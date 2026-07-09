@@ -5,3 +5,5 @@ node_modules/
 *.log
 app/build/
 backend/node_modules/
+/.idea/
+/app/.idea/
