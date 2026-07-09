@@ -1,0 +1,15 @@
+{
+  "name": "flat-finder-backend",
+  "version": "1.0.0",
+  "description": "Scraper API serving normalized flat/house listings for RO, UA, KZ, UZ, KG",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}

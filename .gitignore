@@ -1,0 +1,7 @@
+flatfinder.env
+*.env
+!sample.env
+node_modules/
+*.log
+app/build/
+backend/node_modules/
