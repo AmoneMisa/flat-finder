@@ -166,6 +166,67 @@ class Filters {
     );
   }
 
+  /// Serialize the user's selections so they survive app restarts. Only the
+  /// fields the user actively picks are stored (not derived/UI state).
+  Map<String, dynamic> toJson() => {
+        'countries': countries.toList(),
+        'sources': sources.toList(),
+        'propertyType': propertyType.name,
+        'dealType': dealType.name,
+        'agency': agency.name,
+        'audience': audience.name,
+        'priceMin': priceMin,
+        'priceMax': priceMax,
+        'roomsMin': roomsMin,
+        'roomsMax': roomsMax,
+        'bedroomsMin': bedroomsMin,
+        'bedroomsMax': bedroomsMax,
+        'floorMin': floorMin,
+        'floorMax': floorMax,
+        'yearMin': yearMin,
+        'yearMax': yearMax,
+        'city': city,
+        'district': district,
+        'metro': metro,
+        'query': query,
+      };
+
+  factory Filters.fromJson(Map<String, dynamic> j) {
+    T byName<T extends Enum>(List<T> values, dynamic name, T fallback) {
+      for (final v in values) {
+        if (v.name == name) return v;
+      }
+      return fallback;
+    }
+
+    Set<String> strSet(dynamic v, Set<String> fallback) =>
+        (v is List && v.isNotEmpty) ? v.map((e) => e.toString()).toSet() : fallback;
+    num? n(dynamic v) => v == null ? null : (v as num);
+
+    return Filters(
+      countries: strSet(j['countries'], {'RO'}),
+      sources: strSet(j['sources'], {...kAllSources}),
+      propertyType: byName(PropertyType.values, j['propertyType'], PropertyType.any),
+      dealType: byName(DealType.values, j['dealType'], DealType.any),
+      agency: byName(AgencyFilter.values, j['agency'], AgencyFilter.any),
+      audience: byName(Audience.values, j['audience'], Audience.any),
+      priceMin: n(j['priceMin']),
+      priceMax: n(j['priceMax']),
+      roomsMin: n(j['roomsMin']),
+      roomsMax: n(j['roomsMax']),
+      bedroomsMin: n(j['bedroomsMin']),
+      bedroomsMax: n(j['bedroomsMax']),
+      floorMin: n(j['floorMin']),
+      floorMax: n(j['floorMax']),
+      yearMin: n(j['yearMin']),
+      yearMax: n(j['yearMax']),
+      city: (j['city'] ?? '').toString(),
+      district: (j['district'] ?? '').toString(),
+      metro: (j['metro'] ?? '').toString(),
+      query: (j['query'] ?? '').toString(),
+    );
+  }
+
   Map<String, String> toQueryParams() {
     final p = <String, String>{
       'countries': countries.join(','),

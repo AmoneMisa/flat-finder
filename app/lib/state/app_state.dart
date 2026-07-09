@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/filters.dart';
 import '../models/listing.dart';
@@ -6,6 +9,8 @@ import '../services/api_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState(this._api);
+
+  static const _kFilters = 'filters';
 
   final ApiService _api;
 
@@ -19,6 +24,10 @@ class AppState extends ChangeNotifier {
   String? error;
 
   Future<void> init() async {
+    // Restore the user's last-used filters (country, type, price, etc.) so the
+    // app reopens where they left off.
+    await _loadFilters();
+
     // Rates are non-critical: fetch best-effort so a failure never blocks search.
     _api.fetchRates().then((r) {
       rates = r;
@@ -37,6 +46,25 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadFilters() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final raw = p.getString(_kFilters);
+      if (raw != null) {
+        filters = Filters.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      }
+    } catch (_) {
+      // Corrupt/incompatible saved state: fall back to defaults silently.
+    }
+  }
+
+  Future<void> _saveFilters() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_kFilters, jsonEncode(filters.toJson()));
+    } catch (_) {}
+  }
+
   Country? countryByCode(String code) {
     for (final c in countries) {
       if (c.code == code) return c;
@@ -47,6 +75,7 @@ class AppState extends ChangeNotifier {
   void updateFilters(Filters next) {
     filters = next;
     notifyListeners();
+    _saveFilters(); // persist so choices survive restarts
   }
 
   Future<void> search() async {

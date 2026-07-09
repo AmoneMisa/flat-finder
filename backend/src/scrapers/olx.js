@@ -35,6 +35,11 @@ function buildUrl(country, filters) {
   if (filters.priceMin != null) p.set('filter_float_price:from', String(filters.priceMin));
   if (filters.priceMax != null) p.set('filter_float_price:to', String(filters.priceMax));
 
+  // Newest first: OLX's default ordering mixes in old listings, most of which
+  // the 3-week freshness filter later drops. Sorting by creation date keeps the
+  // fetched batch recent so far more of it survives.
+  p.set('sort_by', 'created_at:desc');
+
   // NB: the owner/agency (filter_enum_business) filter is rejected at the
   // real-estate root category on some portals, so we enforce it after
   // normalization via applyFilters() using each offer's `business` flag.
