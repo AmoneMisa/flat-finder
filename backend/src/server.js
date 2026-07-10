@@ -3,6 +3,7 @@ import cors from 'cors';
 import { COUNTRIES, COUNTRY_CODES } from './countries.js';
 import { cityLocations } from './locations.js';
 import { getListings } from './scrapers/index.js';
+import { validateSource } from './scrapers/custom.js';
 import { applyFilters } from './normalize.js';
 import { getRates } from './fx.js';
 import { startScheduler, refreshAll, getLastRun } from './scheduler.js';
@@ -34,11 +35,22 @@ const VALID_SOURCES = ['olx', 'reddit', 'telegram', 'threads'];
 
 function parseFilters(q) {
   const num = (v) => (v == null || v === '' ? null : Number(v));
+  const bool = (v) => (v === 'true' || v === '1' ? true : null);
   const sources = String(q.sources || '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter((s) => VALID_SOURCES.includes(s));
+  // User-added custom source URLs (comma-separated), deduped and capped.
+  const customSources = [
+    ...new Set(
+      String(q.customSources || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => /^https?:\/\//i.test(s)),
+    ),
+  ].slice(0, 10);
   return {
+    customSources,
     propertyType: ['flat', 'house', 'any'].includes(q.propertyType) ? q.propertyType : 'any',
     dealType: ['sale', 'longRent', 'shortRent', 'any'].includes(q.dealType) ? q.dealType : 'any',
     agency: ['owner', 'agency', 'any'].includes(q.agency) ? q.agency : 'any',
@@ -59,6 +71,11 @@ function parseFilters(q) {
     district: q.district ? String(q.district) : '',
     metro: q.metro ? String(q.metro) : '',
     query: q.query ? String(q.query) : '',
+    // Tenant conditions (only "require allowed" / "room only" are meaningful).
+    pets: bool(q.pets),
+    children: bool(q.children),
+    roomOnly: bool(q.roomOnly),
+    maxAgeDays: num(q.maxAgeDays), // "posted within N days" freshness cap
     sources, // empty array = all sources
     offset: num(q.offset) ?? 0,
     limit: Math.min(num(q.limit) ?? 40, 60),
@@ -90,12 +107,14 @@ app.get('/api/listings', async (req, res) => {
     const results = await Promise.all(codes.map((code) => getListings(code, filters)));
     const degraded = [];
     const sourceCounts = {};
+    const sourceErrors = [];
     let listings = [];
     results.forEach((r, i) => {
       if (r.degraded) degraded.push(codes[i]);
       for (const [name, n] of Object.entries(r.sourceCounts ?? {})) {
         sourceCounts[name] = (sourceCounts[name] ?? 0) + n;
       }
+      if (Array.isArray(r.sourceErrors)) sourceErrors.push(...r.sourceErrors);
       listings = listings.concat(r.listings);
     });
 
@@ -106,12 +125,25 @@ app.get('/api/listings', async (req, res) => {
       count: listings.length,
       degradedCountries: degraded, // countries currently served from demo data
       sourceCounts, // live listings fetched per source before filtering
+      sourceErrors, // per-source failures (name/country/url + message)
       filters,
       listings,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Validate a user-submitted custom source URL before they add it. Fetches the
+// page server-side (SSRF-guarded) and reports how many listings it could read.
+// POST /api/sources/validate  { url, country? }
+app.post('/api/sources/validate', async (req, res) => {
+  const url = String(req.body?.url || '').trim();
+  if (!url) return res.status(400).json({ ok: false, error: 'Missing url' });
+  const code = String(req.body?.country || 'RO').toUpperCase();
+  const country = COUNTRIES[code] ?? COUNTRIES[COUNTRY_CODES[0]];
+  const result = await validateSource(url, country);
+  res.json(result);
 });
 
 // Exchange rates (relative to USD) for client-side price normalization.

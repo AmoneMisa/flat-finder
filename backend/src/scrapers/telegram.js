@@ -28,7 +28,7 @@ function stripHtml(s) {
     .trim();
 }
 
-async function fetchChannel(channel, country, filters) {
+export async function fetchChannel(channel, country, filters = {}) {
   const res = await fetch(`https://t.me/s/${encodeURIComponent(channel)}`, {
     headers: { 'User-Agent': UA_HEADER, 'Accept-Language': 'en,ru' },
     signal: AbortSignal.timeout(10_000),

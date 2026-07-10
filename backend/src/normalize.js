@@ -20,6 +20,13 @@ import {
   parseBedrooms,
   classifyAudience,
   parseContact,
+  looksCommercial,
+  parseResidentialComplex,
+  classifyPets,
+  classifyChildren,
+  looksRoomOnly,
+  parseDeposit,
+  parseCommission,
 } from './textparse.js';
 import { parseLocation } from './locations.js';
 
@@ -69,6 +76,23 @@ export function makeListing(partial) {
   const district = partial.district ?? loc.district;
   const metro = partial.metro ?? loc.metro;
   const nearby = partial.nearby ?? loc.nearby;
+  const residenceComplex = partial.residenceComplex ?? parseResidentialComplex(combined);
+
+  // Flag non-residential (office / commercial) posts so the housing search can
+  // drop them. An explicit propertyType from the source overrides the guess.
+  const commercial = partial.commercial ?? looksCommercial(combined);
+
+  // Tenant conditions + costs pulled from the post text unless the source
+  // provided them. petsAllowed/childrenAllowed are true/false/null (unstated).
+  const petsAllowed = partial.petsAllowed ?? classifyPets(combined);
+  const childrenAllowed = partial.childrenAllowed ?? classifyChildren(combined);
+  const roomOnly = partial.roomOnly ?? looksRoomOnly(combined);
+  const dep = parseDeposit(combined);
+  const deposit = partial.deposit ?? dep.required;
+  const depositAmount = partial.depositAmount ?? dep.amount;
+  const com = parseCommission(combined);
+  const commission = partial.commission ?? com.has;
+  const commissionPercent = partial.commissionPercent ?? com.percent;
 
   return {
     id: String(partial.id),
@@ -103,15 +127,41 @@ export function makeListing(partial) {
     district,
     metro,
     nearby,
+    residenceComplex,
+    commercial,
+    petsAllowed,
+    childrenAllowed,
+    roomOnly,
+    deposit,
+    depositAmount,
+    commission,
+    commissionPercent,
     tags:
       partial.tags ??
-      extractTags({ title, description, propertyType, byAgency, rooms, dealType, audience }),
+      extractTags({
+        title,
+        description,
+        propertyType,
+        byAgency,
+        rooms,
+        dealType,
+        audience,
+        district,
+        nearby,
+        residenceComplex,
+        petsAllowed,
+        childrenAllowed,
+        roomOnly,
+        deposit,
+        commission,
+        commissionPercent,
+      }),
   };
 }
 
 // Only surface listings posted within this window — older posts are treated as
-// stale/inactive and dropped. (3 weeks, per product requirement.)
-export const MAX_AGE_MS = 21 * 24 * 60 * 60 * 1000;
+// stale/inactive and dropped. (1 month, per product requirement.)
+export const MAX_AGE_MS = 31 * 24 * 60 * 60 * 1000;
 
 // Lowercase and strip diacritics so "București" matches "bucuresti" etc.
 function normCity(s) {
@@ -128,16 +178,24 @@ export function applyFilters(listings, filters) {
     roomsMin, roomsMax, bedroomsMin, bedroomsMax,
     floorMin, floorMax, yearMin, yearMax, audience, city,
     cityAliases, district, metro,
+    pets, children, roomOnly, maxAgeDays,
   } = filters;
   const now = Date.now();
+  // Optional "posted within N days" freshness cap on top of MAX_AGE_MS.
+  const ageCapMs =
+    maxAgeDays != null && maxAgeDays > 0
+      ? Math.min(maxAgeDays * 24 * 60 * 60 * 1000, MAX_AGE_MS)
+      : MAX_AGE_MS;
   // Accept the selected city or any of its localized aliases (from countries.js).
   const cityForms = city ? (cityAliases?.length ? cityAliases : [city]).map(normCity) : null;
   return listings.filter((l) => {
+    // Never show offices / commercial premises among housing results.
+    if (l.commercial) return false;
     // Freshness: drop anything with a known post date older than 3 weeks. Posts
     // with no/unparseable date are kept (lenient, like the numeric ranges).
     if (l.createdAt) {
       const t = Date.parse(l.createdAt);
-      if (!Number.isNaN(t) && now - t > MAX_AGE_MS) return false;
+      if (!Number.isNaN(t) && now - t > ageCapMs) return false;
     }
     if (propertyType && propertyType !== 'any' && l.propertyType !== propertyType) return false;
     if (dealType && dealType !== 'any' && l.dealType !== dealType) return false;
@@ -158,6 +216,12 @@ export function applyFilters(listings, filters) {
     if (yearMax != null && l.buildingYear != null && l.buildingYear > yearMax) return false;
     // Audience is an explicit restriction, so match strictly when requested.
     if (audience && audience !== 'any' && l.audience !== audience) return false;
+    // Tenant conditions: only drop on an explicit contradiction. A listing that
+    // does not state a policy (null) is kept, like the lenient numeric ranges.
+    if (pets === true && l.petsAllowed === false) return false;
+    if (children === true && l.childrenAllowed === false) return false;
+    // Room-only (partial rent): when requested, show only shared-room posts.
+    if (roomOnly === true && !l.roomOnly) return false;
     if (cityForms) {
       const hay = normCity(l.city);
       if (!cityForms.some((f) => hay.includes(f))) return false;

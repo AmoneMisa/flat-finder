@@ -80,7 +80,7 @@ async function fetchViaApi(country, filters) {
   return out;
 }
 
-async function fetchTag(tag, country, filters) {
+export async function fetchTag(tag, country, filters = {}) {
   const res = await fetch(
     `https://www.threads.net/search?q=${encodeURIComponent(tag)}&serp_type=tags`,
     {

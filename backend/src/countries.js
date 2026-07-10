@@ -125,8 +125,9 @@ export const COUNTRIES = {
       'kvartiri_tashkent', 'nedvizhimost_tashkent', 'arenda_tashkenta', 'uybor_uz',
       'arentash', 'kvartira_dom_arenda', 'arendatashkent_uz', 'bez_makler_kvartira_arenda_ijara',
       'TOSHKENT_IJARAGA_UYLAR_SERGELI', 'ijara_tashkent', 'kvartira_samarkand',
+      'kv_arenda_tashken_t', 'ArendaTashkentaa', 'arenduzb',
     ],
-    threadsTags: ['недвижимость', 'ташкент', 'kvartira', 'arenda', 'uysotiladi'],
+    threadsTags: ['недвижимость', 'ташкент', 'kvartira', 'arenda', 'uysotiladi', 'аренда ташкент'],
   },
 };
 

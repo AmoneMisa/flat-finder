@@ -35,11 +35,37 @@ export function parsePriceFromText(text, fallbackCurrency = '') {
 export function parseRoomsFromText(text) {
   if (!text) return null;
   // camer (RO), комн (RU), кімн (UA), xona/xonali (UZ), бөлме/бөлмелі (KZ),
-  // room/bedroom (EN).
+  // room/bedroom (EN). Note: we deliberately do NOT match a bare "кв" — that is
+  // "кв.м" (area) or "квартал" (block), e.g. "Чиланзар 16кв" is NOT 16 rooms.
   const m = text.match(
-    /(\d+)\s*-?\s*(?:camer|комн|кімн|room|bedroom|xona|xonali|бөлме|бөлмел|к\.?в|-к\b)/i,
+    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|кімн|room|bedroom|xona|xonali|бөлме|бөлмел)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
   );
-  return m ? Number(m[1]) : null;
+  const n = m ? Number(m[1] ?? m[2]) : null;
+  // Dwellings realistically have 1–10 rooms; anything larger is a mis-parse.
+  return n != null && n >= 1 && n <= 10 ? n : null;
+}
+
+// Non-residential / commercial listings (offices, retail, warehouses) that
+// should not appear among housing results. Kept conservative so amenities like
+// "магазин рядом" (shop nearby) don't wrongly flag a flat.
+const COMMERCIAL_RE =
+  /(офис[ _]|под ?офис|офисн|\boffice\b|\bofis\b|кеңсе|коммерческ|commercial|бизнес[ -]?центр|нежил(?:ое|ое помещ|ых)|торгов(?:ое|ая) ?площад|торгов(?:ое|ое помещ)|warehouse|склад(?:ское)? помещ|производствен(?:ное|ых) ?помещ|spatiu comercial|birou)/i;
+
+export function looksCommercial(text) {
+  return text ? COMMERCIAL_RE.test(text) : false;
+}
+
+// Residential-complex ("ЖК ...", "residential complex", "ЖМ", "TP", RO "ansamblu")
+// name, when the post names one. Returns a short trimmed name or null.
+export function parseResidentialComplex(text) {
+  if (!text) return null;
+  const m = text.match(
+    /(?:жк|жм|ж\/к|residential complex|ansamblu(?: rezidential)?|turar[- ]?joy majmuasi)\s*["'«»„“]?\s*([^"'«»„“\n,.;()]{2,40})/i,
+  );
+  if (!m) return null;
+  const name = m[1].trim().replace(/\s{2,}/g, ' ');
+  // Reject captures that are just a number or too short to be a name.
+  return /[a-zA-Zа-яёіїґ]{2,}/i.test(name) ? name : null;
 }
 
 export function parseAreaFromText(text) {
@@ -164,6 +190,64 @@ export function parseContact(text) {
   if (handle) return handle[0];
 
   return null;
+}
+
+// Whether pets are explicitly allowed. Returns true / false / null (unstated).
+// We only return false on an explicit ban so "unknown" stays lenient.
+export function classifyPets(text) {
+  if (!text) return null;
+  const t = text.toLowerCase();
+  if (/(без ?животн|нельзя с животными|без тварин|no pets|pets not allowed|fara animale|hayvon.*mumkin emas|үй жануар.*болмайды)/i.test(t))
+    return false;
+  if (/(можно с животными|можно с питомц|з тваринами можна|з тваринами дозвол|pets? ?(allowed|ok|friendly)|se accepta animale|animale acceptate|uy hayvon.*mumkin|үй жануар.*болады)/i.test(t))
+    return true;
+  return null;
+}
+
+// Whether children are explicitly allowed. Same true/false/null convention.
+export function classifyChildren(text) {
+  if (!text) return null;
+  const t = text.toLowerCase();
+  if (/(без ?детей|нельзя с детьми|без дітей|no (kids|children)|children not allowed|fara copii|bolalar.*mumkin emas|балалар.*болмайды)/i.test(t))
+    return false;
+  if (/(можно с детьми|можно с ребен|з дітьми можна|з дітьми дозвол|children ?(allowed|ok|welcome)|kids ?(ok|welcome)|se accepta copii|copii acceptati|bolalar.*mumkin|балалар.*болады)/i.test(t))
+    return true;
+  return null;
+}
+
+// True when the post is renting only a room (not the whole flat), a.k.a.
+// "подселение" / partial rent / room in a shared flat.
+export function looksRoomOnly(text) {
+  if (!text) return false;
+  return /(подселени|подселение|комнату в|сдаётся комната|сдается комната|сдам комнату|здам кімнат|кімнату в|room in a (shared |)flat|room for rent|shared (flat|apartment|room)|roommate|xona ijaraga|бөлме жалға|închiriez camer[ăa])/i.test(text);
+}
+
+// Security deposit required? true/false/null. Also returns the amount when the
+// post states one (e.g. "залог 500$").
+export function parseDeposit(text) {
+  if (!text) return { required: null, amount: null };
+  const t = text.toLowerCase();
+  const KW = '(?:залог|заклад|депозит|deposit|garan[țt]ie|kaus|kafolat|кепіл)';
+  if (!new RegExp(KW, 'i').test(t)) return { required: null, amount: null };
+  if (/(без ?залог|без ?депозит|no deposit|fara garantie|депозит ?не ?требует)/i.test(t))
+    return { required: false, amount: null };
+  const m = t.match(new RegExp(`${KW}[^\\d]{0,15}(\\d[\\d\\s.,]{1,})`, 'i'));
+  const amount = m ? Number(m[1].replace(/[\s.,]/g, '')) : null;
+  return { required: true, amount: amount && amount >= 10 ? amount : null };
+}
+
+// Agency commission. Returns { has: bool|null, percent: number|null } — percent
+// is filled when the post states one (e.g. "комиссия 50%").
+export function parseCommission(text) {
+  if (!text) return { has: null, percent: null };
+  const t = text.toLowerCase();
+  const KW = '(?:комисси|комісі|commission|comision|komissiya|комиссионн)';
+  if (/(без ?комисси|без ?комісі|no commission|fara comision|fără comision|без ?комиссионн)/i.test(t))
+    return { has: false, percent: 0 };
+  if (!new RegExp(KW, 'i').test(t)) return { has: null, percent: null };
+  const m = t.match(new RegExp(`${KW}[^\\d]{0,15}(\\d{1,3})\\s*%`, 'i'));
+  const percent = m ? Number(m[1]) : null;
+  return { has: true, percent: percent != null && percent <= 100 ? percent : null };
 }
 
 export function guessPropertyType(text) {

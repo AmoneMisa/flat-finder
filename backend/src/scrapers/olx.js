@@ -82,11 +82,20 @@ function detectAgency(item) {
 function mapItem(item, country, filters) {
   const params = paramMap(item);
   const priceParam = params.price?.value;
-  const rooms =
+  // Rooms: prefer OLX's structured `rooms` param. Fall back to the title, but
+  // only match an explicit room word — NEVER a bare "кв" (that is "кв.м" area or
+  // "квартал" block, e.g. "72 кв.м" is 72 m², not 72 rooms). Allow the Russian
+  // "2х-комнатная" / "2-комн" filler between the number and the word.
+  const roomsFromTitle = (item.title || '').match(
+    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|кімнат|кімн|room|bedroom|xonali|xona)/i,
+  );
+  let rooms =
     Number(params.rooms?.value?.key) ||
     Number((params.rooms?.value?.label || '').match(/\d+/)?.[0]) ||
-    Number((item.title || '').match(/(\d+)\s*-?\s*(camer|комн|кімн|room|кв)/i)?.[1]) ||
+    (roomsFromTitle ? Number(roomsFromTitle[1]) : null) ||
     null;
+  // Sanity cap: dwellings realistically have 1–10 rooms; larger is a mis-parse.
+  if (rooms != null && (rooms < 1 || rooms > 10)) rooms = null;
   const area =
     Number(params.m?.value?.key) ||
     Number((params.m?.value?.label || '').match(/\d+/)?.[0]) ||

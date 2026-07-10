@@ -10,6 +10,7 @@ import { scrapeOlx } from './olx.js';
 import { scrapeReddit } from './reddit.js';
 import { scrapeTelegram } from './telegram.js';
 import { scrapeThreads } from './threads.js';
+import { scrapeCustom } from './custom.js';
 import { generateMock } from '../mock.js';
 
 const SOURCES = {
@@ -32,6 +33,7 @@ function cacheKey(countryCode, filters) {
     filters.priceMax ?? '',
     filters.query ?? '',
     (filters.sources ?? []).join('+') || 'all',
+    (filters.customSources ?? []).join('+') || '',
     filters.offset ?? 0,
   ].join('|');
 }
@@ -50,7 +52,7 @@ function dedupe(listings) {
 
 async function fetchOne(countryCode, filters) {
   const country = COUNTRIES[countryCode];
-  if (!country) return { listings: [], degraded: false, sourceCounts: {} };
+  if (!country) return { listings: [], degraded: false, sourceCounts: {}, sourceErrors: [] };
 
   let sources = country.sources ?? ['olx'];
   // Restrict to the sources the user selected (empty selection = all).
@@ -67,6 +69,7 @@ async function fetchOne(countryCode, filters) {
   );
 
   const sourceCounts = {};
+  const sourceErrors = [];
   let merged = [];
   results.forEach((r, i) => {
     const name = sources[i];
@@ -75,17 +78,29 @@ async function fetchOne(countryCode, filters) {
       merged = merged.concat(r.value.listings);
     } else {
       sourceCounts[name] = 0;
-      console.warn(`[scraper] ${countryCode}/${name} failed: ${r.reason?.message ?? r.reason}`);
+      const msg = r.reason?.message ?? String(r.reason);
+      sourceErrors.push({ source: name, country: countryCode, error: msg });
+      console.warn(`[scraper] ${countryCode}/${name} failed: ${msg}`);
     }
   });
+
+  // User-provided custom sources: fetched per URL, failures surfaced individually.
+  if (Array.isArray(filters.customSources) && filters.customSources.length) {
+    const custom = await scrapeCustom(country, filters);
+    sourceCounts.custom = custom.listings.length;
+    merged = merged.concat(custom.listings);
+    for (const e of custom.errors) {
+      sourceErrors.push({ source: 'custom', country: countryCode, url: e.url, error: e.error });
+    }
+  }
 
   merged = dedupe(merged);
 
   if (!merged.length) {
     console.warn(`[scraper] ${countryCode} all sources empty -> mock`);
-    return { listings: generateMock(countryCode), degraded: true, sourceCounts };
+    return { listings: generateMock(countryCode), degraded: true, sourceCounts, sourceErrors };
   }
-  return { listings: merged, degraded: false, sourceCounts };
+  return { listings: merged, degraded: false, sourceCounts, sourceErrors };
 }
 
 export async function getListings(countryCode, filters, { force = false } = {}) {
