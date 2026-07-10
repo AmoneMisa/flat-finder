@@ -52,7 +52,7 @@ export function parseRoomsFromText(text) {
 // retail/warehouse/production premises, land plots (sotix/sotka/соток/yer
 // maydoni — not housing) and service/auto premises (car wash, repair bay).
 const COMMERCIAL_RE =
-  /(офис[ _]|под ?офис|офисн|\boffice\b|\bofis\b|кеңсе|коммерческ|commercial|бизнес[ -]?центр|нежил(?:ое|ое помещ|ых)|помещени[ея]|торгов(?:ое|ая) ?площад|торгов(?:ое|ое помещ)|warehouse|склад(?:ское)? помещ|производствен(?:ное|ых) ?помещ|spatiu comercial|birou|\d+\s*sot(?:ix|ka)|\d+\s*сот(?:ок|ка|ки|ых)|yer\s*maydoni|bosh\s*yer|уч[аа]сток\s*земл|servis\s*uchun|kassaprav|avtomoyka|автомойк|car\s?wash|шиномонтаж)/i;
+  /(офис[ _]|под ?офис|офисн|\boffice\b|\bofis\b|кеңсе|коммерческ|commercial|бизнес[ -]?центр|нежил(?:ое|ое помещ|ых)|помещени[ея]|торгов(?:ое|ая) ?площад|торгов(?:ое|ое помещ)|warehouse|склад(?!н|ыв)|производствен(?:ное|ых) ?помещ|spatiu comercial|birou|\d+\s*sot(?:ix|ka)|\d+\s*сот(?:ок|ка|ки|ых)|yer\s*maydoni|bosh\s*yer|уч[аа]сток\s*земл|servis\s*uchun|kassaprav|avtomoyka|автомойк|car\s?wash|шиномонтаж|салон\s*красот|zallik\s*saloni|beauty\s*salon|парикмахерск|барбершоп|barbershop)/i;
 
 export function looksCommercial(text) {
   return text ? COMMERCIAL_RE.test(text) : false;
