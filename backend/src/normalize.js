@@ -87,7 +87,7 @@ export function makeListing(partial) {
 
 // Only surface listings posted within this window — older posts are treated as
 // stale/inactive and dropped. (3 weeks, per product requirement.)
-const MAX_AGE_MS = 21 * 24 * 60 * 60 * 1000;
+export const MAX_AGE_MS = 21 * 24 * 60 * 60 * 1000;
 
 // Apply the user-facing filters that a source could not enforce server-side.
 export function applyFilters(listings, filters) {

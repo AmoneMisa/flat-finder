@@ -6,7 +6,12 @@
 // request defensive: any network error, block, or shape change throws and the
 // caller falls back to demo data.
 
-import { makeListing } from '../normalize.js';
+import { makeListing, MAX_AGE_MS } from '../normalize.js';
+
+// Pull several newest-first pages so enough recent listings survive the 3-week
+// freshness filter. One page (~50) is far too few for big markets.
+const OLX_PAGE_SIZE = 50;
+const OLX_MAX_PAGES = 5; // hard ceiling (~250 fetched) to bound latency
 
 const UA_HEADER =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -65,8 +70,51 @@ function detectAgency(item) {
   return Boolean(item.shop) || item.user?.is_business === true;
 }
 
-export async function scrapeOlx(country, filters) {
-  const url = buildUrl(country, filters);
+function mapItem(item, country, filters) {
+  const params = paramMap(item);
+  const priceParam = params.price?.value;
+  const rooms =
+    Number(params.rooms?.value?.key) ||
+    Number((params.rooms?.value?.label || '').match(/\d+/)?.[0]) ||
+    Number((item.title || '').match(/(\d+)\s*-?\s*(camer|комн|кімн|room|кв)/i)?.[1]) ||
+    null;
+  const area =
+    Number(params.m?.value?.key) ||
+    Number((params.m?.value?.label || '').match(/\d+/)?.[0]) ||
+    null;
+
+  // OLX only tells us category.type === 'real_estate', so classify flat vs
+  // house from the listing title. Honor an explicit filter first.
+  const t = (item.title || '').toLowerCase();
+  const isHouse = /cas[aă]|дом|будин|house|коттедж|вилл/.test(t);
+  let propertyType = 'flat';
+  if (filters.propertyType === 'house' || filters.propertyType === 'flat')
+    propertyType = filters.propertyType;
+  else if (isHouse) propertyType = 'house';
+
+  return makeListing({
+    id: item.id,
+    source: 'olx',
+    country: country.code,
+    title: item.title,
+    description: item.description ?? '',
+    propertyType,
+    byAgency: detectAgency(item),
+    price: priceParam?.value ?? null,
+    currency: priceParam?.currency ?? country.currency,
+    rooms,
+    areaSqm: area,
+    city: item.location?.city?.name ?? item.location?.region?.name ?? '',
+    lat: item.map?.lat ?? null,
+    lng: item.map?.lon ?? null,
+    photo: firstPhoto(item),
+    url: item.url ?? country.olxHost,
+    createdAt: item.created_time ?? null,
+  });
+}
+
+async function fetchPage(country, filters, offset) {
+  const url = buildUrl(country, { ...filters, offset, limit: OLX_PAGE_SIZE });
   const res = await fetch(url, {
     headers: { 'User-Agent': UA_HEADER, Accept: 'application/json', 'Accept-Language': 'en' },
     signal: AbortSignal.timeout(12_000),
@@ -75,47 +123,27 @@ export async function scrapeOlx(country, filters) {
   const json = await res.json();
   const data = json?.data;
   if (!Array.isArray(data)) throw new Error(`OLX ${country.code} unexpected payload`);
+  return data;
+}
 
-  return data.map((item) => {
-    const params = paramMap(item);
-    const priceParam = params.price?.value;
-    const rooms =
-      Number(params.rooms?.value?.key) ||
-      Number((params.rooms?.value?.label || '').match(/\d+/)?.[0]) ||
-      Number((item.title || '').match(/(\d+)\s*-?\s*(camer|комн|кімн|room|кв)/i)?.[1]) ||
-      null;
-    const area =
-      Number(params.m?.value?.key) ||
-      Number((params.m?.value?.label || '').match(/\d+/)?.[0]) ||
-      null;
+export async function scrapeOlx(country, filters) {
+  const out = [];
+  const cutoff = Date.now() - MAX_AGE_MS;
+  for (let page = 0; page < OLX_MAX_PAGES; page++) {
+    let data;
+    try {
+      data = await fetchPage(country, filters, page * OLX_PAGE_SIZE);
+    } catch (err) {
+      if (page === 0) throw err; // first page must succeed (caller falls back to mock)
+      break; // later-page hiccup: keep what we already have
+    }
+    for (const item of data) out.push(mapItem(item, country, filters));
 
-    // OLX only tells us category.type === 'real_estate', so classify flat vs
-    // house from the listing title. Honor an explicit filter first.
-    const t = (item.title || '').toLowerCase();
-    const isHouse = /cas[aă]|дом|будин|house|коттедж|вилл/.test(t);
-    let propertyType = 'flat';
-    if (filters.propertyType === 'house' || filters.propertyType === 'flat')
-      propertyType = filters.propertyType;
-    else if (isHouse) propertyType = 'house';
-
-    return makeListing({
-      id: item.id,
-      source: 'olx',
-      country: country.code,
-      title: item.title,
-      description: item.description ?? '',
-      propertyType,
-      byAgency: detectAgency(item),
-      price: priceParam?.value ?? null,
-      currency: priceParam?.currency ?? country.currency,
-      rooms,
-      areaSqm: area,
-      city: item.location?.city?.name ?? item.location?.region?.name ?? '',
-      lat: item.map?.lat ?? null,
-      lng: item.map?.lon ?? null,
-      photo: firstPhoto(item),
-      url: item.url ?? country.olxHost,
-      createdAt: item.created_time ?? null,
-    });
-  });
+    if (data.length < OLX_PAGE_SIZE) break; // no more results
+    // Newest-first: once a page ends past the freshness window, every following
+    // page is older too, so stop paging.
+    const last = data[data.length - 1]?.created_time;
+    if (last && Date.parse(last) < cutoff) break;
+  }
+  return out;
 }
