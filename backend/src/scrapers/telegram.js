@@ -1,7 +1,10 @@
-// Telegram adapter. Public Telegram *channels* expose recent posts via the web
-// preview at https://t.me/s/<channel> (no bot token needed). Private groups are
-// not publicly readable, so only public channels are supported. We parse each
-// message's text and pull price/rooms/area from it.
+// Telegram adapter. Public Telegram *channels* are read through the MTProto
+// sidecar worker (see telegram-worker/), which logs in as a real user account
+// and calls messages.getHistory. This replaced scraping https://t.me/s/<channel>
+// because Telegram heavily throttles that web preview from datacenter IPs (a
+// production server saw ~1 post where a browser sees hundreds). The worker is
+// transport-only: it returns raw message text/date, and all the housing
+// parsing/filtering below stays here so there's a single source of truth.
 
 import { makeListing, MAX_AGE_MS } from '../normalize.js';
 import {
@@ -11,162 +14,105 @@ import {
   guessPropertyType,
 } from '../textparse.js';
 
-const UA_HEADER =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+// Base URL of the MTProto worker (set in docker-compose). When unset the
+// telegram source simply yields nothing, so the backend is not hard-coupled to
+// the worker being up — OLX and the other sources still return results.
+const TG_WORKER_URL = process.env.TG_WORKER_URL || '';
 
-function stripHtml(s) {
-  return (s || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    // Numeric/hex entities first: Telegram often encodes '$' as &#036; and
-    // various punctuation as &#NN;, which the price parser can't see as a
-    // currency symbol until decoded. Do this before the named entities so a
-    // decoded '&' isn't re-processed.
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/[ \t]+/g, ' ')
-    .trim();
-}
+// Only keep messages that look like housing posts. Covers RU/UA/RO plus Uzbek
+// (uy/kvartira/xona/ijara) and Kazakh (пәтер/үй/жалға).
+const HOUSING_RE =
+  /(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
 
-// Parse one /s/ preview page into listings. Also returns the smallest post id
-// seen, which is used as the `before` cursor to page back to older posts.
-function parsePage(html, channel, country, filters) {
-  // Each message div carries a data-post="channel/id" attribute, so splitting on
-  // it gives one self-contained block per post (photo wrap + text div together).
-  const blocks = html.split('data-post="').slice(1);
-  const out = [];
-  let minId = null;
-  // Oldest (earliest) post timestamp seen on this page, across ALL posts — not
-  // just the housing ones — so the caller can stop paging once a page is beyond
-  // the freshness window even when none of its posts passed the housing filter.
-  let oldestTs = null;
-  for (let i = 0; i < blocks.length; i++) {
-    const raw = blocks[i];
-    const dataPost = raw.slice(0, raw.indexOf('"')) || null;
-    // Track the oldest (smallest) numeric post id for pagination.
-    const idNum = Number(dataPost?.split('/')[1]);
-    if (Number.isFinite(idNum)) minId = minId === null ? idNum : Math.min(minId, idNum);
+// Turn one worker message ({ id, text, date, hasPhoto }) into a listing, or
+// null if it isn't a housing post (or is filtered out by the keyword query).
+function messageToListing(msg, channel, country, filters) {
+  const text = (msg.text || '').replace(/[ \t]+/g, ' ').trim();
+  if (text.length < 10) return null;
+  if (!HOUSING_RE.test(text)) return null;
+  if (filters.query && !text.toLowerCase().includes(filters.query.toLowerCase())) return null;
 
-    // Post time of this block (independent of the housing filter below).
-    const blockTime = raw.match(/<time[^>]*datetime="([^"]+)"/i)?.[1];
-    if (blockTime) {
-      const t = Date.parse(blockTime);
-      if (!Number.isNaN(t)) oldestTs = oldestTs === null ? t : Math.min(oldestTs, t);
-    }
+  const { price, currency } = parsePriceFromText(text, country.currency);
+  const type =
+    filters.propertyType === 'house' || filters.propertyType === 'flat'
+      ? filters.propertyType
+      : guessPropertyType(text);
+  const title = text.split('\n')[0].slice(0, 90);
+  const postPath = `${channel}/${msg.id}`;
 
-    // Message body: the div with class js-message_text inside this block.
-    const textIdx = raw.indexOf('js-message_text');
-    if (textIdx < 0) continue;
-    const after = raw.slice(textIdx);
-    const inner = after.slice(after.indexOf('>') + 1, after.indexOf('</div>'));
-    const text = stripHtml(inner);
-    if (text.length < 10) continue;
-
-    // keyword filter: only keep messages that look like housing posts. Covers
-    // RU/UA/RO plus Uzbek (uy/kvartira/xona/ijara) and Kazakh (пәтер/үй/жалға),
-    // which the old RU-only list dropped — the main reason UZ/KZ Telegram posts
-    // were under-represented.
-    if (
-      !/(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i.test(
-        text,
-      )
-    )
-      continue;
-    if (filters.query && !text.toLowerCase().includes(filters.query.toLowerCase())) continue;
-
-    const { price, currency } = parsePriceFromText(text, country.currency);
-    const type =
-      filters.propertyType === 'house' || filters.propertyType === 'flat'
-        ? filters.propertyType
-        : guessPropertyType(text);
-    // Photo is the background-image of tgme_widget_message_photo_wrap (first one).
-    const photo =
-      raw.match(/tgme_widget_message_photo_wrap[^>]*background-image:\s*url\(['"]?([^'")]+)/i)?.[1] ??
-      null;
-    const title = text.split('\n')[0].slice(0, 90);
-    // Post time: the <time datetime="..."> inside this message block. Lets the
-    // caller drop stale posts (we only surface listings < 3 weeks old).
-    const createdAt =
-      raw.match(/<time[^>]*datetime="([^"]+)"/i)?.[1] ?? null;
-
-    out.push(
-      makeListing({
-        id: `tg-${channel}-${dataPost ?? i}`,
-        source: 'telegram',
-        country: country.code,
-        title,
-        description: text,
-        propertyType: type,
-        byAgency: false,
-        price,
-        currency,
-        rooms: parseRoomsFromText(text),
-        areaSqm: parseAreaFromText(text),
-        city: `@${channel}`,
-        lat: null,
-        lng: null,
-        photo,
-        url: dataPost ? `https://t.me/${dataPost}` : `https://t.me/s/${channel}`,
-        createdAt,
-      }),
-    );
-  }
-  return { out, minId, oldestTs };
-}
-
-// Fetch a single /s/ page, optionally paging back with a `before` cursor.
-async function fetchPage(channel, before) {
-  const url = before
-    ? `https://t.me/s/${encodeURIComponent(channel)}?before=${before}`
-    : `https://t.me/s/${encodeURIComponent(channel)}`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': UA_HEADER, 'Accept-Language': 'en,ru' },
-    signal: AbortSignal.timeout(8_000),
+  return makeListing({
+    id: `tg-${channel}-${postPath}`,
+    source: 'telegram',
+    country: country.code,
+    title,
+    description: text,
+    propertyType: type,
+    byAgency: false,
+    price,
+    currency,
+    rooms: parseRoomsFromText(text),
+    areaSqm: parseAreaFromText(text),
+    city: `@${channel}`,
+    lat: null,
+    lng: null,
+    // Media isn't downloaded over MTProto in this worker; the app shows a
+    // placeholder for telegram posts without a thumbnail.
+    photo: null,
+    url: `https://t.me/${postPath}`,
+    createdAt: msg.date,
   });
-  if (!res.ok) throw new Error(`telegram @${channel} HTTP ${res.status}`);
-  return res.text();
 }
 
-// Telegram serves only ~3 posts per /s/ page to server/datacenter requests (a
-// browser gets ~16-20), so with a small page cap a busy channel yields only a
-// dozen housing hits even though a month holds far more. Page back via the
-// `?before=<id>` cursor many times to gather the full freshness window; the
-// early-stop below keeps dead channels cheap.
-const TG_MAX_PAGES = 16;
+// Fetch one history page from the worker. Returns the parsed messages plus the
+// smallest message id seen (the `beforeId` cursor for paging to older posts).
+async function fetchWorkerPage(channel, beforeId, deadline) {
+  const params = new URLSearchParams({ channel, limit: '100' });
+  if (beforeId) params.set('beforeId', String(beforeId));
+  // Cap the per-request wait by whatever budget remains, so a slow worker call
+  // can't overrun the outer telegram budget.
+  const budgetLeft = deadline === Infinity ? 15_000 : Math.max(1_000, deadline - Date.now());
+  const res = await fetch(`${TG_WORKER_URL}/history?${params}`, {
+    signal: AbortSignal.timeout(Math.min(15_000, budgetLeft)),
+  });
+  if (!res.ok) throw new Error(`tg-worker @${channel} HTTP ${res.status}`);
+  const body = await res.json();
+  if (!body.ok) throw new Error(body.error || `tg-worker @${channel} error`);
+  return body;
+}
+
+// The worker returns up to 100 messages per call; page back via the `beforeId`
+// cursor to cover the full freshness window. The early-stop keeps dead channels
+// cheap (bail as soon as a page is entirely older than MAX_AGE_MS).
+const TG_MAX_PAGES = 8;
 
 export async function fetchChannel(channel, country, filters = {}, deadline = Infinity) {
   const listings = [];
-  let before = null;
+  let beforeId = 0;
   for (let page = 0; page < TG_MAX_PAGES; page++) {
-    // Budget spent: stop paging and return what we've gathered. Without this the
-    // deep page loop (up to TG_MAX_PAGES sequential fetches) could run a single
-    // channel long past the whole telegram budget on a throttled server IP,
-    // making the outer source deadline fire and discard *all* telegram results.
     if (Date.now() >= deadline) break;
-    const html = await fetchPage(channel, before);
-    const { out, minId, oldestTs } = parsePage(html, channel, country, filters);
-    listings.push(...out);
-    // Stop when a page has no posts at all (end of history / throttled), or when
-    // the cursor didn't advance.
-    if (minId === null || minId === before) break;
-    // Stop once we've paged past the freshness window: every post on this page
-    // is older than MAX_AGE_MS, so older pages hold nothing we'd surface. This
-    // is what lets dead channels (newest post months old) bail after one page
-    // instead of burning all TG_MAX_PAGES.
+    const { messages, minId } = await fetchWorkerPage(channel, beforeId, deadline);
+    if (!messages.length && minId === null) break; // end of history
+
+    let oldestTs = null;
+    for (const m of messages) {
+      const l = messageToListing(m, channel, country, filters);
+      if (l) listings.push(l);
+      if (m.date) {
+        const t = Date.parse(m.date);
+        if (!Number.isNaN(t)) oldestTs = oldestTs === null ? t : Math.min(oldestTs, t);
+      }
+    }
+
+    // Cursor didn't advance -> nothing older to fetch.
+    if (minId === null || minId === beforeId) break;
+    // Every post on this page is older than the freshness window: stop paging.
     if (oldestTs && Date.now() - oldestTs > MAX_AGE_MS) break;
-    before = minId;
+    beforeId = minId;
   }
   return listings;
 }
 
-// Fetch a channel with one retry. Telegram's web preview returns a 200 with an
-// empty/placeholder page when it throttles a datacenter IP, so an empty result
-// is retried once after a short pause as well as outright errors.
+// Fetch a channel with one retry, mirroring the previous adapter's resilience.
 async function fetchChannelWithRetry(channel, country, filters, deadline = Infinity) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -175,34 +121,28 @@ async function fetchChannelWithRetry(channel, country, filters, deadline = Infin
     } catch (err) {
       if (attempt === 1) return [];
     }
-    // Don't burn the budget sleeping/retrying once it's spent.
     if (Date.now() >= deadline) return [];
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((r) => setTimeout(r, 500));
   }
   return [];
 }
 
-// Wall-clock budget for a whole telegram scrape. Telegram's web preview is slow
-// and frequently throttles datacenter IPs (200 + empty page), so without a cap a
-// single request could stall for a minute and blow past the nginx proxy timeout,
-// starving the response of the fast OLX results. We stop starting new batches
-// once the budget is spent and return whatever was gathered so far.
+// Wall-clock budget for a whole telegram scrape, so one slow channel can't blow
+// past the nginx proxy timeout and starve the fast OLX results.
 const TG_BUDGET_MS = Number(process.env.TG_BUDGET_MS) || 12000;
 
 export async function scrapeTelegram(country, filters) {
+  if (!TG_WORKER_URL) return []; // MTProto worker not configured
   const channels = country.telegramChannels ?? [];
-  // Fetch in small batches instead of all at once: firing 10+ simultaneous
-  // requests from one server IP makes Telegram throttle most of them to empty
-  // pages, which is why production saw far fewer posts than local dev.
+  // The worker serializes MTProto calls internally, so channels are effectively
+  // processed one at a time regardless of this concurrency; we keep a small
+  // batch so Promise.allSettled still bounds how many are queued at once.
   const CONCURRENCY = 4;
   const deadline = Date.now() + TG_BUDGET_MS;
   const listings = [];
   for (let i = 0; i < channels.length; i += CONCURRENCY) {
-    // Out of time: return the partial set rather than blocking the whole request.
     if (Date.now() >= deadline) break;
     const batch = channels.slice(i, i + CONCURRENCY);
-    // The deadline is passed down so each channel stops paging when the budget
-    // is spent; a batch can therefore only overrun by one in-flight page fetch.
     const results = await Promise.allSettled(
       batch.map((ch) => fetchChannelWithRetry(ch, country, filters, deadline)),
     );
