@@ -126,7 +126,7 @@ async function fetchPage(channel, before) {
     : `https://t.me/s/${encodeURIComponent(channel)}`;
   const res = await fetch(url, {
     headers: { 'User-Agent': UA_HEADER, 'Accept-Language': 'en,ru' },
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) throw new Error(`telegram @${channel} HTTP ${res.status}`);
   return res.text();
@@ -139,10 +139,15 @@ async function fetchPage(channel, before) {
 // early-stop below keeps dead channels cheap.
 const TG_MAX_PAGES = 16;
 
-export async function fetchChannel(channel, country, filters = {}) {
+export async function fetchChannel(channel, country, filters = {}, deadline = Infinity) {
   const listings = [];
   let before = null;
   for (let page = 0; page < TG_MAX_PAGES; page++) {
+    // Budget spent: stop paging and return what we've gathered. Without this the
+    // deep page loop (up to TG_MAX_PAGES sequential fetches) could run a single
+    // channel long past the whole telegram budget on a throttled server IP,
+    // making the outer source deadline fire and discard *all* telegram results.
+    if (Date.now() >= deadline) break;
     const html = await fetchPage(channel, before);
     const { out, minId, oldestTs } = parsePage(html, channel, country, filters);
     listings.push(...out);
@@ -162,14 +167,16 @@ export async function fetchChannel(channel, country, filters = {}) {
 // Fetch a channel with one retry. Telegram's web preview returns a 200 with an
 // empty/placeholder page when it throttles a datacenter IP, so an empty result
 // is retried once after a short pause as well as outright errors.
-async function fetchChannelWithRetry(channel, country, filters) {
+async function fetchChannelWithRetry(channel, country, filters, deadline = Infinity) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await fetchChannel(channel, country, filters);
+      const r = await fetchChannel(channel, country, filters, deadline);
       if (r.length > 0 || attempt === 1) return r;
     } catch (err) {
       if (attempt === 1) return [];
     }
+    // Don't burn the budget sleeping/retrying once it's spent.
+    if (Date.now() >= deadline) return [];
     await new Promise((r) => setTimeout(r, 700));
   }
   return [];
@@ -180,7 +187,7 @@ async function fetchChannelWithRetry(channel, country, filters) {
 // single request could stall for a minute and blow past the nginx proxy timeout,
 // starving the response of the fast OLX results. We stop starting new batches
 // once the budget is spent and return whatever was gathered so far.
-const TG_BUDGET_MS = Number(process.env.TG_BUDGET_MS) || 9000;
+const TG_BUDGET_MS = Number(process.env.TG_BUDGET_MS) || 12000;
 
 export async function scrapeTelegram(country, filters) {
   const channels = country.telegramChannels ?? [];
@@ -194,8 +201,10 @@ export async function scrapeTelegram(country, filters) {
     // Out of time: return the partial set rather than blocking the whole request.
     if (Date.now() >= deadline) break;
     const batch = channels.slice(i, i + CONCURRENCY);
+    // The deadline is passed down so each channel stops paging when the budget
+    // is spent; a batch can therefore only overrun by one in-flight page fetch.
     const results = await Promise.allSettled(
-      batch.map((ch) => fetchChannelWithRetry(ch, country, filters)),
+      batch.map((ch) => fetchChannelWithRetry(ch, country, filters, deadline)),
     );
     for (const r of results) if (r.status === 'fulfilled') listings.push(...r.value);
   }

@@ -33,7 +33,10 @@ const inFlight = new Map(); // key -> Promise
 // country response past the proxy timeout. Sources have their own (tighter)
 // internal budgets; this only fires in pathological cases and yields whatever
 // the source returned before the deadline (empty on timeout).
-const SOURCE_DEADLINE_MS = Number(process.env.SOURCE_DEADLINE_MS) || 15000;
+// Must sit above telegram's own budget (TG_BUDGET_MS ~12s) plus one in-flight
+// page fetch (~8s), so telegram returns its partial set on the budget rather
+// than being killed here and discarded entirely (which showed as demo data).
+const SOURCE_DEADLINE_MS = Number(process.env.SOURCE_DEADLINE_MS) || 24000;
 
 function withDeadline(promise, ms, onTimeout) {
   return new Promise((resolve, reject) => {
