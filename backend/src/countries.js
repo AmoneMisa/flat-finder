@@ -42,6 +42,7 @@ export const COUNTRIES = {
       'imobiliare_ro', 'chirii_bucuresti', 'apartamente_bucuresti', 'imobiliare_cluj',
       'rent_bucharest', 'arenda_kvartir_bucharest', 'QwertyrRomania', 'arendavbuchareste',
       'apartaments_bucharest', 'chirii_cluj', 'imobiliare_timisoara', 'chirii_iasi',
+      'rent_ro',
     ],
     threadsTags: ['imobiliare', 'apartamentdevanzare', 'chirie', 'garsoniera', 'deinchiriat'],
   },

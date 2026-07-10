@@ -15,44 +15,85 @@ const CURRENCY_WORDS = [
 // rents (a few hundred $/€) that the "must be ≥ 1000" fallback would drop.
 const PRICE_SYMBOL =
   "(?:\\$|€|₸|₴|usd|eur|грн|uah|lei|ron|тенге|тг|kzt|сум|so'?m|uzs|у\\.?е\\.?|доллар|евро)";
-const PRICE_NUM = '\\d[\\d\\s.,]*\\d|\\d';
+// A single amount: either grouped thousands ("1 500 000", "10.915.500") or a
+// plain integer ("81500", "580"). The separator set excludes newlines so a
+// floor and a price on separate lines ("Этаж: 3\n580€") never merge into 3580.
+const PRICE_NUM = '\\d{1,3}(?:[ \\u00A0.,]\\d{3})+|\\d+';
 
 export function parsePriceFromText(text, fallbackCurrency = '') {
   if (!text) return { price: null, currency: fallbackCurrency };
 
   let currency = fallbackCurrency;
+  let explicit = false; // a currency was actually written in the text
   for (const [re, code] of CURRENCY_WORDS) {
     if (re.test(text)) {
       currency = code;
+      explicit = true;
       break;
     }
   }
 
+  let price = null;
+
   // (1) Prefer a number sitting right next to a currency marker. These are
   // reliable even when small, so hard-currency rents like "150 $" survive.
-  let tagged = null;
-  const reNumSym = new RegExp(`(${PRICE_NUM})\\s*${PRICE_SYMBOL}`, 'ig');
-  const reSymNum = new RegExp(`${PRICE_SYMBOL}\\s*(${PRICE_NUM})`, 'ig');
-  for (const re of [reNumSym, reSymNum]) {
-    let m;
-    while ((m = re.exec(text)) !== null) {
+  {
+    let tagged = null;
+    const reNumSym = new RegExp(`(${PRICE_NUM})\\s*${PRICE_SYMBOL}`, 'ig');
+    const reSymNum = new RegExp(`${PRICE_SYMBOL}\\s*(${PRICE_NUM})`, 'ig');
+    for (const re of [reNumSym, reSymNum]) {
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const n = Number(m[1].replace(/[\s.,]/g, ''));
+        if (n >= 50 && n <= 5_000_000_000 && (tagged == null || n > tagged)) tagged = n;
+      }
+    }
+    price = tagged;
+  }
+
+  // (2) A number right after a price keyword ("Цена 450", "Narx 150",
+  // "PRICE: 395", "Стоимость 550"). Reliable at any size even without a
+  // currency symbol, which is common in Uzbek channels quoting bare USD.
+  if (price == null) {
+    const m = text.match(
+      new RegExp(`(?:цена|ціна|нарх(?:и)?|narx|price|стоимост[ьи])\\s*[:\\-–—]?\\s*(${PRICE_NUM})`, 'i'),
+    );
+    if (m) {
       const n = Number(m[1].replace(/[\s.,]/g, ''));
-      if (n >= 50 && n <= 5_000_000_000 && (tagged == null || n > tagged)) tagged = n;
+      if (n >= 50 && n <= 5_000_000_000) price = n;
     }
   }
-  if (tagged != null) return { price: tagged, currency };
 
-  // (2) Fallback: the largest plausible number with common thousands separators,
+  // (3) Fallback: the largest plausible number with common thousands separators,
   // e.g. "1 500 000", "120.000", "85,000", "50000". A ≥1000 floor here avoids
   // mistaking areas/floors for a price when no currency is attached.
-  const matches = text.match(/\d[\d\s.,]{2,}\d|\d{3,}/g) || [];
-  let best = null;
-  for (const m of matches) {
-    const n = Number(m.replace(/[\s.,]/g, ''));
-    if (n >= 1000 && n <= 5_000_000_000 && (best == null || n > best)) best = n;
+  if (price == null) {
+    const matches = text.match(/\d{1,3}(?:[ \u00A0.,]\d{3})+|\d{4,}/g) || [];
+    let best = null;
+    for (const m of matches) {
+      const n = Number(m.replace(/[\s.,]/g, ''));
+      if (n >= 1000 && n <= 5_000_000_000 && (best == null || n > best)) best = n;
+    }
+    price = best;
   }
-  return { price: best, currency };
+
+  // Uzbek channels quote bare USD for the small amounts and UZS only for the
+  // millions. When no currency was written, disambiguate by magnitude so a bare
+  // "450" becomes USD while "10 915 500" stays UZS.
+  if (!explicit && fallbackCurrency === 'UZS' && price != null) {
+    currency = price >= 1_000_000 ? 'UZS' : 'USD';
+  }
+
+  return { price, currency };
 }
+
+const ok10 = (n) => (n >= 1 && n <= 10 ? n : null); // dwellings have 1–10 rooms
+
+// Spelled-out room counts: "Двухкомнатная", "трёхкомнатная", "однокімнатна".
+const WORD_ROOMS = {
+  одно: 1, одн: 1, двух: 2, двох: 2, трех: 3, трёх: 3, трих: 3, трьох: 3,
+  четырех: 4, четырёх: 4, чотирьох: 4, чотирох: 4, пяти: 5,
+};
 
 export function parseRoomsFromText(text) {
   if (!text) return null;
@@ -64,16 +105,24 @@ export function parseRoomsFromText(text) {
   const after = text.match(
     /(?:количество\s+комнат|комнат[а-яё]*|кімнат[а-яё]*|xonalar\s*soni|xona\s*soni|number\s+of\s+rooms)\s*[:\-–—]?\s*(\d+)/i,
   );
-  // (A) number BEFORE the room word: "3 комнатная", "2-комн", "3 xona",
-  // "1 room". camer (RO), комн (RU), кімн (UA), xona/xonali (UZ),
+  if (after) return ok10(Number(after[1]));
+
+  // (A) number BEFORE the room word: "3 комнатная", "2-комн", "3-ком.",
+  // "3 xona", "1 room". camer (RO), комн (RU), кімн (UA), xona/xonali (UZ),
   // бөлме/бөлмелі (KZ), room/bedroom (EN). We deliberately do NOT match a bare
   // "кв" — that is "кв.м" (area) or "квартал" (block), e.g. "Чиланзар 16кв".
   const before = text.match(
-    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|кімн|room|bedroom|xonali|xona|бөлмел|бөлме)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
+    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|ком\.|кімн|room|bedroom|xonali|xona|бөлмел|бөлме)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
   );
-  const n = after ? Number(after[1]) : before ? Number(before[1] ?? before[2]) : null;
-  // Dwellings realistically have 1–10 rooms; anything larger is a mis-parse.
-  return n != null && n >= 1 && n <= 10 ? n : null;
+  if (before) return ok10(Number(before[1] ?? before[2]));
+
+  // (C) spelled-out count immediately before "комнат"/"кімнат".
+  const word = text
+    .toLowerCase()
+    .match(/(одно|одн|двух|двох|тр[еёи]х|трьох|четыр[её]х|чотир(?:ьох|ох)|пяти)\s*-?\s*(?:комнат|кімнат)/);
+  if (word) return ok10(WORD_ROOMS[word[1]] ?? null);
+
+  return null;
 }
 
 // Non-residential / commercial listings (offices, retail, warehouses) that
