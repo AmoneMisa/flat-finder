@@ -89,6 +89,13 @@ class AppStrings {
       'contact': 'Contact',
       'call': 'Call',
       'message': 'Message',
+      'priceTolerance': 'Allow slightly over max',
+      'priceToleranceHint': 'Include listings up to this much above your max price.',
+      'drawArea': 'Draw area',
+      'clearArea': 'Clear area',
+      'finishArea': 'Done',
+      'inArea': '{n} in area',
+      'drawHint': 'Tap the map to outline a search area.',
     },
     'ru': {
       'appTitle': 'Поиск жилья',
@@ -160,6 +167,13 @@ class AppStrings {
       'contact': 'Контакт',
       'call': 'Позвонить',
       'message': 'Написать',
+      'priceTolerance': 'Допускать чуть дороже макс.',
+      'priceToleranceHint': 'Показывать объявления дороже макс. цены не более чем на эту сумму.',
+      'drawArea': 'Выделить область',
+      'clearArea': 'Очистить область',
+      'finishArea': 'Готово',
+      'inArea': 'в области: {n}',
+      'drawHint': 'Коснитесь карты, чтобы очертить область поиска.',
     },
   };
 }

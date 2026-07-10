@@ -24,6 +24,7 @@ class Listing {
   final double? lat;
   final double? lng;
   final String? photo;
+  final List<String> photos;
   final String url;
   final DateTime? createdAt;
   final String description;
@@ -54,6 +55,7 @@ class Listing {
     required this.lat,
     required this.lng,
     required this.photo,
+    this.photos = const [],
     required this.url,
     required this.createdAt,
     required this.description,
@@ -89,6 +91,8 @@ class Listing {
       lat: toD(j['lat']),
       lng: toD(j['lng']),
       photo: j['photo'],
+      photos: (j['photos'] as List?)?.map((e) => e.toString()).toList() ??
+          (j['photo'] != null ? [j['photo'].toString()] : const []),
       url: j['url'] ?? '',
       createdAt: j['createdAt'] != null ? DateTime.tryParse(j['createdAt']) : null,
       description: j['description'] ?? '',

@@ -27,6 +27,8 @@ class _FilterSheetState extends State<FilterSheet> {
   String? _metro;
   late TextEditingController _minCtl;
   late TextEditingController _maxCtl;
+  late TextEditingController _toleranceCtl;
+  bool _tolerance = false;
   late TextEditingController _roomsMinCtl;
   late TextEditingController _roomsMaxCtl;
   late TextEditingController _bedroomsMinCtl;
@@ -51,6 +53,9 @@ class _FilterSheetState extends State<FilterSheet> {
     _metro = widget.initial.metro.trim().isEmpty ? null : widget.initial.metro.trim();
     _minCtl = TextEditingController(text: widget.initial.priceMin?.toString() ?? '');
     _maxCtl = TextEditingController(text: widget.initial.priceMax?.toString() ?? '');
+    _tolerance = (widget.initial.priceTolerance ?? 0) > 0;
+    _toleranceCtl =
+        TextEditingController(text: widget.initial.priceTolerance?.toString() ?? '');
     _roomsMinCtl = TextEditingController(text: widget.initial.roomsMin?.toString() ?? '');
     _roomsMaxCtl = TextEditingController(text: widget.initial.roomsMax?.toString() ?? '');
     _bedroomsMinCtl = TextEditingController(text: widget.initial.bedroomsMin?.toString() ?? '');
@@ -66,6 +71,7 @@ class _FilterSheetState extends State<FilterSheet> {
   void dispose() {
     _minCtl.dispose();
     _maxCtl.dispose();
+    _toleranceCtl.dispose();
     _roomsMinCtl.dispose();
     _roomsMaxCtl.dispose();
     _bedroomsMinCtl.dispose();
@@ -113,6 +119,7 @@ class _FilterSheetState extends State<FilterSheet> {
         metro: _metro ?? '',
         priceMin: parse(_minCtl.text),
         priceMax: parse(_maxCtl.text),
+        priceTolerance: _tolerance ? parse(_toleranceCtl.text) : null,
         roomsMin: parse(_roomsMinCtl.text),
         roomsMax: parse(_roomsMaxCtl.text),
         bedroomsMin: parse(_bedroomsMinCtl.text),
@@ -256,6 +263,25 @@ class _FilterSheetState extends State<FilterSheet> {
                 ),
               ],
             ),
+            CheckboxListTile(
+              value: _tolerance,
+              onChanged: (v) => setState(() => _tolerance = v ?? false),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(s.t('priceTolerance')),
+              subtitle: Text(s.t('priceToleranceHint'),
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+            if (_tolerance)
+              TextField(
+                controller: _toleranceCtl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: '+ ${s.t('max')}',
+                  prefixText: '+ ',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
             const SizedBox(height: 20),
             _label(s.t('rooms')),
             _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl),

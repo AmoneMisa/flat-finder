@@ -73,6 +73,7 @@ class Filters {
   Audience audience;
   num? priceMin;
   num? priceMax;
+  num? priceTolerance; // allow results up to priceMax + this
   num? roomsMin;
   num? roomsMax;
   num? bedroomsMin;
@@ -95,6 +96,7 @@ class Filters {
     this.audience = Audience.any,
     this.priceMin,
     this.priceMax,
+    this.priceTolerance,
     this.roomsMin,
     this.roomsMax,
     this.bedroomsMin,
@@ -119,6 +121,7 @@ class Filters {
     Audience? audience,
     num? priceMin,
     num? priceMax,
+    num? priceTolerance,
     num? roomsMin,
     num? roomsMax,
     num? bedroomsMin,
@@ -129,6 +132,7 @@ class Filters {
     num? yearMax,
     bool clearPriceMin = false,
     bool clearPriceMax = false,
+    bool clearPriceTolerance = false,
     bool clearRoomsMin = false,
     bool clearRoomsMax = false,
     bool clearBedroomsMin = false,
@@ -151,6 +155,8 @@ class Filters {
       audience: audience ?? this.audience,
       priceMin: clearPriceMin ? null : (priceMin ?? this.priceMin),
       priceMax: clearPriceMax ? null : (priceMax ?? this.priceMax),
+      priceTolerance:
+          clearPriceTolerance ? null : (priceTolerance ?? this.priceTolerance),
       roomsMin: clearRoomsMin ? null : (roomsMin ?? this.roomsMin),
       roomsMax: clearRoomsMax ? null : (roomsMax ?? this.roomsMax),
       bedroomsMin: clearBedroomsMin ? null : (bedroomsMin ?? this.bedroomsMin),
@@ -177,6 +183,7 @@ class Filters {
         'audience': audience.name,
         'priceMin': priceMin,
         'priceMax': priceMax,
+        'priceTolerance': priceTolerance,
         'roomsMin': roomsMin,
         'roomsMax': roomsMax,
         'bedroomsMin': bedroomsMin,
@@ -212,6 +219,7 @@ class Filters {
       audience: byName(Audience.values, j['audience'], Audience.any),
       priceMin: n(j['priceMin']),
       priceMax: n(j['priceMax']),
+      priceTolerance: n(j['priceTolerance']),
       roomsMin: n(j['roomsMin']),
       roomsMax: n(j['roomsMax']),
       bedroomsMin: n(j['bedroomsMin']),
@@ -242,6 +250,10 @@ class Filters {
     }
     if (priceMin != null) p['priceMin'] = priceMin.toString();
     if (priceMax != null) p['priceMax'] = priceMax.toString();
+    // Tolerance only makes sense with a max price set.
+    if (priceMax != null && priceTolerance != null && priceTolerance! > 0) {
+      p['priceTolerance'] = priceTolerance.toString();
+    }
     if (roomsMin != null) p['roomsMin'] = roomsMin.toString();
     if (roomsMax != null) p['roomsMax'] = roomsMax.toString();
     if (bedroomsMin != null) p['bedroomsMin'] = bedroomsMin.toString();

@@ -23,7 +23,9 @@ class ListingDetailScreen extends StatelessWidget {
       appBar: AppBar(title: Text('${countryFlags[listing.country] ?? ''} ${listing.city}')),
       body: ListView(
         children: [
-          if (listing.photo != null)
+          if (listing.photos.isNotEmpty)
+            _PhotoGallery(photos: listing.photos)
+          else if (listing.photo != null)
             CachedNetworkImage(
               imageUrl: listing.photo!,
               height: 240,
@@ -164,6 +166,7 @@ class ListingDetailScreen extends StatelessWidget {
         label: Text(label),
       );
 
+
   IconData _contactIcon(String contact) =>
       contact.startsWith('@') ? Icons.alternate_email : Icons.call;
 
@@ -174,5 +177,65 @@ class ListingDetailScreen extends StatelessWidget {
     }
     final digits = contact.replaceAll(RegExp(r'[^\d+]'), '');
     return digits.isEmpty ? null : Uri.parse('tel:$digits');
+  }
+}
+
+/// Swipeable gallery of all listing photos with a page counter.
+class _PhotoGallery extends StatefulWidget {
+  const _PhotoGallery({required this.photos});
+  final List<String> photos;
+
+  @override
+  State<_PhotoGallery> createState() => _PhotoGalleryState();
+}
+
+class _PhotoGalleryState extends State<_PhotoGallery> {
+  final _controller = PageController();
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 260,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _controller,
+            itemCount: widget.photos.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (_, i) => CachedNetworkImage(
+              imageUrl: widget.photos[i],
+              width: double.infinity,
+              fit: BoxFit.cover,
+              placeholder: (_, __) =>
+                  const Center(child: CircularProgressIndicator()),
+              errorWidget: (_, __, ___) => const Icon(Icons.home, size: 80),
+            ),
+          ),
+          if (widget.photos.length > 1)
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_index + 1} / ${widget.photos.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
