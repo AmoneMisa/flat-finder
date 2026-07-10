@@ -20,7 +20,7 @@ export const COUNTRIES = {
     name: 'Romania',
     currency: 'RON',
     center: { lat: 44.4268, lng: 26.1025 }, // Bucharest
-    sources: ['olx', 'reddit', 'telegram', 'threads'],
+    sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.ro',
     realEstateRoot: 3,
     terms: { flat: 'apartament', house: 'casa' },
@@ -50,7 +50,7 @@ export const COUNTRIES = {
     name: 'Ukraine',
     currency: 'UAH',
     center: { lat: 50.4501, lng: 30.5234 }, // Kyiv
-    sources: ['olx', 'reddit', 'telegram', 'threads'],
+    sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.ua',
     realEstateRoot: 1,
     terms: { flat: 'квартира', house: 'будинок' },
@@ -78,7 +78,7 @@ export const COUNTRIES = {
     name: 'Kazakhstan',
     currency: 'KZT',
     center: { lat: 43.222, lng: 76.8512 }, // Almaty
-    sources: ['olx', 'reddit', 'telegram', 'threads'],
+    sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.kz',
     realEstateRoot: 1,
     terms: { flat: 'квартира', house: 'дом' },
@@ -105,7 +105,7 @@ export const COUNTRIES = {
     name: 'Uzbekistan',
     currency: 'UZS',
     center: { lat: 41.2995, lng: 69.2401 }, // Tashkent
-    sources: ['olx', 'reddit', 'telegram', 'threads'],
+    sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.uz',
     realEstateRoot: 1,
     terms: { flat: 'квартира', house: 'дом' },

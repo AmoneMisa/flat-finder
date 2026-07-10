@@ -10,17 +10,15 @@ const CURRENCY_WORDS = [
   [/(сум|сўм|so'?m\b|soʻm|som\b|uzs\b)/i, 'UZS'],
 ];
 
+// Currency marker used to spot amounts written right next to a currency, e.g.
+// "150 $", "$81500", "750€", "1 500 у.е". Lets us keep small hard-currency
+// rents (a few hundred $/€) that the "must be ≥ 1000" fallback would drop.
+const PRICE_SYMBOL =
+  "(?:\\$|€|₸|₴|usd|eur|грн|uah|lei|ron|тенге|тг|kzt|сум|so'?m|uzs|у\\.?е\\.?|доллар|евро)";
+const PRICE_NUM = '\\d[\\d\\s.,]*\\d|\\d';
+
 export function parsePriceFromText(text, fallbackCurrency = '') {
   if (!text) return { price: null, currency: fallbackCurrency };
-
-  // Grab number groups with common thousands separators, e.g. "1 500 000",
-  // "120.000", "85,000", "50000".
-  const matches = text.match(/\d[\d\s.,]{2,}\d|\d{3,}/g) || [];
-  let best = null;
-  for (const m of matches) {
-    const n = Number(m.replace(/[\s.,]/g, ''));
-    if (n >= 1000 && n <= 5_000_000_000 && (best == null || n > best)) best = n;
-  }
 
   let currency = fallbackCurrency;
   for (const [re, code] of CURRENCY_WORDS) {
@@ -29,18 +27,51 @@ export function parsePriceFromText(text, fallbackCurrency = '') {
       break;
     }
   }
+
+  // (1) Prefer a number sitting right next to a currency marker. These are
+  // reliable even when small, so hard-currency rents like "150 $" survive.
+  let tagged = null;
+  const reNumSym = new RegExp(`(${PRICE_NUM})\\s*${PRICE_SYMBOL}`, 'ig');
+  const reSymNum = new RegExp(`${PRICE_SYMBOL}\\s*(${PRICE_NUM})`, 'ig');
+  for (const re of [reNumSym, reSymNum]) {
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const n = Number(m[1].replace(/[\s.,]/g, ''));
+      if (n >= 50 && n <= 5_000_000_000 && (tagged == null || n > tagged)) tagged = n;
+    }
+  }
+  if (tagged != null) return { price: tagged, currency };
+
+  // (2) Fallback: the largest plausible number with common thousands separators,
+  // e.g. "1 500 000", "120.000", "85,000", "50000". A ≥1000 floor here avoids
+  // mistaking areas/floors for a price when no currency is attached.
+  const matches = text.match(/\d[\d\s.,]{2,}\d|\d{3,}/g) || [];
+  let best = null;
+  for (const m of matches) {
+    const n = Number(m.replace(/[\s.,]/g, ''));
+    if (n >= 1000 && n <= 5_000_000_000 && (best == null || n > best)) best = n;
+  }
   return { price: best, currency };
 }
 
 export function parseRoomsFromText(text) {
   if (!text) return null;
-  // camer (RO), комн (RU), кімн (UA), xona/xonali (UZ), бөлме/бөлмелі (KZ),
-  // room/bedroom (EN). Note: we deliberately do NOT match a bare "кв" — that is
-  // "кв.м" (area) or "квартал" (block), e.g. "Чиланзар 16кв" is NOT 16 rooms.
-  const m = text.match(
-    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|кімн|room|bedroom|xona|xonali|бөлме|бөлмел)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
+  // (B) number AFTER the label — the common Telegram form: "Количество
+  // комнат: 3", "Комнат 1", "Комнаты: 2", "Xonalar soni: 3", "Number of
+  // rooms - 2". Checked FIRST so a stray preceding number (e.g. in "Этаж 3
+  // Комнат 1" the 3 belongs to the floor) doesn't get grabbed by the
+  // number-first pattern below.
+  const after = text.match(
+    /(?:количество\s+комнат|комнат[а-яё]*|кімнат[а-яё]*|xonalar\s*soni|xona\s*soni|number\s+of\s+rooms)\s*[:\-–—]?\s*(\d+)/i,
   );
-  const n = m ? Number(m[1] ?? m[2]) : null;
+  // (A) number BEFORE the room word: "3 комнатная", "2-комн", "3 xona",
+  // "1 room". camer (RO), комн (RU), кімн (UA), xona/xonali (UZ),
+  // бөлме/бөлмелі (KZ), room/bedroom (EN). We deliberately do NOT match a bare
+  // "кв" — that is "кв.м" (area) or "квартал" (block), e.g. "Чиланзар 16кв".
+  const before = text.match(
+    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|кімн|room|bedroom|xonali|xona|бөлмел|бөлме)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
+  );
+  const n = after ? Number(after[1]) : before ? Number(before[1] ?? before[2]) : null;
   // Dwellings realistically have 1–10 rooms; anything larger is a mis-parse.
   return n != null && n >= 1 && n <= 10 ? n : null;
 }
@@ -125,7 +156,15 @@ export function parseFloor(text) {
     t.match(new RegExp(`${FLOOR}\\s*[:№#]?\\s*(\\d{1,2})\\b`));
   if (s) {
     const floor = Number(s[1]);
-    if (ok(floor, null)) return { floor, totalFloors: null };
+    if (ok(floor, null)) {
+      // Building height stated on its own line ("Этажность: 4",
+      // "qavatlar soni: 9", "этажей 12") fills totalFloors when present.
+      const tm = t.match(
+        /(?:этажность|этажей|поверхови|поверховість|qavatlar(?:\s*soni)?|qavatli|қабатты?)\D{0,6}(\d{1,2})/,
+      );
+      const total = tm ? Number(tm[1]) : null;
+      return { floor, totalFloors: total && total >= floor && total <= 200 ? total : null };
+    }
   }
   return { floor: null, totalFloors: null };
 }
