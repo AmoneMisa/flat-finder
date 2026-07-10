@@ -23,9 +23,28 @@ import {
 } from './textparse.js';
 import { parseLocation } from './locations.js';
 
+// Turn source HTML (Telegram/OLX posts arrive with <br />, entities, etc.) into
+// clean plain text so the app doesn't render raw markup.
+function stripHtml(s) {
+  return String(s ?? '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#3[49];/g, "'")
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function makeListing(partial) {
   const title = partial.title ?? 'Untitled';
-  const description = partial.description ?? '';
+  const description = stripHtml(partial.description ?? '');
   const combined = `${title} ${description}`;
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
   const byAgency = Boolean(partial.byAgency);
@@ -65,7 +84,12 @@ export function makeListing(partial) {
     city: partial.city ?? '',
     lat: partial.lat != null ? Number(partial.lat) : null,
     lng: partial.lng != null ? Number(partial.lng) : null,
-    photo: partial.photo ?? null,
+    photo: partial.photo ?? (Array.isArray(partial.photos) ? partial.photos[0] : null) ?? null,
+    photos: Array.isArray(partial.photos)
+      ? partial.photos
+      : partial.photo
+        ? [partial.photo]
+        : [],
     url: partial.url ?? '',
     createdAt: partial.createdAt ?? null,
     description,
@@ -100,7 +124,7 @@ function normCity(s) {
 // Apply the user-facing filters that a source could not enforce server-side.
 export function applyFilters(listings, filters) {
   const {
-    propertyType, agency, priceMin, priceMax, query, dealType,
+    propertyType, agency, priceMin, priceMax, priceTolerance, query, dealType,
     roomsMin, roomsMax, bedroomsMin, bedroomsMax,
     floorMin, floorMax, yearMin, yearMax, audience, city,
     cityAliases, district, metro,
@@ -120,7 +144,9 @@ export function applyFilters(listings, filters) {
     if (agency === 'agency' && !l.byAgency) return false;
     if (agency === 'owner' && l.byAgency) return false;
     if (priceMin != null && l.price != null && l.price < priceMin) return false;
-    if (priceMax != null && l.price != null && l.price > priceMax) return false;
+    // Optional tolerance: allow listings up to priceMax + priceTolerance through.
+    const effMax = priceMax != null ? priceMax + (priceTolerance ?? 0) : null;
+    if (effMax != null && l.price != null && l.price > effMax) return false;
     // Numeric ranges skip listings where the value is unknown (like price).
     if (roomsMin != null && l.rooms != null && l.rooms < roomsMin) return false;
     if (roomsMax != null && l.rooms != null && l.rooms > roomsMax) return false;

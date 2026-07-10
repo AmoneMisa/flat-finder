@@ -45,6 +45,8 @@ function parseFilters(q) {
     audience: ['women', 'men', 'family', 'any'].includes(q.audience) ? q.audience : 'any',
     priceMin: num(q.priceMin),
     priceMax: num(q.priceMax),
+    priceTolerance: num(q.priceTolerance), // allow results up to priceMax + this
+
     roomsMin: num(q.roomsMin),
     roomsMax: num(q.roomsMax),
     bedroomsMin: num(q.bedroomsMin),

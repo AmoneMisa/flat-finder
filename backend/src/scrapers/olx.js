@@ -58,10 +58,19 @@ function paramMap(item) {
   return map;
 }
 
-function firstPhoto(item) {
-  const link = item.photos?.[0]?.link;
-  if (!link) return null;
-  return link.replace('{width}', '600').replace('{height}', '400');
+function allPhotos(item) {
+  return (item.photos ?? [])
+    .map((p) => p.link?.replace('{width}', '800').replace('{height}', '600'))
+    .filter(Boolean);
+}
+
+// OLX Uzbekistan quotes prices in "у.е." (conventional units) under the code
+// "UYE" — a USD equivalent. Map it to USD so display-currency conversion works.
+function normalizeCurrency(code) {
+  if (!code) return null;
+  const c = String(code).toUpperCase();
+  if (c === 'UYE' || c === 'У.Е.' || c === 'УЕ') return 'USD';
+  return code;
 }
 
 function detectAgency(item) {
@@ -101,13 +110,13 @@ function mapItem(item, country, filters) {
     propertyType,
     byAgency: detectAgency(item),
     price: priceParam?.value ?? null,
-    currency: priceParam?.currency ?? country.currency,
+    currency: normalizeCurrency(priceParam?.currency) ?? country.currency,
     rooms,
     areaSqm: area,
     city: item.location?.city?.name ?? item.location?.region?.name ?? '',
     lat: item.map?.lat ?? null,
     lng: item.map?.lon ?? null,
-    photo: firstPhoto(item),
+    photos: allPhotos(item),
     url: item.url ?? country.olxHost,
     createdAt: item.created_time ?? null,
   });
