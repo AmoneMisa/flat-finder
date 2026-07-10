@@ -14,6 +14,17 @@ class SettingsScreen extends StatelessWidget {
       appBar: AppBar(title: Text(settings.t('settings'))),
       body: ListView(
         children: [
+          _sectionTitle(context, settings.t('theme')),
+          ...kThemeOptions.map(
+            (name) => RadioListTile<String>(
+              value: name,
+              groupValue: settings.themeName,
+              title: Text(settings.t(_themeLabelKey(name))),
+              secondary: Icon(_themeIcon(name)),
+              onChanged: (v) => settings.setTheme(v!),
+            ),
+          ),
+          const Divider(),
           _sectionTitle(context, settings.t('language')),
           ...AppStrings.supported.map(
             (code) => RadioListTile<String>(
@@ -37,6 +48,18 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+
+  String _themeLabelKey(String name) => switch (name) {
+        'dark' => 'themeDark',
+        'darkBlue' => 'themeDarkBlue',
+        _ => 'themeLight',
+      };
+
+  IconData _themeIcon(String name) => switch (name) {
+        'dark' => Icons.dark_mode_outlined,
+        'darkBlue' => Icons.nightlight_outlined,
+        _ => Icons.light_mode_outlined,
+      };
 
   Widget _sectionTitle(BuildContext context, String text) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

@@ -281,6 +281,59 @@ class Filters {
     );
   }
 
+  /// Parse filters from a shared deep-link's query parameters (the inverse of
+  /// [toQueryParams], plus the client-only `sort` field). Unknown/missing keys
+  /// fall back to defaults, so a partial or hand-edited link still works.
+  factory Filters.fromQueryParams(Map<String, String> q) {
+    T byName<T extends Enum>(List<T> values, String? name, T fallback) {
+      for (final v in values) {
+        if (v.name == name) return v;
+      }
+      return fallback;
+    }
+
+    num? n(String? v) => (v == null || v.isEmpty) ? null : num.tryParse(v);
+    Set<String> csv(String? v) => (v == null || v.isEmpty)
+        ? <String>{}
+        : v.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+
+    final countries = csv(q['countries']);
+    final sources = csv(q['sources']);
+    return Filters(
+      countries: countries.isEmpty ? {'RO'} : countries,
+      sources: sources.isEmpty ? {...kAllSources} : sources,
+      customSources: (q['customSources'] ?? '')
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
+      propertyType: byName(PropertyType.values, q['propertyType'], PropertyType.any),
+      dealType: byName(DealType.values, q['dealType'], DealType.any),
+      agency: byName(AgencyFilter.values, q['agency'], AgencyFilter.any),
+      audience: byName(Audience.values, q['audience'], Audience.any),
+      priceMin: n(q['priceMin']),
+      priceMax: n(q['priceMax']),
+      priceTolerance: n(q['priceTolerance']),
+      roomsMin: n(q['roomsMin']),
+      roomsMax: n(q['roomsMax']),
+      bedroomsMin: n(q['bedroomsMin']),
+      bedroomsMax: n(q['bedroomsMax']),
+      floorMin: n(q['floorMin']),
+      floorMax: n(q['floorMax']),
+      yearMin: n(q['yearMin']),
+      yearMax: n(q['yearMax']),
+      city: (q['city'] ?? '').trim(),
+      district: (q['district'] ?? '').trim(),
+      metro: (q['metro'] ?? '').trim(),
+      query: (q['query'] ?? '').trim(),
+      pets: q['pets'] == 'true',
+      children: q['children'] == 'true',
+      roomOnly: q['roomOnly'] == 'true',
+      maxAgeDays: int.tryParse(q['maxAgeDays'] ?? ''),
+      sort: byName(SortBy.values, q['sort'], SortBy.relevance),
+    );
+  }
+
   Map<String, String> toQueryParams() {
     final p = <String, String>{
       'countries': countries.join(','),

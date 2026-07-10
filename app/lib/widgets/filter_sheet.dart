@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/filters.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/presets.dart';
 import '../state/settings.dart';
+import '../utils/share_link.dart';
 
 /// Bottom sheet that edits a working copy of the filters and returns it on Apply.
 class FilterSheet extends StatefulWidget {
@@ -221,6 +224,117 @@ class _FilterSheetState extends State<FilterSheet> {
     });
   }
 
+  /// Build a shareable deep link for a set of filters and offer it via the
+  /// system share sheet, copying it to the clipboard as a fallback.
+  Future<void> _shareFilters(SettingsState s, Filters filters) async {
+    final url = buildSearchUrl(filters);
+    await Clipboard.setData(ClipboardData(text: url));
+    try {
+      await Share.share(url, subject: s.t('shareSearch'));
+    } catch (_) {
+      // Sharing isn't available on every platform (e.g. some desktops); the
+      // clipboard copy above still lets the user paste the link.
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.t('searchLinkCopied'))),
+      );
+    }
+  }
+
+  /// Rename an existing preset via a small text dialog.
+  Future<void> _renamePreset(SettingsState s, FilterPreset p) async {
+    final ctl = TextEditingController(text: p.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(s.t('renamePreset')),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: s.t('presetName'),
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: Text(s.t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, ctl.text.trim()),
+            child: Text(s.t('rename')),
+          ),
+        ],
+      ),
+    );
+    ctl.dispose();
+    if (name != null && name.isNotEmpty && mounted) {
+      await context.read<PresetsState>().rename(p.name, name);
+    }
+  }
+
+  /// Present the edit menu for a preset (update to current filters, rename,
+  /// share as a link, or delete).
+  Future<void> _editPreset(SettingsState s, FilterPreset p) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.play_arrow),
+              title: Text(p.name),
+              onTap: () => Navigator.pop(sheetCtx, 'load'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.save_as_outlined),
+              title: Text(s.t('updatePreset')),
+              onTap: () => Navigator.pop(sheetCtx, 'update'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: Text(s.t('renamePreset')),
+              onTap: () => Navigator.pop(sheetCtx, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: Text(s.t('sharePreset')),
+              onTap: () => Navigator.pop(sheetCtx, 'share'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: Text(s.t('deletePreset')),
+              onTap: () => Navigator.pop(sheetCtx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    final presets = context.read<PresetsState>();
+    switch (action) {
+      case 'load':
+        _loadPreset(p.filters);
+      case 'update':
+        await presets.save(p.name, _currentFilters());
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(s.t('presetUpdated'))),
+          );
+        }
+      case 'rename':
+        await _renamePreset(s, p);
+      case 'share':
+        await _shareFilters(s, p.filters);
+      case 'delete':
+        await presets.remove(p.name);
+    }
+  }
+
   /// Prompt for a URL, validate it against the backend, and add it if it yields
   /// listings. Anything unreachable/unsupported is reported inline.
   Future<void> _promptAddCustomSource(SettingsState s) async {
@@ -363,13 +477,23 @@ class _FilterSheetState extends State<FilterSheet> {
                   for (final p in presets)
                     InputChip(
                       label: Text(p.name),
+                      // Tap applies; the edit icon opens rename/update/share/delete.
                       onPressed: () => _loadPreset(p.filters),
+                      avatar: GestureDetector(
+                        onTap: () => _editPreset(s, p),
+                        child: const Icon(Icons.edit, size: 16),
+                      ),
                       onDeleted: () => context.read<PresetsState>().remove(p.name),
                     ),
                   ActionChip(
                     avatar: const Icon(Icons.bookmark_add_outlined, size: 18),
                     label: Text(s.t('savePreset')),
                     onPressed: () => _savePreset(s),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.share_outlined, size: 18),
+                    label: Text(s.t('shareSearch')),
+                    onPressed: () => _shareFilters(s, _currentFilters()),
                   ),
                 ],
               );

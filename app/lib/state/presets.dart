@@ -50,6 +50,21 @@ class PresetsState extends ChangeNotifier {
     await _persist();
   }
 
+  /// Rename a preset, keeping its filters. No-op if the new name collides with
+  /// a different existing preset (case-insensitive).
+  Future<void> rename(String oldName, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) return;
+    final i = _presets.indexWhere((p) => p.name == oldName);
+    if (i < 0) return;
+    final clash = _presets.any((p) =>
+        p.name != oldName && p.name.toLowerCase() == trimmed.toLowerCase());
+    if (clash) return;
+    _presets[i] = FilterPreset(trimmed, _presets[i].filters);
+    notifyListeners();
+    await _persist();
+  }
+
   Future<void> remove(String name) async {
     _presets.removeWhere((p) => p.name == name);
     notifyListeners();

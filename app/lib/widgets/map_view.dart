@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -63,6 +65,38 @@ class _MapViewState extends State<MapView> {
       if (intersect) inside = !inside;
     }
     return inside;
+  }
+
+  /// Fan out listings that share (almost) the same coordinate so their price
+  /// pins don't stack directly on top of each other. Groups by a rounded
+  /// lat/lng key and arranges each group on a small circle around the shared
+  /// point. Filtering still uses each listing's true coordinate — only the
+  /// drawn marker is nudged.
+  List<_PlacedListing> _spread(List<Listing> located) {
+    final groups = <String, List<Listing>>{};
+    for (final l in located) {
+      final key = '${l.lat!.toStringAsFixed(4)},${l.lng!.toStringAsFixed(4)}';
+      groups.putIfAbsent(key, () => []).add(l);
+    }
+    final out = <_PlacedListing>[];
+    for (final group in groups.values) {
+      if (group.length == 1) {
+        final l = group.first;
+        out.add(_PlacedListing(l, LatLng(l.lat!, l.lng!)));
+        continue;
+      }
+      // Small circle whose radius grows slightly with the crowd size.
+      final radius = 0.0004 * (1 + group.length / 12);
+      for (var i = 0; i < group.length; i++) {
+        final l = group[i];
+        final angle = 2 * math.pi * i / group.length;
+        final dLat = radius * math.cos(angle);
+        // Scale longitude by cos(lat) so the ring isn't squashed east–west.
+        final dLng = radius * math.sin(angle) / math.cos(l.lat! * math.pi / 180);
+        out.add(_PlacedListing(l, LatLng(l.lat! + dLat, l.lng! + dLng)));
+      }
+    }
+    return out;
   }
 
   void _onMapTap(LatLng point) {
@@ -134,15 +168,15 @@ class _MapViewState extends State<MapView> {
               ),
             MarkerLayer(
               markers: [
-                for (final l in visible)
+                for (final placed in _spread(visible))
                   Marker(
-                    point: LatLng(l.lat!, l.lng!),
+                    point: placed.point,
                     width: 96,
                     height: 34,
                     child: GestureDetector(
-                      onTap: () => widget.onTapListing(l),
+                      onTap: () => widget.onTapListing(placed.listing),
                       child: _PricePin(
-                        listing: l,
+                        listing: placed.listing,
                         rates: widget.rates,
                         displayCurrency: widget.displayCurrency,
                       ),
@@ -209,6 +243,13 @@ class _MapViewState extends State<MapView> {
       ],
     );
   }
+}
+
+/// A listing paired with the (possibly nudged) point its pin is drawn at.
+class _PlacedListing {
+  const _PlacedListing(this.listing, this.point);
+  final Listing listing;
+  final LatLng point;
 }
 
 class _PricePin extends StatelessWidget {

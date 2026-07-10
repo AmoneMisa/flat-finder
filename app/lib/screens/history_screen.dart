@@ -50,12 +50,42 @@ class HistoryScreen extends StatelessWidget {
                 ),
               ),
             )
-          : ListView.builder(
-              padding: const EdgeInsets.only(bottom: 24, top: 4),
-              itemCount: items.length,
-              itemBuilder: (_, i) =>
-                  ListingCard(listing: items[i], onTap: () => _open(context, items[i])),
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = _columnsFor(constraints.maxWidth);
+                if (columns == 1) {
+                  return ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 24, top: 4),
+                    itemCount: items.length,
+                    itemBuilder: (_, i) => ListingCard(
+                        listing: items[i], onTap: () => _open(context, items[i])),
+                  );
+                }
+                return GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(6, 4, 6, 24),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    childAspectRatio: 0.82,
+                    mainAxisSpacing: 2,
+                    crossAxisSpacing: 2,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (_, i) => ListingCard(
+                      listing: items[i],
+                      grid: true,
+                      onTap: () => _open(context, items[i])),
+                );
+              },
             ),
     );
+  }
+
+  /// Column count from the available width: 1 on phones, up to 4 on wide
+  /// desktop windows (mirrors the home grid).
+  int _columnsFor(double width) {
+    if (width >= 1500) return 4;
+    if (width >= 1100) return 3;
+    if (width >= 700) return 2;
+    return 1;
   }
 }

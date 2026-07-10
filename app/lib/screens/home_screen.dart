@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +11,7 @@ import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
+import '../utils/share_link.dart';
 import '../utils/sort.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/listing_card.dart';
@@ -26,6 +30,43 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _mapMode = false;
+  AppLinks? _appLinks;
+  StreamSubscription<Uri>? _linkSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
+  }
+
+  /// Listen for `flatfinder://search?…` deep links (a shared search opening the
+  /// app) and apply the encoded filters. Handles both a cold start (initial
+  /// link) and links received while the app is already running.
+  Future<void> _initDeepLinks() async {
+    try {
+      _appLinks = AppLinks();
+      final initial = await _appLinks!.getInitialLink();
+      if (initial != null) _applyLink(initial);
+      _linkSub = _appLinks!.uriLinkStream.listen(_applyLink, onError: (_) {});
+    } catch (_) {
+      // Deep links are best-effort; a platform without support just no-ops.
+    }
+  }
+
+  void _applyLink(Uri uri) {
+    final filters = parseSearchUrl(uri);
+    if (filters == null || !mounted) return;
+    final state = context.read<AppState>();
+    state.updateFilters(filters);
+    state.search();
+    setState(() => _mapMode = false);
+  }
 
   Future<void> _openFilters(AppState state) async {
     final result = await showModalBottomSheet<Filters>(

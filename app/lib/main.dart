@@ -54,11 +54,7 @@ class FlatFinderApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          theme: ThemeData(
-            useMaterial3: true,
-            colorSchemeSeed: const Color(0xFF2E7D6B),
-            brightness: Brightness.light,
-          ),
+          theme: settings.themeData,
           // Allow drag-to-scroll with a mouse/trackpad (not just touch), so the
           // photo carousel and lists can be swiped on desktop/web too.
           scrollBehavior: const _AppScrollBehavior(),

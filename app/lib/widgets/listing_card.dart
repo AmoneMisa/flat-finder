@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../l10n/strings.dart';
 import '../models/listing.dart';
 import '../state/app_state.dart';
+import '../state/favorites.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
 
@@ -29,7 +30,9 @@ class ListingCard extends StatelessWidget {
     final theme = Theme.of(context);
     final settings = context.watch<SettingsState>();
     final rates = context.watch<AppState>().rates;
+    final favorites = context.watch<FavoritesState>();
     final s = settings.s;
+    final isFav = favorites.isFavorite(listing.id);
 
     // Prominent photo with the price and badges overlaid on a scrim.
     final photo = Stack(
@@ -61,6 +64,15 @@ class ListingCard extends StatelessWidget {
               fontSize: 18,
               shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
             ),
+          ),
+        ),
+        Positioned(
+          top: 4,
+          left: 4,
+          child: _FavButton(
+            isFav: isFav,
+            tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
+            onPressed: () => favorites.toggle(listing),
           ),
         ),
         Positioned(
@@ -254,6 +266,41 @@ class _CardPhotoCarouselState extends State<_CardPhotoCarousel> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Heart toggle overlaid on a card photo. Uses a dark scrim so it stays visible
+/// over any image; filled red when the listing is saved.
+class _FavButton extends StatelessWidget {
+  const _FavButton({
+    required this.isFav,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final bool isFav;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black38,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        tooltip: tooltip,
+        iconSize: 20,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.all(6),
+        constraints: const BoxConstraints(),
+        onPressed: onPressed,
+        icon: Icon(
+          isFav ? Icons.favorite : Icons.favorite_border,
+          color: isFav ? Colors.redAccent : Colors.white,
+        ),
+      ),
     );
   }
 }
