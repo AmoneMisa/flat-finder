@@ -86,12 +86,17 @@ export function classifyDealType(text) {
   // Short-term: RO/RU/UA + UZ (sutkaga/kunlik/kecha) + KZ (тәулік/сағаттық).
   if (/(regim hotelier|in regim|posutoc|подобов|подобно|посуточн|почасов|за сутки|per (night|day)|daily rent|short[\s-]?term|nightly|sutkaga|kunlik|kecha[- ]?kunduz|тәулік|тәулiк|сағаттық)/i.test(t))
     return 'shortRent';
+  // Sale: RO/RU/UA/EN + UZ (sotiladi/sotuv/sotaman) + KZ (сатылады/сату).
+  // Checked BEFORE long-term rent because sale posts routinely pitch rental
+  // income ("подойдёт для сдачи в аренду"), which would otherwise be misread as
+  // a rental. A negation guard avoids "не продаётся" flipping a rental to sale.
+  const sale =
+    /(de v[aâ]nzare|v[aâ]nzare|прода[жёе]|продам|на продаж|for sale|\bsale\b|купит|kupit|to buy|sotiladi|sotuv|sotaman|sotib|сатылады|сату|сатамын)/i.test(t) &&
+    !/не\s+прода/i.test(t);
+  if (sale) return 'sale';
   // Long-term rent: RO/RU/UA/EN + UZ (ijara/arenda) + KZ (жалға/жалдау/аренда).
   if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|arenda|жалға|жалдау|жалга|жал\b)/i.test(t))
     return 'longRent';
-  // Sale: RO/RU/UA/EN + UZ (sotiladi/sotuv/sotaman) + KZ (сатылады/сату).
-  if (/(de v[aâ]nzare|v[aâ]nzare|продаж|продам|продаётся|продается|for sale|\bsale\b|купит|kupit|to buy|sotiladi|sotuv|sotaman|sotib|сатылады|сату|сатамын)/i.test(t))
-    return 'sale';
   return null;
 }
 
