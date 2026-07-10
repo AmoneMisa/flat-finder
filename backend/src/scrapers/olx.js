@@ -11,7 +11,7 @@ import { makeListing, MAX_AGE_MS } from '../normalize.js';
 // Pull several newest-first pages so enough recent listings survive the 3-week
 // freshness filter. One page (~50) is far too few for big markets.
 const OLX_PAGE_SIZE = 50;
-const OLX_MAX_PAGES = 5; // hard ceiling (~250 fetched) to bound latency
+const OLX_MAX_PAGES = 10; // hard ceiling (~500 fetched) to bound latency
 
 const UA_HEADER =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +

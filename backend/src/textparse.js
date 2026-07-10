@@ -48,8 +48,11 @@ export function parseRoomsFromText(text) {
 // Non-residential / commercial listings (offices, retail, warehouses) that
 // should not appear among housing results. Kept conservative so amenities like
 // "магазин рядом" (shop nearby) don't wrongly flag a flat.
+// Includes: offices, commercial/business centres, non-residential "помещение",
+// retail/warehouse/production premises, land plots (sotix/sotka/соток/yer
+// maydoni — not housing) and service/auto premises (car wash, repair bay).
 const COMMERCIAL_RE =
-  /(офис[ _]|под ?офис|офисн|\boffice\b|\bofis\b|кеңсе|коммерческ|commercial|бизнес[ -]?центр|нежил(?:ое|ое помещ|ых)|торгов(?:ое|ая) ?площад|торгов(?:ое|ое помещ)|warehouse|склад(?:ское)? помещ|производствен(?:ное|ых) ?помещ|spatiu comercial|birou)/i;
+  /(офис[ _]|под ?офис|офисн|\boffice\b|\bofis\b|кеңсе|коммерческ|commercial|бизнес[ -]?центр|нежил(?:ое|ое помещ|ых)|помещени[ея]|торгов(?:ое|ая) ?площад|торгов(?:ое|ое помещ)|warehouse|склад(?:ское)? помещ|производствен(?:ное|ых) ?помещ|spatiu comercial|birou|\d+\s*sot(?:ix|ka)|\d+\s*сот(?:ок|ка|ки|ых)|yer\s*maydoni|bosh\s*yer|уч[аа]сток\s*земл|servis\s*uchun|kassaprav|avtomoyka|автомойк|car\s?wash|шиномонтаж)/i;
 
 export function looksCommercial(text) {
   return text ? COMMERCIAL_RE.test(text) : false;
