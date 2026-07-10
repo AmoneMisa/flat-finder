@@ -74,6 +74,16 @@ app.get('/api/listings', async (req, res) => {
 
   const codes = requested.length ? requested : COUNTRY_CODES;
 
+  // Resolve the selected city to its localized forms (OLX/posts use Cyrillic or
+  // diacritics, the dropdown sends the English name), so the city filter matches.
+  if (filters.city) {
+    const forms = new Set([filters.city]);
+    for (const code of codes) {
+      for (const alias of COUNTRIES[code]?.cityAliases?.[filters.city] ?? []) forms.add(alias);
+    }
+    filters.cityAliases = [...forms];
+  }
+
   try {
     const results = await Promise.all(codes.map((code) => getListings(code, filters)));
     const degraded = [];

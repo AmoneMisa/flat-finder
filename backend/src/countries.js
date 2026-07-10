@@ -26,6 +26,17 @@ export const COUNTRIES = {
     terms: { flat: 'apartament', house: 'casa' },
     dealTerms: { sale: 'de vanzare', longRent: 'de inchiriat', shortRent: 'regim hotelier' },
     cities: ['Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta', 'Oradea'],
+    // Localized forms OLX/posts actually use, so the city filter matches. The
+    // canonical (English) name is always accepted too; diacritics are ignored.
+    cityAliases: {
+      Bucharest: ['bucuresti', 'bucurești', 'бухарест'],
+      'Cluj-Napoca': ['cluj', 'cluj-napoca'],
+      Timisoara: ['timisoara', 'timișoara'],
+      Iasi: ['iasi', 'iași'],
+      Brasov: ['brasov', 'brașov'],
+      Constanta: ['constanta', 'constanța'],
+      Oradea: ['oradea'],
+    },
     subreddits: ['Romania', 'Bucuresti', 'cluj', 'Timisoara', 'iasi', 'brasov', 'constanta'],
     telegramChannels: [
       'imobiliare_ro', 'chirii_bucuresti', 'apartamente_bucuresti', 'imobiliare_cluj',
@@ -45,6 +56,15 @@ export const COUNTRIES = {
     terms: { flat: 'квартира', house: 'будинок' },
     dealTerms: { sale: 'продаж', longRent: 'оренда', shortRent: 'подобово' },
     cities: ['Kyiv', 'Lviv', 'Odesa', 'Kharkiv', 'Dnipro', 'Vinnytsia', 'Ivano-Frankivsk'],
+    cityAliases: {
+      Kyiv: ['київ', 'киев', 'kyiv', 'kiev'],
+      Lviv: ['львів', 'львов', 'lviv'],
+      Odesa: ['одеса', 'одесса', 'odesa', 'odessa'],
+      Kharkiv: ['харків', 'харьков', 'kharkiv'],
+      Dnipro: ['дніпро', 'днепр', 'dnipro'],
+      Vinnytsia: ['вінниця', 'винница', 'vinnytsia'],
+      'Ivano-Frankivsk': ['івано-франківськ', 'ивано-франковск', 'ivano-frankivsk'],
+    },
     subreddits: ['ukraine', 'Kyiv', 'lviv', 'Kharkiv', 'Odessa', 'Dnipro'],
     telegramChannels: [
       'kvartira_kiev', 'arenda_kiev_kvartir', 'nedvizhimost_kiev', 'kvartiry_lvov',
@@ -64,6 +84,15 @@ export const COUNTRIES = {
     terms: { flat: 'квартира', house: 'дом' },
     dealTerms: { sale: 'продажа', longRent: 'аренда', shortRent: 'посуточно' },
     cities: ['Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau', 'Oral'],
+    cityAliases: {
+      Almaty: ['алматы', 'алмата', 'almaty'],
+      Astana: ['астана', 'нур-султан', 'astana', 'nur-sultan'],
+      Shymkent: ['шымкент', 'shymkent'],
+      Karaganda: ['караганда', 'қарағанды', 'karaganda'],
+      Aktobe: ['актобе', 'ақтөбе', 'aktobe'],
+      Atyrau: ['атырау', 'atyrau'],
+      Oral: ['уральск', 'орал', 'oral'],
+    },
     subreddits: ['Kazakhstan', 'almaty', 'Astana'],
     telegramChannels: [
       'nedvizhimost_almaty', 'krisha_almaty', 'arenda_astana', 'kvartiry_shymkent',
@@ -82,6 +111,15 @@ export const COUNTRIES = {
     terms: { flat: 'квартира', house: 'дом' },
     dealTerms: { sale: 'продажа', longRent: 'аренда', shortRent: 'посуточно' },
     cities: ['Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana', 'Nukus'],
+    cityAliases: {
+      Tashkent: ['ташкент', 'toshkent', 'tashkent'],
+      Samarkand: ['самарканд', 'samarqand', 'samarkand'],
+      Bukhara: ['бухара', 'buxoro', 'bukhara'],
+      Namangan: ['наманган', 'namangan'],
+      Andijan: ['андижан', 'andijon', 'andijan'],
+      Fergana: ['фергана', "farg'ona", 'fargona', 'fergana'],
+      Nukus: ['нукус', 'nukus'],
+    },
     subreddits: ['Uzbekistan', 'Tashkent', 'Samarkand'],
     telegramChannels: [
       'kvartiri_tashkent', 'nedvizhimost_tashkent', 'arenda_tashkenta', 'uybor_uz',

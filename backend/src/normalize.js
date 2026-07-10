@@ -89,15 +89,25 @@ export function makeListing(partial) {
 // stale/inactive and dropped. (3 weeks, per product requirement.)
 export const MAX_AGE_MS = 21 * 24 * 60 * 60 * 1000;
 
+// Lowercase and strip diacritics so "București" matches "bucuresti" etc.
+function normCity(s) {
+  return String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 // Apply the user-facing filters that a source could not enforce server-side.
 export function applyFilters(listings, filters) {
   const {
     propertyType, agency, priceMin, priceMax, query, dealType,
     roomsMin, roomsMax, bedroomsMin, bedroomsMax,
     floorMin, floorMax, yearMin, yearMax, audience, city,
-    district, metro,
+    cityAliases, district, metro,
   } = filters;
   const now = Date.now();
+  // Accept the selected city or any of its localized aliases (from countries.js).
+  const cityForms = city ? (cityAliases?.length ? cityAliases : [city]).map(normCity) : null;
   return listings.filter((l) => {
     // Freshness: drop anything with a known post date older than 3 weeks. Posts
     // with no/unparseable date are kept (lenient, like the numeric ranges).
@@ -122,7 +132,10 @@ export function applyFilters(listings, filters) {
     if (yearMax != null && l.buildingYear != null && l.buildingYear > yearMax) return false;
     // Audience is an explicit restriction, so match strictly when requested.
     if (audience && audience !== 'any' && l.audience !== audience) return false;
-    if (city && !l.city.toLowerCase().includes(String(city).toLowerCase())) return false;
+    if (cityForms) {
+      const hay = normCity(l.city);
+      if (!cityForms.some((f) => hay.includes(f))) return false;
+    }
     // District / metro are structured picks: match strictly (drop unknowns).
     if (district && (l.district ?? '').toLowerCase() !== String(district).toLowerCase())
       return false;
