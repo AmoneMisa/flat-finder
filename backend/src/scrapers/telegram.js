@@ -3,7 +3,7 @@
 // not publicly readable, so only public channels are supported. We parse each
 // message's text and pull price/rooms/area from it.
 
-import { makeListing } from '../normalize.js';
+import { makeListing, MAX_AGE_MS } from '../normalize.js';
 import {
   parsePriceFromText,
   parseRoomsFromText,
@@ -19,9 +19,14 @@ function stripHtml(s) {
   return (s || '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, '')
+    // Numeric/hex entities first: Telegram often encodes '$' as &#036; and
+    // various punctuation as &#NN;, which the price parser can't see as a
+    // currency symbol until decoded. Do this before the named entities so a
+    // decoded '&' isn't re-processed.
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/[ \t]+/g, ' ')
@@ -36,12 +41,23 @@ function parsePage(html, channel, country, filters) {
   const blocks = html.split('data-post="').slice(1);
   const out = [];
   let minId = null;
+  // Oldest (earliest) post timestamp seen on this page, across ALL posts — not
+  // just the housing ones — so the caller can stop paging once a page is beyond
+  // the freshness window even when none of its posts passed the housing filter.
+  let oldestTs = null;
   for (let i = 0; i < blocks.length; i++) {
     const raw = blocks[i];
     const dataPost = raw.slice(0, raw.indexOf('"')) || null;
     // Track the oldest (smallest) numeric post id for pagination.
     const idNum = Number(dataPost?.split('/')[1]);
     if (Number.isFinite(idNum)) minId = minId === null ? idNum : Math.min(minId, idNum);
+
+    // Post time of this block (independent of the housing filter below).
+    const blockTime = raw.match(/<time[^>]*datetime="([^"]+)"/i)?.[1];
+    if (blockTime) {
+      const t = Date.parse(blockTime);
+      if (!Number.isNaN(t)) oldestTs = oldestTs === null ? t : Math.min(oldestTs, t);
+    }
 
     // Message body: the div with class js-message_text inside this block.
     const textIdx = raw.indexOf('js-message_text');
@@ -100,7 +116,7 @@ function parsePage(html, channel, country, filters) {
       }),
     );
   }
-  return { out, minId };
+  return { out, minId, oldestTs };
 }
 
 // Fetch a single /s/ page, optionally paging back with a `before` cursor.
@@ -116,21 +132,28 @@ async function fetchPage(channel, before) {
   return res.text();
 }
 
-// A single /s/ page shows only ~20 recent posts, so a busy channel yields very
-// few housing hits. Page back a few times via the `?before=<id>` cursor to
-// gather more — this is the main lever for telegram listing volume.
-const TG_MAX_PAGES = 4;
+// Telegram serves only ~3 posts per /s/ page to server/datacenter requests (a
+// browser gets ~16-20), so with a small page cap a busy channel yields only a
+// dozen housing hits even though a month holds far more. Page back via the
+// `?before=<id>` cursor many times to gather the full freshness window; the
+// early-stop below keeps dead channels cheap.
+const TG_MAX_PAGES = 16;
 
 export async function fetchChannel(channel, country, filters = {}) {
   const listings = [];
   let before = null;
   for (let page = 0; page < TG_MAX_PAGES; page++) {
     const html = await fetchPage(channel, before);
-    const { out, minId } = parsePage(html, channel, country, filters);
+    const { out, minId, oldestTs } = parsePage(html, channel, country, filters);
     listings.push(...out);
     // Stop when a page has no posts at all (end of history / throttled), or when
     // the cursor didn't advance.
     if (minId === null || minId === before) break;
+    // Stop once we've paged past the freshness window: every post on this page
+    // is older than MAX_AGE_MS, so older pages hold nothing we'd surface. This
+    // is what lets dead channels (newest post months old) bail after one page
+    // instead of burning all TG_MAX_PAGES.
+    if (oldestTs && Date.now() - oldestTs > MAX_AGE_MS) break;
     before = minId;
   }
   return listings;
@@ -152,14 +175,24 @@ async function fetchChannelWithRetry(channel, country, filters) {
   return [];
 }
 
+// Wall-clock budget for a whole telegram scrape. Telegram's web preview is slow
+// and frequently throttles datacenter IPs (200 + empty page), so without a cap a
+// single request could stall for a minute and blow past the nginx proxy timeout,
+// starving the response of the fast OLX results. We stop starting new batches
+// once the budget is spent and return whatever was gathered so far.
+const TG_BUDGET_MS = Number(process.env.TG_BUDGET_MS) || 9000;
+
 export async function scrapeTelegram(country, filters) {
   const channels = country.telegramChannels ?? [];
   // Fetch in small batches instead of all at once: firing 10+ simultaneous
   // requests from one server IP makes Telegram throttle most of them to empty
   // pages, which is why production saw far fewer posts than local dev.
   const CONCURRENCY = 4;
+  const deadline = Date.now() + TG_BUDGET_MS;
   const listings = [];
   for (let i = 0; i < channels.length; i += CONCURRENCY) {
+    // Out of time: return the partial set rather than blocking the whole request.
+    if (Date.now() >= deadline) break;
     const batch = channels.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
       batch.map((ch) => fetchChannelWithRetry(ch, country, filters)),

@@ -14,7 +14,7 @@ const CURRENCY_WORDS = [
 // "150 $", "$81500", "750€", "1 500 у.е". Lets us keep small hard-currency
 // rents (a few hundred $/€) that the "must be ≥ 1000" fallback would drop.
 const PRICE_SYMBOL =
-  "(?:\\$|€|₸|₴|usd|eur|грн|uah|lei|ron|тенге|тг|kzt|сум|so'?m|uzs|у\\.?е\\.?|доллар|евро)";
+  "(?:\\$|€|₸|₴|usd|eur|грн?\\.?|uah|lei|ron|тенге|тг|kzt|сум|so'?m|uzs|у\\.?е\\.?|доллар|евро)";
 // A single amount: either grouped thousands ("1 500 000", "10.915.500") or a
 // plain integer ("81500", "580"). The separator set excludes newlines so a
 // floor and a price on separate lines ("Этаж: 3\n580€") never merge into 3580.
@@ -68,10 +68,21 @@ export function parsePriceFromText(text, fallbackCurrency = '') {
   // e.g. "1 500 000", "120.000", "85,000", "50000". A ≥1000 floor here avoids
   // mistaking areas/floors for a price when no currency is attached.
   if (price == null) {
-    const matches = text.match(/\d{1,3}(?:[ \u00A0.,]\d{3})+|\d{4,}/g) || [];
+    // Blank out phone numbers first so a phone like "8 707 338 72 55" is never
+    // read as a price. A phone is a run of digits/separators with ≥10 digits
+    // total; real prices in these posts stay well under that (e.g. "12 000 000"
+    // = 8 digits), so the threshold cleanly separates the two.
+    const cleaned = text.replace(/\+?\d[\d\s().-]{7,}\d/g, (seg) =>
+      seg.replace(/\D/g, '').length >= 10 ? ' ' : seg,
+    );
+    const matches = cleaned.match(/\d{1,3}(?:[ \u00A0.,]\d{3})+|\d{4,}/g) || [];
     let best = null;
     for (const m of matches) {
-      const n = Number(m.replace(/[\s.,]/g, ''));
+      const digits = m.replace(/[\s.,]/g, '');
+      // A leading zero marks a phone number / id, never a price ("050 863 10 68"
+      // grouped into "050863"), so skip it to avoid reading phones as prices.
+      if (digits[0] === '0') continue;
+      const n = Number(digits);
       if (n >= 1000 && n <= 5_000_000_000 && (best == null || n > best)) best = n;
     }
     price = best;
@@ -112,7 +123,7 @@ export function parseRoomsFromText(text) {
   // бөлме/бөлмелі (KZ), room/bedroom (EN). We deliberately do NOT match a bare
   // "кв" — that is "кв.м" (area) or "квартал" (block), e.g. "Чиланзар 16кв".
   const before = text.match(
-    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|ком\.|кімн|room|bedroom|xonali|xona|бөлмел|бөлме)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
+    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|ком\.|кімнатн|кімн|кім\.|room|bedroom|xonali|xona|бөлмел|бөлме)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
   );
   if (before) return ok10(Number(before[1] ?? before[2]));
 
@@ -132,7 +143,7 @@ export function parseRoomsFromText(text) {
 // retail/warehouse/production premises, land plots (sotix/sotka/соток/yer
 // maydoni — not housing) and service/auto premises (car wash, repair bay).
 const COMMERCIAL_RE =
-  /(офис[ _]|под ?офис|офисн|\boffice\b|\bofis\b|кеңсе|коммерческ|commercial|бизнес[ -]?центр|нежил(?:ое|ое помещ|ых)|помещени[ея]|торгов(?:ое|ая) ?площад|торгов(?:ое|ое помещ)|warehouse|склад(?!н|ыв)|производствен(?:ное|ых) ?помещ|spatiu comercial|birou|\d+\s*sot(?:ix|ka)|\d+\s*сот(?:ок|ка|ки|ых)|yer\s*maydoni|bosh\s*yer|уч[аа]сток\s*земл|servis\s*uchun|kassaprav|avtomoyka|автомойк|car\s?wash|шиномонтаж|салон\s*красот|zallik\s*saloni|beauty\s*salon|парикмахерск|барбершоп|barbershop)/i;
+  /(офис[ _]|под ?офис|офисн|\boffice\b|\bofis\b|кеңсе|коммерческ|commercial|бизнес[ -]?центр|нежил(?:ое|ое помещ|ых)|помещени[ея]|торгов(?:ое|ая) ?площад|торгов(?:ое|ое помещ)|warehouse|склад(?!н|ыв)|производствен(?:ное|ых) ?помещ|spatiu comercial|birou|\d+\s*sot(?:ix|ka)|\d+\s*сот(?:ок|ка|ки|ых)|yer\s*maydoni|bosh\s*yer|уч[аа]сток\s*земл|servis\s*uchun|kassaprav|avtomoyka|автомойк|car\s?wash|шиномонтаж|салон\s*красот|zallik\s*saloni|beauty\s*salon|парикмахерск|барбершоп|barbershop|аренда\s+рабоч(?:его|ее)\s*мест|рабоч(?:ее|его)\s*мест[оае]\s+(?:мастер|для\s+мастер|под\s+)|оренд[аи]\s+робоч(?:ого|е)\s*місц|аренда\s+гараж|гараж[ае]?\s+(?:аренд|сда[её]тся|ijara)|\bgaraj\b|\bgarage\b|o[\u2018\u2019\u02bb\u02bc'`ʻʼ]?quv\s*xona|o[\u2018\u2019\u02bb\u02bc'`ʻʼ]?quv\s*markaz|учебн(?:ый|ое|ая|ого)\s*(?:класс|помещ|кабинет|центр)|под\s+(?:бар|каф[её]|ресторан|магазин|салон|склад|бизнес|спортпит|спорт\s*пит|аптек|пекарн|пункт|шоурум|showroom|офис)|спортпит|sportpit)/i;
 
 export function looksCommercial(text) {
   return text ? COMMERCIAL_RE.test(text) : false;
@@ -199,9 +210,13 @@ export function parseFloor(text) {
     if (ok(floor, total)) return { floor, totalFloors: total };
   }
 
-  // Single floor: "X этаж", "X-й этаж", "floor X", "этаж: X".
+  // Single floor: "X этаж", "X-й этаж", "floor X", "этаж: X". A JS `\b` after a
+  // Cyrillic letter is unreliable (Cyrillic isn't `\w`), so we use an explicit
+  // "not followed by another letter" lookahead instead. This both fixes "2 этаж"
+  // (which `\b` failed to match) and still rejects "5-этажный дом" (5-storey).
+  const NOT_LETTER = '(?![a-zа-яёіїґ])';
   let s =
-    t.match(new RegExp(`(\\d{1,2})\\s*-?\\s*(?:й|го|nd|rd|th|st)?\\s*${FLOOR}\\b`)) ||
+    t.match(new RegExp(`(\\d{1,2})\\s*-?\\s*(?:й|го|nd|rd|th|st)?\\s*${FLOOR}${NOT_LETTER}`)) ||
     t.match(new RegExp(`${FLOOR}\\s*[:№#]?\\s*(\\d{1,2})\\b`));
   if (s) {
     const floor = Number(s[1]);
@@ -213,6 +228,20 @@ export function parseFloor(text) {
       );
       const total = tm ? Number(tm[1]) : null;
       return { floor, totalFloors: total && total >= floor && total <= 200 ? total : null };
+    }
+  }
+
+  // Last resort: a bare "N/M" with no floor word, the compact form Telegram
+  // posts favour ("вул. ... 193-А. 1/9 23м"). Heavily guarded to avoid dates and
+  // fractions: both sides must be plausible floors (1–40), floor ≤ total, total
+  // ≥ 2, and the pair must not be part of a longer number/date sequence
+  // ("01/09/2025" is excluded by the trailing lookahead).
+  const bare = t.match(/(?<![\d/])([1-9]\d?)\s*\/\s*([1-9]\d?)(?![\d/])/);
+  if (bare) {
+    const floor = Number(bare[1]);
+    const total = Number(bare[2]);
+    if (floor >= 1 && floor <= 40 && total >= 2 && total <= 40 && floor <= total) {
+      return { floor, totalFloors: total };
     }
   }
   return { floor: null, totalFloors: null };
@@ -257,7 +286,7 @@ export function classifyAudience(text) {
     return 'family';
   if (/(девуш|девоч|для дівч|дівчат|for girls|for women|only girls|doar fete|\bfete\b|qizlar(ga| uchun)?|қыздар)/.test(t))
     return 'women';
-  if (/(парн(ей|ям)|для мужчин|мужчинам|для хлопц|for men\b|for boys|doar b[aă]ie[țt]i|yigitlar(ga| uchun)?|жігіттер|ер адам)/.test(t))
+  if (/(парн(ей|ям)|для мужчин|мужчинам|для хлопц|for men\b|for boys|doar b[aă]ie[țt]i|yigit(lar)?(ga| uchun)?|жігіт|ер адам)/.test(t))
     return 'men';
   return null;
 }
@@ -293,7 +322,7 @@ export function parseContact(text) {
 export function classifyPets(text) {
   if (!text) return null;
   const t = text.toLowerCase();
-  if (/(без ?животн|нельзя с животными|без тварин|no pets|pets not allowed|fara animale|hayvon.*mumkin emas|үй жануар.*болмайды)/i.test(t))
+  if (/(без ?животн|нельзя с животными|без[^.\n]{0,20}тварин|no pets|pets not allowed|fara animale|hayvon.*mumkin emas|үй жануар.*болмайды)/i.test(t))
     return false;
   if (/(можно с животными|можно с питомц|з тваринами можна|з тваринами дозвол|pets? ?(allowed|ok|friendly)|se accepta animale|animale acceptate|uy hayvon.*mumkin|үй жануар.*болады)/i.test(t))
     return true;
@@ -304,7 +333,7 @@ export function classifyPets(text) {
 export function classifyChildren(text) {
   if (!text) return null;
   const t = text.toLowerCase();
-  if (/(без ?детей|нельзя с детьми|без дітей|no (kids|children)|children not allowed|fara copii|bolalar.*mumkin emas|балалар.*болмайды)/i.test(t))
+  if (/(без ?детей|нельзя с детьми|без[^.\n]{0,20}дітей|no (kids|children)|children not allowed|fara copii|bolalar.*mumkin emas|балалар.*болмайды)/i.test(t))
     return false;
   if (/(можно с детьми|можно с ребен|з дітьми можна|з дітьми дозвол|children ?(allowed|ok|welcome)|kids ?(ok|welcome)|se accepta copii|copii acceptati|bolalar.*mumkin|балалар.*болады)/i.test(t))
     return true;

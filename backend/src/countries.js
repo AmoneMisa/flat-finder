@@ -97,7 +97,8 @@ export const COUNTRIES = {
     subreddits: ['Kazakhstan', 'almaty', 'Astana'],
     telegramChannels: [
       'nedvizhimost_almaty', 'krisha_almaty', 'arenda_astana', 'kvartiry_shymkent',
-      'arenda_almaty_kz', 'nedvizhimost_astana', 'kvartiry_almaty',
+      'arenda_almaty_kz', 'nedvizhimost_astana', 'kvartiry_almaty', 'kvartiry2',
+      'arendakvartirastana2022', 'arendam0',
     ],
     threadsTags: ['недвижимость', 'квартира', 'аренда', 'продажаквартир', 'арендаквартир'],
   },
@@ -127,6 +128,7 @@ export const COUNTRIES = {
       'arentash', 'kvartira_dom_arenda', 'arendatashkent_uz', 'bez_makler_kvartira_arenda_ijara',
       'TOSHKENT_IJARAGA_UYLAR_SERGELI', 'ijara_tashkent', 'kvartira_samarkand',
       'kv_arenda_tashken_t', 'ArendaTashkentaa', 'arenduzb',
+      'samkvartira', 'arenda_samarkand',
     ],
     threadsTags: ['недвижимость', 'ташкент', 'kvartira', 'arenda', 'uysotiladi', 'аренда ташкент'],
   },

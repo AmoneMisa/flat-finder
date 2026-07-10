@@ -12,6 +12,7 @@ import { scrapeTelegram } from './telegram.js';
 import { scrapeThreads } from './threads.js';
 import { scrapeCustom } from './custom.js';
 import { generateMock } from '../mock.js';
+import { cacheGet, cacheSet } from '../cache.js';
 
 const SOURCES = {
   olx: scrapeOlx,
@@ -20,8 +21,35 @@ const SOURCES = {
   threads: scrapeThreads,
 };
 
+// How long a cached entry is considered "fresh" (served without a re-scrape).
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const cache = new Map(); // key -> { at, listings, degraded, sourceCounts }
+// How long a stale entry is still kept and served (while a refresh runs in the
+// background). This is the Redis retention window for each key.
+const STALE_TTL_MS = 60 * 60 * 1000;
+// De-dupe concurrent background refreshes of the same key.
+const inFlight = new Map(); // key -> Promise
+
+// Hard backstop so a single misbehaving source can never stall the whole
+// country response past the proxy timeout. Sources have their own (tighter)
+// internal budgets; this only fires in pathological cases and yields whatever
+// the source returned before the deadline (empty on timeout).
+const SOURCE_DEADLINE_MS = Number(process.env.SOURCE_DEADLINE_MS) || 15000;
+
+function withDeadline(promise, ms, onTimeout) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(onTimeout), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
 
 function cacheKey(countryCode, filters) {
   return [
@@ -63,7 +91,7 @@ async function fetchOne(countryCode, filters) {
     sources.map(async (name) => {
       const fn = SOURCES[name];
       if (!fn) return { name, listings: [] };
-      const listings = await fn(country, filters);
+      const listings = await withDeadline(fn(country, filters), SOURCE_DEADLINE_MS, []);
       return { name, listings };
     }),
   );
@@ -103,15 +131,41 @@ async function fetchOne(countryCode, filters) {
   return { listings: merged, degraded: false, sourceCounts, sourceErrors };
 }
 
+// Scrape a country fresh and store the result in the (Redis or in-memory) cache.
+// Concurrent callers for the same key share a single in-flight scrape.
+function refresh(countryCode, filters, key) {
+  if (inFlight.has(key)) return inFlight.get(key);
+  const p = (async () => {
+    const result = await fetchOne(countryCode, filters);
+    const entry = { at: Date.now(), ...result };
+    await cacheSet(key, entry, STALE_TTL_MS);
+    return entry;
+  })().finally(() => inFlight.delete(key));
+  inFlight.set(key, p);
+  return p;
+}
+
+// Stale-while-revalidate:
+//   fresh cache hit  -> return immediately
+//   stale cache hit  -> return the stale copy now, refresh in the background
+//   miss             -> scrape synchronously
+// This means a user request never blocks on a slow telegram scrape once the
+// key has been warmed at least once, which is what caused the 504s / few results.
 export async function getListings(countryCode, filters, { force = false } = {}) {
   const key = cacheKey(countryCode, filters);
-  const hit = cache.get(key);
-  if (!force && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit;
+  if (force) return refresh(countryCode, filters, key);
 
-  const result = await fetchOne(countryCode, filters);
-  const entry = { at: Date.now(), ...result };
-  cache.set(key, entry);
-  return entry;
+  const hit = await cacheGet(key);
+  if (hit) {
+    const age = Date.now() - hit.at;
+    if (age < CACHE_TTL_MS) return hit; // fresh
+    // Stale: kick off a background refresh but serve the cached copy now.
+    refresh(countryCode, filters, key).catch((e) =>
+      console.warn(`[scraper] background refresh ${countryCode} failed: ${e.message}`),
+    );
+    return hit;
+  }
+  return refresh(countryCode, filters, key);
 }
 
 // Default "browse" filters — the query the app sends when no filters are set.

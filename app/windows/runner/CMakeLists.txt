@@ -16,6 +16,12 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
+# Ship the .exe under a friendly product name (with spaces) while keeping the
+# CMake target name space-free so the build tooling keeps working.
+if(DEFINED EXE_OUTPUT_NAME)
+  set_target_properties(${BINARY_NAME} PROPERTIES OUTPUT_NAME "${EXE_OUTPUT_NAME}")
+endif()
+
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})

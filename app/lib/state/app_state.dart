@@ -18,6 +18,7 @@ class AppState extends ChangeNotifier {
   Filters filters = Filters();
   List<Listing> listings = [];
   List<String> degradedCountries = [];
+  List<SourceError> sourceErrors = []; // per-source failures from the last search
   Map<String, double> rates = {}; // currency -> units per 1 USD
 
   bool loading = false;
@@ -78,6 +79,25 @@ class AppState extends ChangeNotifier {
     _saveFilters(); // persist so choices survive restarts
   }
 
+  /// Validate a candidate custom-source URL against the backend (uses the first
+  /// selected country for currency/context).
+  Future<SourceValidation> validateSource(String url) {
+    final country = filters.countries.isNotEmpty ? filters.countries.first : null;
+    return _api.validateSource(url, country: country);
+  }
+
+  void addCustomSource(String url) {
+    final u = url.trim();
+    if (u.isEmpty || filters.customSources.contains(u)) return;
+    updateFilters(filters.copyWith(customSources: [...filters.customSources, u]));
+  }
+
+  void removeCustomSource(String url) {
+    updateFilters(filters.copyWith(
+      customSources: filters.customSources.where((s) => s != url).toList(),
+    ));
+  }
+
   Future<void> search() async {
     if (filters.countries.isEmpty) {
       listings = [];
@@ -92,9 +112,11 @@ class AppState extends ChangeNotifier {
       final res = await _api.fetchListings(filters);
       listings = res.listings;
       degradedCountries = res.degradedCountries;
+      sourceErrors = res.sourceErrors;
     } catch (e) {
       error = e.toString();
       listings = [];
+      sourceErrors = [];
     } finally {
       loading = false;
       notifyListeners();

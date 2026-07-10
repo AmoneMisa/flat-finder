@@ -9,14 +9,18 @@ enum AgencyFilter { any, owner, agency }
 /// Stated tenant restriction. `name` matches the backend value (women/men/family).
 enum Audience { any, women, men, family }
 
+/// Client-side result ordering. `relevance` keeps the server's original order.
+enum SortBy { relevance, dateNew, priceAsc, priceDesc, areaDesc, distanceCenter, distanceMetro }
+
 /// All selectable listing sources. Empty selection on the server means "all".
-const kAllSources = ['olx', 'reddit', 'telegram', 'threads'];
+/// Reddit/Threads are omitted: their public APIs can't be read from the server
+/// (datacenter IPs are blocked / no public search), so they never return
+/// results and only added dead filter chips.
+const kAllSources = ['olx', 'telegram'];
 
 const kSourceLabels = {
   'olx': 'OLX',
-  'reddit': 'Reddit',
   'telegram': 'Telegram',
-  'threads': 'Threads',
 };
 
 /// Districts and metro/transit stations available within a single city.
@@ -67,6 +71,7 @@ class Country {
 class Filters {
   Set<String> countries; // selected country codes
   Set<String> sources; // selected listing sources
+  List<String> customSources; // user-added source URLs (JSON-LD / RSS pages)
   PropertyType propertyType;
   DealType dealType;
   AgencyFilter agency;
@@ -86,10 +91,16 @@ class Filters {
   String district;
   String metro;
   String query;
+  bool pets; // require "pets allowed"
+  bool children; // require "children allowed"
+  bool roomOnly; // only partial / room-share rentals
+  int? maxAgeDays; // only posts newer than this many days
+  SortBy sort; // client-side ordering (not sent to the server)
 
   Filters({
     Set<String>? countries,
     Set<String>? sources,
+    List<String>? customSources,
     this.propertyType = PropertyType.any,
     this.dealType = DealType.any,
     this.agency = AgencyFilter.any,
@@ -109,12 +120,19 @@ class Filters {
     this.district = '',
     this.metro = '',
     this.query = '',
+    this.pets = false,
+    this.children = false,
+    this.roomOnly = false,
+    this.maxAgeDays,
+    this.sort = SortBy.relevance,
   })  : countries = countries ?? {'RO'},
-        sources = sources ?? {...kAllSources};
+        sources = sources ?? {...kAllSources},
+        customSources = customSources ?? [];
 
   Filters copyWith({
     Set<String>? countries,
     Set<String>? sources,
+    List<String>? customSources,
     PropertyType? propertyType,
     DealType? dealType,
     AgencyFilter? agency,
@@ -145,10 +163,17 @@ class Filters {
     String? district,
     String? metro,
     String? query,
+    bool? pets,
+    bool? children,
+    bool? roomOnly,
+    int? maxAgeDays,
+    bool clearMaxAgeDays = false,
+    SortBy? sort,
   }) {
     return Filters(
       countries: countries ?? this.countries,
       sources: sources ?? this.sources,
+      customSources: customSources ?? this.customSources,
       propertyType: propertyType ?? this.propertyType,
       dealType: dealType ?? this.dealType,
       agency: agency ?? this.agency,
@@ -169,6 +194,11 @@ class Filters {
       district: district ?? this.district,
       metro: metro ?? this.metro,
       query: query ?? this.query,
+      pets: pets ?? this.pets,
+      children: children ?? this.children,
+      roomOnly: roomOnly ?? this.roomOnly,
+      maxAgeDays: clearMaxAgeDays ? null : (maxAgeDays ?? this.maxAgeDays),
+      sort: sort ?? this.sort,
     );
   }
 
@@ -177,6 +207,7 @@ class Filters {
   Map<String, dynamic> toJson() => {
         'countries': countries.toList(),
         'sources': sources.toList(),
+        'customSources': customSources,
         'propertyType': propertyType.name,
         'dealType': dealType.name,
         'agency': agency.name,
@@ -196,6 +227,11 @@ class Filters {
         'district': district,
         'metro': metro,
         'query': query,
+        'pets': pets,
+        'children': children,
+        'roomOnly': roomOnly,
+        'maxAgeDays': maxAgeDays,
+        'sort': sort.name,
       };
 
   factory Filters.fromJson(Map<String, dynamic> j) {
@@ -213,6 +249,11 @@ class Filters {
     return Filters(
       countries: strSet(j['countries'], {'RO'}),
       sources: strSet(j['sources'], {...kAllSources}),
+      customSources: (j['customSources'] as List?)
+              ?.map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList() ??
+          [],
       propertyType: byName(PropertyType.values, j['propertyType'], PropertyType.any),
       dealType: byName(DealType.values, j['dealType'], DealType.any),
       agency: byName(AgencyFilter.values, j['agency'], AgencyFilter.any),
@@ -232,21 +273,34 @@ class Filters {
       district: (j['district'] ?? '').toString(),
       metro: (j['metro'] ?? '').toString(),
       query: (j['query'] ?? '').toString(),
+      pets: j['pets'] == true,
+      children: j['children'] == true,
+      roomOnly: j['roomOnly'] == true,
+      maxAgeDays: (j['maxAgeDays'] as num?)?.toInt(),
+      sort: byName(SortBy.values, j['sort'], SortBy.relevance),
     );
   }
 
   Map<String, String> toQueryParams() {
     final p = <String, String>{
       'countries': countries.join(','),
-      'propertyType': propertyType.name,
-      'dealType': dealType.name,
-      'agency': agency.name,
-      'audience': audience.name,
       'limit': '50',
     };
+    // "Any" means "don't filter", so we simply omit those params server-side.
+    if (propertyType != PropertyType.any) p['propertyType'] = propertyType.name;
+    if (dealType != DealType.any) p['dealType'] = dealType.name;
+    if (agency != AgencyFilter.any) p['agency'] = agency.name;
+    if (audience != Audience.any) p['audience'] = audience.name;
+    if (pets) p['pets'] = 'true';
+    if (children) p['children'] = 'true';
+    if (roomOnly) p['roomOnly'] = 'true';
+    if (maxAgeDays != null && maxAgeDays! > 0) p['maxAgeDays'] = maxAgeDays.toString();
     // Only send when it's a real subset; all-selected means "all" server-side.
     if (sources.isNotEmpty && sources.length < kAllSources.length) {
       p['sources'] = sources.join(',');
+    }
+    if (customSources.isNotEmpty) {
+      p['customSources'] = customSources.join(',');
     }
     if (priceMin != null) p['priceMin'] = priceMin.toString();
     if (priceMax != null) p['priceMax'] = priceMax.toString();

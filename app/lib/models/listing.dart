@@ -20,6 +20,13 @@ class Listing {
   final String? district; // intra-city district / neighbourhood | null
   final String? metro; // nearest metro/transit station | null
   final List<String> nearby; // nearby landmarks
+  final bool? petsAllowed; // true/false/null (unstated)
+  final bool? childrenAllowed; // true/false/null (unstated)
+  final bool roomOnly; // renting a single room, not the whole flat
+  final bool? deposit; // security deposit required?
+  final num? depositAmount; // stated deposit amount, if any
+  final bool? commission; // agency commission charged?
+  final num? commissionPercent; // stated commission %, if any
   final String city;
   final double? lat;
   final double? lng;
@@ -51,6 +58,13 @@ class Listing {
     required this.district,
     required this.metro,
     required this.nearby,
+    this.petsAllowed,
+    this.childrenAllowed,
+    this.roomOnly = false,
+    this.deposit,
+    this.depositAmount,
+    this.commission,
+    this.commissionPercent,
     required this.city,
     required this.lat,
     required this.lng,
@@ -87,6 +101,13 @@ class Listing {
       district: j['district'] as String?,
       metro: j['metro'] as String?,
       nearby: (j['nearby'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      petsAllowed: j['petsAllowed'] as bool?,
+      childrenAllowed: j['childrenAllowed'] as bool?,
+      roomOnly: j['roomOnly'] == true,
+      deposit: j['deposit'] as bool?,
+      depositAmount: j['depositAmount'] as num?,
+      commission: j['commission'] as bool?,
+      commissionPercent: j['commissionPercent'] as num?,
       city: j['city'] ?? '',
       lat: toD(j['lat']),
       lng: toD(j['lng']),
@@ -99,4 +120,44 @@ class Listing {
       tags: (j['tags'] as List?)?.map((e) => e.toString()).toList() ?? const [],
     );
   }
+
+  /// Round-trips through [Listing.fromJson]; used to persist favorites locally.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'source': source,
+        'country': country,
+        'title': title,
+        'propertyType': propertyType,
+        'dealType': dealType,
+        'byAgency': byAgency,
+        'price': price,
+        'currency': currency,
+        'rooms': rooms,
+        'areaSqm': areaSqm,
+        'floor': floor,
+        'totalFloors': totalFloors,
+        'buildingYear': buildingYear,
+        'bedrooms': bedrooms,
+        'audience': audience,
+        'contact': contact,
+        'district': district,
+        'metro': metro,
+        'nearby': nearby,
+        'petsAllowed': petsAllowed,
+        'childrenAllowed': childrenAllowed,
+        'roomOnly': roomOnly,
+        'deposit': deposit,
+        'depositAmount': depositAmount,
+        'commission': commission,
+        'commissionPercent': commissionPercent,
+        'city': city,
+        'lat': lat,
+        'lng': lng,
+        'photo': photo,
+        'photos': photos,
+        'url': url,
+        'createdAt': createdAt?.toIso8601String(),
+        'description': description,
+        'tags': tags,
+      };
 }

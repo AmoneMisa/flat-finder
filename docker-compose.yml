@@ -5,6 +5,13 @@ services:
     restart: unless-stopped
     env_file:
       - ./flatfinder.env
+    # Shared listing cache. Falls back to in-memory automatically if this is
+    # unreachable, so the backend still boots even when Redis is down.
+    environment:
+      - REDIS_URL=redis://flat-finder-redis:6379
+    depends_on:
+      flat-finder-redis:
+        condition: service_healthy
     # Loopback-only, like the other project's 8080/8081 services. The host's
     # existing nginx reverse-proxies to this port.
     ports:
@@ -15,3 +22,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  flat-finder-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Cache-only: cap memory and evict least-recently-used keys instead of
+    # erroring when full. No persistence needed — the scraper repopulates it.
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

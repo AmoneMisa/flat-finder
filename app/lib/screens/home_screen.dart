@@ -4,12 +4,16 @@ import 'package:provider/provider.dart';
 
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
+import '../utils/sort.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/listing_card.dart';
 import '../widgets/map_view.dart';
+import 'favorites_screen.dart';
+import 'history_screen.dart';
 import 'listing_detail.dart';
 import 'settings_screen.dart';
 
@@ -39,6 +43,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
+  }
+
+  void _openFavorites() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+    );
+  }
+
+  void _openHistory() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const HistoryScreen()),
     );
   }
 
@@ -81,6 +97,16 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => setState(() => _mapMode = !_mapMode),
           ),
           IconButton(
+            tooltip: settings.t('history'),
+            icon: const Icon(Icons.history),
+            onPressed: _openHistory,
+          ),
+          IconButton(
+            tooltip: settings.t('favorites'),
+            icon: const Icon(Icons.favorite_border),
+            onPressed: _openFavorites,
+          ),
+          IconButton(
             tooltip: settings.t('filters'),
             icon: const Icon(Icons.tune),
             onPressed: () => _openFilters(state),
@@ -99,6 +125,8 @@ class _HomeScreenState extends State<HomeScreen> {
             _Banner(
               text: settings.t('demoBanner', {'countries': state.degradedCountries.join(', ')}),
             ),
+          if (state.sourceErrors.isNotEmpty)
+            _SourceErrorBanner(errors: state.sourceErrors, settings: settings),
           Expanded(child: _body(state, settings)),
         ],
       ),
@@ -121,21 +149,57 @@ class _HomeScreenState extends State<HomeScreen> {
       return Center(child: Text(settings.t('noListings')));
     }
 
+    final center = _centerFor(state);
+    final listings = sortListings(
+      state.listings,
+      state.filters.sort,
+      centerLat: center.latitude,
+      centerLng: center.longitude,
+      rates: state.rates,
+      displayCurrency: settings.displayCurrency,
+    );
+
     if (_mapMode) {
       return MapView(
-        listings: state.listings,
-        center: _centerFor(state),
+        listings: listings,
+        center: center,
         onTapListing: _showMapPreview,
+        rates: state.rates,
+        displayCurrency: settings.displayCurrency,
       );
     }
     return Stack(
       children: [
-        ListView.builder(
-          padding: const EdgeInsets.only(bottom: 90, top: 4),
-          itemCount: state.listings.length,
-          itemBuilder: (_, i) {
-            final l = state.listings[i];
-            return ListingCard(listing: l, onTap: () => _openListing(l));
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = _columnsFor(constraints.maxWidth);
+            // A single column keeps the original full-width card list; multiple
+            // columns lay the cards out in a responsive grid.
+            if (columns == 1) {
+              return ListView.builder(
+                padding: const EdgeInsets.only(bottom: 90, top: 4),
+                itemCount: listings.length,
+                itemBuilder: (_, i) {
+                  final l = listings[i];
+                  return ListingCard(listing: l, onTap: () => _openListing(l));
+                },
+              );
+            }
+            return GridView.builder(
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 90),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                childAspectRatio: 0.82,
+                mainAxisSpacing: 2,
+                crossAxisSpacing: 2,
+              ),
+              itemCount: listings.length,
+              itemBuilder: (_, i) {
+                final l = listings[i];
+                return ListingCard(
+                    listing: l, grid: true, onTap: () => _openListing(l));
+              },
+            );
           },
         ),
         if (state.loading)
@@ -147,6 +211,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
       ],
     );
+  }
+
+  /// Column count from the available width: 1 on phones, up to 4 on wide
+  /// desktop windows.
+  int _columnsFor(double width) {
+    if (width >= 1500) return 4;
+    if (width >= 1100) return 3;
+    if (width >= 700) return 2;
+    return 1;
   }
 }
 
@@ -202,6 +275,50 @@ class _Banner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text(text, style: const TextStyle(fontSize: 12))),
         ],
+      ),
+    );
+  }
+}
+
+/// Red, expandable banner listing sources that failed during the last search
+/// (a blocked scraper, or a custom URL that returned nothing / was unreachable).
+class _SourceErrorBanner extends StatelessWidget {
+  const _SourceErrorBanner({required this.errors, required this.settings});
+  final List<SourceError> errors;
+  final SettingsState settings;
+
+  String _label(SourceError e) {
+    final who = e.url ?? (kSourceLabels[e.source] ?? e.source);
+    return '$who — ${e.message}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      color: Colors.red.shade50,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+          leading: Icon(Icons.error_outline, size: 20, color: Colors.red.shade700),
+          title: Text(
+            '${settings.t('sourceErrorsTitle')} (${errors.length})',
+            style: TextStyle(fontSize: 13, color: Colors.red.shade900),
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          children: [
+            for (final e in errors)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(_label(e),
+                      style: TextStyle(fontSize: 12, color: Colors.red.shade900)),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

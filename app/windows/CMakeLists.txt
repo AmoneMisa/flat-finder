@@ -5,6 +5,9 @@ project(flat_finder LANGUAGES CXX)
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "flat_finder")
+# On-disk product name (the .exe file). May contain spaces, unlike the CMake
+# target name above.
+set(EXE_OUTPUT_NAME "Flat Finder by WhitesLove")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

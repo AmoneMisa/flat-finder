@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/listing.dart';
 import '../state/settings.dart';
+import '../utils/format.dart';
 
 class MapView extends StatefulWidget {
   const MapView({
@@ -12,11 +13,15 @@ class MapView extends StatefulWidget {
     required this.listings,
     required this.center,
     required this.onTapListing,
+    this.rates,
+    this.displayCurrency,
   });
 
   final List<Listing> listings;
   final LatLng center;
   final void Function(Listing) onTapListing;
+  final Map<String, double>? rates;
+  final String? displayCurrency;
 
   @override
   State<MapView> createState() => _MapViewState();
@@ -132,11 +137,15 @@ class _MapViewState extends State<MapView> {
                 for (final l in visible)
                   Marker(
                     point: LatLng(l.lat!, l.lng!),
-                    width: 78,
+                    width: 96,
                     height: 34,
                     child: GestureDetector(
                       onTap: () => widget.onTapListing(l),
-                      child: _PricePin(listing: l),
+                      child: _PricePin(
+                        listing: l,
+                        rates: widget.rates,
+                        displayCurrency: widget.displayCurrency,
+                      ),
                     ),
                   ),
               ],
@@ -203,14 +212,16 @@ class _MapViewState extends State<MapView> {
 }
 
 class _PricePin extends StatelessWidget {
-  const _PricePin({required this.listing});
+  const _PricePin({required this.listing, this.rates, this.displayCurrency});
   final Listing listing;
+  final Map<String, double>? rates;
+  final String? displayCurrency;
 
   @override
   Widget build(BuildContext context) {
     final color =
         listing.byAgency ? Colors.orange.shade700 : Theme.of(context).colorScheme.primary;
-    final label = listing.price != null ? _short(listing.price!) : '—';
+    final label = pinPriceLabel(listing, rates: rates, displayCurrency: displayCurrency);
     return Container(
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -221,14 +232,10 @@ class _PricePin extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
       ),
     );
-  }
-
-  static String _short(num v) {
-    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}K';
-    return v.toString();
   }
 }
