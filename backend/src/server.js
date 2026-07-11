@@ -146,6 +146,19 @@ app.get('/api/listings', async (req, res) => {
     // Enforce filters the source could not (e.g. mock fallback, agency guess).
     listings = applyFilters(listings, filters);
 
+    // Interleave sources by recency. Without this the array is just each
+    // source concatenated in registry order (all OLX, then all Telegram), so a
+    // paginated client that reads from the top would show only OLX when both
+    // are selected and never reach the appended Telegram posts. Newest first;
+    // listings with no/unparseable date sort last (stable among themselves).
+    listings.sort((a, b) => {
+      const ta = a.createdAt ? Date.parse(a.createdAt) : NaN;
+      const tb = b.createdAt ? Date.parse(b.createdAt) : NaN;
+      const va = Number.isNaN(ta) ? -Infinity : ta;
+      const vb = Number.isNaN(tb) ? -Infinity : tb;
+      return vb - va;
+    });
+
     res.json({
       count: listings.length,
       degradedCountries: degraded, // countries currently served from demo data
