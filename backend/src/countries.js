@@ -39,10 +39,8 @@ export const COUNTRIES = {
     },
     subreddits: ['Romania', 'Bucuresti', 'cluj', 'Timisoara', 'iasi', 'brasov', 'constanta'],
     telegramChannels: [
-      'imobiliare_ro', 'chirii_bucuresti', 'apartamente_bucuresti', 'imobiliare_cluj',
       'rent_bucharest', 'arenda_kvartir_bucharest', 'QwertyrRomania', 'arendavbuchareste',
-      'apartaments_bucharest', 'chirii_cluj', 'imobiliare_timisoara', 'chirii_iasi',
-      'rent_ro',
+      'apartaments_bucharest', 'rent_ro', 'armonie_agentie_imobiliare_ro',
     ],
     threadsTags: ['imobiliare', 'apartamentdevanzare', 'chirie', 'garsoniera', 'deinchiriat'],
   },
@@ -68,9 +66,8 @@ export const COUNTRIES = {
     },
     subreddits: ['ukraine', 'Kyiv', 'lviv', 'Kharkiv', 'Odessa', 'Dnipro'],
     telegramChannels: [
-      'kvartira_kiev', 'arenda_kiev_kvartir', 'nedvizhimost_kiev', 'kvartiry_lvov',
-      'davnich', 'davnichprodaga', 'davnichK', 'davnichL', 'kharkov_apartment',
-      'arenda_lviv', 'nedvizhimost_odessa', 'arenda_dnepr',
+      'davnich', 'davnichprodaga', 'davnichK', 'kharkov_apartment',
+      'nedvizhimost_odessa', 'arenda_dnepr',
     ],
     threadsTags: ['нерухомість', 'оренда', 'квартира', 'продажквартири', 'орендаквартири'],
   },
@@ -95,10 +92,9 @@ export const COUNTRIES = {
       Oral: ['уральск', 'орал', 'oral'],
     },
     subreddits: ['Kazakhstan', 'almaty', 'Astana'],
+    // NOTE: KZ is thin after pruning dead channels — needs fresh replacements.
     telegramChannels: [
-      'nedvizhimost_almaty', 'krisha_almaty', 'arenda_astana', 'kvartiry_shymkent',
-      'arenda_almaty_kz', 'nedvizhimost_astana', 'kvartiry_almaty', 'kvartiry2',
-      'arendakvartirastana2022', 'arendam0',
+      'kvartiry2', 'arendakvartirastana2022', 'arendam0',
     ],
     threadsTags: ['недвижимость', 'квартира', 'аренда', 'продажаквартир', 'арендаквартир'],
   },
@@ -124,9 +120,8 @@ export const COUNTRIES = {
     },
     subreddits: ['Uzbekistan', 'Tashkent', 'Samarkand'],
     telegramChannels: [
-      'kvartiri_tashkent', 'nedvizhimost_tashkent', 'arenda_tashkenta', 'uybor_uz',
-      'arentash', 'kvartira_dom_arenda', 'arendatashkent_uz', 'bez_makler_kvartira_arenda_ijara',
-      'TOSHKENT_IJARAGA_UYLAR_SERGELI', 'ijara_tashkent', 'kvartira_samarkand',
+      'nedvizhimost_tashkent', 'arentash', 'kvartira_dom_arenda', 'arendatashkent_uz',
+      'bez_makler_kvartira_arenda_ijara', 'TOSHKENT_IJARAGA_UYLAR_SERGELI',
       'kv_arenda_tashken_t', 'ArendaTashkentaa', 'arenduzb',
       'samkvartira', 'arenda_samarkand',
     ],
