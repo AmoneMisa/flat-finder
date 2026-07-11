@@ -27,11 +27,39 @@ if (!apiId || !apiHash || !session) {
   process.exit(1);
 }
 
+// Optional outbound proxy. Some hosts block direct egress to Telegram's
+// datacenters (a plain TCP connect to 149.154.x / 91.108.x times out even
+// though the rest of the internet is reachable). Point the worker at a
+// SOCKS5 proxy (or a Telegram MTProxy) that CAN reach Telegram to route
+// around the block. Unset -> direct connection, unchanged behaviour.
+//   SOCKS5:  TG_PROXY_HOST, TG_PROXY_PORT, [TG_PROXY_USER, TG_PROXY_PASS]
+//   MTProxy: TG_PROXY_HOST, TG_PROXY_PORT, TG_PROXY_SECRET
+function buildProxy() {
+  const ip = process.env.TG_PROXY_HOST;
+  const port = Number(process.env.TG_PROXY_PORT);
+  if (!ip || !port) return undefined;
+  const secret = process.env.TG_PROXY_SECRET;
+  if (secret) {
+    console.log(`[tg-worker] using MTProxy ${ip}:${port}`);
+    return { ip, port, MTProxy: true, secret };
+  }
+  console.log(`[tg-worker] using SOCKS5 proxy ${ip}:${port}`);
+  return {
+    ip,
+    port,
+    socksType: 5,
+    ...(process.env.TG_PROXY_USER
+      ? { username: process.env.TG_PROXY_USER, password: process.env.TG_PROXY_PASS || '' }
+      : {}),
+  };
+}
+
 const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
   connectionRetries: 5,
   // Auto-wait through short FLOOD_WAITs (Telegram asking us to slow down)
   // instead of erroring; anything longer than this surfaces as an error.
   floodSleepThreshold: 60,
+  proxy: buildProxy(),
 });
 
 // Resolving a @username to an entity is itself an API call, so cache the

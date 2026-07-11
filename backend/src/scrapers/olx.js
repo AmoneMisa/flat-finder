@@ -6,7 +6,7 @@
 // request defensive: any network error, block, or shape change throws and the
 // caller falls back to demo data.
 
-import { makeListing, MAX_AGE_MS } from '../normalize.js';
+import { makeListing } from '../normalize.js';
 
 // Pull several newest-first pages so enough recent listings survive the 3-week
 // freshness filter. One page (~50) is far too few for big markets.
@@ -146,7 +146,6 @@ async function fetchPage(country, filters, offset) {
 
 export async function scrapeOlx(country, filters) {
   const out = [];
-  const cutoff = Date.now() - MAX_AGE_MS;
   for (let page = 0; page < OLX_MAX_PAGES; page++) {
     let data;
     try {
@@ -157,11 +156,13 @@ export async function scrapeOlx(country, filters) {
     }
     for (const item of data) out.push(mapItem(item, country, filters));
 
-    if (data.length < OLX_PAGE_SIZE) break; // no more results
-    // Newest-first: once a page ends past the freshness window, every following
-    // page is older too, so stop paging.
-    const last = data[data.length - 1]?.created_time;
-    if (last && Date.parse(last) < cutoff) break;
+    // Only stop on a genuinely short page (end of results). We deliberately do
+    // NOT early-stop on an old last item: OLX ignores `sort_by=created_at:desc`,
+    // so results come back in mixed date order and each page carries roughly a
+    // third of fresh (<31d) listings. Stopping on an old tail therefore threw
+    // away the fresh listings still sitting on later pages. Paging the full
+    // budget and letting the freshness filter do the trimming yields far more.
+    if (data.length < OLX_PAGE_SIZE) break;
   }
   return out;
 }
