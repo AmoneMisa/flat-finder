@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/strings.dart';
 import '../models/listing.dart';
+import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
 import '../state/history.dart';
@@ -30,7 +31,11 @@ class ListingDetailScreen extends StatefulWidget {
 class _ListingDetailScreenState extends State<ListingDetailScreen> {
   final _shareKey = GlobalKey();
 
-  Listing get listing => widget.listing;
+  // Held in state (not just widget.listing) so a manual reload can swap in a
+  // fresh copy in place.
+  late Listing _listing = widget.listing;
+  Listing get listing => _listing;
+  bool _reloading = false;
 
   @override
   void initState() {
@@ -38,6 +43,34 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     // Every detail open funnels through here, so record "last viewed" once at a
     // single point regardless of where it was opened from (list, map, favorites).
     context.read<HistoryState>().record(listing);
+  }
+
+  /// Re-fetch this single listing fresh from the source. Server flood protection
+  /// (429) surfaces as a "wait a moment" message.
+  Future<void> _reload(AppStrings s) async {
+    if (_reloading) return;
+    setState(() => _reloading = true);
+    try {
+      final fresh = await context.read<AppState>().reloadListing(_listing);
+      if (!mounted) return;
+      if (fresh != null) {
+        setState(() => _listing = fresh);
+        _snack(s.t('reloaded'));
+      } else {
+        _snack(s.t('reloadFailed'));
+      }
+    } on RateLimitException {
+      _snack(s.t('reloadCooldown'));
+    } catch (_) {
+      _snack(s.t('reloadFailed'));
+    } finally {
+      if (mounted) setState(() => _reloading = false);
+    }
+  }
+
+  void _snack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   bool get _isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -116,6 +149,18 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       appBar: AppBar(
         title: Text('${countryFlags[listing.country] ?? ''} ${listing.city}'),
         actions: [
+          if (listing.source == 'olx')
+            IconButton(
+              tooltip: s.t('reloadThis'),
+              icon: _reloading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              onPressed: _reloading ? null : () => _reload(s),
+            ),
           IconButton(
             tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
             icon: Icon(isFav ? Icons.favorite : Icons.favorite_border,

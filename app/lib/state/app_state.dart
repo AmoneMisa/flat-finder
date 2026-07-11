@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -23,6 +24,19 @@ class AppState extends ChangeNotifier {
 
   bool loading = false;
   String? error;
+
+  // Client-side cooldown for the manual "Reload all" button, matching the
+  // server's flood protection so the button greys out instead of hitting a 429.
+  DateTime? _reloadAllUntil;
+  Timer? _reloadAllTimer;
+  bool get reloadAllCoolingDown =>
+      _reloadAllUntil != null && DateTime.now().isBefore(_reloadAllUntil!);
+
+  @override
+  void dispose() {
+    _reloadAllTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> init() async {
     // Restore the user's last-used filters (country, type, price, etc.) so the
@@ -121,5 +135,52 @@ class AppState extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+  }
+
+  /// Force a fresh scrape (bypasses the backend cache), then start a local
+  /// cooldown so the button can't be spammed into the server's 429.
+  Future<void> reloadAll() async {
+    if (loading || reloadAllCoolingDown || filters.countries.isEmpty) return;
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      final res = await _api.fetchListings(filters, force: true);
+      listings = res.listings;
+      degradedCountries = res.degradedCountries;
+      sourceErrors = res.sourceErrors;
+      _startReloadAllCooldown(const Duration(seconds: 8));
+    } on RateLimitException catch (e) {
+      _startReloadAllCooldown(Duration(milliseconds: e.retryAfterMs));
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  void _startReloadAllCooldown(Duration d) {
+    _reloadAllUntil = DateTime.now().add(d);
+    _reloadAllTimer?.cancel();
+    // Re-enable the button (refresh the UI) once the cooldown elapses.
+    _reloadAllTimer = Timer(d, () {
+      _reloadAllUntil = null;
+      notifyListeners();
+    });
+  }
+
+  /// Re-fetch one listing fresh and, if it's still in the current results,
+  /// swap in the updated copy. Returns the fresh listing (or null if gone).
+  Future<Listing?> reloadListing(Listing l) async {
+    final fresh = await _api.reloadListing(l);
+    if (fresh != null) {
+      final i = listings.indexWhere((x) => x.id == l.id && x.source == l.source);
+      if (i >= 0) {
+        listings[i] = fresh;
+        notifyListeners();
+      }
+    }
+    return fresh;
   }
 }

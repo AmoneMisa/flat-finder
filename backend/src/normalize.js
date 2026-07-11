@@ -56,7 +56,24 @@ export function makeListing(partial) {
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
   const byAgency = Boolean(partial.byAgency);
   const rooms = partial.rooms != null ? Number(partial.rooms) : null;
-  const dealType = partial.dealType ?? classifyDealType(combined);
+  let dealType = partial.dealType ?? classifyDealType(combined);
+
+  // Sale-scale price guard. Some sale posts carry no explicit sale keyword and
+  // only mention rent in passing (e.g. "зона для проживания и аренды", price
+  // "115 000 у.е."), so classifyDealType mislabels them as longRent. A hard-
+  // currency price this large is a purchase, never a monthly rent, so correct
+  // it. Scoped to USD/EUR (OLX maps Uzbek "у.е."/UYE to USD) to stay currency-
+  // safe; UZS/UAH/etc. nominal values are left untouched. Only overrides a
+  // *text-derived* longRent, never an explicit source dealType.
+  if (
+    partial.dealType == null &&
+    dealType === 'longRent' &&
+    partial.price != null &&
+    Number(partial.price) >= 10000 &&
+    ['USD', 'EUR'].includes(String(partial.currency ?? '').toUpperCase())
+  ) {
+    dealType = 'sale';
+  }
 
   // Structured fields: prefer an explicit value from the source, otherwise parse
   // them out of the post text (works across EN/RU/UZ/KZ/RO/UA).

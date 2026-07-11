@@ -131,6 +131,23 @@ function mapItem(item, country, filters) {
   });
 }
 
+// Re-fetch a single OLX offer by id (used by the manual "reload this listing"
+// action). OLX exposes each offer at /api/v1/offers/{id}/. Returns a freshly
+// mapped listing, or null if the offer no longer exists.
+export async function fetchOlxOffer(country, id) {
+  const url = `${country.olxHost}/api/v1/offers/${encodeURIComponent(id)}/`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': UA_HEADER, Accept: 'application/json', 'Accept-Language': 'en' },
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`OLX ${country.code} offer HTTP ${res.status}`);
+  const json = await res.json();
+  const item = json?.data;
+  if (!item || typeof item !== 'object') return null;
+  return mapItem(item, country, {});
+}
+
 async function fetchPage(country, filters, offset) {
   const url = buildUrl(country, { ...filters, offset, limit: OLX_PAGE_SIZE });
   const res = await fetch(url, {

@@ -133,6 +133,13 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(settings.t('appTitle')),
         actions: [
           IconButton(
+            tooltip: settings.t('reloadAll'),
+            icon: const Icon(Icons.refresh),
+            onPressed: (state.loading || state.reloadAllCoolingDown)
+                ? null
+                : state.reloadAll,
+          ),
+          IconButton(
             tooltip: _mapMode ? settings.t('listView') : settings.t('mapView'),
             icon: Icon(_mapMode ? Icons.view_list : Icons.map_outlined),
             onPressed: () => setState(() => _mapMode = !_mapMode),

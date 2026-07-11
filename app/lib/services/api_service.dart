@@ -27,6 +27,13 @@ class ListingsResult {
   ListingsResult(this.listings, this.degradedCountries, this.sourceErrors);
 }
 
+/// Thrown when the backend rejects a manual reload with HTTP 429 (flood
+/// protection). Carries the suggested wait so the UI can tell the user.
+class RateLimitException implements Exception {
+  final int retryAfterMs;
+  RateLimitException(this.retryAfterMs);
+}
+
 /// Outcome of validating a candidate custom-source URL.
 class SourceValidation {
   final bool ok;
@@ -74,10 +81,26 @@ class ApiService {
     return list.map((e) => Country.fromJson(e)).toList();
   }
 
-  Future<ListingsResult> fetchListings(Filters filters) async {
-    final uri = Uri.parse('$baseUrl/api/listings')
-        .replace(queryParameters: filters.toQueryParams());
+  /// Parse the server's suggested wait (from body or the Retry-After header),
+  /// defaulting to a few seconds if absent.
+  int _retryAfterMs(http.Response res) {
+    try {
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final ms = (j['retryAfterMs'] as num?)?.toInt();
+      if (ms != null && ms > 0) return ms;
+    } catch (_) {}
+    final hdr = int.tryParse(res.headers['retry-after'] ?? '');
+    return hdr != null ? hdr * 1000 : 3000;
+  }
+
+  /// [force] triggers a fresh backend scrape (bypasses the cache) — used by the
+  /// manual "Reload all" action. It is flood-protected server-side (429).
+  Future<ListingsResult> fetchListings(Filters filters, {bool force = false}) async {
+    final params = Map<String, String>.from(filters.toQueryParams());
+    if (force) params['refresh'] = '1';
+    final uri = Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
     final res = await http.get(uri).timeout(const Duration(seconds: 30));
+    if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
     if (res.statusCode != 200) {
       throw Exception('listings HTTP ${res.statusCode}');
     }
@@ -91,6 +114,22 @@ class ApiService {
         .map((e) => SourceError.fromJson(e as Map<String, dynamic>))
         .toList();
     return ListingsResult(listings, degraded, errors);
+  }
+
+  /// Re-fetch a single listing fresh from its source (manual "Reload this
+  /// listing"). Returns the updated listing, or null if it's gone. Throws
+  /// [RateLimitException] on 429.
+  Future<Listing?> reloadListing(Listing l) async {
+    final uri = Uri.parse('$baseUrl/api/listing/${l.source}/${l.id}')
+        .replace(queryParameters: {'country': l.country});
+    final res = await http.get(uri).timeout(const Duration(seconds: 20));
+    if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
+    if (res.statusCode == 404) return null;
+    if (res.statusCode != 200) throw Exception('reload HTTP ${res.statusCode}');
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final j = json['listing'];
+    if (j == null) return null;
+    return Listing.fromJson(_absolutizePhotos(j as Map<String, dynamic>));
   }
 
   /// Ask the backend to fetch and validate a custom-source URL before the user

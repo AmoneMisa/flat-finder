@@ -3,6 +3,7 @@ import cors from 'cors';
 import { COUNTRIES, COUNTRY_CODES } from './countries.js';
 import { cityLocations } from './locations.js';
 import { getListings } from './scrapers/index.js';
+import { fetchOlxOffer } from './scrapers/olx.js';
 import { validateSource } from './scrapers/custom.js';
 import { applyFilters } from './normalize.js';
 import { getRates } from './fx.js';
@@ -32,6 +33,25 @@ app.get('/api/countries', (_req, res) => {
 });
 
 const VALID_SOURCES = ['olx', 'reddit', 'telegram', 'threads'];
+
+// Lightweight in-memory, per-IP flood protection for the *manual reload*
+// endpoints only (a normal cached search is never rate-limited). It just stops
+// one client from repeatedly triggering an expensive force-scrape. Keyed by
+// bucket + IP; on limit it responds 429 and returns false so the caller bails.
+const rlBuckets = new Map(); // `${bucket}:${ip}` -> last epoch ms
+function checkRate(req, res, bucket, windowMs) {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const key = `${bucket}:${ip}`;
+  const now = Date.now();
+  const wait = (rlBuckets.get(key) || 0) + windowMs - now;
+  if (wait > 0) {
+    res.set('Retry-After', String(Math.ceil(wait / 1000)));
+    res.status(429).json({ error: 'Too many reload requests', retryAfterMs: wait });
+    return false;
+  }
+  rlBuckets.set(key, now);
+  return true;
+}
 
 function parseFilters(q) {
   const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -85,6 +105,11 @@ function parseFilters(q) {
 // Main search endpoint. Accepts a comma-separated list of country codes.
 // GET /api/listings?countries=RO,UA&propertyType=flat&agency=owner&priceMin=&priceMax=&query=
 app.get('/api/listings', async (req, res) => {
+  // "Reload all": bypass the stale-while-revalidate cache and scrape fresh.
+  // Flood-protected so it can't be spammed (normal searches are untouched).
+  const force = req.query.refresh === '1' || req.query.refresh === 'true';
+  if (force && !checkRate(req, res, 'reloadAll', 8000)) return;
+
   const filters = parseFilters(req.query);
   const requested = String(req.query.countries || COUNTRY_CODES.join(','))
     .split(',')
@@ -104,7 +129,7 @@ app.get('/api/listings', async (req, res) => {
   }
 
   try {
-    const results = await Promise.all(codes.map((code) => getListings(code, filters)));
+    const results = await Promise.all(codes.map((code) => getListings(code, filters, { force })));
     const degraded = [];
     const sourceCounts = {};
     const sourceErrors = [];
@@ -131,6 +156,29 @@ app.get('/api/listings', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// "Reload this listing": re-fetch a single offer fresh from its source so the
+// user can refresh a stale card (price/photos/availability). Flood-protected.
+// Only OLX exposes a per-offer endpoint; other sources return 400.
+// GET /api/listing/:source/:id?country=RO
+app.get('/api/listing/:source/:id', async (req, res) => {
+  if (!checkRate(req, res, 'reloadOne', 1500)) return;
+  const source = String(req.params.source).toLowerCase();
+  const id = String(req.params.id);
+  const code = String(req.query.country || '').toUpperCase();
+  const country = COUNTRIES[code];
+  if (!country) return res.status(400).json({ error: 'Unknown country' });
+  if (source !== 'olx') {
+    return res.status(400).json({ error: 'Reload not supported for this source' });
+  }
+  try {
+    const listing = await fetchOlxOffer(country, id);
+    if (!listing) return res.status(404).json({ error: 'Listing no longer available' });
+    res.json({ listing });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
   }
 });
 

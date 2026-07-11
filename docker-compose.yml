@@ -9,9 +9,11 @@ services:
     # unreachable, so the backend still boots even when Redis is down.
     environment:
       - REDIS_URL=redis://flat-finder-redis:6379
-      # Telegram MTProto sidecar. If unset/unreachable the telegram source just
-      # yields nothing (OLX etc. still work), so the backend is not hard-coupled.
-      - TG_WORKER_URL=http://flat-finder-tg-worker:4100
+      # Telegram MTProto sidecar URL comes from flatfinder.env (TG_WORKER_URL).
+      # It points either at the in-compose worker (http://flat-finder-tg-worker:4100)
+      # or, while the server can't reach Telegram's DCs, at the PC Cloudflare tunnel.
+      # If unset/unreachable the telegram source just yields nothing (OLX etc. still
+      # work), so the backend is not hard-coupled.
     depends_on:
       flat-finder-redis:
         condition: service_healthy
