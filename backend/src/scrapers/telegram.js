@@ -12,6 +12,7 @@ import {
   parseRoomsFromText,
   parseAreaFromText,
   guessPropertyType,
+  classifyAgency,
 } from '../textparse.js';
 
 // Base URL of the MTProto worker (set in docker-compose). When unset the
@@ -58,7 +59,8 @@ function messageToListing(msg, channel, country, filters) {
     title,
     description: text,
     propertyType: type,
-    byAgency: false,
+    // No structured business flag in Telegram — infer realtor/agency from text.
+    byAgency: classifyAgency(text),
     price,
     currency,
     rooms: parseRoomsFromText(text),

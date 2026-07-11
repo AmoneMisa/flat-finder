@@ -379,6 +379,22 @@ export function parseCommission(text) {
   return { has: true, percent: percent != null && percent <= 100 ? percent : null };
 }
 
+// Whether a post was placed by a realtor / broker / agency rather than the
+// owner. Telegram posts have no structured business flag (unlike OLX), so we
+// infer it from the text: an explicit realtor/broker/agency word, or a stated
+// "realtor fee / agency service" charge. Returns true when such a signal is
+// present and not negated ("без посредников", "vositachisiz"), otherwise false.
+const AGENCY_RE =
+  /(ри[еэ]л?тор|реал?тор|макл[её]р|агентств|агент\s+по\s+недвиж|услуги\s+агентств|реал?тор\s*хак|макл[её]р\s*хак|rieltor|makler|vositachi(?!siz)|agentlik|realtor|real\s*estate\s*agen|broker|брокер)/i;
+const NO_AGENCY_RE =
+  /(без\s+посредник|без\s+ри[еэ]л?тор|без\s+макл|без\s+агент|no\s+agency|fara\s+intermediari|vositachisiz|egasidan|иесінен)/i;
+
+export function classifyAgency(text) {
+  if (!text) return false;
+  if (NO_AGENCY_RE.test(text)) return false;
+  return AGENCY_RE.test(text);
+}
+
 export function guessPropertyType(text) {
   if (!text) return 'flat';
   // house (EN), casa (RO), dom/дом (RU), будин (UA), коттедж/villa/вілл/вилл,
