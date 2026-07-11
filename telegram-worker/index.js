@@ -58,10 +58,66 @@ function enqueue(task) {
   return run;
 }
 
+// Small in-memory LRU for downloaded photo bytes, so repeated views of the same
+// listing (or several users) don't each re-download from Telegram — every
+// download is a rate-limited API call. The real long-term cache is client-side
+// (the app's cached_network_image + the HTTP cache headers the backend sets);
+// this just absorbs bursts. Capped by entry count to bound memory.
+const PHOTO_CACHE_MAX = 300;
+const photoCache = new Map(); // "channel/id" -> Buffer
+function cacheGetPhoto(key) {
+  const buf = photoCache.get(key);
+  if (buf) {
+    // Refresh recency (Map preserves insertion order).
+    photoCache.delete(key);
+    photoCache.set(key, buf);
+  }
+  return buf;
+}
+function cacheSetPhoto(key, buf) {
+  photoCache.set(key, buf);
+  while (photoCache.size > PHOTO_CACHE_MAX) {
+    photoCache.delete(photoCache.keys().next().value);
+  }
+}
+
 const app = express();
 
 app.get('/health', (_req, res) => {
   res.json({ ok: client.connected === true });
+});
+
+// GET /photo?channel=<name>&id=<messageId>
+// Downloads the photo attached to one message and returns the raw JPEG bytes.
+// Lazy (only when a client actually views the listing) and cached, since media
+// downloads are themselves rate-limited MTProto calls.
+app.get('/photo', async (req, res) => {
+  const channel = String(req.query.channel || '').trim();
+  const id = Number(req.query.id);
+  if (!channel || !Number.isFinite(id)) {
+    return res.status(400).json({ ok: false, error: 'channel and numeric id required' });
+  }
+  const key = `${channel}/${id}`;
+
+  try {
+    let buf = cacheGetPhoto(key);
+    if (!buf) {
+      buf = await enqueue(async () => {
+        const entity = await resolve(channel);
+        const [msg] = await client.getMessages(entity, { ids: [id] });
+        if (!msg || !msg.photo) return null;
+        return client.downloadMedia(msg, {});
+      });
+      if (!buf) return res.status(404).json({ ok: false, error: 'no photo' });
+      cacheSetPhoto(key, buf);
+    }
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.send(buf);
+  } catch (err) {
+    const msg = err?.message ?? String(err);
+    console.warn(`[tg-worker] photo ${key} failed: ${msg}`);
+    res.status(502).json({ ok: false, error: msg });
+  }
 });
 
 // GET /history?channel=<name>&limit=<n>&beforeId=<id>

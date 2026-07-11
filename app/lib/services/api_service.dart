@@ -49,6 +49,22 @@ class ApiService {
     return 'http://localhost:4000';
   }
 
+  /// Telegram photos come back as backend-relative paths ("/api/tg-photo/…")
+  /// since the image is proxied through our server; make them absolute so the
+  /// image widgets can load them. Absolute URLs (OLX CDN etc.) pass through.
+  String _resolvePhoto(Object? raw) {
+    final s = raw?.toString() ?? '';
+    return s.startsWith('/') ? '$baseUrl$s' : s;
+  }
+
+  Map<String, dynamic> _absolutizePhotos(Map<String, dynamic> j) {
+    if (j['photo'] != null) j['photo'] = _resolvePhoto(j['photo']);
+    if (j['photos'] is List) {
+      j['photos'] = (j['photos'] as List).map(_resolvePhoto).toList();
+    }
+    return j;
+  }
+
   Future<List<Country>> fetchCountries() async {
     final res = await http.get(Uri.parse('$baseUrl/api/countries'));
     if (res.statusCode != 200) {
@@ -67,7 +83,7 @@ class ApiService {
     }
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     final listings = (json['listings'] as List)
-        .map((e) => Listing.fromJson(e as Map<String, dynamic>))
+        .map((e) => Listing.fromJson(_absolutizePhotos(e as Map<String, dynamic>)))
         .toList();
     final degraded =
         (json['degradedCountries'] as List? ?? []).map((e) => e.toString()).toList();

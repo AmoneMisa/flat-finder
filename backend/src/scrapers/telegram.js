@@ -55,9 +55,10 @@ function messageToListing(msg, channel, country, filters) {
     city: `@${channel}`,
     lat: null,
     lng: null,
-    // Media isn't downloaded over MTProto in this worker; the app shows a
-    // placeholder for telegram posts without a thumbnail.
-    photo: null,
+    // Relative path to the backend photo proxy, which pulls the image from the
+    // MTProto worker on demand. The app resolves it against its API base. Left
+    // null when the post has no photo so the app shows its placeholder.
+    photo: msg.hasPhoto ? `/api/tg-photo/${channel}/${msg.id}` : null,
     url: `https://t.me/${postPath}`,
     createdAt: msg.date,
   });

@@ -156,6 +156,35 @@ app.get('/api/rates', async (_req, res) => {
   }
 });
 
+// Proxy a Telegram post photo through to the (internal-only) MTProto worker.
+// Telegram listings carry a relative `/api/tg-photo/<channel>/<id>` photo URL;
+// the app loads it from here, and we fetch the bytes from the worker on demand.
+// GET /api/tg-photo/:channel/:id
+const TG_WORKER_URL = process.env.TG_WORKER_URL || '';
+app.get('/api/tg-photo/:channel/:id', async (req, res) => {
+  if (!TG_WORKER_URL) return res.status(404).end();
+  const { channel, id } = req.params;
+  // The channel is a Telegram username and id a message number; validate both so
+  // we only ever build a well-formed worker URL from them.
+  if (!/^[A-Za-z0-9_]{3,64}$/.test(channel) || !/^\d+$/.test(id)) {
+    return res.status(400).end();
+  }
+  try {
+    const params = new URLSearchParams({ channel, id });
+    const r = await fetch(`${TG_WORKER_URL}/photo?${params}`, {
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!r.ok) return res.status(r.status === 404 ? 404 : 502).end();
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.setHeader('Content-Type', r.headers.get('content-type') || 'image/jpeg');
+    // Photos for a given post never change, so let the app / any CDN cache hard.
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    res.send(buf);
+  } catch (err) {
+    res.status(502).end();
+  }
+});
+
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Status of the background refresher (last run stats).
