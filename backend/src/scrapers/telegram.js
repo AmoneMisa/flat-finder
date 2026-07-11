@@ -40,6 +40,17 @@ function messageToListing(msg, channel, country, filters) {
   const title = text.split('\n')[0].slice(0, 90);
   const postPath = `${channel}/${msg.id}`;
 
+  // Every image in the post (albums share a groupedId in the worker) becomes a
+  // relative photo-proxy URL. Fall back to the single caption-message id for
+  // older worker builds that don't send photoIds.
+  const photoIds =
+    Array.isArray(msg.photoIds) && msg.photoIds.length
+      ? msg.photoIds
+      : msg.hasPhoto
+        ? [msg.id]
+        : [];
+  const photos = photoIds.map((pid) => `/api/tg-photo/${channel}/${pid}`);
+
   return makeListing({
     id: `tg-${channel}-${postPath}`,
     source: 'telegram',
@@ -55,10 +66,10 @@ function messageToListing(msg, channel, country, filters) {
     city: `@${channel}`,
     lat: null,
     lng: null,
-    // Relative path to the backend photo proxy, which pulls the image from the
-    // MTProto worker on demand. The app resolves it against its API base. Left
-    // null when the post has no photo so the app shows its placeholder.
-    photo: msg.hasPhoto ? `/api/tg-photo/${channel}/${msg.id}` : null,
+    // Relative paths to the backend photo proxy, which pulls each image from the
+    // MTProto worker on demand. The app resolves them against its API base.
+    // Empty when the post has no photo so the app shows its placeholder.
+    photos,
     url: `https://t.me/${postPath}`,
     createdAt: msg.date,
   });

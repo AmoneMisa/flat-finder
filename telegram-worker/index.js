@@ -166,20 +166,46 @@ app.get('/history', async (req, res) => {
       return client.getMessages(entity, { limit, offsetId: beforeId });
     });
 
-    const out = [];
+    // Telegram sends a multi-photo post (album) as several messages that share
+    // a groupedId; typically only one carries the caption text and the others
+    // are photo-only (and would be dropped by the no-text skip below). Collect
+    // every photo message id per album so the caption message can expose the
+    // whole gallery instead of just its own single image.
+    const albumPhotoIds = new Map(); // groupedId -> [messageId,...]
     let minId = null;
     for (const m of messages) {
       if (typeof m.id === 'number') {
         minId = minId === null ? m.id : Math.min(minId, m.id);
       }
+      const gid = m.groupedId != null ? String(m.groupedId) : null;
+      if (gid && m.photo) {
+        if (!albumPhotoIds.has(gid)) albumPhotoIds.set(gid, []);
+        albumPhotoIds.get(gid).push(m.id);
+      }
+    }
+    for (const ids of albumPhotoIds.values()) ids.sort((a, b) => a - b);
+
+    const out = [];
+    const seenAlbums = new Set();
+    for (const m of messages) {
       const text = m.message || '';
       if (!text) continue; // service messages, pure media with no caption, etc.
+      const gid = m.groupedId != null ? String(m.groupedId) : null;
+      let photoIds;
+      if (gid) {
+        if (seenAlbums.has(gid)) continue; // album already emitted via its caption
+        seenAlbums.add(gid);
+        photoIds = albumPhotoIds.get(gid) ?? (m.photo ? [m.id] : []);
+      } else {
+        photoIds = m.photo ? [m.id] : [];
+      }
       out.push({
         id: m.id,
         text,
         // GramJS exposes the unix timestamp (seconds) as `date`.
         date: m.date ? new Date(m.date * 1000).toISOString() : null,
-        hasPhoto: Boolean(m.photo),
+        hasPhoto: photoIds.length > 0,
+        photoIds, // every image id in the post (album-aware)
       });
     }
     res.json({ ok: true, messages: out, minId });

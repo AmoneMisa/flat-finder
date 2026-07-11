@@ -192,7 +192,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (listing.photos.isNotEmpty)
-                    _PhotoGallery(photos: listing.photos)
+                    _PhotoGallery(photos: listing.photos, listing: listing)
                   else if (listing.photo != null)
                     CachedNetworkImage(
                       imageUrl: listing.photo!,
@@ -425,8 +425,9 @@ class _ContactCard extends StatelessWidget {
 /// photo opens a fullscreen, zoomable viewer. Left/right arrows allow navigation
 /// with a mouse on desktop where swiping isn't obvious.
 class _PhotoGallery extends StatefulWidget {
-  const _PhotoGallery({required this.photos});
+  const _PhotoGallery({required this.photos, required this.listing});
   final List<String> photos;
+  final Listing listing;
 
   @override
   State<_PhotoGallery> createState() => _PhotoGalleryState();
@@ -459,6 +460,8 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
   @override
   Widget build(BuildContext context) {
     final multi = widget.photos.length > 1;
+    final favorites = context.watch<FavoritesState>();
+    final isFav = favorites.isFavorite(widget.listing.id);
     return SizedBox(
       height: 220,
       child: Stack(
@@ -496,19 +499,48 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
               child: _navButton(Icons.chevron_right,
                   _index < widget.photos.length - 1, () => _go(_index + 1)),
             ),
-            Positioned(
-              right: 12,
-              bottom: 12,
-              child: _pill(Text(
-                '${_index + 1} / ${widget.photos.length}',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              )),
-            ),
           ],
+          // Photo counter (when there's more than one) with the favorite toggle
+          // stacked directly beneath it, bottom-right.
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (multi) ...[
+                  _pill(Text(
+                    '${_index + 1} / ${widget.photos.length}',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  )),
+                  const SizedBox(height: 6),
+                ],
+                _favButton(isFav, () => favorites.toggle(widget.listing)),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
+
+  Widget _favButton(bool isFav, VoidCallback onTap) => Material(
+        color: Colors.black54,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(
+              isFav ? Icons.favorite : Icons.favorite_border,
+              color: isFav ? Colors.red : Colors.white,
+              size: 20,
+            ),
+          ),
+        ),
+      );
 
   Widget _pill(Widget child) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
