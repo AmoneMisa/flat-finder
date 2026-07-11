@@ -11,6 +11,8 @@
 // which keeps all the housing parsing/filtering logic in one place.
 
 import express from 'express';
+import { mkdir, readFile, writeFile, readdir, stat, unlink } from 'node:fs/promises';
+import path from 'node:path';
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
 
@@ -109,6 +111,48 @@ function cacheSetPhoto(key, buf) {
   }
 }
 
+// Persistent (on-disk) photo cache. Every downloadMedia is a rate-limited
+// MTProto call, so once a photo's bytes are on disk we serve them from there on
+// a miss instead of re-downloading — this survives restarts and scales far past
+// the small in-memory LRU. Files are pruned by age (see below) so the folder
+// tracks the same freshness window as the listings themselves.
+const PHOTO_DIR = process.env.TG_PHOTO_DIR || path.join(process.cwd(), 'photo-cache');
+const PHOTO_MAX_AGE_MS =
+  (Number(process.env.TG_PHOTO_MAX_AGE_DAYS) || 21) * 24 * 60 * 60 * 1000;
+await mkdir(PHOTO_DIR, { recursive: true }).catch(() => {});
+
+function diskPathFor(channel, id) {
+  // channel/id are validated upstream, but sanitise anyway so the value can
+  // never escape PHOTO_DIR.
+  const safe = String(channel).replace(/[^A-Za-z0-9_]/g, '_');
+  return path.join(PHOTO_DIR, `${safe}_${id}.jpg`);
+}
+
+// Delete cached photos whose files are older than the freshness window. Posts
+// that old are already filtered out of results, so their images are dead weight.
+async function cleanupPhotoDir() {
+  try {
+    const files = await readdir(PHOTO_DIR);
+    const now = Date.now();
+    let removed = 0;
+    for (const f of files) {
+      const p = path.join(PHOTO_DIR, f);
+      try {
+        const s = await stat(p);
+        if (now - s.mtimeMs > PHOTO_MAX_AGE_MS) {
+          await unlink(p);
+          removed += 1;
+        }
+      } catch {
+        // File vanished or unreadable — ignore.
+      }
+    }
+    if (removed) console.log(`[tg-worker] photo cache: pruned ${removed} old file(s)`);
+  } catch {
+    // Directory missing/unreadable — nothing to prune.
+  }
+}
+
 const app = express();
 
 app.get('/health', (_req, res) => {
@@ -130,14 +174,23 @@ app.get('/photo', async (req, res) => {
   try {
     let buf = cacheGetPhoto(key);
     if (!buf) {
-      buf = await enqueue(async () => {
-        const entity = await resolve(channel);
-        const [msg] = await client.getMessages(entity, { ids: [id] });
-        if (!msg || !msg.photo) return null;
-        return client.downloadMedia(msg, {});
-      });
-      if (!buf) return res.status(404).json({ ok: false, error: 'no photo' });
-      cacheSetPhoto(key, buf);
+      // Try the on-disk cache before spending a rate-limited MTProto download.
+      const file = diskPathFor(channel, id);
+      buf = await readFile(file).catch(() => null);
+      if (buf) {
+        cacheSetPhoto(key, buf);
+      } else {
+        buf = await enqueue(async () => {
+          const entity = await resolve(channel);
+          const [msg] = await client.getMessages(entity, { ids: [id] });
+          if (!msg || !msg.photo) return null;
+          return client.downloadMedia(msg, {});
+        });
+        if (!buf) return res.status(404).json({ ok: false, error: 'no photo' });
+        cacheSetPhoto(key, buf);
+        // Persist for future misses / restarts (best-effort).
+        writeFile(file, buf).catch(() => {});
+      }
     }
     res.setHeader('Content-Type', 'image/jpeg');
     res.send(buf);
@@ -218,4 +271,10 @@ app.get('/history', async (req, res) => {
 
 await client.connect();
 console.log('[tg-worker] connected to Telegram');
+
+// Prune the on-disk photo cache on boot and every 6 hours thereafter.
+cleanupPhotoDir();
+const cleanupTimer = setInterval(cleanupPhotoDir, 6 * 60 * 60 * 1000);
+if (cleanupTimer.unref) cleanupTimer.unref();
+
 app.listen(port, () => console.log(`[tg-worker] listening on :${port}`));
