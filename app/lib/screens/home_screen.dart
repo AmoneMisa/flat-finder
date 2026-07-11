@@ -9,6 +9,8 @@ import '../models/filters.dart';
 import '../models/listing.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
+import '../state/favorites.dart';
+import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
 import '../utils/share_link.dart';
@@ -28,8 +30,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+/// Quick views layered on top of the active filters/search results.
+enum _ViewTab { all, fresh, favorites, viewed }
+
 class _HomeScreenState extends State<HomeScreen> {
   bool _mapMode = false;
+  _ViewTab _tab = _ViewTab.all;
   AppLinks? _appLinks;
   StreamSubscription<Uri>? _linkSub;
 
@@ -127,6 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final settings = context.watch<SettingsState>();
+    final favorites = context.watch<FavoritesState>();
+    final history = context.watch<HistoryState>();
 
     return Scaffold(
       appBar: AppBar(
@@ -169,13 +177,18 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Column(
         children: [
           _SummaryBar(state: state, settings: settings),
+          _ViewTabBar(
+            current: _tab,
+            settings: settings,
+            onChanged: (t) => setState(() => _tab = t),
+          ),
           if (state.degradedCountries.isNotEmpty)
             _Banner(
               text: settings.t('demoBanner', {'countries': state.degradedCountries.join(', ')}),
             ),
           if (state.sourceErrors.isNotEmpty)
             _SourceErrorBanner(errors: state.sourceErrors, settings: settings),
-          Expanded(child: _body(state, settings)),
+          Expanded(child: _body(state, settings, favorites, history)),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -186,26 +199,32 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _body(AppState state, SettingsState settings) {
+  Widget _body(
+      AppState state, SettingsState settings, FavoritesState favorites, HistoryState history) {
     if (state.loading && state.listings.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (state.error != null && state.listings.isEmpty) {
       return _ErrorView(message: state.error!, onRetry: state.search, settings: settings);
     }
-    if (state.listings.isEmpty) {
-      return Center(child: Text(settings.t('noListings')));
-    }
 
     final center = _centerFor(state);
-    final listings = sortListings(
-      state.listings,
-      state.filters.sort,
-      centerLat: center.latitude,
-      centerLng: center.longitude,
-      rates: state.rates,
-      displayCurrency: settings.displayCurrency,
+    final listings = _applyTab(
+      sortListings(
+        state.listings,
+        state.filters.sort,
+        centerLat: center.latitude,
+        centerLng: center.longitude,
+        rates: state.rates,
+        displayCurrency: settings.displayCurrency,
+      ),
+      favorites,
+      history,
     );
+
+    if (listings.isEmpty) {
+      return Center(child: Text(_emptyLabel(settings)));
+    }
 
     if (_mapMode) {
       return MapView(
@@ -261,6 +280,31 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Restrict the visible listings to the selected quick view (on top of the
+  /// active filters/search). "Fresh" keeps only posts from the last 24 hours.
+  List<Listing> _applyTab(List<Listing> listings, FavoritesState fav, HistoryState hist) {
+    switch (_tab) {
+      case _ViewTab.all:
+        return listings;
+      case _ViewTab.favorites:
+        return listings.where((l) => fav.isFavorite(l.id)).toList();
+      case _ViewTab.viewed:
+        return listings.where((l) => hist.isViewed(l.id)).toList();
+      case _ViewTab.fresh:
+        final cutoff = DateTime.now().toUtc().subtract(const Duration(hours: 24));
+        return listings
+            .where((l) => l.createdAt != null && l.createdAt!.toUtc().isAfter(cutoff))
+            .toList();
+    }
+  }
+
+  String _emptyLabel(SettingsState settings) => switch (_tab) {
+        _ViewTab.favorites => settings.t('noFavoritesHere'),
+        _ViewTab.viewed => settings.t('noViewedHere'),
+        _ViewTab.fresh => settings.t('noFreshHere'),
+        _ViewTab.all => settings.t('noListings'),
+      };
+
   /// Column count from the available width: 1 on phones, up to 4 on wide
   /// desktop windows.
   int _columnsFor(double width) {
@@ -268,6 +312,48 @@ class _HomeScreenState extends State<HomeScreen> {
     if (width >= 1100) return 3;
     if (width >= 700) return 2;
     return 1;
+  }
+}
+
+/// Horizontal quick-view selector (All / Fresh / Favorites / Viewed) shown above
+/// the results, layered on top of the active filters.
+class _ViewTabBar extends StatelessWidget {
+  const _ViewTabBar({
+    required this.current,
+    required this.settings,
+    required this.onChanged,
+  });
+
+  final _ViewTab current;
+  final SettingsState settings;
+  final ValueChanged<_ViewTab> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const items = <(_ViewTab, String, IconData)>[
+      (_ViewTab.all, 'tabAll', Icons.list),
+      (_ViewTab.fresh, 'tabFresh', Icons.bolt),
+      (_ViewTab.favorites, 'tabFavorites', Icons.favorite),
+      (_ViewTab.viewed, 'tabViewed', Icons.visibility),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
+        children: [
+          for (final (tab, key, icon) in items)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                selected: current == tab,
+                avatar: Icon(icon, size: 16),
+                label: Text(settings.t(key)),
+                onSelected: (_) => onChanged(tab),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

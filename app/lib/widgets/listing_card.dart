@@ -6,6 +6,7 @@ import '../l10n/strings.dart';
 import '../models/listing.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
+import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
 
@@ -33,6 +34,7 @@ class ListingCard extends StatelessWidget {
     final favorites = context.watch<FavoritesState>();
     final s = settings.s;
     final isFav = favorites.isFavorite(listing.id);
+    final isViewed = context.watch<HistoryState>().isViewed(listing.id);
 
     // Prominent photo with the price and badges overlaid on a scrim.
     final photo = Stack(
@@ -75,6 +77,12 @@ class ListingCard extends StatelessWidget {
             onPressed: () => favorites.toggle(listing),
           ),
         ),
+        if (isViewed)
+          Positioned(
+            top: 44,
+            left: 6,
+            child: _ViewedTag(text: s.t('viewedTag')),
+          ),
         Positioned(
           top: 8,
           right: 8,
@@ -99,6 +107,9 @@ class ListingCard extends StatelessWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
+      // Favorite listings get a soft pink glow so they stand out in the list.
+      elevation: isFav ? 8 : null,
+      shadowColor: isFav ? Colors.pink : null,
       margin: grid
           ? const EdgeInsets.all(6)
           : const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -300,6 +311,33 @@ class _FavButton extends StatelessWidget {
           isFav ? Icons.favorite : Icons.favorite_border,
           color: isFav ? Colors.redAccent : Colors.white,
         ),
+      ),
+    );
+  }
+}
+
+/// "Already viewed" marker overlaid on the card photo, shown once the listing
+/// has been opened at least once.
+class _ViewedTag extends StatelessWidget {
+  const _ViewedTag({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.visibility, color: Colors.white70, size: 12),
+          const SizedBox(width: 4),
+          Text(text,
+              style: const TextStyle(color: Colors.white, fontSize: 11)),
+        ],
       ),
     );
   }
