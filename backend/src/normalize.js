@@ -177,8 +177,8 @@ export function makeListing(partial) {
 }
 
 // Only surface listings posted within this window — older posts are treated as
-// stale/inactive and dropped. (1 month, per product requirement.)
-export const MAX_AGE_MS = 31 * 24 * 60 * 60 * 1000;
+// stale/inactive and dropped. (3 weeks, per product requirement.)
+export const MAX_AGE_MS = 21 * 24 * 60 * 60 * 1000;
 
 // Lowercase and strip diacritics so "București" matches "bucuresti" etc.
 function normCity(s) {
