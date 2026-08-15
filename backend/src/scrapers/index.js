@@ -11,6 +11,7 @@ import { scrapeTelegram } from './telegram.js';
 import { scrapeCustom } from './custom.js';
 import { generateMock } from '../mock.js';
 import { cacheGet, cacheSet } from '../cache.js';
+import { geocodeListings } from '../geocode.js';
 
 const SOURCES = {
   olx: scrapeOlx,
@@ -169,6 +170,14 @@ function refresh(countryCode, filters, key) {
   if (inFlight.has(key)) return inFlight.get(key);
   const p = (async () => {
     const result = await fetchOne(countryCode, snapshotFilters(filters));
+    // Place coordinate-less listings (Telegram/custom) on the map by geocoding
+    // their address > metro > district > city. Throttled + cached; runs here in
+    // the background refresh so it never delays a user request.
+    try {
+      await geocodeListings(result.listings, COUNTRIES[countryCode]);
+    } catch (err) {
+      console.warn(`[geocode] ${countryCode} failed: ${err.message}`);
+    }
     const entry = { at: Date.now(), ...result };
     await cacheSet(key, entry, STALE_TTL_MS);
     return entry;

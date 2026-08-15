@@ -49,6 +49,19 @@ function stripHtml(s) {
     .trim();
 }
 
+// Best-effort street address from a post: an explicit "Адрес:/Manzil:" label, or
+// a street pattern (ул./проспект/мкр/ko'chasi). Used for map geocoding + display.
+function parseAddress(text) {
+  if (!text) return null;
+  const labeled = text.match(/(?:адрес|адреса|manzil|address)\s*[:\-–]\s*([^\n]{3,80})/i);
+  if (labeled) return labeled[1].replace(/\s+/g, ' ').trim().replace(/[.;,]+$/, '');
+  const street = text.match(
+    /((?:ул(?:иц[аы])?\.?|улиц[аы]|просп(?:ект)?\.?|проспект|мкр\.?|микрорайон|ko['’]?chasi|k[oó]chasi)\s*[^\n,.;]{2,50}(?:,?\s*\d+[\w/-]*)?)/i,
+  );
+  if (street) return street[1].replace(/\s+/g, ' ').trim();
+  return null;
+}
+
 export function makeListing(partial) {
   const title = partial.title ?? 'Untitled';
   const description = stripHtml(partial.description ?? '');
@@ -94,6 +107,7 @@ export function makeListing(partial) {
   const metro = partial.metro ?? loc.metro;
   const nearby = partial.nearby ?? loc.nearby;
   const residenceComplex = partial.residenceComplex ?? parseResidentialComplex(combined);
+  const address = partial.address ?? parseAddress(combined);
 
   // Flag non-residential (office / commercial) posts so the housing search can
   // drop them. An explicit propertyType from the source overrides the guess.
@@ -123,6 +137,7 @@ export function makeListing(partial) {
     rooms,
     areaSqm: partial.areaSqm != null ? Number(partial.areaSqm) : null,
     city: partial.city || loc.city || '',
+    address: address || null,
     lat: partial.lat != null ? Number(partial.lat) : null,
     lng: partial.lng != null ? Number(partial.lng) : null,
     photo: partial.photo ?? (Array.isArray(partial.photos) ? partial.photos[0] : null) ?? null,
