@@ -116,7 +116,7 @@ export const LOCATIONS = {
       districts: [
         { name: 'Chilanzar', re: /чиланзар|chilonzor|chilanzar/i },
         { name: 'Yunusabad', re: /юнусабад|yunusobod|yunusabad/i },
-        { name: 'Mirzo Ulugbek', re: /мирзо улугбек|mirzo ulug'?bek|mirzo ulugbek/i },
+        { name: 'Mirzo Ulugbek', re: /мирзо[\s-]?улугбек|mirzo[\s-]?ulug'?bek/i },
         { name: 'Yakkasaray', re: /яккасарай|yakkasaroy|yakkasaray/i },
         { name: 'Shaykhantahur', re: /шайхантахур|shayxontohur|shaykhantahur/i },
         { name: 'Yashnobod', re: /яшнабад|yashnobod|yashnabad/i },
@@ -148,18 +148,26 @@ export const LOCATIONS = {
 // country. Scans every city we have data for, returning the first district and
 // metro match plus up to 4 landmark names.
 export function parseLocation(text, countryCode) {
-  const result = { district: null, metro: null, nearby: [] };
+  const result = { district: null, metro: null, nearby: [], city: null };
   if (!text) return result;
   const country = LOCATIONS[countryCode];
   if (!country) return result;
-  for (const city of Object.values(country)) {
+  // A matched district or metro is a strong signal for WHICH city a post is in,
+  // so record it — many posts (e.g. Telegram) name a district but no city.
+  for (const [cityName, city] of Object.entries(country)) {
     if (!result.district) {
       const d = city.districts.find((x) => x.re.test(text));
-      if (d) result.district = d.name;
+      if (d) {
+        result.district = d.name;
+        if (!result.city) result.city = cityName;
+      }
     }
     if (!result.metro) {
       const m = city.metro.find((x) => x.re.test(text));
-      if (m) result.metro = m.name;
+      if (m) {
+        result.metro = m.name;
+        if (!result.city) result.city = cityName;
+      }
     }
     for (const l of city.landmarks) {
       if (result.nearby.length >= 4) break;

@@ -122,7 +122,7 @@ export function makeListing(partial) {
     currency: partial.currency ?? '',
     rooms,
     areaSqm: partial.areaSqm != null ? Number(partial.areaSqm) : null,
-    city: partial.city ?? '',
+    city: partial.city || loc.city || '',
     lat: partial.lat != null ? Number(partial.lat) : null,
     lng: partial.lng != null ? Number(partial.lng) : null,
     photo: partial.photo ?? (Array.isArray(partial.photos) ? partial.photos[0] : null) ?? null,

@@ -62,7 +62,10 @@ function messageToListing(msg, channel, country) {
     currency,
     rooms: parseRoomsFromText(text),
     areaSqm: parseAreaFromText(text),
-    city: `@${channel}`,
+    // No explicit city in Telegram posts — let normalize infer it from the
+    // detected district/metro (parseLocation), so city filters (e.g. Tashkent)
+    // match posts that only name a district like "Яшнабадский район".
+    city: null,
     lat: null,
     lng: null,
     // Relative paths to the backend photo proxy, which pulls each image from the
