@@ -78,6 +78,7 @@ function parseFilters(q) {
     priceMin: num(q.priceMin),
     priceMax: num(q.priceMax),
     priceTolerance: num(q.priceTolerance), // allow results up to priceMax + this
+    priceCurrency: q.priceCurrency ? String(q.priceCurrency).toUpperCase() : null,
 
     roomsMin: num(q.roomsMin),
     roomsMax: num(q.roomsMax),
@@ -146,7 +147,14 @@ app.get('/api/listings', async (req, res) => {
     });
 
     // Enforce filters the source could not (e.g. mock fallback, agency guess).
-    listings = applyFilters(listings, filters);
+    // Pass FX rates so price filters compare across currencies (USD-normalized).
+    let fxRates = null;
+    try {
+      fxRates = (await getRates()).rates;
+    } catch {
+      /* rates unavailable -> raw same-currency price comparison */
+    }
+    listings = applyFilters(listings, filters, fxRates);
 
     // Interleave sources by recency. Without this the array is just each
     // source concatenated in registry order (all OLX, then all Telegram), so a

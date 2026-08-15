@@ -17,6 +17,14 @@ const FALLBACK = { USD: 1, EUR: 0.92, RON: 4.57, UAH: 41.5, KZT: 470, UZS: 12600
 
 let cache = { at: 0, base: 'USD', rates: null };
 
+// Convert an amount in `currency` to USD using rates (units per 1 USD).
+// Returns null when the amount is missing or the currency has no known rate.
+export function toUsd(amount, currency, rates) {
+  if (amount == null) return null;
+  const r = rates?.[String(currency || 'USD').toUpperCase()];
+  return r ? amount / r : null;
+}
+
 export async function getRates() {
   if (cache.rates && Date.now() - cache.at < TTL_MS) return cache;
   try {

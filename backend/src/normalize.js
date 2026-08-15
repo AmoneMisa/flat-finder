@@ -29,6 +29,7 @@ import {
   parseCommission,
 } from './textparse.js';
 import { parseLocation } from './locations.js';
+import { toUsd } from './fx.js';
 
 // Turn source HTML (Telegram/OLX posts arrive with <br />, entities, etc.) into
 // clean plain text so the app doesn't render raw markup.
@@ -204,14 +205,19 @@ function normCity(s) {
 }
 
 // Apply the user-facing filters that a source could not enforce server-side.
-export function applyFilters(listings, filters) {
+export function applyFilters(listings, filters, rates = null) {
   const {
-    propertyType, agency, priceMin, priceMax, priceTolerance, query, dealType,
+    propertyType, agency, priceMin, priceMax, priceTolerance, priceCurrency, query, dealType,
     roomsMin, roomsMax, bedroomsMin, bedroomsMax,
     floorMin, floorMax, yearMin, yearMax, audience, city,
     cityAliases, district, metro,
     pets, children, roomOnly, maxAgeDays, sources,
   } = filters;
+  // Cross-currency price filtering: when the client says which currency the
+  // min/max are in and we have FX rates, compare everything in USD so a bound
+  // in one currency matches listings priced in any. Otherwise fall back to a
+  // raw same-currency comparison (unchanged behaviour).
+  const convertPrices = !!(rates && priceCurrency);
   const now = Date.now();
   // Optional "posted within N days" freshness cap on top of MAX_AGE_MS.
   const ageCapMs =
@@ -237,10 +243,25 @@ export function applyFilters(listings, filters) {
     // Once the user selects a numeric constraint, an unknown value is not a
     // valid match. Previously unknown prices/room counts slipped through and
     // made the controls appear to do nothing.
-    if (priceMin != null && (l.price == null || l.price < priceMin)) return false;
     // Optional tolerance: allow listings up to priceMax + priceTolerance through.
     const effMax = priceMax != null ? priceMax + (priceTolerance ?? 0) : null;
-    if (effMax != null && (l.price == null || l.price > effMax)) return false;
+    if (priceMin != null || effMax != null) {
+      if (convertPrices) {
+        const priceUsd = toUsd(l.price, l.currency, rates);
+        if (priceUsd == null) return false; // unknown / unconvertible price
+        if (priceMin != null) {
+          const minUsd = toUsd(priceMin, priceCurrency, rates);
+          if (minUsd != null && priceUsd < minUsd) return false;
+        }
+        if (effMax != null) {
+          const maxUsd = toUsd(effMax, priceCurrency, rates);
+          if (maxUsd != null && priceUsd > maxUsd) return false;
+        }
+      } else {
+        if (priceMin != null && (l.price == null || l.price < priceMin)) return false;
+        if (effMax != null && (l.price == null || l.price > effMax)) return false;
+      }
+    }
     if (roomsMin != null && (l.rooms == null || l.rooms < roomsMin)) return false;
     if (roomsMax != null && (l.rooms == null || l.rooms > roomsMax)) return false;
     if (bedroomsMin != null && (l.bedrooms == null || l.bedrooms < bedroomsMin)) return false;
