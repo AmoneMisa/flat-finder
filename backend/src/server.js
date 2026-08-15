@@ -159,13 +159,17 @@ app.get('/api/listings', async (req, res) => {
       return vb - va;
     });
 
+    const count = listings.length;
+    const offset = Math.max(0, filters.offset || 0);
+    const page = listings.slice(offset, offset + filters.limit);
+
     res.json({
-      count: listings.length,
+      count,
       degradedCountries: degraded, // countries currently served from demo data
       sourceCounts, // live listings fetched per source before filtering
       sourceErrors, // per-source failures (name/country/url + message)
       filters,
-      listings,
+      listings: page,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

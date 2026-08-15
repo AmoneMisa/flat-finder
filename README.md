@@ -22,12 +22,10 @@ schema and merged/de-duplicated:
 | Source | Method | Notes |
 |--------|--------|-------|
 | **OLX** (olx.ro/.ua/.kz/.uz) | Internal JSON API | Primary source, works out of the box |
-| **Reddit** | Public JSON API / OAuth | Set `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` env — anonymous access is often blocked |
-| **Telegram** | `t.me/s/<channel>` web preview | Public **channels** only (private groups aren't readable); configure real channels |
-| **Threads** | Best-effort inline JSON | Meta has no public read API — usually returns nothing without the official Graph API |
+| **Telegram** | Separate GramJS/MTProto worker | Public channels; set `TG_WORKER_URL` to the deployed worker |
 
-Free-text sources (Reddit/Telegram/Threads) have no structured price/rooms, so
-those are parsed from the post text; they have no coordinates so they appear in
+Telegram posts have no structured price/rooms, so those are parsed from the
+post text; they have no coordinates so they appear in
 the **list** but not on the map.
 
 If **all** sources for a country come back empty (blocked/rate-limited), that
@@ -35,18 +33,15 @@ country falls back to generated **demo data** and the app shows an amber banner
 naming it. So the app is always usable.
 
 > ⚠️ Scraping note: these sites' HTML/APIs can change and their Terms of Service
-> may restrict scraping. Sources, category IDs, subreddits and Telegram channels
+> may restrict scraping. Sources, category IDs and Telegram channels
 > are centralized in `backend/src/countries.js` and `backend/src/scrapers/*`.
 > Use responsibly and check each site's ToS before running at scale.
 
 ### Enabling / configuring sources
 
-- **Reddit**: create a "script" app at https://www.reddit.com/prefs/apps and run
-  the backend with `REDDIT_CLIENT_ID=... REDDIT_CLIENT_SECRET=... npm start`.
-- **Telegram**: put real public channel usernames in `telegramChannels` per
-  country in `backend/src/countries.js` (the defaults are placeholders).
-- **Threads**: plug the official Threads/Instagram Graph API into
-  `backend/src/scrapers/threads.js`.
+- **Telegram**: deploy the separate Telegram worker, set its URL as
+  `TG_WORKER_URL`, and keep the public channel usernames in `telegramChannels`
+  per country in `backend/src/countries.js`.
 
 ---
 
@@ -144,11 +139,9 @@ flutter run -d windows
 ## Tuning the scrapers
 
 - `backend/src/countries.js` — per-country sources list, OLX hosts + real-estate
-  root category IDs, subreddits, Telegram channels, map centers, search terms.
+  root category IDs, Telegram channels, map centers, search terms.
 - `backend/src/scrapers/olx.js` — OLX API request + field parsing.
-- `backend/src/scrapers/reddit.js` — Reddit search (+ optional OAuth).
-- `backend/src/scrapers/telegram.js` — public Telegram channel parsing.
-- `backend/src/scrapers/threads.js` — Threads best-effort adapter.
+- `backend/src/scrapers/telegram.js` — MTProto worker response parsing.
 - `backend/src/tags.js` — keyword → card-tag rules (EN/RO/RU/UA).
 - `backend/src/textparse.js` — price/rooms/area extraction from free text.
 - `backend/src/mock.js` — demo data generator used as fallback.

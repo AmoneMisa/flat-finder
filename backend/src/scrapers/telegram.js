@@ -146,7 +146,9 @@ async function fetchChannelWithRetry(channel, country, filters, deadline = Infin
 const TG_BUDGET_MS = Number(process.env.TG_BUDGET_MS) || 12000;
 
 export async function scrapeTelegram(country, filters) {
-  if (!TG_WORKER_URL) return []; // MTProto worker not configured
+  if (!TG_WORKER_URL) {
+    throw new Error('TG_WORKER_URL is not configured');
+  }
   const channels = country.telegramChannels ?? [];
   // The worker serializes MTProto calls internally, so channels are effectively
   // processed one at a time regardless of this concurrency; we keep a small

@@ -18,7 +18,6 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import { makeListing } from '../normalize.js';
 import { fetchChannel } from './telegram.js';
-import { fetchTag } from './threads.js';
 
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_BYTES = 4 * 1024 * 1024; // cap the response we'll parse (4 MB)
@@ -327,8 +326,6 @@ function hash(s) {
 function detectPlatform(u) {
   const h = u.hostname.replace(/^www\./, '').toLowerCase();
   if (h === 't.me' || h === 'telegram.me') return 'telegram';
-  if (h === 'reddit.com' || h.endsWith('.reddit.com')) return 'reddit';
-  if (h === 'threads.com' || h === 'threads.net') return 'threads';
   if (h === 'facebook.com' || h.endsWith('.facebook.com') || h === 'fb.com') return 'facebook';
   return 'generic';
 }
@@ -345,31 +342,6 @@ async function scrapeTelegramUrl(u, country) {
   return listings.slice(0, MAX_ITEMS);
 }
 
-// reddit.com/r/<sub> -> read the subreddit's public "new" RSS feed. Reddit's
-// JSON API is 403 from datacenter IPs, but the .rss feed is usually readable.
-async function scrapeRedditUrl(u, country) {
-  const m = u.pathname.match(/\/r\/([A-Za-z0-9_]+)/);
-  if (!m) throw new SourceError('Not a subreddit URL (expected reddit.com/r/<name>)');
-  const rss = `https://www.reddit.com/r/${m[1]}/new/.rss?limit=40`;
-  const safe = await assertSafeUrl(rss);
-  const body = await fetchText(safe);
-  const listings = extractFeed(body, country, rss);
-  if (!listings.length) throw new SourceError('No readable posts in this subreddit');
-  return listings.slice(0, MAX_ITEMS);
-}
-
-// threads.com/search?q=... -> best-effort tag/keyword read (usually empty when
-// logged out; set THREADS_ACCESS_TOKEN for reliable results).
-async function scrapeThreadsUrl(u, country) {
-  const q = u.searchParams.get('q') || u.pathname.split('/').filter(Boolean).pop();
-  if (!q) throw new SourceError('Threads URL has no search query (?q=...)');
-  const listings = await fetchTag(q, country).catch(() => []);
-  if (!listings.length) {
-    throw new SourceError('Threads returned no public posts (its search needs login)');
-  }
-  return listings.slice(0, MAX_ITEMS);
-}
-
 // Fetch + parse a single custom-source URL. Recognizes common social platforms
 // and routes them to a dedicated reader; otherwise falls back to reading any
 // structured data (JSON-LD) or RSS/Atom feed on the page. Throws SourceError
@@ -378,8 +350,6 @@ export async function scrapeCustomUrl(url, country) {
   const safe = await assertSafeUrl(url);
   const platform = detectPlatform(safe);
   if (platform === 'telegram') return scrapeTelegramUrl(safe, country);
-  if (platform === 'reddit') return scrapeRedditUrl(safe, country);
-  if (platform === 'threads') return scrapeThreadsUrl(safe, country);
   if (platform === 'facebook') {
     // Facebook groups are login-walled and JS-rendered; there is nothing a
     // server-side fetch can read, so fail with a clear explanation.

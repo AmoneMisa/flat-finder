@@ -59,9 +59,13 @@ function cacheKey(countryCode, filters) {
     filters.priceMin ?? '',
     filters.priceMax ?? '',
     filters.query ?? '',
-    (filters.sources ?? []).join('+') || 'all',
+    // Source selection is intentionally not part of the scrape cache key.
+    // Every cache entry contains the country's complete OLX + Telegram feed;
+    // the API applies the selected source after reading that warm snapshot.
+    // This prevents an OLX-only click from triggering a cold scrape that OLX
+    // may reject, and lets Telegram reuse the hourly-warmed feed as well.
+    'all-sources',
     (filters.customSources ?? []).join('+') || '',
-    filters.offset ?? 0,
   ].join('|');
 }
 
@@ -81,11 +85,7 @@ async function fetchOne(countryCode, filters) {
   const country = COUNTRIES[countryCode];
   if (!country) return { listings: [], degraded: false, sourceCounts: {}, sourceErrors: [] };
 
-  let sources = country.sources ?? ['olx'];
-  // Restrict to the sources the user selected (empty selection = all).
-  if (filters.sources && filters.sources.length) {
-    sources = sources.filter((s) => filters.sources.includes(s));
-  }
+  const sources = country.sources ?? ['olx'];
   const results = await Promise.allSettled(
     sources.map(async (name) => {
       const fn = SOURCES[name];

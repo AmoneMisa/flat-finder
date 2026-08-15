@@ -195,7 +195,7 @@ export function applyFilters(listings, filters) {
     roomsMin, roomsMax, bedroomsMin, bedroomsMax,
     floorMin, floorMax, yearMin, yearMax, audience, city,
     cityAliases, district, metro,
-    pets, children, roomOnly, maxAgeDays,
+    pets, children, roomOnly, maxAgeDays, sources,
   } = filters;
   const now = Date.now();
   // Optional "posted within N days" freshness cap on top of MAX_AGE_MS.
@@ -206,6 +206,7 @@ export function applyFilters(listings, filters) {
   // Accept the selected city or any of its localized aliases (from countries.js).
   const cityForms = city ? (cityAliases?.length ? cityAliases : [city]).map(normCity) : null;
   return listings.filter((l) => {
+    if (sources?.length && !sources.includes(String(l.source).toLowerCase())) return false;
     // Never show offices / commercial premises among housing results.
     if (l.commercial) return false;
     // Freshness: drop anything with a known post date older than 3 weeks. Posts

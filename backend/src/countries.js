@@ -6,13 +6,11 @@
 //
 // Sources:
 //   olx      - OLX internal JSON API (RO/UA/KZ/UZ)
-//   reddit   - Reddit public JSON API, searched across the listed subreddits
-//   telegram - public Telegram channels via the t.me/s/<channel> web preview
-//   threads  - Meta Threads (best-effort; usually needs official API access)
+//   telegram - public Telegram channels via the separate MTProto worker
 //
-// NOTE: OLX real-estate root category ids differ per portal. Subreddits and
-// Telegram channels below are starting points — verify/replace them for your
-// use case. Kyrgyzstan is intentionally omitted for now.
+// NOTE: OLX real-estate root category ids differ per portal. Telegram channels
+// below are starting points — verify/replace them for your use case.
+// Kyrgyzstan is intentionally omitted for now.
 
 export const COUNTRIES = {
   RO: {
@@ -37,12 +35,10 @@ export const COUNTRIES = {
       Constanta: ['constanta', 'constanța'],
       Oradea: ['oradea'],
     },
-    subreddits: ['Romania', 'Bucuresti', 'cluj', 'Timisoara', 'iasi', 'brasov', 'constanta'],
     telegramChannels: [
       'rent_bucharest', 'arenda_kvartir_bucharest', 'QwertyrRomania', 'arendavbuchareste',
       'apartaments_bucharest', 'rent_ro', 'armonie_agentie_imobiliare_ro',
     ],
-    threadsTags: ['imobiliare', 'apartamentdevanzare', 'chirie', 'garsoniera', 'deinchiriat'],
   },
   UA: {
     code: 'UA',
@@ -64,12 +60,10 @@ export const COUNTRIES = {
       Vinnytsia: ['вінниця', 'винница', 'vinnytsia'],
       'Ivano-Frankivsk': ['івано-франківськ', 'ивано-франковск', 'ivano-frankivsk'],
     },
-    subreddits: ['ukraine', 'Kyiv', 'lviv', 'Kharkiv', 'Odessa', 'Dnipro'],
     telegramChannels: [
       'davnich', 'davnichprodaga', 'davnichK', 'kharkov_apartment',
       'nedvizhimost_odessa', 'arenda_dnepr',
     ],
-    threadsTags: ['нерухомість', 'оренда', 'квартира', 'продажквартири', 'орендаквартири'],
   },
   KZ: {
     code: 'KZ',
@@ -91,12 +85,10 @@ export const COUNTRIES = {
       Atyrau: ['атырау', 'atyrau'],
       Oral: ['уральск', 'орал', 'oral'],
     },
-    subreddits: ['Kazakhstan', 'almaty', 'Astana'],
     // NOTE: KZ is thin after pruning dead channels — needs fresh replacements.
     telegramChannels: [
       'kvartiry2', 'arendakvartirastana2022', 'arendam0',
     ],
-    threadsTags: ['недвижимость', 'квартира', 'аренда', 'продажаквартир', 'арендаквартир'],
   },
   UZ: {
     code: 'UZ',
@@ -118,14 +110,12 @@ export const COUNTRIES = {
       Fergana: ['фергана', "farg'ona", 'fargona', 'fergana'],
       Nukus: ['нукус', 'nukus'],
     },
-    subreddits: ['Uzbekistan', 'Tashkent', 'Samarkand'],
     telegramChannels: [
       'nedvizhimost_tashkent', 'arentash', 'kvartira_dom_arenda', 'arendatashkent_uz',
       'bez_makler_kvartira_arenda_ijara', 'TOSHKENT_IJARAGA_UYLAR_SERGELI',
       'kv_arenda_tashken_t', 'ArendaTashkentaa', 'arenduzb',
       'samkvartira', 'arenda_samarkand',
     ],
-    threadsTags: ['недвижимость', 'ташкент', 'kvartira', 'arenda', 'uysotiladi', 'аренда ташкент'],
   },
 };
 
