@@ -32,7 +32,7 @@ app.get('/api/countries', (_req, res) => {
   );
 });
 
-const VALID_SOURCES = ['olx', 'reddit', 'telegram', 'threads'];
+const VALID_SOURCES = ['olx', 'telegram'];
 
 // Lightweight in-memory, per-IP flood protection for the *manual reload*
 // endpoints only (a normal cached search is never rate-limited). It just stops

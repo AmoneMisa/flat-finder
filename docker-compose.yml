@@ -28,24 +28,6 @@ services:
       retries: 3
       start_period: 10s
 
-  # MTProto (GramJS) sidecar that fetches public-channel history via a real user
-  # account, avoiding the datacenter-IP throttling of the t.me/s web preview.
-  # Requires TG_API_ID, TG_API_HASH and TG_SESSION in flatfinder.env (generate
-  # the session once with `cd telegram-worker && npm run login`). Not exposed to
-  # the host — only the backend talks to it over the compose network.
-  flat-finder-tg-worker:
-    build:
-      context: ./telegram-worker
-    restart: unless-stopped
-    env_file:
-      - ./flatfinder.env
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:4100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
   flat-finder-redis:
     image: redis:7-alpine
     restart: unless-stopped

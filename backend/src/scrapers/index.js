@@ -7,18 +7,14 @@
 
 import { COUNTRIES } from '../countries.js';
 import { scrapeOlx } from './olx.js';
-import { scrapeReddit } from './reddit.js';
 import { scrapeTelegram } from './telegram.js';
-import { scrapeThreads } from './threads.js';
 import { scrapeCustom } from './custom.js';
 import { generateMock } from '../mock.js';
 import { cacheGet, cacheSet } from '../cache.js';
 
 const SOURCES = {
   olx: scrapeOlx,
-  reddit: scrapeReddit,
   telegram: scrapeTelegram,
-  threads: scrapeThreads,
 };
 
 // How long a cached entry is considered "fresh" (served without a re-scrape).
