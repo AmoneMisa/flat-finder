@@ -397,9 +397,15 @@ export function classifyAgency(text) {
 
 export function guessPropertyType(text) {
   if (!text) return 'flat';
+  // Prefer an explicit apartment word. Real-estate copy often says
+  // "квартира в новом доме"; checking the generic house word first used to
+  // misclassify those rows as houses.
+  if (/(apartment|apartament|квартир|kvartira|пәтер|квартиралар|xonadon)/i.test(text)) {
+    return 'flat';
+  }
   // house (EN), casa (RO), dom/дом (RU), будин (UA), коттедж/villa/вілл/вилл,
   // uy/hovli (UZ), үй (KZ).
-  return /\b(house|casa|dom\b|будин|дом\b|коттедж|villa|вілл|вилл|hovli|\buy\b|үй\b)/i.test(text)
+  return /(?:\b(?:house|casa|dom|villa|hovli|uy)\b|будин|коттедж|вілл|вилл|(?:^|[^\p{L}\p{N}_])(?:дом|үй)(?=$|[^\p{L}\p{N}_]))/iu.test(text)
     ? 'house'
     : 'flat';
 }

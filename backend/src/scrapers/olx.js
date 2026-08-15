@@ -7,6 +7,7 @@
 // caller falls back to demo data.
 
 import { makeListing } from '../normalize.js';
+import { guessPropertyType } from '../textparse.js';
 
 // Pull several newest-first pages so enough recent listings survive the 3-week
 // freshness filter. One page (~50) is far too few for big markets.
@@ -79,7 +80,7 @@ function detectAgency(item) {
   return Boolean(item.shop) || item.user?.is_business === true;
 }
 
-function mapItem(item, country, filters) {
+function mapItem(item, country) {
   const params = paramMap(item);
   const priceParam = params.price?.value;
   // Rooms: prefer OLX's structured `rooms` param. Fall back to the title, but
@@ -101,14 +102,17 @@ function mapItem(item, country, filters) {
     Number((params.m?.value?.label || '').match(/\d+/)?.[0]) ||
     null;
 
-  // OLX only tells us category.type === 'real_estate', so classify flat vs
-  // house from the listing title. Honor an explicit filter first.
-  const t = (item.title || '').toLowerCase();
-  const isHouse = /cas[aă]|дом|будин|house|коттедж|вилл/.test(t);
-  let propertyType = 'flat';
-  if (filters.propertyType === 'house' || filters.propertyType === 'flat')
-    propertyType = filters.propertyType;
-  else if (isHouse) propertyType = 'house';
+  // Classification is intrinsic listing data. Never copy the currently
+  // selected UI filter into a row: doing that turned every result from a
+  // `propertyType=house` scrape into a house (including apartments). Include
+  // OLX category/parameter labels when available, as titles alone are often
+  // too terse to identify the dwelling type.
+  const categoryText = [
+    item.category?.name,
+    item.category?.label,
+    ...Object.values(params).flatMap((param) => [param?.name, param?.value?.label]),
+  ].filter(Boolean).join(' ');
+  const propertyType = guessPropertyType(`${item.title || ''} ${categoryText}`);
 
   return makeListing({
     id: item.id,
@@ -145,7 +149,7 @@ export async function fetchOlxOffer(country, id) {
   const json = await res.json();
   const item = json?.data;
   if (!item || typeof item !== 'object') return null;
-  return mapItem(item, country, {});
+  return mapItem(item, country);
 }
 
 async function fetchPage(country, filters, offset) {
@@ -171,7 +175,7 @@ export async function scrapeOlx(country, filters) {
       if (page === 0) throw err; // first page must succeed (caller falls back to mock)
       break; // later-page hiccup: keep what we already have
     }
-    for (const item of data) out.push(mapItem(item, country, filters));
+    for (const item of data) out.push(mapItem(item, country));
 
     // Only stop on a genuinely short page (end of results). We deliberately do
     // NOT early-stop on an old last item: OLX ignores `sort_by=created_at:desc`,

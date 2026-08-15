@@ -26,18 +26,15 @@ const HOUSING_RE =
   /(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
 
 // Turn one worker message ({ id, text, date, hasPhoto }) into a listing, or
-// null if it isn't a housing post (or is filtered out by the keyword query).
-function messageToListing(msg, channel, country, filters) {
+// null if it isn't a housing post. Search filters are applied to the complete
+// normalized snapshot in server.js, just like the vacancy feed.
+function messageToListing(msg, channel, country) {
   const text = (msg.text || '').replace(/[ \t]+/g, ' ').trim();
   if (text.length < 10) return null;
   if (!HOUSING_RE.test(text)) return null;
-  if (filters.query && !text.toLowerCase().includes(filters.query.toLowerCase())) return null;
 
   const { price, currency } = parsePriceFromText(text, country.currency);
-  const type =
-    filters.propertyType === 'house' || filters.propertyType === 'flat'
-      ? filters.propertyType
-      : guessPropertyType(text);
+  const type = guessPropertyType(text);
   const title = text.split('\n')[0].slice(0, 90);
   const postPath = `${channel}/${msg.id}`;
 
@@ -109,7 +106,7 @@ export async function fetchChannel(channel, country, filters = {}, deadline = In
 
     let oldestTs = null;
     for (const m of messages) {
-      const l = messageToListing(m, channel, country, filters);
+      const l = messageToListing(m, channel, country);
       if (l) listings.push(l);
       if (m.date) {
         const t = Date.parse(m.date);

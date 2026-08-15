@@ -133,9 +133,11 @@ app.get('/api/listings', async (req, res) => {
     const degraded = [];
     const sourceCounts = {};
     const sourceErrors = [];
+    let warming = false;
     let listings = [];
     results.forEach((r, i) => {
       if (r.degraded) degraded.push(codes[i]);
+      if (r.warming) warming = true;
       for (const [name, n] of Object.entries(r.sourceCounts ?? {})) {
         sourceCounts[name] = (sourceCounts[name] ?? 0) + n;
       }
@@ -168,6 +170,7 @@ app.get('/api/listings', async (req, res) => {
       degradedCountries: degraded, // countries currently served from demo data
       sourceCounts, // live listings fetched per source before filtering
       sourceErrors, // per-source failures (name/country/url + message)
+      warming, // cold/stale snapshots are refreshing in the background
       filters,
       listings: page,
     });

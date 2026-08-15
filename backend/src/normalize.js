@@ -219,19 +219,21 @@ export function applyFilters(listings, filters) {
     if (dealType && dealType !== 'any' && l.dealType !== dealType) return false;
     if (agency === 'agency' && !l.byAgency) return false;
     if (agency === 'owner' && l.byAgency) return false;
-    if (priceMin != null && l.price != null && l.price < priceMin) return false;
+    // Once the user selects a numeric constraint, an unknown value is not a
+    // valid match. Previously unknown prices/room counts slipped through and
+    // made the controls appear to do nothing.
+    if (priceMin != null && (l.price == null || l.price < priceMin)) return false;
     // Optional tolerance: allow listings up to priceMax + priceTolerance through.
     const effMax = priceMax != null ? priceMax + (priceTolerance ?? 0) : null;
-    if (effMax != null && l.price != null && l.price > effMax) return false;
-    // Numeric ranges skip listings where the value is unknown (like price).
-    if (roomsMin != null && l.rooms != null && l.rooms < roomsMin) return false;
-    if (roomsMax != null && l.rooms != null && l.rooms > roomsMax) return false;
-    if (bedroomsMin != null && l.bedrooms != null && l.bedrooms < bedroomsMin) return false;
-    if (bedroomsMax != null && l.bedrooms != null && l.bedrooms > bedroomsMax) return false;
-    if (floorMin != null && l.floor != null && l.floor < floorMin) return false;
-    if (floorMax != null && l.floor != null && l.floor > floorMax) return false;
-    if (yearMin != null && l.buildingYear != null && l.buildingYear < yearMin) return false;
-    if (yearMax != null && l.buildingYear != null && l.buildingYear > yearMax) return false;
+    if (effMax != null && (l.price == null || l.price > effMax)) return false;
+    if (roomsMin != null && (l.rooms == null || l.rooms < roomsMin)) return false;
+    if (roomsMax != null && (l.rooms == null || l.rooms > roomsMax)) return false;
+    if (bedroomsMin != null && (l.bedrooms == null || l.bedrooms < bedroomsMin)) return false;
+    if (bedroomsMax != null && (l.bedrooms == null || l.bedrooms > bedroomsMax)) return false;
+    if (floorMin != null && (l.floor == null || l.floor < floorMin)) return false;
+    if (floorMax != null && (l.floor == null || l.floor > floorMax)) return false;
+    if (yearMin != null && (l.buildingYear == null || l.buildingYear < yearMin)) return false;
+    if (yearMax != null && (l.buildingYear == null || l.buildingYear > yearMax)) return false;
     // Audience is an explicit restriction, so match strictly when requested.
     if (audience && audience !== 'any' && l.audience !== audience) return false;
     // Tenant conditions: only drop on an explicit contradiction. A listing that
@@ -249,7 +251,10 @@ export function applyFilters(listings, filters) {
       return false;
     if (metro && (l.metro ?? '').toLowerCase() !== String(metro).toLowerCase()) return false;
     if (query) {
-      const hay = `${l.title} ${l.city}`.toLowerCase();
+      const hay = [l.title, l.description, l.city, l.district, l.metro, ...(l.tags ?? [])]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
       if (!hay.includes(String(query).toLowerCase())) return false;
     }
     return true;
