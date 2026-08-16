@@ -1,19 +1,25 @@
 // OLX adapter.
 //
-// OLX's own web frontend talks to an internal JSON endpoint:
-//   {host}/api/v1/offers/?offset=&limit=&category_id=&query=&filter_float_price:from=&...
-// It is far more stable than parsing HTML, so we use it directly. We keep the
-// request defensive: any network error, block, or shape change throws and the
-// caller falls back to demo data.
+// OLX fronts its site with an AWS WAF that 403s plain HTTP clients from our
+// server by TLS/JA3 fingerprint (both the private /api/v1 endpoint AND the HTML
+// pages), while letting a real Chrome fingerprint through even from the same IP.
+// So the country snapshot is fetched through the `olx-fetcher` sidecar
+// (Python + curl_cffi, which impersonates Chrome). It returns the ad objects
+// embedded in each real-estate page's `window.__PRERENDERED_STATE__`, which we
+// map here. If OLX_FETCHER_URL is unset the source is disabled and yields
+// nothing (the other sources still work).
+//
+// The /api/v1 path below is kept ONLY for the manual single-listing reload
+// (fetchOlxOffer); it will 403 from a blocked server until it is also routed
+// through the sidecar.
 
 import { makeListing } from '../normalize.js';
 import { guessPropertyType } from '../textparse.js';
 import { throttle, sleep } from '../ratelimit.js';
 
 // Pull several newest-first pages so enough recent listings survive the 3-week
-// freshness filter. One page (~50) is far too few for big markets.
-const OLX_PAGE_SIZE = 50;
-const OLX_MAX_PAGES = 10; // hard ceiling (~500 fetched) to bound latency
+// freshness filter. One page is ~50 ads; this ceiling (~500) bounds latency.
+const OLX_MAX_PAGES = Number(process.env.OLX_MAX_PAGES) || 10;
 
 // Rate limiting: keep at least OLX_MIN_INTERVAL_MS (+ up to OLX_JITTER_MS random)
 // between requests to the same OLX portal so we don't hammer it. Keyed per host,
@@ -53,39 +59,85 @@ function browserHeaders(country) {
   };
 }
 
-function buildUrl(country, filters) {
-  const host = country.olxHost;
-  const p = new URLSearchParams();
-  p.set('offset', String(filters.offset ?? 0));
-  p.set('limit', String(filters.limit ?? 40));
+// URL of the olx-fetcher sidecar. Unset -> OLX source disabled (yields nothing).
+const OLX_FETCHER_URL = process.env.OLX_FETCHER_URL || '';
 
-  // Scope to the portal's real-estate section.
-  if (country.realEstateRoot) p.set('category_id', String(country.realEstateRoot));
+// One rate-limited page fetch via the sidecar. Node throttles here (1:1 with the
+// sidecar's outbound OLX request) so we stay a polite client to OLX.
+async function fetchStatePage(country, page) {
+  await throttle(`olx:${country.olxHost}`, OLX_MIN_INTERVAL_MS, OLX_JITTER_MS);
+  const base = OLX_FETCHER_URL.replace(/\/$/, '');
+  const url = `${base}/olx/listings?country=${country.code}&page=${page}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { detail = (await res.json())?.error || detail; } catch { /* non-JSON body */ }
+    throw new Error(`olx-fetcher ${country.code}: ${detail}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data?.ads) ? data.ads : [];
+}
 
-  // Narrow flat vs house with a localized term (OLX has no single stable
-  // sub-category id across portals). Combine with any free-text query.
-  const type = filters.propertyType;
-  const terms = [];
-  if (type === 'flat' || type === 'house') terms.push(country.terms?.[type] ?? '');
-  const deal = filters.dealType;
-  if (deal === 'sale' || deal === 'longRent' || deal === 'shortRent')
-    terms.push(country.dealTerms?.[deal] ?? '');
-  if (filters.query) terms.push(filters.query);
-  if (terms.length) p.set('query', terms.filter(Boolean).join(' '));
+// Find a listing parameter by key or human name. Web-state params look like
+// { key, name, type, value, normalizedValue }. Returns the display `value`.
+function stateParam(item, keyRe, nameRe) {
+  for (const p of item.params ?? []) {
+    if ((p.key && keyRe.test(p.key)) || (p.name && nameRe.test(p.name))) return p.value;
+  }
+  return null;
+}
 
-  if (filters.priceMin != null) p.set('filter_float_price:from', String(filters.priceMin));
-  if (filters.priceMax != null) p.set('filter_float_price:to', String(filters.priceMax));
+function stateRooms(item) {
+  const raw = stateParam(item, /room|komnat|kimnat|xonali|kolichestvo/i, /комнат|кімнат|room|xonali|спал/i);
+  let rooms = raw != null ? Number(String(raw).match(/\d+/)?.[0]) : null;
+  if (!rooms) {
+    // Fall back to the title, but only on an explicit room word — never a bare
+    // "кв" (that is "кв.м" area, e.g. "72 кв.м" is 72 m², not 72 rooms).
+    const t = (item.title || '').match(
+      /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|кімнат|кімн|room|bedroom|xonali|xona)/i,
+    );
+    rooms = t ? Number(t[1]) : null;
+  }
+  if (rooms != null && (rooms < 1 || rooms > 10)) rooms = null; // sanity cap
+  return rooms || null;
+}
 
-  // Newest first: OLX's default ordering mixes in old listings, most of which
-  // the 3-week freshness filter later drops. Sorting by creation date keeps the
-  // fetched batch recent so far more of it survives.
-  p.set('sort_by', 'created_at:desc');
+function stateArea(item) {
+  const raw = stateParam(item, /area|m2|total_area|ploshch|maydon|kvadrat/i, /площад|area|m²|кв\.?\s*м|maydon|майдон/i);
+  const n = raw != null ? Number(String(raw).replace(',', '.').match(/\d+(?:\.\d+)?/)?.[0]) : null;
+  return n || null;
+}
 
-  // NB: the owner/agency (filter_enum_business) filter is rejected at the
-  // real-estate root category on some portals, so we enforce it after
-  // normalization via applyFilters() using each offer's `business` flag.
-
-  return `${host}/api/v1/offers/?${p.toString()}`;
+// Map one ad from a page's __PRERENDERED_STATE__ (a richer shape than /api/v1).
+// The structured pieces we can get cheaply are passed to makeListing; the rest
+// (dealType, floor, audience, tags, ...) is parsed from title/description there.
+// Note: web-state ads carry real coordinates + city/district, so they need no
+// geocoding downstream.
+function mapStateItem(item, country) {
+  const rp = item.price?.regularPrice ?? {};
+  const paramText = (item.params ?? [])
+    .map((p) => `${p.name ?? ''} ${Array.isArray(p.value) ? p.value.join(' ') : p.value ?? ''}`)
+    .join(' ');
+  return makeListing({
+    id: item.id,
+    source: 'olx',
+    country: country.code,
+    title: item.title,
+    description: item.description ?? '',
+    propertyType: guessPropertyType(`${item.title || ''} ${paramText}`),
+    byAgency: Boolean(item.isBusiness),
+    price: rp.value ?? null,
+    currency: normalizeCurrency(rp.currencyCode) ?? country.currency,
+    rooms: stateRooms(item),
+    areaSqm: stateArea(item),
+    city: item.location?.cityName ?? item.location?.regionName ?? '',
+    district: item.location?.districtName ?? null,
+    lat: item.map?.lat ?? null,
+    lng: item.map?.lon ?? null,
+    photos: Array.isArray(item.photos) ? item.photos.filter(Boolean) : [],
+    url: item.url ?? country.olxHost,
+    createdAt: item.createdTime ?? null,
+  });
 }
 
 function paramMap(item) {
@@ -201,35 +253,28 @@ async function olxFetch(country, url) {
   return res;
 }
 
-async function fetchPage(country, filters, offset) {
-  const url = buildUrl(country, { ...filters, offset, limit: OLX_PAGE_SIZE });
-  const res = await olxFetch(country, url);
-  if (!res.ok) throw new Error(`OLX ${country.code} HTTP ${res.status}`);
-  const json = await res.json();
-  const data = json?.data;
-  if (!Array.isArray(data)) throw new Error(`OLX ${country.code} unexpected payload`);
-  return data;
-}
-
-export async function scrapeOlx(country, filters) {
+// Scrape one country's real-estate snapshot via the fetcher sidecar. The caller
+// (index.js) neutralizes UI filters, so we fetch the whole category newest-first
+// and let applyFilters narrow it in memory afterwards — `filters` is unused here.
+export async function scrapeOlx(country, _filters) {
+  if (!OLX_FETCHER_URL) return []; // OLX disabled until the fetch sidecar is set
   const out = [];
-  for (let page = 0; page < OLX_MAX_PAGES; page++) {
-    let data;
+  const seen = new Set();
+  for (let page = 1; page <= OLX_MAX_PAGES; page++) {
+    let ads;
     try {
-      data = await fetchPage(country, filters, page * OLX_PAGE_SIZE);
+      ads = await fetchStatePage(country, page);
     } catch (err) {
-      if (page === 0) throw err; // first page must succeed (caller falls back to mock)
+      if (page === 1) throw err; // first page must succeed (caller falls back to mock)
       break; // later-page hiccup: keep what we already have
     }
-    for (const item of data) out.push(mapItem(item, country));
-
-    // Only stop on a genuinely short page (end of results). We deliberately do
-    // NOT early-stop on an old last item: OLX ignores `sort_by=created_at:desc`,
-    // so results come back in mixed date order and each page carries roughly a
-    // third of fresh (<31d) listings. Stopping on an old tail therefore threw
-    // away the fresh listings still sitting on later pages. Paging the full
-    // budget and letting the freshness filter do the trimming yields far more.
-    if (data.length < OLX_PAGE_SIZE) break;
+    if (!ads.length) break;
+    for (const item of ads) {
+      if (item?.id == null || seen.has(item.id)) continue;
+      seen.add(item.id);
+      out.push(mapStateItem(item, country));
+    }
+    if (ads.length < 40) break; // short page → end of results
   }
   return out;
 }

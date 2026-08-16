@@ -9,6 +9,10 @@ services:
     # unreachable, so the backend still boots even when Redis is down.
     environment:
       - REDIS_URL=redis://flat-finder-redis:6379
+      # OLX is fetched through the curl_cffi sidecar (OLX's WAF 403s plain HTTP
+      # clients from our server). If this is unreachable the OLX source just
+      # yields nothing (other sources still work) — not hard-coupled.
+      - OLX_FETCHER_URL=http://flat-finder-olx-fetcher:4020
       # Telegram MTProto sidecar URL comes from flatfinder.env (TG_WORKER_URL).
       # It points either at the in-compose worker (http://flat-finder-tg-worker:4100)
       # or, while the server can't reach Telegram's DCs, at the PC Cloudflare tunnel.
@@ -17,6 +21,10 @@ services:
     depends_on:
       flat-finder-redis:
         condition: service_healthy
+      # Ordering only (service_started, not _healthy): OLX failing must not block
+      # the backend from serving the other sources.
+      flat-finder-olx-fetcher:
+        condition: service_started
     # Loopback-only, like the other project's 8080/8081 services. The host's
     # existing nginx reverse-proxies to this port.
     ports:
@@ -27,6 +35,24 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # Chrome-TLS-impersonating fetch sidecar for OLX (see backend/src/scrapers/olx.js).
+  flat-finder-olx-fetcher:
+    build:
+      context: ./olx-fetcher
+    restart: unless-stopped
+    # Optional overrides (defaults in app.py): OLX_IMPERSONATE, OLX_TIMEOUT.
+    # environment:
+    #   - OLX_IMPERSONATE=chrome124
+    # Internal only — reached by the backend over the compose network.
+    expose:
+      - "4020"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4020/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   flat-finder-redis:
     image: redis:7-alpine

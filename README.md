@@ -10,8 +10,9 @@ listing description.
 
 ```
 flat-finder/
-├── backend/     Node.js scraper API (runs today, Node 24)
-└── app/         Flutter client (Android + Windows/macOS/Linux desktop)
+├── backend/      Node.js scraper API (runs today, Node 24)
+├── olx-fetcher/  Python + curl_cffi sidecar that fetches OLX past its WAF
+└── app/          Flutter client (Android + Windows/macOS/Linux desktop)
 ```
 
 ## How data works
@@ -21,7 +22,7 @@ schema and merged/de-duplicated:
 
 | Source | Method | Notes |
 |--------|--------|-------|
-| **OLX** (olx.ro/.ua/.kz/.uz) | Internal JSON API | Primary source, works out of the box |
+| **OLX** (olx.ro/.ua/.kz/.uz) | HTML `__PRERENDERED_STATE__` via the `olx-fetcher` sidecar | OLX's WAF 403s plain HTTP clients from a server by TLS fingerprint; the sidecar (curl_cffi Chrome impersonation) gets through. Set `OLX_FETCHER_URL`; unset ⇒ OLX disabled. Ads carry real coordinates. |
 | **Telegram** | Separate GramJS/MTProto worker | Public channels; set `TG_WORKER_URL` to the deployed worker |
 
 Telegram posts have no structured price/rooms, so those are parsed from the
@@ -39,6 +40,11 @@ naming it. So the app is always usable.
 
 ### Enabling / configuring sources
 
+- **OLX**: runs the `olx-fetcher` sidecar (see `docker-compose.yml`). The backend
+  reaches it via `OLX_FETCHER_URL` (set to `http://flat-finder-olx-fetcher:4020`
+  in compose). Override the impersonation target with `OLX_IMPERSONATE` on the
+  sidecar if a curl_cffi upgrade renames it. If the sidecar is unset/down, OLX
+  simply yields nothing and the other sources still work.
 - **Telegram**: deploy the separate Telegram worker, set its URL as
   `TG_WORKER_URL`, and keep the public channel usernames in `telegramChannels`
   per country in `backend/src/countries.js`.
@@ -140,7 +146,9 @@ flutter run -d windows
 
 - `backend/src/countries.js` — per-country sources list, OLX hosts + real-estate
   root category IDs, Telegram channels, map centers, search terms.
-- `backend/src/scrapers/olx.js` — OLX API request + field parsing.
+- `backend/src/scrapers/olx.js` — maps OLX `__PRERENDERED_STATE__` ads (fetched
+  via the sidecar) to the listing schema; per-host rate limiting.
+- `olx-fetcher/app.py` — Python curl_cffi service that fetches OLX HTML past the WAF.
 - `backend/src/scrapers/telegram.js` — MTProto worker response parsing.
 - `backend/src/tags.js` — keyword → card-tag rules (EN/RO/RU/UA).
 - `backend/src/textparse.js` — price/rooms/area extraction from free text.
