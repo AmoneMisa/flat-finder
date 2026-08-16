@@ -20,6 +20,10 @@ import { throttle, sleep } from '../ratelimit.js';
 // Pull several newest-first pages so enough recent listings survive the 3-week
 // freshness filter. One page is ~50 ads; this ceiling (~500) bounds latency.
 const OLX_MAX_PAGES = Number(process.env.OLX_MAX_PAGES) || 10;
+// Stop paging once this much wall-clock has elapsed and return what we have.
+// Must stay below index.js's SOURCE_DEADLINE_MS (24s) so OLX yields partial
+// results instead of being cut off and discarded entirely.
+const OLX_BUDGET_MS = Number(process.env.OLX_BUDGET_MS) || 20_000;
 
 // Rate limiting: keep at least OLX_MIN_INTERVAL_MS (+ up to OLX_JITTER_MS random)
 // between requests to the same OLX portal so we don't hammer it. Keyed per host,
@@ -260,7 +264,9 @@ export async function scrapeOlx(country, _filters) {
   if (!OLX_FETCHER_URL) return []; // OLX disabled until the fetch sidecar is set
   const out = [];
   const seen = new Set();
+  const started = Date.now();
   for (let page = 1; page <= OLX_MAX_PAGES; page++) {
+    if (page > 1 && Date.now() - started > OLX_BUDGET_MS) break; // time budget
     let ads;
     try {
       ads = await fetchStatePage(country, page);
