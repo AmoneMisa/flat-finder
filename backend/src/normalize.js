@@ -27,6 +27,16 @@ import {
   looksRoomOnly,
   parseDeposit,
   parseCommission,
+  parseBalcony,
+  parseAirConditioner,
+  parseGasSupply,
+  parseNewBuilding,
+  parseBathrooms,
+  parseCommunalSeparated,
+  parseKvartal,
+  parseNearbyShops,
+  parseRoomsFromText,
+  parseAreaFromText,
 } from './textparse.js';
 import { parseLocation, canonicalDistrict } from './locations.js';
 import { toUsd } from './fx.js';
@@ -69,7 +79,7 @@ export function makeListing(partial) {
   const combined = `${title} ${description}`;
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
   const byAgency = Boolean(partial.byAgency);
-  const rooms = partial.rooms != null ? Number(partial.rooms) : null;
+  const rooms = partial.rooms != null ? Number(partial.rooms) : parseRoomsFromText(combined);
   let dealType = partial.dealType ?? classifyDealType(combined);
 
   // Sale-scale price guard. Some sale posts carry no explicit sale keyword and
@@ -129,6 +139,21 @@ export function makeListing(partial) {
   const commission = partial.commission ?? com.has;
   const commissionPercent = partial.commissionPercent ?? com.percent;
 
+  // Amenities / structured extras for the normalized spec table. Prefer a value
+  // the source gave us, else parse it from the text. `null` renders as "n/d".
+  const balcony = partial.balcony ?? parseBalcony(combined);
+  const airConditioner = partial.airConditioner ?? parseAirConditioner(combined);
+  const gas = partial.gas ?? parseGasSupply(combined);
+  const bathrooms = partial.bathrooms != null ? Number(partial.bathrooms) : parseBathrooms(combined);
+  const newBuilding =
+    partial.newBuilding ??
+    (parseNewBuilding(combined) ||
+      (buildingYear && buildingYear >= new Date().getFullYear() - 3 ? true : null));
+  // UZ note: utilities are usually included when unstated (null); the UI reflects that.
+  const communalSeparated = partial.communalSeparated ?? parseCommunalSeparated(combined);
+  const kvartal = partial.kvartal ?? parseKvartal(combined);
+  const nearbyShops = partial.nearbyShops ?? parseNearbyShops(combined);
+
   return {
     id: String(partial.id),
     source: partial.source,
@@ -139,7 +164,7 @@ export function makeListing(partial) {
     price: partial.price != null ? Number(partial.price) : null,
     currency: partial.currency ?? '',
     rooms,
-    areaSqm: partial.areaSqm != null ? Number(partial.areaSqm) : null,
+    areaSqm: partial.areaSqm != null ? Number(partial.areaSqm) : parseAreaFromText(combined),
     city: partial.city || loc.city || '',
     address: address || null,
     lat: partial.lat != null ? Number(partial.lat) : null,
@@ -172,6 +197,14 @@ export function makeListing(partial) {
     depositAmount,
     commission,
     commissionPercent,
+    balcony,
+    airConditioner,
+    gas,
+    bathrooms,
+    newBuilding,
+    communalSeparated,
+    kvartal,
+    nearbyShops,
     tags:
       partial.tags ??
       extractTags({

@@ -409,3 +409,94 @@ export function guessPropertyType(text) {
     ? 'house'
     : 'flat';
 }
+
+// --- Amenities & structured extras (spec table) -----------------------------
+// Positive-only signals unless noted: `true` when the post mentions the feature,
+// `null` when it doesn't (free text can rarely prove absence). EN/RU/UA/UZ/KZ/RO.
+
+// Balcony or loggia present.
+export function parseBalcony(text) {
+  if (!text) return null;
+  return /(балкон|лоджи|balkon|ayvon|balcon|loggia|balcony)/i.test(text) ? true : null;
+}
+
+// Air-conditioner / split system present.
+export function parseAirConditioner(text) {
+  if (!text) return null;
+  return /(кондиционер|кондицион|сплит[- ]?систем|konditsioner|klimat|air ?con|\bA\/?C\b|aer condi[țt]ionat)/i.test(text)
+    ? true
+    : null;
+}
+
+// Natural-gas supply to the flat (NOT a nearby filling station). Guards against
+// "газон" (lawn). Returns true / false (explicit "no gas") / null.
+export function parseGasSupply(text) {
+  if (!text) return null;
+  const t = text.toLowerCase();
+  if (/(без ?газа|нет ?газа|no gas|gaz ?yo['’]?q)/i.test(t)) return false;
+  return /(?:^|[^а-яё])газ(?!он)|метан|\bgaz\b|\bgas\b(?! ?stat)|aragaz|gaz ta['’]?min/i.test(t) ? true : null;
+}
+
+// New-build / novostroyka flag from text (buildingYear recency is added in
+// makeListing). Returns true / null.
+export function parseNewBuilding(text) {
+  if (!text) return null;
+  return /(новостро|новобуд|новый ?дом|new ?buil|newly ?built|yangi ?(bino|qurilgan|uy)|novostroy|bloc ?nou)/i.test(text)
+    ? true
+    : null;
+}
+
+// Number of bathrooms / санузлы. "2 санузла", "sanuzel 2", "2 bathrooms".
+export function parseBathrooms(text) {
+  if (!text) return null;
+  const m =
+    text.match(/(\d)\s*(?:санузл|с\/?у\b|ванн[аы]|bathroom|sanuzel|hammom)/i) ||
+    text.match(/(?:санузл\w*|bathrooms?|sanuzel|hammom)\D{0,4}(\d)/i);
+  const n = m ? Number(m[1]) : null;
+  return n != null && n >= 1 && n <= 5 ? n : null;
+}
+
+// Whether communal/utility payments are billed separately from rent (UZ note:
+// when nothing is stated, utilities are usually *included* — the UI renders
+// null accordingly). Returns true (separate) / false (included) / null.
+export function parseCommunalSeparated(text) {
+  if (!text) return null;
+  const t = text.toLowerCase();
+  // NB: \w does not match Cyrillic in JS regex, so stems use [а-яё]*.
+  if (/(коммунал[а-яё]*\s*(?:отдельно|сверху|плюс|оплачива[а-яё]*\s*отдельно)|свет\s*вода\s*газ\s*отдельно|kommunal\w*\s*(?:alohida|ustiga)|utilities?\s*(?:separate|extra|not included))/i.test(t))
+    return true;
+  if (/(коммунал[а-яё]*\s*(?:включ|входит|в ?стоимост)|вс[её] ?включ|all ?inclusive|kommunal\w*\s*(?:kiritilgan|ichida)|utilities?\s*included)/i.test(t))
+    return false;
+  return null;
+}
+
+// UZ/Central-Asian "kvartal" / massiv / micro-district, e.g. "Chilonzor 8
+// kvartal", "Юнусабад 19 квартал", "мкр 4". Returns a short "N kvartal" label
+// (used later to place the map pin more precisely), or null.
+export function parseKvartal(text) {
+  if (!text) return null;
+  const m =
+    text.match(/(\d{1,3})\s*[-\s]?\s*(?:квартал|кв-?л\b|kvartal|kvartali|мкр\b|микрорайон|массив|massiv)/i) ||
+    text.match(/(?:квартал|kvartal|мкр|микрорайон|массив|massiv)\s*[-№#]?\s*(\d{1,3})/i);
+  return m ? `${m[1]} kvartal` : null;
+}
+
+// Named retail chains / malls mentioned (proximity signal). Deduped canonical
+// names. Guards ("metro cash&carry" not the subway; "small" the shop).
+const SHOP_CHAINS = [
+  ['Korzinka', /korzinka|корзинка/i],
+  ['Makro', /\bmakro\b|макро/i],
+  ['Havas', /\bhavas\b|хавас/i],
+  ['Carrefour', /carrefour|карфур/i],
+  ['ATB', /\bатб\b|\batb\b/i],
+  ['Klass', /\bklass\b|\bкласс\b/i],
+  ['Magnum', /magnum|магнум/i],
+  ['Bravo', /\bbravo\b|браво/i],
+  ['Metro C&C', /\bmetro\s*(?:cash|c\s*&\s*c|market)|метро\s*кэш/i],
+];
+export function parseNearbyShops(text) {
+  if (!text) return [];
+  const out = [];
+  for (const [name, re] of SHOP_CHAINS) if (re.test(text) && !out.includes(name)) out.push(name);
+  return out;
+}
