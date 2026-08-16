@@ -23,6 +23,10 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 // How long a stale entry is still kept and served (while a refresh runs in the
 // background). This is the Redis retention window for each key.
 const STALE_TTL_MS = 60 * 60 * 1000;
+// While a scrape is in progress, partial snapshots are written to the cache no
+// more often than this so the UI count/results climb as chunks arrive without
+// hammering Redis. The final complete snapshot is always written.
+const PARTIAL_WRITE_MS = Number(process.env.PARTIAL_WRITE_MS) || 1200;
 // De-dupe concurrent background refreshes of the same key.
 const inFlight = new Map(); // key -> Promise
 
@@ -115,47 +119,61 @@ function dedupe(listings) {
   return out;
 }
 
-async function fetchOne(countryCode, filters) {
+// `onProgress({ listings, sourceCounts, sourceErrors })` (optional) is called as
+// chunks/sources arrive so the caller can stream partial snapshots into the cache.
+async function fetchOne(countryCode, filters, onProgress) {
   const country = COUNTRIES[countryCode];
   if (!country) return { listings: [], degraded: false, sourceCounts: {}, sourceErrors: [] };
 
   const sources = country.sources ?? ['olx'];
-  const results = await Promise.allSettled(
-    sources.map(async (name) => {
-      const fn = SOURCES[name];
-      if (!fn) return { name, listings: [] };
-      const listings = await withDeadline(fn(country, filters), SOURCE_DEADLINE_MS, []);
-      return { name, listings };
-    }),
-  );
-
   const sourceCounts = {};
   const sourceErrors = [];
   let merged = [];
-  results.forEach((r, i) => {
-    const name = sources[i];
-    if (r.status === 'fulfilled') {
-      sourceCounts[name] = r.value.listings.length;
-      merged = merged.concat(r.value.listings);
-    } else {
-      sourceCounts[name] = 0;
-      const msg = r.reason?.message ?? String(r.reason);
-      sourceErrors.push({ source: name, country: countryCode, error: msg });
-      console.warn(`[scraper] ${countryCode}/${name} failed: ${msg}`);
-    }
+  const emit = () => {
+    if (onProgress) onProgress({ listings: merged, sourceCounts: { ...sourceCounts }, sourceErrors: [...sourceErrors] });
+  };
+
+  const tasks = sources.map((name) => {
+    const fn = SOURCES[name];
+    if (!fn) { sourceCounts[name] = 0; return Promise.resolve(); }
+    sourceCounts[name] = 0;
+    // Sources that support it (OLX pages) stream partial results per chunk so the
+    // count climbs during the scrape; others just resolve once at the end.
+    const onChunk = (chunk) => {
+      if (!chunk?.length) return;
+      sourceCounts[name] += chunk.length;
+      merged = dedupe(merged.concat(chunk));
+      emit();
+    };
+    return withDeadline(fn(country, filters, onChunk), SOURCE_DEADLINE_MS, []).then(
+      (listings) => {
+        // Merge the source's authoritative result (no-op for chunks already
+        // streamed; picks up non-streaming sources like Telegram). Reconcile the
+        // per-source count to the source's own de-duplicated total.
+        merged = dedupe(merged.concat(listings));
+        sourceCounts[name] = Math.max(sourceCounts[name], listings.length);
+        emit();
+      },
+      (err) => {
+        const msg = err?.message ?? String(err);
+        sourceErrors.push({ source: name, country: countryCode, error: msg });
+        console.warn(`[scraper] ${countryCode}/${name} failed: ${msg}`);
+        emit();
+      },
+    );
   });
+  await Promise.allSettled(tasks);
 
   // User-provided custom sources: fetched per URL, failures surfaced individually.
   if (Array.isArray(filters.customSources) && filters.customSources.length) {
     const custom = await scrapeCustom(country, filters);
     sourceCounts.custom = custom.listings.length;
-    merged = merged.concat(custom.listings);
+    merged = dedupe(merged.concat(custom.listings));
     for (const e of custom.errors) {
       sourceErrors.push({ source: 'custom', country: countryCode, url: e.url, error: e.error });
     }
+    emit();
   }
-
-  merged = dedupe(merged);
 
   if (!merged.length) {
     console.warn(`[scraper] ${countryCode} all sources empty -> mock`);
@@ -169,7 +187,23 @@ async function fetchOne(countryCode, filters) {
 function refresh(countryCode, filters, key) {
   if (inFlight.has(key)) return inFlight.get(key);
   const p = (async () => {
-    const result = await fetchOne(countryCode, snapshotFilters(filters));
+    // Stream partial snapshots into the cache as chunks arrive so the client's
+    // warm-poll sees the count/results climb. Partial writes are throttled and
+    // serialized, and skip geocoding (that runs once on the final snapshot) to
+    // keep them cheap. Marked complete:false so getListings keeps `warming` on.
+    let lastWrite = 0;
+    let writing = Promise.resolve();
+    const onProgress = (partial) => {
+      const now = Date.now();
+      if (now - lastWrite < PARTIAL_WRITE_MS) return;
+      lastWrite = now;
+      writing = writing
+        .then(() => cacheSet(key, { at: Date.now(), ...partial, degraded: false, complete: false }, STALE_TTL_MS))
+        .catch(() => {});
+    };
+
+    const result = await fetchOne(countryCode, snapshotFilters(filters), onProgress);
+    await writing; // ensure the final write below lands after any partial write
     // Place coordinate-less listings (Telegram/custom) on the map by geocoding
     // their address > metro > district > city. Throttled + cached; runs here in
     // the background refresh so it never delays a user request.
@@ -178,7 +212,7 @@ function refresh(countryCode, filters, key) {
     } catch (err) {
       console.warn(`[geocode] ${countryCode} failed: ${err.message}`);
     }
-    const entry = { at: Date.now(), ...result };
+    const entry = { at: Date.now(), ...result, complete: true };
     await cacheSet(key, entry, STALE_TTL_MS);
     return entry;
   })().finally(() => inFlight.delete(key));
@@ -198,6 +232,17 @@ export async function getListings(countryCode, filters, { force = false } = {}) 
 
   const hit = await cacheGet(key);
   if (hit) {
+    // An in-progress (partial) snapshot: serve what we have and keep the client
+    // polling so the count/results climb as more chunks land. If no refresh is
+    // actually running (e.g. the process restarted mid-scrape), resume one.
+    if (hit.complete === false) {
+      if (!inFlight.has(key)) {
+        refresh(countryCode, filters, key).catch((e) =>
+          console.warn(`[scraper] resume refresh ${countryCode} failed: ${e.message}`),
+        );
+      }
+      return { ...hit, warming: true };
+    }
     const age = Date.now() - hit.at;
     if (age < CACHE_TTL_MS) return { ...hit, warming: false }; // fresh
     // Stale: kick off a background refresh but serve the cached copy now.

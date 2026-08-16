@@ -260,7 +260,9 @@ async function olxFetch(country, url) {
 // Scrape one country's real-estate snapshot via the fetcher sidecar. The caller
 // (index.js) neutralizes UI filters, so we fetch the whole category newest-first
 // and let applyFilters narrow it in memory afterwards — `filters` is unused here.
-export async function scrapeOlx(country, _filters) {
+// `onChunk(pageListings)` (optional) is called after each page so the caller can
+// stream partial results into the cache and the UI count can climb during a scrape.
+export async function scrapeOlx(country, _filters, onChunk) {
   if (!OLX_FETCHER_URL) return []; // OLX disabled until the fetch sidecar is set
   const out = [];
   const seen = new Set();
@@ -275,11 +277,15 @@ export async function scrapeOlx(country, _filters) {
       break; // later-page hiccup: keep what we already have
     }
     if (!ads.length) break;
+    const fresh = [];
     for (const item of ads) {
       if (item?.id == null || seen.has(item.id)) continue;
       seen.add(item.id);
-      out.push(mapStateItem(item, country));
+      const mapped = mapStateItem(item, country);
+      out.push(mapped);
+      fresh.push(mapped);
     }
+    if (onChunk && fresh.length) onChunk(fresh); // stream this page
     if (ads.length < 40) break; // short page → end of results
   }
   return out;
