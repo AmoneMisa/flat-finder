@@ -16,7 +16,33 @@ const OLX_MAX_PAGES = 10; // hard ceiling (~500 fetched) to bound latency
 
 const UA_HEADER =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+  '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+// Preferred UI language per portal, sent in Accept-Language so the response and
+// the anti-bot check see a locale consistent with the host being requested.
+const OLX_LANG = { RO: 'ro-RO,ro;q=0.9,en;q=0.7', UA: 'uk-UA,uk;q=0.9,ru;q=0.7,en;q=0.5', KZ: 'ru-RU,ru;q=0.9,kk;q=0.7,en;q=0.5', UZ: 'ru-RU,ru;q=0.9,uz;q=0.7,en;q=0.5' };
+
+// OLX fronts its API with an anti-bot WAF that rejects requests missing the
+// header set a real browser sends. A bare User-Agent gets an HTTP 403; sending
+// the same-origin Referer/Origin, client hints and Sec-Fetch metadata that
+// olx.<tld>'s own frontend sends clears the naive rules. (If the block is at the
+// IP/TLS-fingerprint level this is not enough — an egress proxy is then needed.)
+function browserHeaders(country) {
+  const host = country.olxHost;
+  return {
+    'User-Agent': UA_HEADER,
+    Accept: 'application/json, text/plain, */*',
+    'Accept-Language': OLX_LANG[country.code] || 'en-US,en;q=0.9',
+    Referer: `${host}/`,
+    Origin: host,
+    'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+  };
+}
 
 function buildUrl(country, filters) {
   const host = country.olxHost;
@@ -141,7 +167,7 @@ function mapItem(item, country) {
 export async function fetchOlxOffer(country, id) {
   const url = `${country.olxHost}/api/v1/offers/${encodeURIComponent(id)}/`;
   const res = await fetch(url, {
-    headers: { 'User-Agent': UA_HEADER, Accept: 'application/json', 'Accept-Language': 'en' },
+    headers: browserHeaders(country),
     signal: AbortSignal.timeout(12_000),
   });
   if (res.status === 404) return null;
@@ -155,7 +181,7 @@ export async function fetchOlxOffer(country, id) {
 async function fetchPage(country, filters, offset) {
   const url = buildUrl(country, { ...filters, offset, limit: OLX_PAGE_SIZE });
   const res = await fetch(url, {
-    headers: { 'User-Agent': UA_HEADER, Accept: 'application/json', 'Accept-Language': 'en' },
+    headers: browserHeaders(country),
     signal: AbortSignal.timeout(12_000),
   });
   if (!res.ok) throw new Error(`OLX ${country.code} HTTP ${res.status}`);
