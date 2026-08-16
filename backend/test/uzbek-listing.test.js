@@ -264,6 +264,40 @@ test('parses Uzbek Cyrillic rooms, locative floor and implicit monthly rent', ()
   assert.equal(listing.dealType, 'longRent');
 });
 
+test('infers Tashkent from Darkhan and Novomoskovskaya landmarks', () => {
+  const text = `#2комнатная #Новомосковская
+
+2 комнатная
+1 этаж
+2 этажного дом
+
+Сдается 2 комнатная квартира в центре города, ориентир: Дархан, Новомосковская.
+Для семьи без детей, можно двум девушкам или маме с детьми!
+
+Цена 450$
+
++998903720270 @arenda_tashkent10`;
+  const parsedPrice = parsePriceFromText(text, 'UZS');
+  const listing = makeListing({
+    id: 'darkhan-novomoskovskaya-test',
+    source: 'telegram',
+    country: 'UZ',
+    title: '#2комнатная #Новомосковская',
+    description: text,
+    price: parsedPrice.price,
+    currency: parsedPrice.currency,
+  });
+
+  assert.equal(listing.city, 'Tashkent');
+  assert.equal(listing.rooms, 2);
+  assert.equal(listing.floor, 1);
+  assert.equal(listing.totalFloors, 2);
+  assert.equal(listing.dealType, 'longRent');
+  assert.equal(listing.price, 450);
+  assert.equal(listing.currency, 'USD');
+  assert.deepEqual(listing.nearby, ['Darkhan', 'Novomoskovskaya']);
+});
+
 test('does not use a following phone number as the deposit amount', () => {
   const text = `Цена 450$\n\nИмеется договорной депозит.\n\n+998903720270 @arenda_tashkent10`;
   assert.deepEqual(parseDeposit(text), { required: true, amount: null });

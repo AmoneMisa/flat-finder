@@ -141,6 +141,8 @@ export const LOCATIONS = {
         { name: 'Chorsu Bazaar', re: /чорсу|chorsu/i },
         { name: 'Alay Bazaar', re: /алайск|олой\s+бозор|alay\s+bazaar/i },
         { name: 'C-2', re: /(?:^|[^\p{L}\p{N}_])(?:ц|c)\s*[-–]?\s*2(?:$|[^\p{L}\p{N}_])/iu },
+        { name: 'Darkhan', re: /дархан|darhan|darkhan/i },
+        { name: 'Novomoskovskaya', re: /новомосковск|novomoskovsk/i },
         { name: 'Amir Timur Square', re: /амир тимур|амира темура|amir timur/i },
         { name: 'Independence Square', re: /площад[ьи] независимости|mustaqillik maydoni|independence square/i },
         { name: 'Minor Mosque', re: /мечет[ьи] минор|minor masjid|minor mosque/i },
@@ -207,8 +209,17 @@ export function parseLocation(text, countryCode) {
     /(?:ориентир|mo['’`ʻʼ]?ljal|landmark)\s*(?:[:\-–—]\s*)?([^\r\n]{2,60})/i,
   );
   if (orientation && result.nearby.length < 6) {
-    const name = orientation[1].replace(/\s+/g, ' ').trim().replace(/[.,;:]+$/, '');
-    if (/[\p{L}\p{N}]{2}/u.test(name) && !result.nearby.includes(name)) result.nearby.push(name);
+    const names = orientation[1]
+      .split(/[,;/]/)
+      .map((value) => value.replace(/\s+/g, ' ').trim().replace(/[.,;:]+$/, ''))
+      .filter(Boolean);
+    const knownLandmarks = Object.values(country).flatMap((city) => city.landmarks);
+    for (const name of names) {
+      if (result.nearby.length >= 6) break;
+      if (!/[\p{L}\p{N}]{2}/u.test(name)) continue;
+      if (knownLandmarks.some((landmark) => landmark.re.test(name))) continue;
+      if (!result.nearby.includes(name)) result.nearby.push(name);
+    }
   }
   return result;
 }
