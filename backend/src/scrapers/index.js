@@ -173,6 +173,15 @@ function apartmentAiInput(listing) {
     depositAmount: listing.depositAmount ?? null,
     commissionRequired: listing.commission ?? null,
     commissionPercent: listing.commissionPercent ?? null,
+    priceAmount: listing.price ?? null,
+    priceCurrency: listing.currency ?? null,
+    negotiable: listing.negotiable ?? null,
+    parking: listing.parking ?? null,
+    elevator: listing.elevator ?? null,
+    heating: listing.heating ?? null,
+    hotWater: listing.hotWater ?? null,
+    internet: listing.internet ?? null,
+    smokingAllowed: listing.smokingAllowed ?? null,
   };
   return {
     rawText,
@@ -206,6 +215,18 @@ function mergeApartmentAi(listing, data) {
   fill('depositAmount', data.depositAmount);
   fill('commission', data.commissionRequired);
   fill('commissionPercent', data.commissionPercent);
+  fill('negotiable', data.negotiable);
+  fill('parking', data.parking);
+  fill('elevator', data.elevator);
+  fill('heating', data.heating);
+  fill('hotWater', data.hotWater);
+  fill('internet', data.internet);
+  fill('smokingAllowed', data.smokingAllowed);
+  fill('utilitiesAmount', data.utilitiesAmount);
+  fill('minLeaseTerm', data.minLeaseTerm);
+  fill('availableFrom', data.availableFrom);
+  fill('price', data.priceAmount);
+  if (!merged.currency && data.priceCurrency) merged.currency = data.priceCurrency;
   fill('condition', data.condition);
 
   if (!merged.dealType && data.dealType) {
