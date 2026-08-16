@@ -113,8 +113,12 @@ export function parseRoomsFromText(text) {
   // rooms - 2". Checked FIRST so a stray preceding number (e.g. in "Этаж 3
   // Комнат 1" the 3 belongs to the floor) doesn't get grabbed by the
   // number-first pattern below.
+  // The label matches the room NOUN only, never the adjective ("1комнатная" is
+  // handled by (A)): a `(?![а-яё])` boundary stops "комнат" from eating
+  // "комнатная⏎9 этаж" and grabbing the floor as the room count. The gap before
+  // the number is horizontal whitespace only, so it can never cross a line.
   const after = text.match(
-    /(?:количество\s+комнат|комнат[а-яё]*|кімнат[а-яё]*|xonalar\s*soni|xona\s*soni|number\s+of\s+rooms)\s*[:\-–—]?\s*(\d+)/i,
+    /(?:количество\s+комнат\w*|комнат(?:ы|а)?(?![а-яё])|кімнат(?:и|а)?(?![а-яіїґ])|xonalar\s*soni|xona\s*soni|number\s+of\s+rooms)[^\S\r\n]*[:\-–—]?[^\S\r\n]*(\d+)/i,
   );
   if (after) return ok10(Number(after[1]));
 
