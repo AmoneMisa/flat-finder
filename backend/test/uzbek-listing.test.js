@@ -475,3 +475,17 @@ test('parses separate floor and building-height labels from a Yunusabad rental',
   assert.equal(listing.kvartal, '2 kvartal');
   assert.equal(listing.district, 'Yunusabad');
 });
+
+test('parses Glinka as a named Yakkasaray microdistrict', () => {
+  const listing = makeListing({
+    id: 'yakkasaray-glinka-test',
+    source: 'telegram',
+    country: 'UZ',
+    title: 'Яккасарайский район, Глинка.',
+    description: 'Яккасарайский район, Глинка.',
+  });
+
+  assert.equal(listing.city, 'Tashkent');
+  assert.equal(listing.district, 'Yakkasaray');
+  assert.equal(listing.kvartal, 'Glinka');
+});

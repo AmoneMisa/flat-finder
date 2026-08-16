@@ -621,6 +621,10 @@ export function parseCommunalSeparated(text) {
 // (used later to place the map pin more precisely), or null.
 export function parseKvartal(text) {
   if (!text) return null;
+  // Named Tashkent microdistricts are commonly written without an explicit
+  // `микрорайон` label. Keep them in the same field as numbered kvartals so
+  // they appear in the UI's "Quarter / microdistrict" row.
+  if (/(?:^|[^\p{L}\p{N}_])(?:глинк[аи]?|glinka)(?:$|[^\p{L}\p{N}_])/iu.test(text)) return 'Glinka';
   const m =
     text.match(/(\d{1,3})\s*(?:-?\s*(?:chi|чи))?\s*[-\s]?\s*(?:квартал|кв-?л\b|kvartal(?:i)?|мкр\b|микрорайон|массив|massiv|daha(?:si|dan)?|hudud|худуд)/i) ||
     text.match(/(?:квартал|kvartal(?:i)?|мкр|микрорайон|массив|massiv|daha(?:si|dan)?|hudud|худуд)\s*[-№#]?\s*(\d{1,3})/i) ||
