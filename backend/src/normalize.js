@@ -38,6 +38,13 @@ import {
   parseNearbyShops,
   parseRoomsFromText,
   parseAreaFromText,
+  parseParking,
+  parseElevator,
+  parseHeating,
+  parseHotWater,
+  parseInternet,
+  parseSmoking,
+  parseNegotiable,
 } from './textparse.js';
 import { parseLocation, canonicalDistrict } from './locations.js';
 import { toUsd } from './fx.js';
@@ -159,6 +166,13 @@ export function makeListing(partial) {
   const communalSeparated = partial.communalSeparated ?? parseCommunalSeparated(combined);
   const kvartal = partial.kvartal ?? parseKvartal(combined);
   const nearbyShops = partial.nearbyShops ?? parseNearbyShops(combined);
+  const parking = partial.parking ?? parseParking(combined);
+  const elevator = partial.elevator ?? parseElevator(combined);
+  const heating = partial.heating ?? parseHeating(combined);
+  const hotWater = partial.hotWater ?? parseHotWater(combined);
+  const internet = partial.internet ?? parseInternet(combined);
+  const smokingAllowed = partial.smokingAllowed ?? parseSmoking(combined);
+  const negotiable = partial.negotiable ?? parseNegotiable(combined);
 
   return {
     id: String(partial.id),
@@ -211,6 +225,13 @@ export function makeListing(partial) {
     communalSeparated,
     kvartal,
     nearbyShops,
+    parking,
+    elevator,
+    heating,
+    hotWater,
+    internet,
+    smokingAllowed,
+    negotiable,
     furnished: partial.furnished ?? null,
     condition: partial.condition ?? null,
     amenities: Array.isArray(partial.amenities) ? partial.amenities : [],

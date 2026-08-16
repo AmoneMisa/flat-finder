@@ -524,3 +524,38 @@ export function parseNearbyShops(text) {
   for (const [name, re] of SHOP_CHAINS) if (re.test(text) && !out.includes(name)) out.push(name);
   return out;
 }
+
+// --- More amenities / conditions (positive-only unless a negation is stated) ---
+export function parseParking(text) {
+  if (!text) return null;
+  return /паркинг|парковк|машино[- ]?мест|parking|avtoturargoh|mashina\s*joyi/i.test(text) ? true : null;
+}
+export function parseElevator(text) {
+  if (!text) return null;
+  if (/без\s*лифт|no\s*elevator|lift\s*yo['’]?q/i.test(text)) return false;
+  return /лифт|elevator|\blift\b/i.test(text) ? true : null;
+}
+export function parseHeating(text) {
+  if (!text) return null;
+  return /отоплени|heating|otoplenie|isitish|markaziy\s*issiq/i.test(text) ? true : null;
+}
+export function parseHotWater(text) {
+  if (!text) return null;
+  return /горяч[а-яё]*\s*вод|hot\s*water|issiq\s*suv/i.test(text) ? true : null;
+}
+export function parseInternet(text) {
+  if (!text) return null;
+  return /интернет|wi[- ]?fi|wifi|\binternet\b/i.test(text) ? true : null;
+}
+export function parseSmoking(text) {
+  if (!text) return null;
+  if (/нельзя\s*курить|курить\s*нельзя|без\s*курени|не\s*курить|курить\s*запрещ|курение\s*запрещ|no\s*smoking/i.test(text)) return false;
+  if (/можно\s*курить|курить\s*можно|smoking\s*allowed/i.test(text)) return true;
+  return null;
+}
+export function parseNegotiable(text) {
+  if (!text) return null;
+  if (/без\s*торга|торг\s*не\s*уместен|цена\s*фиксир|fixed\s*price|торга\s*нет/i.test(text)) return false;
+  if (/возможен\s*торг|торг\s*уместен|торг\s*есть|торгу[еюё]|договорн(?:ая|ой)|kelishamiz|kelishilg|price\s*negotiable/i.test(text)) return true;
+  return null;
+}
