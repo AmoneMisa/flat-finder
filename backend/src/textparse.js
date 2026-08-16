@@ -7,14 +7,14 @@ const CURRENCY_WORDS = [
   [/(грн|uah\b|₴|гривн)/i, 'UAH'],
   [/(lei\b|ron\b)/i, 'RON'],
   [/(тенге|теңге|tenge|tg\b|kzt\b|₸)/i, 'KZT'],
-  [/(сум|сўм|so'?m\b|soʻm|som\b|uzs\b)/i, 'UZS'],
+  [/(сум|сўм|so[‘’ʻʼ'`]?m\b|som\b|uzs\b)/i, 'UZS'],
 ];
 
 // Currency marker used to spot amounts written right next to a currency, e.g.
 // "150 $", "$81500", "750€", "1 500 у.е". Lets us keep small hard-currency
 // rents (a few hundred $/€) that the "must be ≥ 1000" fallback would drop.
 const PRICE_SYMBOL =
-  "(?:\\$|€|₸|₴|usd|eur|грн?\\.?|uah|lei|ron|тенге|тг|kzt|сум|so'?m|uzs|у\\.?е\\.?|доллар|евро)";
+  "(?:\\$|€|₸|₴|usd|eur|грн?\\.?|uah|lei|ron|тенге|тг|kzt|сум|сўм|so[‘’ʻʼ'`]?m|uzs|у\\.?е\\.?|доллар|евро)";
 // A single amount: either grouped thousands ("1 500 000", "10.915.500") or a
 // plain integer ("81500", "580"). The separator set excludes newlines so a
 // floor and a price on separate lines ("Этаж: 3\n580€") never merge into 3580.
@@ -125,7 +125,11 @@ export function parsePriceFromText(text, fallbackCurrency = '') {
   // millions. When no currency was written, disambiguate by magnitude so a bare
   // "450" becomes USD while "10 915 500" stays UZS.
   if (!explicit && fallbackCurrency === 'UZS' && price != null) {
-    currency = price >= 1_000_000 ? 'UZS' : 'USD';
+    // Daily Uzbek listings commonly omit `so'm`: `Narxi 200 000 kunlik` is
+    // 200,000 UZS/day, never USD. Monthly posts still use the established
+    // small-number-as-USD convention (`450` -> USD, millions -> UZS).
+    const dailyUzbek = /(?:kunlik|sutkaga|kecha[- ]?kunduz|посуточн|суточн)/i.test(text);
+    currency = price >= 1_000_000 || (dailyUzbek && price >= 10_000) ? 'UZS' : 'USD';
   }
 
   return { price, currency };
@@ -149,11 +153,20 @@ export function parseRoomsFromText(text) {
   // ("2³/4/4" = a 2-room plan converted to 3 rooms, on floor 4 of 4), so the
   // effective room count is the superscript value.
   const compact = text.match(
-    /(?:^|\n)[^\d\r\n]{0,8}([1-9])\s*([¹²³⁴⁵⁶⁷⁸⁹])?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?=\s|$)/m,
+    /(?:^|\n)[^\d\r\n]{0,8}([1-9])\s*([¹²³⁴⁵⁶⁷⁸⁹])?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})[.,;:]?(?=\s|$)/m,
   );
   if (compact) {
     const superscript = '¹²³⁴⁵⁶⁷⁸⁹'.indexOf(compact[2]) + 1;
-    return ok10(superscript || Number(compact[1]));
+    if (superscript) return ok10(superscript);
+    const first = Number(compact[1]);
+    const floor = Number(compact[3]);
+    const last = Number(compact[4]);
+    // A few Uzbek channels write the ambiguous compact form as
+    // floor/storeys/rooms. The characteristic `2 / 2 / 3` has a valid 2/3
+    // floor pair and otherwise no room count; preserve the standard
+    // rooms/floor/storeys interpretation for forms such as `2/5/16`.
+    if (first === floor && last > first && last <= 5) return ok10(last);
+    return ok10(first);
   }
   // (B) number AFTER the label — the common Telegram form: "Количество
   // комнат: 3", "Комнат 1", "Комнаты: 2", "Xonalar soni: 3", "Number of
@@ -250,7 +263,7 @@ export function classifyDealType(text) {
     !/не\s+прода/i.test(t);
   if (sale) return 'sale';
   // Long-term rent: RO/RU/UA/EN + UZ (ijara/arenda) + KZ (жалға/жалдау/аренда).
-  if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаю|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|arenda|жалға|жалдау|жалга|жал\b|oila(?:ga)?\s+qo['’`]?yiladi|oila(?:ga)?\s+quyiladi|(?:хонали|квартир)[^\r\n]{0,100}турибди[^\r\n]{0,30}\d+\s*\$)/i.test(t))
+  if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаю|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|ижара|arenda|жалға|жалдау|жалга|жал\b|sherik(?:ka|lik)|шерик(?:ка|лик)|oila(?:ga)?\s+qo['’`]?yiladi|oila(?:ga)?\s+quyiladi|(?:хонали|квартир)[^\r\n]{0,100}турибди[^\r\n]{0,30}\d+\s*\$|квартира\s+бор)/i.test(t))
     return 'longRent';
   return null;
 }
@@ -271,7 +284,7 @@ export function parseFloor(text) {
   // Central-Asian room/floor/storeys shorthand. The optional superscript after
   // the room count describes a converted layout and is irrelevant to floors.
   const compact = t.match(
-    /(?:^|\n)[^\d\r\n]{0,8}[1-9]\s*[¹²³⁴⁵⁶⁷⁸⁹]?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?=\s|$)/m,
+    /(?:^|\n)[^\d\r\n]{0,8}[1-9]\s*[¹²³⁴⁵⁶⁷⁸⁹]?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})[.,;:]?(?=\s|$)/m,
   );
   if (compact) {
     const floor = Number(compact[1]);
@@ -382,11 +395,11 @@ export function classifyAudience(text) {
   // Families and single tenants are both accepted: this is not a restriction.
   if (/(?:семейн|для семь)[^.\n]{0,80}(?:одиноч|мужчин|женщин)|(?:одиноч|мужчин|женщин)[^.\n]{0,80}(?:семейн|для семь)/.test(t))
     return null;
-  if (/(для семь|семейн|для сім|для родин|for famil|families?|pentru famil|oila(?:ga| uchun|\s+qo['’`]?yiladi|\s+quyiladi)|отбасы)/.test(t))
+  if (/(для семь|семейн|для сім|для родин|for famil|families?|pentru famil|oila(?:ga| uchun|\s+qo['’`]?yiladi|\s+quyiladi)|оила|отбасы)/.test(t))
     return 'family';
-  if (/(девуш|девоч|для дівч|дівчат|for girls|for women|only girls|doar fete|\bfete\b|qizlar(ga| uchun)?|қыздар)/.test(t))
+  if (/(девуш|девоч|для дівч|дівчат|for girls|for women|only girls|doar fete|\bfete\b|qiz(?:lar|la)?(?:ga| uchun)?|(?:қ|к)из(?:лар|ла)?|қыздар)/.test(t))
     return 'women';
-  if (/(парн(ей|ям)|для мужчин|мужчинам|для хлопц|for men\b|for boys|doar b[aă]ie[țt]i|yigit(lar)?(ga| uchun)?|жігіт|ер адам)/.test(t))
+  if (/(парн(ей|ям)|для мужчин|мужчинам|для хлопц|for men\b|for boys|doar b[aă]ie[țt]i|yigit(lar)?(ga| uchun)?|(?:ў|у)гил\s*бол|жігіт|ер адам)/.test(t))
     return 'men';
   return null;
 }
@@ -453,7 +466,7 @@ export function classifyChildren(text) {
 // "подселение" / partial rent / room in a shared flat.
 export function looksRoomOnly(text) {
   if (!text) return false;
-  return /(подселени|подселение|комнату в|сдаётся комната|сдается комната|сдам комнату|здам кімнат|кімнату в|room in a (shared |)flat|room for rent|shared (flat|apartment|room)|roommate|xona ijaraga|бөлме жалға|închiriez camer[ăa])/i.test(text);
+  return /(подселени|подселение|комнату в|сдаётся комната|сдается комната|сдам комнату|здам кімнат|кімнату в|room in a (shared |)flat|room for rent|shared (flat|apartment|room)|roommate|xona ijaraga|xona\s+beriladi|sherik(?:ka|lik)|шерик(?:ка|лик)|(?:1|бир)\s*та\s*(?:бола|киши|қиз|киз)\s*керак|1\s*хонага[^\r\n]{0,40}(?:киши|одам)\s*турилади|бөлме жалға|închiriez camer[ăa])/i.test(text);
 }
 
 // Security deposit required? true/false/null. Also returns the amount when the
@@ -484,6 +497,13 @@ export function parseDeposit(text) {
 export function parseCommission(text) {
   if (!text) return { has: null, percent: null };
   const t = text.toLowerCase();
+  // Uzbek Telegram realtor shorthand: `M50%` / Cyrillic `М50%` means
+  // makler commission 50%, even when the word makler is omitted.
+  const shorthand = t.match(/(?:^|[^\p{L}\p{N}_])[mм]\s*[:.\-]?\s*(\d{1,3})\s*%/iu);
+  if (shorthand) {
+    const percent = Number(shorthand[1]);
+    return { has: true, percent: percent <= 100 ? percent : null };
+  }
   const KW = '(?:комисси|комісі|commission|comision|komissiya|комиссионн|ри[еэ]?лтор|ри[еэ]?лтер|услуг[аи]?\\s*ри[еэ]?лтор|маклер|makler|rieltor|vositachi)';
   if (/(без ?комисси|без ?комісі|no commission|fara comision|fără comision|без ?комиссионн)/i.test(t))
     return { has: false, percent: 0 };
@@ -499,7 +519,7 @@ export function parseCommission(text) {
 // "realtor fee / agency service" charge. Returns true when such a signal is
 // present and not negated ("без посредников", "vositachisiz"), otherwise false.
 const AGENCY_RE =
-  /(ри[еэ]л?тор|реал?тор|макл[её]р|агентств|агент\s+по\s+недвиж|услуги\s+агентств|реал?тор\s*хак|макл[её]р\s*хак|rieltor|makler|vositachi(?!siz)|agentlik|realtor|real\s*estate\s*agen|broker|брокер)/i;
+  /(ри[еэ]л?тор|реал?тор|макл[её]р|агентств|агент\s+по\s+недвиж|услуги\s+агентств|реал?тор\s*хак|макл[её]р\s*хак|rieltor|makler|vositachi(?!siz)|agentlik|realtor|real\s*estate\s*agen|broker|брокер|(?:^|[^\p{L}\p{N}_])[mм]\s*\d{1,3}\s*%)/iu;
 const NO_AGENCY_RE =
   /(без\s+посредник|без\s+ри[еэ]л?тор|без\s+макл|без\s+агент|no\s+agency|fara\s+intermediari|vositachisiz|egasidan|иесінен)/i;
 
@@ -567,7 +587,7 @@ export function parseGasSupply(text) {
 // makeListing). Returns true / null.
 export function parseNewBuilding(text) {
   if (!text) return null;
-  return /(новостро|новобуд|новый ?дом|new ?buil|newly ?built|yangi ?(bino|qurilgan|uy)|novostroy|bloc ?nou)/i.test(text)
+  return /(новостро|новобуд|новый ?дом|new ?buil|newly ?built|yangi ?(bino|qurilgan|uy)|n[oa]v[oa]sti?roy|novostroy|bloc ?nou)/i.test(text)
     ? true
     : null;
 }
@@ -591,7 +611,7 @@ export function parseCommunalSeparated(text) {
   // NB: \w does not match Cyrillic in JS regex, so stems use [а-яё]*.
   if (/(коммунал[а-яё]*(?:\s+услуг[а-яё]*)?\s*(?:отдельно|сверху|плюс|оплачива[а-яё]*\s*отдельно)|свет\s*вода\s*газ\s*отдельно|kommunal\w*\s*(?:alohida|ustiga)|utilities?\s*(?:separate|extra|not included))/i.test(t))
     return true;
-  if (/(коммунал[а-яё]*(?:\s+услуг[а-яё]*)?\s*(?:включ|входит|в ?стоимост)|вс[её] ?включ|all ?inclusive|kommunal\w*\s*(?:kiritilgan|ichida)|utilities?\s*included)/i.test(t))
+  if (/(коммунал[а-яё]*(?:\s+услуг[а-яё]*)?\s*(?:включ|входит|в ?стоимост)|вс[её] ?включ|all ?inclusive|kommunal\w*\s*(?:kiritilgan|ichida)|ком+унал(?:каси)?\s+ичида|utilities?\s*included)/i.test(t))
     return false;
   return null;
 }
@@ -602,8 +622,8 @@ export function parseCommunalSeparated(text) {
 export function parseKvartal(text) {
   if (!text) return null;
   const m =
-    text.match(/(\d{1,3})\s*[-\s]?\s*(?:квартал|кв-?л\b|kvartal(?:i)?|мкр\b|микрорайон|массив|massiv|daha(?:si|dan)?)/i) ||
-    text.match(/(?:квартал|kvartal(?:i)?|мкр|микрорайон|массив|massiv|daha(?:si|dan)?)\s*[-№#]?\s*(\d{1,3})/i) ||
+    text.match(/(\d{1,3})\s*(?:-?\s*(?:chi|чи))?\s*[-\s]?\s*(?:квартал|кв-?л\b|kvartal(?:i)?|мкр\b|микрорайон|массив|massiv|daha(?:si|dan)?|hudud|худуд)/i) ||
+    text.match(/(?:квартал|kvartal(?:i)?|мкр|микрорайон|массив|massiv|daha(?:si|dan)?|hudud|худуд)\s*[-№#]?\s*(\d{1,3})/i) ||
     // Tashkent shorthand omits the word "kvartal": "Chilonzor 12" means
     // Chilanzar district, 12th kvartal (not metro Chilonzor + building 12).
     text.match(/(?:чиланзар|chilonzor|chilanzar)\s*[-№#]?\s*(\d{1,2})(?!\d)/i);
@@ -623,6 +643,12 @@ export function parseAmenities(text) {
   if (/(?:комнат[а-яё]*\s+раздельн|изолированн[а-яё]*\s+комнат|separate\s+rooms?)/i.test(text)) {
     amenities.push('Separate rooms');
   }
+  if (/(?:стиральн[а-яё]*\s+машин|washing\s+machine|kir\s*yuvish\s*mashin|kirmoshina)/i.test(text)) {
+    amenities.push('Washing machine');
+  }
+  if (/(?:телевизор|телевизион|televizor|television|\btv\b)/i.test(text)) amenities.push('Television');
+  if (/(?:постельн[а-яё]*\s+бель|bed\s*linen|toza\s+choyshab|yostiq\s+jild)/i.test(text)) amenities.push('Bed linen');
+  if (/(?:полотенц|towels?|sochiq)/i.test(text)) amenities.push('Towels');
   return amenities;
 }
 

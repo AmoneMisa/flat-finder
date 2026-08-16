@@ -315,3 +315,163 @@ test('finds one shared listing by exact id outside normal pagination', () => {
     ['shared-row'],
   );
 });
+
+test('parses a daily Chilanzar listing with explicit Uzbek sum and amenities', () => {
+  const text = `KUNLIK IJARA ✅
+Manzil: Chilonzor tumani, 12-kvartal
+Mo'ljal: Farhod bozori ro‘parasi, Chilonzor metro 10 minut yo'l
+Wi-Fi
+Kir yuvish mashinasi
+Konditsioner
+Televizor
+Toza choyshab va yostiq jildlari
+Yuz va vanna sochiqlari
+Kunlik narx: 200 000 so‘mdan – 250 000 so‘mgacha`;
+  const parsedPrice = parsePriceFromText(text, 'UZS');
+  const listing = makeListing({
+    id: 'daily-chilanzar-test', source: 'telegram', country: 'UZ', title: 'KUNLIK IJARA',
+    description: text, price: parsedPrice.price, currency: parsedPrice.currency,
+  });
+
+  assert.equal(listing.price, 200_000);
+  assert.equal(listing.currency, 'UZS');
+  assert.equal(listing.dealType, 'shortRent');
+  assert.equal(listing.district, 'Chilanzar');
+  assert.equal(listing.kvartal, '12 kvartal');
+  assert.equal(listing.metro, 'Chilonzor');
+  assert.deepEqual(listing.nearby, ['Farhod Bazaar']);
+  assert.equal(listing.internet, true);
+  assert.equal(listing.airConditioner, true);
+  assert.deepEqual(listing.amenities, ['Washing machine', 'Television', 'Bed linen', 'Towels']);
+});
+
+test('parses an Uzbek roommate listing as a long-term women-only room', () => {
+  const text = `Uch tepa 12-kvartalda 1 ta qiz sherikka olinadi.
+Nizomiy yoki Jahon tillar universitetida o‘qiydigan qizla.
+Inyazga piyodalik yo‘l.`;
+  const listing = makeListing({
+    id: 'uchtepa-roommate-test', source: 'telegram', country: 'UZ', title: 'Sherikka qiz olinadi', description: text,
+  });
+
+  assert.equal(listing.dealType, 'longRent');
+  assert.equal(listing.roomOnly, true);
+  assert.equal(listing.audience, 'women');
+  assert.equal(listing.city, 'Tashkent');
+  assert.equal(listing.district, 'Uchtepa');
+  assert.equal(listing.kvartal, '12 kvartal');
+  assert.deepEqual(listing.nearby, ['Nizami Pedagogical University', 'World Languages University']);
+});
+
+test('parses Cyrillic Uzbek shared rent, included utilities and local price', () => {
+  const text = `УГИЛ БОЛЛАРГА
+КВАРТИРА БОР ХАЗАЙКАЛИ
+Сергели
+ЯНГИ ЧОШТЕПА
+1 метро бекати яқин
+1.000.000 дан
+Комуналкаси ичида
+1 ТА БОЛА КЕРАК.
+1 хонага обше 3 киши турилади
+Ижара шартнома йук
+Без Маклер`;
+  const parsedPrice = parsePriceFromText(text, 'UZS');
+  const listing = makeListing({
+    id: 'sergeli-shared-test', source: 'telegram', country: 'UZ', title: 'КВАРТИРА БОР ХАЗАЙКАЛИ',
+    description: text, price: parsedPrice.price, currency: parsedPrice.currency, byAgency: classifyAgency(text),
+  });
+
+  assert.equal(listing.price, 1_000_000);
+  assert.equal(listing.currency, 'UZS');
+  assert.equal(listing.dealType, 'longRent');
+  assert.equal(listing.roomOnly, true);
+  assert.equal(listing.audience, 'men');
+  assert.equal(listing.byAgency, false);
+  assert.equal(listing.communalSeparated, false);
+  assert.equal(listing.city, 'Tashkent');
+  assert.equal(listing.district, 'Sergeli');
+  assert.deepEqual(listing.nearby, ['Yangi Choshtepa']);
+});
+
+test('parses Sergeli hudud, realtor shorthand and bare daily UZS', () => {
+  const commissionText = `Сергели 10 худуд
+Новостройка
+Комнат 2
+Этаж 6
+Этажность 9
+400$
+Оила
+Кизла
+Калит узимда
+М50%`;
+  const commissionPrice = parsePriceFromText(commissionText, 'UZS');
+  const listing = makeListing({
+    id: 'sergeli-commission-test', source: 'telegram', country: 'UZ', title: 'Сергели 10 худуд',
+    description: commissionText, price: commissionPrice.price, currency: commissionPrice.currency,
+    byAgency: classifyAgency(commissionText),
+  });
+  assert.equal(listing.kvartal, '10 kvartal');
+  assert.equal(listing.commission, true);
+  assert.equal(listing.commissionPercent, 50);
+  assert.equal(listing.byAgency, true);
+  assert.equal(listing.rooms, 2);
+  assert.equal(listing.floor, 6);
+  assert.equal(listing.totalFloors, 9);
+  assert.equal(listing.newBuilding, true);
+
+  const dailyText = `Kunlik kvartira xona beriladi
+Sergele tumani 5 chi hududda sergele metroda 5 minut metroga piyoda
+2 xona navastroyka xazaykalik
+Narxi 200 000 kunlik`;
+  const dailyPrice = parsePriceFromText(dailyText, 'UZS');
+  const daily = makeListing({
+    id: 'sergeli-daily-test', source: 'telegram', country: 'UZ', title: 'Kunlik kvartira',
+    description: dailyText, price: dailyPrice.price, currency: dailyPrice.currency,
+  });
+  assert.equal(daily.price, 200_000);
+  assert.equal(daily.currency, 'UZS');
+  assert.equal(daily.dealType, 'shortRent');
+  assert.equal(daily.kvartal, '5 kvartal');
+  assert.equal(daily.metro, 'Sergeli');
+  assert.equal(daily.roomOnly, true);
+  assert.equal(daily.newBuilding, true);
+});
+
+test('parses the channel-specific 2 / 2 / 3 shorthand as three rooms on floor two of three', () => {
+  const text = `ARENDA
+SERGILE MOSHENA BOZOR
+2 / 2 / 3. Navastiroyka
+Xamma sharoiti bor
+Oyla qizlar bollar
+Narxi 400$
+Makler 50%`;
+  const parsedPrice = parsePriceFromText(text, 'UZS');
+  const listing = makeListing({
+    id: 'sergeli-compact-test', source: 'telegram', country: 'UZ', title: 'ARENDA',
+    description: text, price: parsedPrice.price, currency: parsedPrice.currency,
+    byAgency: classifyAgency(text),
+  });
+
+  assert.equal(listing.rooms, 3);
+  assert.equal(listing.floor, 2);
+  assert.equal(listing.totalFloors, 3);
+  assert.equal(listing.price, 400);
+  assert.equal(listing.currency, 'USD');
+  assert.equal(listing.commissionPercent, 50);
+  assert.equal(listing.newBuilding, true);
+  assert.equal(listing.district, 'Sergeli');
+  assert.deepEqual(listing.nearby, ['Sergeli Car Bazaar']);
+});
+
+test('parses separate floor and building-height labels from a Yunusabad rental', () => {
+  const text = `Аренда:
+- Юнусабад-2 квартал.
+- 2 комнатная, 3 этаж, 5 этажный дом, новый ремонт, мебель и техника, интернет, цена: 650$`;
+  const listing = makeListing({
+    id: 'yunusabad-floor-test', source: 'telegram', country: 'UZ', title: 'Аренда', description: text,
+  });
+  assert.equal(listing.floor, 3);
+  assert.equal(listing.totalFloors, 5);
+  assert.equal(listing.rooms, 2);
+  assert.equal(listing.kvartal, '2 kvartal');
+  assert.equal(listing.district, 'Yunusabad');
+});

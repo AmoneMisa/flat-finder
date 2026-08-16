@@ -120,8 +120,8 @@ export const LOCATIONS = {
         { name: 'Yakkasaray', re: /яккасарай|yakkasaroy|yakkasaray/i },
         { name: 'Shaykhantahur', re: /шайхантахур|shayxontohur|shaykhantahur/i },
         { name: 'Yashnobod', re: /яшнабад|yashnobod|yashnabad/i },
-        { name: 'Sergeli', re: /сергели|sergeli/i },
-        { name: 'Uchtepa', re: /учтеп|uchtepa/i },
+        { name: 'Sergeli', re: /сергели|serg(?:eli|ile|ele)/i },
+        { name: 'Uchtepa', re: /уч\s*теп|uch\s*tepa/i },
         { name: 'Mirobod', re: /мир[оа]б[оа]д|mirobod|mirabad/i },
       ],
       metro: [
@@ -135,6 +135,7 @@ export const LOCATIONS = {
         { name: 'Pushkin', re: /пушкин|pushkin/i },
         { name: 'Bodomzor', re: /бодомзор|bodomzor/i },
         { name: 'Yunusobod', re: /юнусабад(?: станц)?|yunusobod/i },
+        { name: 'Sergeli', re: /(?:метро|станц(?:ия|ии)?|metro|station)\s*сергели|сергели\s*(?:метро|станц(?:ия|ии)?)|(?:metro|station)\s*serg(?:eli|ile|ele)|serg(?:eli|ile|ele)\s*(?:metro|station)/i },
         { name: 'Tashkent North Railway Station', re: /(?:метро\s*)?(?:ташкент\s*)?(?:северн[а-яё]*\s+вокзал|toshkent\s+shimoliy\s+vokzal|tashkent\s+north\s+(?:railway\s+)?station)/i },
       ],
       landmarks: [
@@ -147,6 +148,11 @@ export const LOCATIONS = {
         { name: 'Independence Square', re: /площад[ьи] независимости|mustaqillik maydoni|independence square/i },
         { name: 'Minor Mosque', re: /мечет[ьи] минор|minor masjid|minor mosque/i },
         { name: 'Bobur Park', re: /(?:парк\s*(?:имени\s*)?бобур|бобур\w*\s*парк|bobur\s*(?:bog[‘’'`ʻʼ]?i|park)|park\s*bobur)/i },
+        { name: 'Farhod Bazaar', re: /farhod\s+bozor|фархадск[а-яё]*\s+базар|фарход\s+бозор/i },
+        { name: 'Nizami Pedagogical University', re: /(?:^|[^\p{L}\p{N}_])nizomiy(?:$|[^\p{L}\p{N}_])|низамий\s+(?:педагогик[а-яё]*\s+)?университет/iu },
+        { name: 'World Languages University', re: /jahon\s+tillar(?:i)?\s+universitet|жа[ҳх]он\s+тиллар[а-яё]*\s+университет|(?:^|[^\p{L}\p{N}_])иняз(?:$|[^\p{L}\p{N}_])/iu },
+        { name: 'Yangi Choshtepa', re: /yangi\s+cho['’`ʻʼ]?shtepa|янги\s+чоштепа/i },
+        { name: 'Sergeli Car Bazaar', re: /serg(?:eli|ile|ele)\s+(?:m[oa]sh[ei]na|avto)\s+bozor|сергели\s+(?:машин|авто)[а-яё]*\s+(?:бозор|базар)/i },
       ],
     },
   },
@@ -213,11 +219,15 @@ export function parseLocation(text, countryCode) {
       .split(/[,;/]/)
       .map((value) => value.replace(/\s+/g, ' ').trim().replace(/[.,;:]+$/, ''))
       .filter(Boolean);
-    const knownLandmarks = Object.values(country).flatMap((city) => city.landmarks);
+    const knownPlaces = Object.values(country).flatMap((city) => [
+      ...city.landmarks,
+      ...city.metro,
+      ...city.districts,
+    ]);
     for (const name of names) {
       if (result.nearby.length >= 6) break;
       if (!/[\p{L}\p{N}]{2}/u.test(name)) continue;
-      if (knownLandmarks.some((landmark) => landmark.re.test(name))) continue;
+      if (knownPlaces.some((place) => place.re.test(name))) continue;
       if (!result.nearby.includes(name)) result.nearby.push(name);
     }
   }
