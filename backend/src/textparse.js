@@ -35,9 +35,22 @@ export function parsePriceFromText(text, fallbackCurrency = '') {
 
   let price = null;
 
+  // A labelled base price outranks conditional prices elsewhere in the post.
+  // Example: `Аренда: 400$` remains the main rent even when a later line says
+  // `Для семьи — 450$`.
+  {
+    const labelled = text.match(
+      new RegExp(`(?:цена|ціна|нарх(?:и)?|narx|price|стоимост[ьи]|аренд(?:а|ная\\s+плата)?|rent)\\s*[:\\-–—]?\\s*(${PRICE_NUM})`, 'i'),
+    );
+    if (labelled) {
+      const n = Number(labelled[1].replace(/[\s.,]/g, ''));
+      if (n >= 50 && n <= 5_000_000_000) price = n;
+    }
+  }
+
   // (1) Prefer a number sitting right next to a currency marker. These are
   // reliable even when small, so hard-currency rents like "150 $" survive.
-  {
+  if (price == null) {
     let tagged = null;
     const reNumSym = new RegExp(`(${PRICE_NUM})\\s*${PRICE_SYMBOL}`, 'ig');
     const reSymNum = new RegExp(`${PRICE_SYMBOL}\\s*(${PRICE_NUM})`, 'ig');
@@ -128,12 +141,15 @@ const WORD_ROOMS = {
 
 export function parseRoomsFromText(text) {
   if (!text) return null;
+  // Basement shorthand: room count / zero / basement floor.
+  const basement = text.match(/(?:^|\n)[^\d\r\n]{0,8}([1-9])\s*\/\s*0\s*\/\s*-1\s*(?:этаж|эт\.?)?[^\r\n]*(?:подвал|цоколь)/im);
+  if (basement) return ok10(Number(basement[1]));
   // Central-Asian Telegram shorthand: room/floor/storeys, for example
   // "2/4/4". A superscript room count means the original layout was converted
   // ("2³/4/4" = a 2-room plan converted to 3 rooms, on floor 4 of 4), so the
   // effective room count is the superscript value.
   const compact = text.match(
-    /(?:^|\n)\s*([1-9])\s*([¹²³⁴⁵⁶⁷⁸⁹])?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})\s*(?=\n|$)/m,
+    /(?:^|\n)[^\d\r\n]{0,8}([1-9])\s*([¹²³⁴⁵⁶⁷⁸⁹])?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?=\s|$)/m,
   );
   if (compact) {
     const superscript = '¹²³⁴⁵⁶⁷⁸⁹'.indexOf(compact[2]) + 1;
@@ -199,7 +215,12 @@ export function parseResidentialComplex(text) {
 
 export function parseAreaFromText(text) {
   if (!text) return null;
-  const m = text.match(/(\d{2,4})\s*(?:m2|m²|мкв|м2|м²|sq ?m|кв\.?\s*м)/i);
+  const m =
+    text.match(/(\d{2,4})\s*(?:m2|m²|мкв|м2|м²|sq ?m|кв\.?\s*м)/i) ||
+    // Telegram shorthand often puts a bare `кв` area after
+    // rooms/floor/storeys: `2/5/16 56кв`. Requiring the three-part prefix
+    // avoids mistaking district labels such as `Chilonzor 16кв` for an area.
+    text.match(/(?:^|\n)[^\d\r\n]{0,8}[1-9]\s*[¹²³⁴⁵⁶⁷⁸⁹]?\s*\/\s*[0-9]{1,2}\s*\/\s*[0-9]{1,2}\s+(\d{2,4})\s*кв(?=\s|$)/im);
   return m ? Number(m[1]) : null;
 }
 
@@ -239,10 +260,14 @@ export function parseFloor(text) {
   const ok = (f, total) =>
     f >= 0 && f <= 200 && (total == null || (total >= f && total <= 200));
 
+  if (/(?:^|\n)[^\d\r\n]{0,8}[1-9]\s*\/\s*0\s*\/\s*-1\s*(?:этаж|эт\.?)?[^\r\n]*(?:подвал|цоколь)/im.test(t)) {
+    return { floor: -1, totalFloors: null };
+  }
+
   // Central-Asian room/floor/storeys shorthand. The optional superscript after
   // the room count describes a converted layout and is irrelevant to floors.
   const compact = t.match(
-    /(?:^|\n)\s*[1-9]\s*[¹²³⁴⁵⁶⁷⁸⁹]?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})\s*(?=\n|$)/m,
+    /(?:^|\n)[^\d\r\n]{0,8}[1-9]\s*[¹²³⁴⁵⁶⁷⁸⁹]?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?=\s|$)/m,
   );
   if (compact) {
     const floor = Number(compact[1]);
@@ -374,6 +399,15 @@ export function parseContact(text) {
   if (kw) {
     const digits = kw[1].replace(/\D/g, '');
     if (digits.length >= 9 && digits.length <= 15) return kw[1].trim();
+  }
+
+  // Some Telegram posts put the marker after a local number: `771443473 tel`.
+  const trailingKw = text.match(
+    /(\+?\d[\d\s().-]{6,}\d)\s*(?:tel|тел(?:ефон)?|phone|моб|whats?app|viber|telegram|aloqa|contact)(?=$|[^\p{L}\p{N}_])/iu,
+  );
+  if (trailingKw) {
+    const digits = trailingKw[1].replace(/\D/g, '');
+    if (digits.length >= 9 && digits.length <= 15) return trailingKw[1].trim();
   }
 
   const handle = text.match(/@[A-Za-z0-9_]{4,32}/);

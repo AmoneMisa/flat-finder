@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { applyFilters, makeListing } from '../src/normalize.js';
-import { classifyAgency, parseDeposit, parseFloor } from '../src/textparse.js';
+import { classifyAgency, parseContact, parseDeposit, parseFloor, parsePriceFromText } from '../src/textparse.js';
 
 const description = `Chilonzor 12
 Shoxmed sentr
@@ -74,6 +74,75 @@ test('parses Uchtepa district, daha, floor pair and nearby amenities', () => {
 
 test('parses a bare floor / building-height pair', () => {
   assert.deepEqual(parseFloor('Квартира 2 / 14, рядом с парком'), { floor: 2, totalFloors: 14 });
+});
+
+test('parses compact room, floor, area and named orientation from a Telegram post', () => {
+  const text = `Сдается квартира
+
+Яккасарайский район "ЖК Kislorod"
+
+Ориентир: Seoul Mun
+
+2/5/16 56кв
+
+Цена: 350$
+
+Пишите / звоните:
+
+771443473 tel`;
+  const listing = makeListing({
+    id: 'kislorod-test',
+    source: 'telegram',
+    country: 'UZ',
+    title: 'Сдается квартира',
+    description: text,
+    price: 350,
+    currency: 'USD',
+  });
+
+  assert.equal(listing.dealType, 'longRent');
+  assert.equal(listing.propertyType, 'flat');
+  assert.equal(listing.city, 'Tashkent');
+  assert.equal(listing.district, 'Yakkasaray');
+  assert.equal(listing.residenceComplex, 'Kislorod');
+  assert.deepEqual(listing.nearby, ['Seoul Mun']);
+  assert.equal(listing.rooms, 2);
+  assert.equal(listing.floor, 5);
+  assert.equal(listing.totalFloors, 16);
+  assert.equal(listing.areaSqm, 56);
+  assert.equal(listing.price, 350);
+  assert.equal(listing.currency, 'USD');
+  assert.equal(listing.contact, '771443473');
+  assert.equal(parseContact(text), '771443473');
+});
+
+test('parses a basement rental and keeps its labelled base price', () => {
+  const text = `🔥 СРОЧНО! АРЕНДА КВАРТИРЫ 🔥
+
+📍 Учтепа Авеню
+🏠 2/0/-1 этаж (подвал)
+💰 Аренда: 400$
+👨‍👩‍👧 Для семьи — 450$
+👶 Для семьи с 4 детьми — 400$`;
+
+  const parsedPrice = parsePriceFromText(text, 'UZS');
+  const listing = makeListing({
+    id: 'uchtepa-basement-test',
+    source: 'telegram',
+    country: 'UZ',
+    title: '🔥 СРОЧНО! АРЕНДА КВАРТИРЫ 🔥',
+    description: text,
+    price: parsedPrice.price,
+    currency: parsedPrice.currency,
+  });
+
+  assert.equal(listing.rooms, 2);
+  assert.equal(listing.floor, -1);
+  assert.equal(listing.totalFloors, null);
+  assert.equal(listing.price, 400);
+  assert.equal(listing.currency, 'USD');
+  assert.equal(listing.dealType, 'longRent');
+  assert.equal(listing.district, 'Uchtepa');
 });
 
 test('does not use a following phone number as the deposit amount', () => {

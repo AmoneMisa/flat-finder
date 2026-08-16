@@ -193,6 +193,15 @@ export function parseLocation(text, countryCode) {
     if (item.name === 'Park' && result.nearby.some((name) => /Park$/i.test(name))) continue;
     if (item.re.test(text) && !result.nearby.includes(item.name)) result.nearby.push(item.name);
   }
+  // Preserve an explicitly named orientation point even when it is not in the
+  // curated landmark table, e.g. `Ориентир: Seoul Mun`.
+  const orientation = text.match(
+    /(?:ориентир|mo['’`ʻʼ]?ljal|landmark)\s*[:\-–—]\s*([^\r\n]{2,60})/i,
+  );
+  if (orientation && result.nearby.length < 6) {
+    const name = orientation[1].replace(/\s+/g, ' ').trim().replace(/[.,;:]+$/, '');
+    if (/[\p{L}\p{N}]{2}/u.test(name) && !result.nearby.includes(name)) result.nearby.push(name);
+  }
   return result;
 }
 
