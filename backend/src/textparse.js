@@ -174,7 +174,7 @@ export function parseRoomsFromText(text) {
   // бөлме/бөлмелі (KZ), room/bedroom (EN). We deliberately do NOT match a bare
   // "кв" — that is "кв.м" (area) or "квартал" (block), e.g. "Чиланзар 16кв".
   const before = text.match(
-    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|ком\.|кімнатн|кімн|кім\.|room|bedroom|xonali|xona|бөлмел|бөлме)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
+    /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|ком\.|кімнатн|кімн|кім\.|room|bedroom|xonali|xona|хонали|хона|бөлмел|бөлме)|(\d+)\s*-\s*к(?:омн|\.?\s*кв)/i,
   );
   if (before) return ok10(Number(before[1] ?? before[2]));
 
@@ -250,7 +250,7 @@ export function classifyDealType(text) {
     !/не\s+прода/i.test(t);
   if (sale) return 'sale';
   // Long-term rent: RO/RU/UA/EN + UZ (ijara/arenda) + KZ (жалға/жалдау/аренда).
-  if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаю|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|arenda|жалға|жалдау|жалга|жал\b|oila(?:ga)?\s+qo['’`]?yiladi|oila(?:ga)?\s+quyiladi)/i.test(t))
+  if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаю|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|arenda|жалға|жалдау|жалга|жал\b|oila(?:ga)?\s+qo['’`]?yiladi|oila(?:ga)?\s+quyiladi|(?:хонали|квартир)[^\r\n]{0,100}турибди[^\r\n]{0,30}\d+\s*\$)/i.test(t))
     return 'longRent';
   return null;
 }
@@ -260,7 +260,7 @@ export function classifyDealType(text) {
 export function parseFloor(text) {
   if (!text) return { floor: null, totalFloors: null };
   const t = text.toLowerCase();
-  const FLOOR = '(?:этаж|поверх|qavat|қабат|қабатт|etaj|floor|эт\\.?)';
+  const FLOOR = '(?:этаж(?:да)?|поверх|qavat|қабат|қабатт|etaj|floor|эт\\.?)';
   const ok = (f, total) =>
     f >= 0 && f <= 200 && (total == null || (total >= f && total <= 200));
 

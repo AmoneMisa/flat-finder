@@ -243,6 +243,27 @@ test('recognizes first-person long rent and all nearby place categories', () => 
   assert.equal(listing.contact, '993758330');
 });
 
+test('parses Uzbek Cyrillic rooms, locative floor and implicit monthly rent', () => {
+  const text = '2 хонали 3 этажда ремонти яхши холатда турибди 350$';
+  const parsedPrice = parsePriceFromText(text, 'UZS');
+  const listing = makeListing({
+    id: 'uzbek-cyrillic-floor-test',
+    source: 'telegram',
+    country: 'UZ',
+    title: text,
+    description: text,
+    price: parsedPrice.price,
+    currency: parsedPrice.currency,
+  });
+
+  assert.equal(listing.rooms, 2);
+  assert.equal(listing.floor, 3);
+  assert.equal(listing.totalFloors, null);
+  assert.equal(listing.price, 350);
+  assert.equal(listing.currency, 'USD');
+  assert.equal(listing.dealType, 'longRent');
+});
+
 test('does not use a following phone number as the deposit amount', () => {
   const text = `Цена 450$\n\nИмеется договорной депозит.\n\n+998903720270 @arenda_tashkent10`;
   assert.deepEqual(parseDeposit(text), { required: true, amount: null });
