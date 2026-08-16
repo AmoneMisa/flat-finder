@@ -5,6 +5,7 @@
 // nothing (all blocked/empty), we fall back to generated demo data so the
 // client never sees an empty screen for that country.
 
+import { createHash } from 'node:crypto';
 import { COUNTRIES } from '../countries.js';
 import { scrapeOlx } from './olx.js';
 import { scrapeTelegram } from './telegram.js';
@@ -112,13 +113,31 @@ function snapshotFilters(filters) {
   };
 }
 
+// Content fingerprint: identical reposts (same text/photo across channels or a
+// channel reposting itself) get different message ids, so id-dedup alone misses
+// them. Hash the normalized title+description; for near-empty text fall back to
+// the structured key so we don't collapse distinct short posts (spec §27).
+function contentFingerprint(l) {
+  const text = `${l.title || ''} ${l.description || ''}`
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[^a-zа-яёіїґ0-9]+/g, '')
+    .slice(0, 600);
+  if (text.length >= 40) return `t:${createHash('sha1').update(text).digest('hex')}`;
+  return `k:${[l.price, l.currency, l.rooms, l.areaSqm, l.district, l.city].join('|').toLowerCase()}`;
+}
+
 function dedupe(listings) {
-  const seen = new Set();
+  const seenId = new Set();
+  const seenContent = new Set();
   const out = [];
   for (const l of listings) {
-    const key = `${l.source}:${l.id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const id = `${l.source}:${l.id}`;
+    if (seenId.has(id)) continue;
+    const fp = contentFingerprint(l);
+    if (seenContent.has(fp)) continue; // identical repost — keep the first
+    seenId.add(id);
+    seenContent.add(fp);
     out.push(l);
   }
   return out;
