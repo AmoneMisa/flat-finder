@@ -222,6 +222,27 @@ test('infers Tashkent from Alay and puts dishwasher into other amenities', () =>
   assert.deepEqual(listing.amenities, ['Dishwasher', 'Separate rooms']);
 });
 
+test('recognizes first-person long rent and all nearby place categories', () => {
+  const text = `Сдаю чистую квартиру порядочным людям. В квартире есть все необходимые бытовые техники также рядом есть школа, ТЦ, поликлиника, мечеть и т.д.
+
+Шторы повесим позже
+
+Если не отвечу на звонок пиш
+
+993758330 tel`;
+  const listing = makeListing({
+    id: 'nearby-categories-test',
+    source: 'telegram',
+    country: 'UZ',
+    title: 'Сдаю чистую квартиру порядочным людям',
+    description: text,
+  });
+
+  assert.equal(listing.dealType, 'longRent');
+  assert.deepEqual(listing.nearby, ['Clinic', 'School', 'Shopping center', 'Mosque']);
+  assert.equal(listing.contact, '993758330');
+});
+
 test('does not use a following phone number as the deposit amount', () => {
   const text = `Цена 450$\n\nИмеется договорной депозит.\n\n+998903720270 @arenda_tashkent10`;
   assert.deepEqual(parseDeposit(text), { required: true, amount: null });

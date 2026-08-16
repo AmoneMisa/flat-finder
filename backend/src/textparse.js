@@ -250,7 +250,7 @@ export function classifyDealType(text) {
     !/не\s+прода/i.test(t);
   if (sale) return 'sale';
   // Long-term rent: RO/RU/UA/EN + UZ (ijara/arenda) + KZ (жалға/жалдау/аренда).
-  if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|arenda|жалға|жалдау|жалга|жал\b|oila(?:ga)?\s+qo['’`]?yiladi|oila(?:ga)?\s+quyiladi)/i.test(t))
+  if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаю|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|arenda|жалға|жалдау|жалга|жал\b|oila(?:ga)?\s+qo['’`]?yiladi|oila(?:ga)?\s+quyiladi)/i.test(t))
     return 'longRent';
   return null;
 }

@@ -159,6 +159,8 @@ const GENERIC_NEARBY = [
   { name: 'Clinic', re: /пол[иe]клиник|pol[ei]klinik/iu },
   { name: 'School', re: /(?:^|[^\p{L}\p{N}_])(?:школ[а-яё]*|maktab[a-z]*)(?:$|[^\p{L}\p{N}_])/iu },
   { name: 'Kindergarten', re: /детск\w*\s+сад|bolalar\s+bog[‘’'`ʻʼ]?chasi/iu },
+  { name: 'Shopping center', re: /(?:^|[^\p{L}\p{N}_])(?:тц|трц|shopping\s+cent(?:er|re)|savdo\s+markazi)(?:$|[^\p{L}\p{N}_])/iu },
+  { name: 'Mosque', re: /(?:^|[^\p{L}\p{N}_])(?:мечет[а-яё]*|masjid|mosque)(?:$|[^\p{L}\p{N}_])/iu },
 ];
 
 // Detect district / metro / nearby landmarks in a post's text for a given
