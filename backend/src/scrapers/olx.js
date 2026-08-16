@@ -8,11 +8,20 @@
 
 import { makeListing } from '../normalize.js';
 import { guessPropertyType } from '../textparse.js';
+import { throttle, sleep } from '../ratelimit.js';
 
 // Pull several newest-first pages so enough recent listings survive the 3-week
 // freshness filter. One page (~50) is far too few for big markets.
 const OLX_PAGE_SIZE = 50;
 const OLX_MAX_PAGES = 10; // hard ceiling (~500 fetched) to bound latency
+
+// Rate limiting: keep at least OLX_MIN_INTERVAL_MS (+ up to OLX_JITTER_MS random)
+// between requests to the same OLX portal so we don't hammer it. Keyed per host,
+// so different countries throttle independently.
+const OLX_MIN_INTERVAL_MS = Number(process.env.OLX_MIN_INTERVAL_MS) || 900;
+const OLX_JITTER_MS = Number(process.env.OLX_JITTER_MS) || 500;
+// On HTTP 429 (Too Many Requests), back off this long before the caller retries.
+const OLX_BACKOFF_MS = Number(process.env.OLX_BACKOFF_MS) || 5_000;
 
 const UA_HEADER =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -166,10 +175,7 @@ function mapItem(item, country) {
 // mapped listing, or null if the offer no longer exists.
 export async function fetchOlxOffer(country, id) {
   const url = `${country.olxHost}/api/v1/offers/${encodeURIComponent(id)}/`;
-  const res = await fetch(url, {
-    headers: browserHeaders(country),
-    signal: AbortSignal.timeout(12_000),
-  });
+  const res = await olxFetch(country, url);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`OLX ${country.code} offer HTTP ${res.status}`);
   const json = await res.json();
@@ -178,12 +184,26 @@ export async function fetchOlxOffer(country, id) {
   return mapItem(item, country);
 }
 
-async function fetchPage(country, filters, offset) {
-  const url = buildUrl(country, { ...filters, offset, limit: OLX_PAGE_SIZE });
+// One rate-limited GET to an OLX portal. Honors a 429 by backing off (Retry-After
+// if the portal sends it, else OLX_BACKOFF_MS) before surfacing the error so the
+// caller can decide whether to retry.
+async function olxFetch(country, url) {
+  await throttle(`olx:${country.olxHost}`, OLX_MIN_INTERVAL_MS, OLX_JITTER_MS);
   const res = await fetch(url, {
     headers: browserHeaders(country),
     signal: AbortSignal.timeout(12_000),
   });
+  if (res.status === 429) {
+    const retryAfter = Number(res.headers.get('retry-after'));
+    await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : OLX_BACKOFF_MS);
+    throw new Error(`OLX ${country.code} HTTP 429`);
+  }
+  return res;
+}
+
+async function fetchPage(country, filters, offset) {
+  const url = buildUrl(country, { ...filters, offset, limit: OLX_PAGE_SIZE });
+  const res = await olxFetch(country, url);
   if (!res.ok) throw new Error(`OLX ${country.code} HTTP ${res.status}`);
   const json = await res.json();
   const data = json?.data;
