@@ -28,7 +28,7 @@ import {
   parseDeposit,
   parseCommission,
 } from './textparse.js';
-import { parseLocation } from './locations.js';
+import { parseLocation, canonicalDistrict } from './locations.js';
 import { toUsd } from './fx.js';
 
 // Turn source HTML (Telegram/OLX posts arrive with <br />, entities, etc.) into
@@ -104,7 +104,10 @@ export function makeListing(partial) {
   // Intra-city location: district, nearest metro/transit station, and nearby
   // landmarks, detected from the post text unless the source provided them.
   const loc = parseLocation(combined, partial.country);
-  const district = partial.district ?? loc.district;
+  // A source-provided district (e.g. OLX's raw "Чиланзарский район") is mapped to
+  // our canonical value so the district filter matches; text-parsed districts are
+  // already canonical. Unknown names are kept as-is.
+  const district = canonicalDistrict(partial.district ?? loc.district, partial.country);
   const metro = partial.metro ?? loc.metro;
   const nearby = partial.nearby ?? loc.nearby;
   const residenceComplex = partial.residenceComplex ?? parseResidentialComplex(combined);

@@ -121,8 +121,8 @@ export const LOCATIONS = {
         { name: 'Shaykhantahur', re: /шайхантахур|shayxontohur|shaykhantahur/i },
         { name: 'Yashnobod', re: /яшнабад|yashnobod|yashnabad/i },
         { name: 'Sergeli', re: /сергели|sergeli/i },
-        { name: 'Uchtepa', re: /учтепа|uchtepa/i },
-        { name: 'Mirobod', re: /миробад|mirobod|mirabad/i },
+        { name: 'Uchtepa', re: /учтеп|uchtepa/i },
+        { name: 'Mirobod', re: /мир[оа]б[оа]д|mirobod|mirabad/i },
       ],
       metro: [
         { name: 'Chilonzor', re: /чиланзар(?: станц)?|chilonzor/i },
@@ -175,6 +175,23 @@ export function parseLocation(text, countryCode) {
     }
   }
   return result;
+}
+
+// Map a source-provided district name (e.g. OLX's "Чиланзарский район" or
+// "Chilonzor tumani") to our canonical dropdown value ("Chilanzar") by testing
+// it against the same multilingual regexes used for free-text detection. This
+// lets the strict district filter match regardless of the language/spelling the
+// source used. Unknown districts keep their raw name (still shown, just not
+// selectable from the predefined dropdown).
+export function canonicalDistrict(name, countryCode) {
+  if (!name || typeof name !== 'string') return name || null;
+  const country = LOCATIONS[countryCode];
+  if (!country) return name;
+  for (const city of Object.values(country)) {
+    const d = city.districts.find((x) => x.re.test(name));
+    if (d) return d.name;
+  }
+  return name;
 }
 
 // Plain-name lists per city for the /api/countries payload, so the app can
