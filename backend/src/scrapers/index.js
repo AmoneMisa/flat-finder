@@ -65,9 +65,8 @@ function cacheKey(countryCode, filters) {
   return [
     // Bump this when the snapshot shape/semantics change so Redis cannot serve
     // an older cache whose rows were already narrowed by a UI filter.
-    // v7 reparses existing source rows with the expanded Uzbek/Cyrillic price,
-    // rental, location, amenities and named-microdistrict rules immediately.
-    'full-feed-v7',
+    // v8 reparses rows with the ambiguity-aware Tashkent area/district model.
+    'full-feed-v8',
     countryCode,
     // UI filters are deliberately absent. Like the vacancy store, this cache
     // is one complete country snapshot; /api/listings filters and paginates it
@@ -161,7 +160,7 @@ function apartmentAiInput(listing) {
     floor: listing.floor ?? null,
     floorsTotal: listing.totalFloors ?? null,
     district: listing.district ?? null,
-    kvartal: listing.kvartal ?? null,
+    kvartal: listing.area ?? listing.kvartal ?? null,
     newBuilding: listing.newBuilding ?? null,
     balcony: listing.balcony ?? null,
     airConditioner: listing.airConditioner ?? null,
@@ -204,6 +203,7 @@ function mergeApartmentAi(listing, data) {
   fill('totalFloors', data.floorsTotal);
   fill('district', data.district);
   fill('kvartal', data.kvartal);
+  if (!merged.area && merged.kvartal) merged.area = merged.kvartal;
   fill('newBuilding', data.newBuilding);
   fill('balcony', data.balcony);
   fill('airConditioner', data.airConditioner);

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { applyFilters, makeListing } from '../src/normalize.js';
 import { classifyAgency, parseContact, parseDeposit, parseFloor, parsePriceFromText } from '../src/textparse.js';
+import { cityLocations, parseLocation } from '../src/locations.js';
+import { resolveTashkentArea } from '../src/tashkent-areas.js';
 
 const description = `Chilonzor 12
 Shoxmed sentr
@@ -40,8 +42,8 @@ test('parses converted-room Uzbek Telegram shorthand and rental details', () => 
   assert.equal(listing.furnished, true);
   assert.equal(listing.audience, 'family');
   assert.equal(listing.city, 'Tashkent');
-  assert.equal(listing.district, 'Chilanzar');
-  assert.equal(listing.kvartal, '12 kvartal');
+  assert.equal(listing.district, 'Uchtepa');
+  assert.equal(listing.kvartal, 'Chilanzar-12');
   assert.equal(listing.metro, null);
   assert.deepEqual(listing.nearbyShops, ['Havas']);
 });
@@ -215,7 +217,7 @@ test('infers Tashkent from Alay and puts dishwasher into other amenities', () =>
 
   assert.equal(listing.city, 'Tashkent');
   assert.equal(listing.rooms, 4);
-  assert.equal(listing.kvartal, 'C-2');
+  assert.equal(listing.kvartal, 'Alay');
   assert.equal(listing.price, 850);
   assert.equal(listing.currency, 'USD');
   assert.deepEqual(listing.nearby, ['Alay Bazaar', 'C-2', 'School']);
@@ -336,8 +338,8 @@ Kunlik narx: 200 000 so‘mdan – 250 000 so‘mgacha`;
   assert.equal(listing.price, 200_000);
   assert.equal(listing.currency, 'UZS');
   assert.equal(listing.dealType, 'shortRent');
-  assert.equal(listing.district, 'Chilanzar');
-  assert.equal(listing.kvartal, '12 kvartal');
+  assert.equal(listing.district, 'Uchtepa');
+  assert.equal(listing.kvartal, 'Chilanzar-12');
   assert.equal(listing.metro, 'Chilonzor');
   assert.deepEqual(listing.nearby, ['Farhod Bazaar']);
   assert.equal(listing.internet, true);
@@ -388,7 +390,8 @@ test('parses Cyrillic Uzbek shared rent, included utilities and local price', ()
   assert.equal(listing.byAgency, false);
   assert.equal(listing.communalSeparated, false);
   assert.equal(listing.city, 'Tashkent');
-  assert.equal(listing.district, 'Sergeli');
+  assert.equal(listing.district, 'Yangihayot');
+  assert.equal(listing.kvartal, 'Yangi Choshtepa');
   assert.deepEqual(listing.nearby, ['Yangi Choshtepa']);
 });
 
@@ -409,7 +412,9 @@ test('parses Sergeli hudud, realtor shorthand and bare daily UZS', () => {
     description: commissionText, price: commissionPrice.price, currency: commissionPrice.currency,
     byAgency: classifyAgency(commissionText),
   });
-  assert.equal(listing.kvartal, '10 kvartal');
+  assert.equal(listing.kvartal, 'Sergeli-10');
+  assert.equal(listing.areaAmbiguous, true);
+  assert.equal(listing.requireExactAddress, true);
   assert.equal(listing.commission, true);
   assert.equal(listing.commissionPercent, 50);
   assert.equal(listing.byAgency, true);
@@ -430,7 +435,8 @@ Narxi 200 000 kunlik`;
   assert.equal(daily.price, 200_000);
   assert.equal(daily.currency, 'UZS');
   assert.equal(daily.dealType, 'shortRent');
-  assert.equal(daily.kvartal, '5 kvartal');
+  assert.equal(daily.kvartal, 'Sergeli-5');
+  assert.equal(daily.district, 'Sergeli');
   assert.equal(daily.metro, 'Sergeli');
   assert.equal(daily.roomOnly, true);
   assert.equal(daily.newBuilding, true);
@@ -472,7 +478,7 @@ test('parses separate floor and building-height labels from a Yunusabad rental',
   assert.equal(listing.floor, 3);
   assert.equal(listing.totalFloors, 5);
   assert.equal(listing.rooms, 2);
-  assert.equal(listing.kvartal, '2 kvartal');
+  assert.equal(listing.kvartal, 'Yunusabad-2');
   assert.equal(listing.district, 'Yunusabad');
 });
 
@@ -487,5 +493,54 @@ test('parses Glinka as a named Yakkasaray microdistrict', () => {
 
   assert.equal(listing.city, 'Tashkent');
   assert.equal(listing.district, 'Yakkasaray');
+  assert.equal(listing.area, 'Glinka');
   assert.equal(listing.kvartal, 'Glinka');
+});
+
+test('exposes all twelve Tashkent administrative districts', () => {
+  assert.deepEqual(
+    new Set(cityLocations('UZ').Tashkent.districts),
+    new Set([
+      'Almazar', 'Bektemir', 'Mirobod', 'Mirzo Ulugbek', 'Sergeli', 'Uchtepa',
+      'Chilanzar', 'Shaykhantahur', 'Yunusabad', 'Yakkasaray', 'Yangihayot', 'Yashnobod',
+    ]),
+  );
+});
+
+test('maps numbered Chilanzar areas to their actual districts', () => {
+  assert.deepEqual(resolveTashkentArea('Чиланзар-7'), {
+    area: 'Chilanzar-7', district: 'Chilanzar', confidence: 1, ambiguous: false, requireExactAddress: false,
+  });
+  assert.deepEqual(resolveTashkentArea('13 квартал Чиланзара'), {
+    area: 'Chilanzar-13', district: 'Uchtepa', confidence: 1, ambiguous: false, requireExactAddress: false,
+  });
+  assert.equal(parseLocation('Chilonzor 23 kvartal', 'UZ').district, 'Uchtepa');
+});
+
+test('resolves Kuylyuk ranges and preserves a bare ambiguous area', () => {
+  assert.equal(resolveTashkentArea('Куйлюк-2').district, 'Mirobod');
+  assert.equal(resolveTashkentArea('Куйлюк 6 квартал').district, 'Sergeli');
+  assert.equal(resolveTashkentArea('Куйлюк-Центр').district, 'Yashnobod');
+  assert.deepEqual(resolveTashkentArea('Ориентир рынок Куйлюк'), {
+    area: 'Kuylyuk', district: null, confidence: 0.25, ambiguous: true, requireExactAddress: true,
+  });
+});
+
+test('resolves Sergeli legacy addresses without guessing a bare massif', () => {
+  assert.equal(resolveTashkentArea('Сергели-1').district, 'Yangihayot');
+  assert.equal(resolveTashkentArea('Сергели-5А').district, 'Yangihayot');
+  assert.equal(resolveTashkentArea('Сергели-6А').district, 'Sergeli');
+  assert.deepEqual(resolveTashkentArea('Сергели, квартира рядом с рынком'), {
+    area: 'Sergeli', district: null, confidence: 0.35, ambiguous: true, requireExactAddress: true,
+  });
+  assert.equal(parseLocation('Sergele tumani, kvartira ijaraga', 'UZ').district, 'Sergeli');
+});
+
+test('maps legacy C-codes and named massifs to current districts', () => {
+  assert.equal(resolveTashkentArea('Лабзак Ц-13').district, 'Shaykhantahur');
+  assert.equal(resolveTashkentArea('Кашгар Ц-4').district, 'Yunusabad');
+  assert.equal(resolveTashkentArea('Алайский Ц-2').district, 'Mirzo Ulugbek');
+  assert.equal(resolveTashkentArea('Авиасозлар-3').district, 'Yashnobod');
+  assert.equal(resolveTashkentArea('Янги Чоштепа').district, 'Yangihayot');
+  assert.equal(resolveTashkentArea('Глинка').district, 'Yakkasaray');
 });

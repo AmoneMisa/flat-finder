@@ -6,6 +6,8 @@
 //
 // Indexed by country code, then by city name (matching countries.js `cities`).
 
+import { resolveTashkentArea } from './tashkent-areas.js';
+
 export const LOCATIONS = {
   UA: {
     Kyiv: {
@@ -114,15 +116,21 @@ export const LOCATIONS = {
   UZ: {
     Tashkent: {
       districts: [
-        { name: 'Chilanzar', re: /чиланзар|chilonzor|chilanzar/i },
+        { name: 'Almazar', re: /алмазарск|олмазор|almazar|olmazor/i },
+        { name: 'Bektemir', re: /бектемир|bektemir/i },
+        { name: 'Chilanzar', re: /чиланзарск[а-яё]*\s+район|чиланзар\s+туман[а-яё]*|chilanzar\s+district/i },
         { name: 'Yunusabad', re: /юнусабад|yunusobod|yunusabad/i },
         { name: 'Mirzo Ulugbek', re: /мирзо[\s-]?улугбек|mirzo[\s-]?ulug'?bek/i },
         { name: 'Yakkasaray', re: /яккасарай|yakkasaroy|yakkasaray/i },
         { name: 'Shaykhantahur', re: /шайхантахур|shayxontohur|shaykhantahur/i },
         { name: 'Yashnobod', re: /яшнабад|yashnobod|yashnabad/i },
-        { name: 'Sergeli', re: /сергели|serg(?:eli|ile|ele)/i },
+        // Bare Sergeli is an ambiguous legacy massif after Yangihayot was
+        // created. Numbered areas are resolved by tashkent-areas.js; only an
+        // explicit administrative marker identifies Sergeli district directly.
+        { name: 'Sergeli', re: /сергелийск[а-яё]*\s+район|сергели\s+туман[а-яё]*|serg(?:eli|ile|ele)\s+(?:tumani|district)/i },
         { name: 'Uchtepa', re: /уч\s*теп|uch\s*tepa/i },
         { name: 'Mirobod', re: /мир[оа]б[оа]д|mirobod|mirabad/i },
+        { name: 'Yangihayot', re: /янгиха[её]т|янгихаят|yangihayot/i },
       ],
       metro: [
         // Plain "Chilonzor" normally names the district; require an explicit
@@ -175,10 +183,30 @@ const GENERIC_NEARBY = [
 // country. Scans every city we have data for, returning the first district and
 // metro match plus up to 4 landmark names.
 export function parseLocation(text, countryCode) {
-  const result = { district: null, metro: null, nearby: [], city: null };
+  const result = {
+    district: null,
+    area: null,
+    areaAmbiguous: false,
+    locationConfidence: null,
+    requireExactAddress: false,
+    metro: null,
+    nearby: [],
+    city: null,
+  };
   if (!text) return result;
   const country = LOCATIONS[countryCode];
   if (!country) return result;
+  if (countryCode === 'UZ') {
+    const resolvedArea = resolveTashkentArea(text);
+    if (resolvedArea) {
+      result.area = resolvedArea.area;
+      result.district = resolvedArea.district;
+      result.areaAmbiguous = resolvedArea.ambiguous;
+      result.locationConfidence = resolvedArea.confidence;
+      result.requireExactAddress = resolvedArea.requireExactAddress;
+      result.city = 'Tashkent';
+    }
+  }
   // A matched district or metro is a strong signal for WHICH city a post is in,
   // so record it — many posts (e.g. Telegram) name a district but no city.
   for (const [cityName, city] of Object.entries(country)) {

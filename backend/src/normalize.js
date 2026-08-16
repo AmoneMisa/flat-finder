@@ -169,7 +169,11 @@ export function makeListing(partial) {
       (buildingYear && buildingYear >= new Date().getFullYear() - 3 ? true : null));
   // UZ note: utilities are usually included when unstated (null); the UI reflects that.
   const communalSeparated = partial.communalSeparated ?? parseCommunalSeparated(combined);
-  const kvartal = partial.kvartal ?? parseKvartal(combined);
+  const parsedKvartal = parseKvartal(combined);
+  const area = partial.area ?? loc.area ?? partial.kvartal ?? parsedKvartal;
+  // Keep `kvartal` as a backwards-compatible API field while exposing `area`
+  // separately for named massifs/microdistricts and legacy address codes.
+  const kvartal = partial.kvartal ?? area;
   const nearbyShops = partial.nearbyShops ?? parseNearbyShops(combined);
   const amenities = Array.isArray(partial.amenities) ? partial.amenities : parseAmenities(combined);
   const parking = partial.parking ?? parseParking(combined);
@@ -213,6 +217,10 @@ export function makeListing(partial) {
     audience,
     contact,
     district,
+    area,
+    areaAmbiguous: partial.areaAmbiguous ?? loc.areaAmbiguous ?? false,
+    locationConfidence: partial.locationConfidence ?? loc.locationConfidence ?? null,
+    requireExactAddress: partial.requireExactAddress ?? loc.requireExactAddress ?? false,
     metro,
     nearby,
     residenceComplex,
