@@ -281,7 +281,7 @@ export function applyFilters(listings, filters, rates = null) {
     propertyType, agency, priceMin, priceMax, priceTolerance, priceCurrency, query, dealType,
     roomsMin, roomsMax, bedroomsMin, bedroomsMax,
     floorMin, floorMax, yearMin, yearMax, audience, city,
-    cityAliases, district, metro,
+    cityAliases, district, metro, listingId,
     pets, children, roomOnly, maxAgeDays, sources,
   } = filters;
   // Cross-currency price filtering: when the client says which currency the
@@ -298,6 +298,7 @@ export function applyFilters(listings, filters, rates = null) {
   // Accept the selected city or any of its localized aliases (from countries.js).
   const cityForms = city ? (cityAliases?.length ? cityAliases : [city]).map(normCity) : null;
   return listings.filter((l) => {
+    if (listingId && String(l.id) !== String(listingId)) return false;
     if (sources?.length && !sources.includes(String(l.source).toLowerCase())) return false;
     // Never show offices / commercial premises among housing results.
     if (l.commercial) return false;

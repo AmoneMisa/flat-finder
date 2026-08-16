@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeListing } from '../src/normalize.js';
-import { classifyAgency, parseFloor } from '../src/textparse.js';
+import { applyFilters, makeListing } from '../src/normalize.js';
+import { classifyAgency, parseDeposit, parseFloor } from '../src/textparse.js';
 
 const description = `Chilonzor 12
 Shoxmed sentr
@@ -74,4 +74,22 @@ test('parses Uchtepa district, daha, floor pair and nearby amenities', () => {
 
 test('parses a bare floor / building-height pair', () => {
   assert.deepEqual(parseFloor('Квартира 2 / 14, рядом с парком'), { floor: 2, totalFloors: 14 });
+});
+
+test('does not use a following phone number as the deposit amount', () => {
+  const text = `Цена 450$\n\nИмеется договорной депозит.\n\n+998903720270 @arenda_tashkent10`;
+  assert.deepEqual(parseDeposit(text), { required: true, amount: null });
+  assert.deepEqual(parseDeposit('Залог 500$; телефон +998 90 123 45 67'), { required: true, amount: 500 });
+  assert.deepEqual(parseDeposit('Депозит 1 500 000 UZS'), { required: true, amount: 1_500_000 });
+});
+
+test('finds one shared listing by exact id outside normal pagination', () => {
+  const rows = [
+    { id: 'first', source: 'telegram', commercial: false },
+    { id: 'shared-row', source: 'telegram', commercial: false },
+  ];
+  assert.deepEqual(
+    applyFilters(rows, { listingId: 'shared-row', sources: ['telegram'] }).map(({ id }) => id),
+    ['shared-row'],
+  );
 });

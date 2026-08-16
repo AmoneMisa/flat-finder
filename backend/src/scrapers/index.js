@@ -65,7 +65,7 @@ function cacheKey(countryCode, filters) {
   return [
     // Bump this when the snapshot shape/semantics change so Redis cannot serve
     // an older cache whose rows were already narrowed by a UI filter.
-    'full-feed-v4',
+    'full-feed-v5',
     countryCode,
     // UI filters are deliberately absent. Like the vacancy store, this cache
     // is one complete country snapshot; /api/listings filters and paginates it

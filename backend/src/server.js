@@ -92,6 +92,10 @@ function parseFilters(q) {
     district: q.district ? String(q.district) : '',
     metro: q.metro ? String(q.metro) : '',
     query: q.query ? String(q.query) : '',
+    // Exact lookup used by share links. It is applied to the already warmed
+    // country snapshot, so a shared listing can be restored even when it is not
+    // part of the first paginated result set.
+    listingId: q.listingId ? String(q.listingId) : '',
     // Tenant conditions (only "require allowed" / "room only" are meaningful).
     pets: bool(q.pets),
     children: bool(q.children),

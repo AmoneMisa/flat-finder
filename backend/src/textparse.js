@@ -421,7 +421,16 @@ export function parseDeposit(text) {
   if (!new RegExp(KW, 'i').test(t)) return { required: null, amount: null };
   if (/(без ?залог|без ?депозит|no deposit|fara garantie|депозит ?не ?требует)/i.test(t))
     return { required: false, amount: null };
-  const m = t.match(new RegExp(`${KW}[^\\d]{0,15}(\\d[\\d\\s.,]{1,})`, 'i'));
+
+  // Amounts must be on the same line as the deposit marker. Previously `\s`
+  // crossed into the next line and turned a following +998 phone number into a
+  // huge deposit. Strip phone-shaped runs first in case contact data is written
+  // on the same line, then accept a grouped amount or a bounded plain integer.
+  const tail = t.match(new RegExp(`${KW}([^\\r\\n]{0,80})`, 'i'))?.[1] || '';
+  const withoutPhones = tail.replace(/\+?\d[\d\s().-]{7,}\d/g, (segment) =>
+    segment.replace(/\D/g, '').length >= 9 ? ' ' : segment,
+  );
+  const m = withoutPhones.match(/(?:^|[^\d])(\d{1,3}(?:[ \u00a0.,]\d{3})+|\d{2,8})(?!\d)/);
   const amount = m ? Number(m[1].replace(/[\s.,]/g, '')) : null;
   return { required: true, amount: amount && amount >= 10 ? amount : null };
 }
