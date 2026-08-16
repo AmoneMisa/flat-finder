@@ -51,6 +51,26 @@ export function parsePriceFromText(text, fallbackCurrency = '') {
     price = tagged;
   }
 
+  // (1b) Word/abbrev magnitudes: "5 миллионов", "1.2 млн", "1 млрд", "500 тыс".
+  // Without this, "Цена 5 миллионов" captured only "5" (below the price floor)
+  // and the listing showed no price. Applies the multiplier to the number.
+  if (price == null) {
+    const m = text.match(
+      /(\d+(?:[.,]\d+)?)\s*(млрд|миллиард|billion|млн|миллион|million|mln|тысяч|тыс|минг|ming)/i,
+    );
+    if (m) {
+      const base = Number(m[1].replace(',', '.'));
+      const unit = m[2].toLowerCase();
+      const mult = /млрд|миллиард|billion/.test(unit)
+        ? 1e9
+        : /млн|миллион|million|mln/.test(unit)
+          ? 1e6
+          : 1e3;
+      const n = Math.round(base * mult);
+      if (n >= 1000 && n <= 5_000_000_000) price = n;
+    }
+  }
+
   // (2) A number right after a price keyword ("Цена 450", "Narx 150",
   // "PRICE: 395", "Стоимость 550"). Reliable at any size even without a
   // currency symbol, which is common in Uzbek channels quoting bare USD.

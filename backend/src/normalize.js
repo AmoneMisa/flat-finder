@@ -83,21 +83,26 @@ export function makeListing(partial) {
   const rooms = partial.rooms != null ? Number(partial.rooms) : parseRoomsFromText(combined);
   let dealType = partial.dealType ?? classifyDealType(combined);
 
-  // Sale-scale price guard. Some sale posts carry no explicit sale keyword and
-  // only mention rent in passing (e.g. "зона для проживания и аренды", price
-  // "115 000 у.е."), so classifyDealType mislabels them as longRent. A hard-
-  // currency price this large is a purchase, never a monthly rent, so correct
-  // it. Scoped to USD/EUR (OLX maps Uzbek "у.е."/UYE to USD) to stay currency-
-  // safe; UZS/UAH/etc. nominal values are left untouched. Only overrides a
-  // *text-derived* longRent, never an explicit source dealType.
+  // Sale-scale price guard. A price far above any plausible monthly rent is a
+  // purchase, so classify it as a sale — even when the text names no deal type
+  // (very common on OLX sale listings: "ЖК Мадрид ... 4х комнатная квартира"
+  // at 3.1 billion UZS with no "продажа" word → no sale badge before this).
+  // Currency-aware floors, each comfortably above the top of the rental range.
+  // Only overrides an unknown or text-derived longRent — never an explicit
+  // source dealType, and never a short-term rent.
+  const SALE_FLOOR = {
+    USD: 10000, EUR: 10000, GBP: 10000, UYE: 10000,
+    UZS: 100_000_000, KZT: 5_000_000, UAH: 500_000, RON: 50_000,
+    KGS: 800_000, TJS: 90_000, RUB: 700_000,
+  };
   if (
     partial.dealType == null &&
-    dealType === 'longRent' &&
-    partial.price != null &&
-    Number(partial.price) >= 10000 &&
-    ['USD', 'EUR'].includes(String(partial.currency ?? '').toUpperCase())
+    dealType !== 'sale' &&
+    dealType !== 'shortRent' &&
+    partial.price != null
   ) {
-    dealType = 'sale';
+    const floor = SALE_FLOOR[String(partial.currency ?? '').toUpperCase()];
+    if (floor && Number(partial.price) >= floor) dealType = 'sale';
   }
 
   // Structured fields: prefer an explicit value from the source, otherwise parse
