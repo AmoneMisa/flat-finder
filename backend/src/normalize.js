@@ -45,6 +45,7 @@ import {
   parseInternet,
   parseSmoking,
   parseNegotiable,
+  parseFurnished,
 } from './textparse.js';
 import { parseLocation, canonicalDistrict } from './locations.js';
 import { toUsd } from './fx.js';
@@ -176,6 +177,7 @@ export function makeListing(partial) {
   const internet = partial.internet ?? parseInternet(combined);
   const smokingAllowed = partial.smokingAllowed ?? parseSmoking(combined);
   const negotiable = partial.negotiable ?? parseNegotiable(combined);
+  const furnished = partial.furnished ?? parseFurnished(combined);
 
   return {
     id: String(partial.id),
@@ -235,7 +237,7 @@ export function makeListing(partial) {
     internet,
     smokingAllowed,
     negotiable,
-    furnished: partial.furnished ?? null,
+    furnished,
     condition: partial.condition ?? null,
     amenities: Array.isArray(partial.amenities) ? partial.amenities : [],
     tags:

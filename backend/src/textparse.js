@@ -128,6 +128,17 @@ const WORD_ROOMS = {
 
 export function parseRoomsFromText(text) {
   if (!text) return null;
+  // Central-Asian Telegram shorthand: room/floor/storeys, for example
+  // "2/4/4". A superscript room count means the original layout was converted
+  // ("2³/4/4" = a 2-room plan converted to 3 rooms, on floor 4 of 4), so the
+  // effective room count is the superscript value.
+  const compact = text.match(
+    /(?:^|\n)\s*([1-9])\s*([¹²³⁴⁵⁶⁷⁸⁹])?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})\s*(?=\n|$)/m,
+  );
+  if (compact) {
+    const superscript = '¹²³⁴⁵⁶⁷⁸⁹'.indexOf(compact[2]) + 1;
+    return ok10(superscript || Number(compact[1]));
+  }
   // (B) number AFTER the label — the common Telegram form: "Количество
   // комнат: 3", "Комнат 1", "Комнаты: 2", "Xonalar soni: 3", "Number of
   // rooms - 2". Checked FIRST so a stray preceding number (e.g. in "Этаж 3
@@ -214,7 +225,7 @@ export function classifyDealType(text) {
     !/не\s+прода/i.test(t);
   if (sale) return 'sale';
   // Long-term rent: RO/RU/UA/EN + UZ (ijara/arenda) + KZ (жалға/жалдау/аренда).
-  if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|arenda|жалға|жалдау|жалга|жал\b)/i.test(t))
+  if (/(inchiri|închiri|de închiriat|оренд|аренд|rent\b|for rent|сдам|сдаётся|сдается|здам|найм|долгосроч|довгостро|ijara|ijaraga|arenda|жалға|жалдау|жалга|жал\b|oila(?:ga)?\s+qo['’`]?yiladi|oila(?:ga)?\s+quyiladi)/i.test(t))
     return 'longRent';
   return null;
 }
@@ -227,6 +238,29 @@ export function parseFloor(text) {
   const FLOOR = '(?:этаж|поверх|qavat|қабат|қабатт|etaj|floor|эт\\.?)';
   const ok = (f, total) =>
     f >= 0 && f <= 200 && (total == null || (total >= f && total <= 200));
+
+  // Central-Asian room/floor/storeys shorthand. The optional superscript after
+  // the room count describes a converted layout and is irrelevant to floors.
+  const compact = t.match(
+    /(?:^|\n)\s*[1-9]\s*[¹²³⁴⁵⁶⁷⁸⁹]?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})\s*(?=\n|$)/m,
+  );
+  if (compact) {
+    const floor = Number(compact[1]);
+    const total = Number(compact[2]);
+    if (floor >= 1 && floor <= 40 && total >= 2 && total <= 40 && floor <= total) {
+      return { floor, totalFloors: total };
+    }
+  }
+
+  // Uzbek/Russian labelled pairs that put the floor word between the values,
+  // for example "2-qavat / 14-qavatli" or "2 этаж из 14 этажей".
+  const labelledPair =
+    t.match(/([1-9]\d?)\s*-?\s*(?:qavat|этаж|поверх|қабат)\s*(?:\/|из|iz|of)\s*([1-9]\d?)\s*-?\s*(?:qavatli|qavat|этаж(?:ей|ный)?|поверх(?:ів|овий)?|қабатты?)/i);
+  if (labelledPair) {
+    const floor = Number(labelledPair[1]);
+    const total = Number(labelledPair[2]);
+    if (floor <= 40 && total <= 40 && floor <= total) return { floor, totalFloors: total };
+  }
 
   // "X/Y" (or "X из Y" / "X of Y") with a floor word on either side.
   const SEP = '(?:\\/|из|iz|of)';
@@ -313,7 +347,7 @@ export function parseBedrooms(text) {
 export function classifyAudience(text) {
   if (!text) return null;
   const t = text.toLowerCase();
-  if (/(для семь|семейн|для сім|для родин|for famil|families?|pentru famil|oila(ga| uchun)|отбасы)/.test(t))
+  if (/(для семь|семейн|для сім|для родин|for famil|families?|pentru famil|oila(?:ga| uchun|\s+qo['’`]?yiladi|\s+quyiladi)|отбасы)/.test(t))
     return 'family';
   if (/(девуш|девоч|для дівч|дівчат|for girls|for women|only girls|doar fete|\bfete\b|qizlar(ga| uchun)?|қыздар)/.test(t))
     return 'women';
@@ -431,8 +465,10 @@ export function guessPropertyType(text) {
     return 'flat';
   }
   // house (EN), casa (RO), dom/дом (RU), будин (UA), коттедж/villa/вілл/вилл,
-  // uy/hovli (UZ), үй (KZ).
-  return /(?:\b(?:house|casa|dom|villa|hovli|uy)\b|будин|коттедж|вілл|вилл|(?:^|[^\p{L}\p{N}_])(?:дом|үй)(?=$|[^\p{L}\p{N}_]))/iu.test(text)
+  // hovli (UZ), үй (KZ). Do not treat Uzbek "uy" alone as a detached house:
+  // it commonly means home/apartment in phrases such as "uy yangi remontdan
+  // chiqqan" and was misclassifying ordinary Tashkent flats.
+  return /(?:\b(?:house|casa|dom|villa|hovli)\b|будин|коттедж|вілл|вилл|(?:^|[^\p{L}\p{N}_])(?:дом|үй)(?=$|[^\p{L}\p{N}_]))/iu.test(text)
     ? 'house'
     : 'flat';
 }
@@ -450,7 +486,17 @@ export function parseBalcony(text) {
 // Air-conditioner / split system present.
 export function parseAirConditioner(text) {
   if (!text) return null;
-  return /([кk]ондицион|сплит[- ]?систем|konditsioner|klimat|air ?con|\bA\/?C\b|aer condi[țt]ionat)/i.test(text)
+  return /([кk]ондицион|сплит[- ]?систем|konditsioner|kondisaner|kansaner|klimat|air ?con|\bA\/?C\b|aer condi[țt]ionat)/i.test(text)
+    ? true
+    : null;
+}
+
+// Furnishing is tri-state. Only explicit furniture words produce true/false;
+// appliances alone are not enough to claim that a property is furnished.
+export function parseFurnished(text) {
+  if (!text) return null;
+  if (/(без\s+мебел|пустая\s+квартир|unfurnished|nemobilat|mebelsiz|jihozlanmagan)/i.test(text)) return false;
+  return /(с\s+мебел|меблирован|мебел|furnished|mobilat|mebelli|jihozlangan|spalni|spaln[iy]\s+garnitur|yotoq\s+mebel)/i.test(text)
     ? true
     : null;
 }
@@ -503,8 +549,11 @@ export function parseCommunalSeparated(text) {
 export function parseKvartal(text) {
   if (!text) return null;
   const m =
-    text.match(/(\d{1,3})\s*[-\s]?\s*(?:квартал|кв-?л\b|kvartal|kvartali|мкр\b|микрорайон|массив|massiv)/i) ||
-    text.match(/(?:квартал|kvartal|мкр|микрорайон|массив|massiv)\s*[-№#]?\s*(\d{1,3})/i);
+    text.match(/(\d{1,3})\s*[-\s]?\s*(?:квартал|кв-?л\b|kvartal(?:i)?|мкр\b|микрорайон|массив|massiv|daha(?:si|dan)?)/i) ||
+    text.match(/(?:квартал|kvartal(?:i)?|мкр|микрорайон|массив|massiv|daha(?:si|dan)?)\s*[-№#]?\s*(\d{1,3})/i) ||
+    // Tashkent shorthand omits the word "kvartal": "Chilonzor 12" means
+    // Chilanzar district, 12th kvartal (not metro Chilonzor + building 12).
+    text.match(/(?:чиланзар|chilonzor|chilanzar)\s*[-№#]?\s*(\d{1,2})(?!\d)/i);
   return m ? `${m[1]} kvartal` : null;
 }
 
@@ -513,7 +562,7 @@ export function parseKvartal(text) {
 const SHOP_CHAINS = [
   ['Korzinka', /korzinka|корзинка/i],
   ['Makro', /\bmakro\b|макро/i],
-  ['Havas', /\bhavas\b|хавас/i],
+  ['Havas', /\b[хxh]avas\b|хавас/i],
   ['Carrefour', /carrefour|карфур/i],
   ['ATB', /\bатб\b|\batb\b/i],
   ['Klass', /\bklass\b|\bкласс\b/i],

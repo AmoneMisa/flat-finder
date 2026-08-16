@@ -125,7 +125,9 @@ export const LOCATIONS = {
         { name: 'Mirobod', re: /мир[оа]б[оа]д|mirobod|mirabad/i },
       ],
       metro: [
-        { name: 'Chilonzor', re: /чиланзар(?: станц)?|chilonzor/i },
+        // Plain "Chilonzor" normally names the district; require an explicit
+        // metro/station marker before classifying the similarly named station.
+        { name: 'Chilonzor', re: /(?:метро|станц(?:ия|ии)?|metro|station)\s*чиланзар|чиланзар\s*(?:метро|станц(?:ия|ии)?)|(?:metro|station)\s*chilonzor|chilonzor\s*(?:metro|station)/i },
         { name: 'Mustaqillik Maydoni', re: /мустакиллик|mustaqillik maydoni/i },
         { name: 'Kosmonavtlar', re: /космонавт|kosmonavtlar/i },
         { name: 'Alisher Navoi', re: /алишер навои|alisher navoi/i },
@@ -139,10 +141,22 @@ export const LOCATIONS = {
         { name: 'Amir Timur Square', re: /амир тимур|амира темура|amir timur/i },
         { name: 'Independence Square', re: /площад[ьи] независимости|mustaqillik maydoni|independence square/i },
         { name: 'Minor Mosque', re: /мечет[ьи] минор|minor masjid|minor mosque/i },
+        { name: 'Bobur Park', re: /(?:парк\s*(?:имени\s*)?бобур|бобур\w*\s*парк|bobur\s*(?:bog[‘’'`ʻʼ]?i|park)|park\s*bobur)/i },
       ],
     },
   },
 };
+
+// Generic amenities around a property. Keep these separate from shops (which
+// have their own field) and run them after named landmarks so "Bobur Park"
+// remains specific instead of degrading to a generic "Park" label.
+const GENERIC_NEARBY = [
+  { name: 'Park', re: /(?:^|[^\p{L}\p{N}_])(?:парк|park|bog[‘’'`ʻʼ]?i?)(?:$|[^\p{L}\p{N}_])/iu },
+  { name: 'Bus stop', re: /автобусн\w*\s+(?:останов|конеч)|остановк\w*\s+автобус|avtobus\s+(?:bekat\w*|kanichka\w*|konichka\w*)/iu },
+  { name: 'Clinic', re: /пол[иe]клиник|pol[ei]klinik/iu },
+  { name: 'School', re: /(?:^|[^\p{L}\p{N}_])(?:школ\w*|maktab\w*)(?:$|[^\p{L}\p{N}_])/iu },
+  { name: 'Kindergarten', re: /детск\w*\s+сад|bolalar\s+bog[‘’'`ʻʼ]?chasi/iu },
+];
 
 // Detect district / metro / nearby landmarks in a post's text for a given
 // country. Scans every city we have data for, returning the first district and
@@ -173,6 +187,11 @@ export function parseLocation(text, countryCode) {
       if (result.nearby.length >= 4) break;
       if (l.re.test(text) && !result.nearby.includes(l.name)) result.nearby.push(l.name);
     }
+  }
+  for (const item of GENERIC_NEARBY) {
+    if (result.nearby.length >= 6) break;
+    if (item.name === 'Park' && result.nearby.some((name) => /Park$/i.test(name))) continue;
+    if (item.re.test(text) && !result.nearby.includes(item.name)) result.nearby.push(item.name);
   }
   return result;
 }
