@@ -9,6 +9,8 @@ services:
     # unreachable, so the backend still boots even when Redis is down.
     environment:
       - REDIS_URL=redis://flat-finder-redis:6379
+      # Private shared enrichment service. The key is supplied by flatfinder.env.
+      - AI_WORKER_URL=http://ai-worker:4030
       # OLX is fetched through the curl_cffi sidecar (OLX's WAF 403s plain HTTP
       # clients from our server). If this is unreachable the OLX source just
       # yields nothing (other sources still work) — not hard-coupled.
@@ -29,6 +31,9 @@ services:
     # existing nginx reverse-proxies to this port.
     ports:
       - "127.0.0.1:4000:4000"
+    networks:
+      - default
+      - ai-net
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -66,3 +71,7 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+
+networks:
+  ai-net:
+    external: true

@@ -7,6 +7,7 @@
 //   description: string,        // free text used for tag extraction
 //   dealType: 'sale'|'longRent'|'shortRent'|null,
 //   floor, totalFloors, buildingYear, bedrooms: number|null,
+//   furnished: boolean|null, condition: string|null, amenities: string[],
 //   audience: 'women'|'men'|'family'|null,   // stated tenant restriction
 //   contact: string|null,       // phone or @handle pulled from the post
 //   tags: string[],             // derived card tags
@@ -205,6 +206,9 @@ export function makeListing(partial) {
     communalSeparated,
     kvartal,
     nearbyShops,
+    furnished: partial.furnished ?? null,
+    condition: partial.condition ?? null,
+    amenities: Array.isArray(partial.amenities) ? partial.amenities : [],
     tags:
       partial.tags ??
       extractTags({

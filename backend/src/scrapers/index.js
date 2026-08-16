@@ -12,6 +12,11 @@ import { scrapeCustom } from './custom.js';
 import { generateMock } from '../mock.js';
 import { cacheGet, cacheSet } from '../cache.js';
 import { geocodeListings } from '../geocode.js';
+import {
+  aiFingerprint,
+  aiWorkerEnabled,
+  scheduleAiExtraction,
+} from '../ai-worker.js';
 
 const SOURCES = {
   olx: scrapeOlx,
@@ -119,6 +124,158 @@ function dedupe(listings) {
   return out;
 }
 
+function listingKey(listing) {
+  return `${listing.source}:${listing.id}`;
+}
+
+function apartmentAiInput(listing) {
+  const rawText = `${listing.title || ''}\n${listing.description || ''}`.trim();
+  const dealMap = { longRent: 'rent', shortRent: 'daily_rent', sale: 'sale' };
+  const knownFacts = {
+    dealType: dealMap[listing.dealType] ?? null,
+    propertyType: listing.propertyType === 'house' ? 'house' : 'apartment',
+    rooms: listing.rooms ?? null,
+    bedrooms: listing.bedrooms ?? null,
+    areaM2: listing.areaSqm ?? null,
+    floor: listing.floor ?? null,
+    floorsTotal: listing.totalFloors ?? null,
+    district: listing.district ?? null,
+    kvartal: listing.kvartal ?? null,
+    newBuilding: listing.newBuilding ?? null,
+    balcony: listing.balcony ?? null,
+    airConditioner: listing.airConditioner ?? null,
+    gas: listing.gas ?? null,
+    bathrooms: listing.bathrooms ?? null,
+    furnished: listing.furnished ?? null,
+    petsAllowed: listing.petsAllowed ?? null,
+    childrenAllowed: listing.childrenAllowed ?? null,
+    communalSeparated: listing.communalSeparated ?? null,
+    depositRequired: listing.deposit ?? null,
+    depositAmount: listing.depositAmount ?? null,
+    commissionRequired: listing.commission ?? null,
+    commissionPercent: listing.commissionPercent ?? null,
+  };
+  return {
+    rawText,
+    knownFacts,
+    fingerprint: aiFingerprint('apartment', rawText, knownFacts),
+  };
+}
+
+function mergeApartmentAi(listing, data) {
+  const merged = { ...listing };
+  const fill = (field, value) => {
+    if ((merged[field] == null || merged[field] === '') && value != null) merged[field] = value;
+  };
+  fill('rooms', data.rooms);
+  fill('bedrooms', data.bedrooms);
+  fill('areaSqm', data.areaM2);
+  fill('floor', data.floor);
+  fill('totalFloors', data.floorsTotal);
+  fill('district', data.district);
+  fill('kvartal', data.kvartal);
+  fill('newBuilding', data.newBuilding);
+  fill('balcony', data.balcony);
+  fill('airConditioner', data.airConditioner);
+  fill('gas', data.gas);
+  fill('bathrooms', data.bathrooms);
+  fill('furnished', data.furnished);
+  fill('petsAllowed', data.petsAllowed);
+  fill('childrenAllowed', data.childrenAllowed);
+  fill('communalSeparated', data.communalSeparated);
+  fill('deposit', data.depositRequired);
+  fill('depositAmount', data.depositAmount);
+  fill('commission', data.commissionRequired);
+  fill('commissionPercent', data.commissionPercent);
+  fill('condition', data.condition);
+
+  if (!merged.dealType && data.dealType) {
+    merged.dealType = { rent: 'longRent', daily_rent: 'shortRent', sale: 'sale' }[data.dealType] ?? null;
+  }
+  if (data.propertyType === 'house' && !merged.propertyType) merged.propertyType = 'house';
+  if (data.propertyType === 'room') merged.roomOnly = true;
+  if (data.propertyType === 'commercial') merged.commercial = true;
+  merged.amenities = [...new Set([...(merged.amenities || []), ...(data.amenities || [])])];
+  return merged;
+}
+
+function apartmentNeedsAi(listing) {
+  if ((listing.description || '').length < 80 || String(listing.source).startsWith('mock')) return false;
+  let score = 0;
+  if (listing.rooms == null) score += 2;
+  if (listing.areaSqm == null) score += 2;
+  if (listing.floor == null || listing.totalFloors == null) score += 1;
+  if (!listing.district) score += 1;
+  if (listing.deposit == null && listing.commission == null) score += 1;
+  if (listing.balcony == null && listing.airConditioner == null && listing.gas == null) score += 1;
+  return score >= 3;
+}
+
+async function applyApartmentAiResult(cacheKeyValue, id, fingerprint, result) {
+  const entry = await cacheGet(cacheKeyValue);
+  if (!entry?.complete) return;
+  const index = entry.listings.findIndex((listing) => listingKey(listing) === id);
+  if (index < 0) return;
+  const current = entry.listings[index];
+  if (apartmentAiInput(current).fingerprint !== fingerprint) return;
+  const accepted = !result.lowConfidence && result.confidence >= 0.6;
+  if (accepted) entry.listings[index] = mergeApartmentAi(current, result.data);
+  entry.ai = entry.ai || {};
+  entry.ai[id] = {
+    fingerprint,
+    status: accepted ? 'completed' : 'low_confidence',
+    confidence: result.confidence,
+    data: accepted ? result.data : undefined,
+    updatedAt: new Date().toISOString(),
+  };
+  await cacheSet(cacheKeyValue, entry, STALE_TTL_MS);
+}
+
+function scheduleApartmentAi(cacheKeyValue, entry) {
+  if (!aiWorkerEnabled()) return 0;
+  // Per country refresh. Five keeps the initial five-country rollout bounded;
+  // terminal records are skipped so later refreshes naturally advance.
+  const batchSize = Math.max(1, Number(process.env.AI_WORKER_APARTMENT_BATCH) || 5);
+  entry.ai = entry.ai || {};
+  let count = 0;
+  for (const listing of entry.listings) {
+    if (count >= batchSize) break;
+    if (!apartmentNeedsAi(listing)) continue;
+    const id = listingKey(listing);
+    const input = apartmentAiInput(listing);
+    const prior = entry.ai[id];
+    // `entry.ai` only contains metadata whose fingerprint matched the fresh
+    // deterministic listing above. Completed results may already have filled
+    // fields and therefore intentionally change a newly computed fingerprint.
+    if (prior && prior.status !== 'pending') continue;
+    const queued = scheduleAiExtraction({
+      id,
+      kind: 'apartment',
+      ...input,
+      meta: { source: listing.source, country: listing.country, id: listing.id },
+      onResult: (result) => applyApartmentAiResult(cacheKeyValue, id, input.fingerprint, result),
+      onFailed: async (status) => {
+        if (status !== 'failed') return;
+        const current = await cacheGet(cacheKeyValue);
+        if (!current?.complete) return;
+        current.ai = current.ai || {};
+        current.ai[id] = {
+          fingerprint: input.fingerprint,
+          status: 'failed',
+          updatedAt: new Date().toISOString(),
+        };
+        await cacheSet(cacheKeyValue, current, STALE_TTL_MS);
+      },
+    });
+    if (queued) {
+      entry.ai[id] = { fingerprint: input.fingerprint, status: 'pending', updatedAt: new Date().toISOString() };
+      count += 1;
+    }
+  }
+  if (count) console.log(`[flats:ai] queued ${count} ambiguous listings for ${cacheKeyValue}`);
+  return count;
+}
+
 // `onProgress({ listings, sourceCounts, sourceErrors })` (optional) is called as
 // chunks/sources arrive so the caller can stream partial snapshots into the cache.
 async function fetchOne(countryCode, filters, onProgress) {
@@ -187,6 +344,9 @@ async function fetchOne(countryCode, filters, onProgress) {
 function refresh(countryCode, filters, key) {
   if (inFlight.has(key)) return inFlight.get(key);
   const p = (async () => {
+    // Preserve AI provenance/results across deterministic source refreshes when
+    // the source text and known facts are unchanged.
+    const previousAi = (await cacheGet(key))?.ai || {};
     // Stream partial snapshots into the cache as chunks arrive so the client's
     // warm-poll sees the count/results climb. Partial writes are throttled and
     // serialized, and skip geocoding (that runs once on the final snapshot) to
@@ -212,8 +372,20 @@ function refresh(countryCode, filters, key) {
     } catch (err) {
       console.warn(`[geocode] ${countryCode} failed: ${err.message}`);
     }
-    const entry = { at: Date.now(), ...result, complete: true };
+    const ai = {};
+    result.listings = result.listings.map((listing) => {
+      const id = listingKey(listing);
+      const input = apartmentAiInput(listing);
+      const prior = previousAi[id];
+      if (prior?.fingerprint !== input.fingerprint) return listing;
+      ai[id] = prior;
+      return prior.status === 'completed' && prior.data
+        ? mergeApartmentAi(listing, prior.data)
+        : listing;
+    });
+    const entry = { at: Date.now(), ...result, ai, complete: true };
     await cacheSet(key, entry, STALE_TTL_MS);
+    if (scheduleApartmentAi(key, entry)) await cacheSet(key, entry, STALE_TTL_MS);
     return entry;
   })().finally(() => inFlight.delete(key));
   inFlight.set(key, p);
