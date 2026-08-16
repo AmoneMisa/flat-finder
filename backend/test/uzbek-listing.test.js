@@ -145,6 +145,53 @@ test('parses a basement rental and keeps its labelled base price', () => {
   assert.equal(listing.district, 'Uchtepa');
 });
 
+test('parses hashtag complex, utilities and transit from a Yashnobod post', () => {
+  const text = `😉😉😚😉😚
+#Яшнабадский
+#1комнатная
+#ЖКАссаломСохил
+Ориентир Узбум
+
+1 комнатная
+9 этаж
+9 этажный дом
+
+Цена 5 миллионов
+Коммунальные услуги отдельно.
+
+Сдается квартира в новостройке,возле центра города.
+До метро Ташкент Северный вокзал 5 минут на машине.
+Заселяют семейную пару и одиночек мужчину или женщину.
+
++998903720270 @arenda_tashkent10`;
+  const parsedPrice = parsePriceFromText(text, 'UZS');
+  const listing = makeListing({
+    id: 'yashnobod-assalom-test',
+    source: 'telegram',
+    country: 'UZ',
+    title: '😉😉😚😉😚',
+    description: text,
+    price: parsedPrice.price,
+    currency: parsedPrice.currency,
+  });
+
+  assert.equal(listing.dealType, 'longRent');
+  assert.equal(listing.rooms, 1);
+  assert.equal(listing.floor, 9);
+  assert.equal(listing.totalFloors, 9);
+  assert.equal(listing.price, 5_000_000);
+  assert.equal(listing.currency, 'UZS');
+  assert.equal(listing.city, 'Tashkent');
+  assert.equal(listing.district, 'Yashnobod');
+  assert.equal(listing.residenceComplex, 'Ассалом Сохил');
+  assert.equal(listing.metro, 'Tashkent North Railway Station');
+  assert.deepEqual(listing.nearby, ['Узбум']);
+  assert.equal(listing.newBuilding, true);
+  assert.equal(listing.communalSeparated, true);
+  assert.equal(listing.audience, null);
+  assert.equal(listing.contact, '+998903720270');
+});
+
 test('does not use a following phone number as the deposit amount', () => {
   const text = `Цена 450$\n\nИмеется договорной депозит.\n\n+998903720270 @arenda_tashkent10`;
   assert.deepEqual(parseDeposit(text), { required: true, amount: null });

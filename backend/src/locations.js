@@ -135,6 +135,7 @@ export const LOCATIONS = {
         { name: 'Pushkin', re: /пушкин|pushkin/i },
         { name: 'Bodomzor', re: /бодомзор|bodomzor/i },
         { name: 'Yunusobod', re: /юнусабад(?: станц)?|yunusobod/i },
+        { name: 'Tashkent North Railway Station', re: /(?:метро\s*)?(?:ташкент\s*)?(?:северн[а-яё]*\s+вокзал|toshkent\s+shimoliy\s+vokzal|tashkent\s+north\s+(?:railway\s+)?station)/i },
       ],
       landmarks: [
         { name: 'Chorsu Bazaar', re: /чорсу|chorsu/i },
@@ -196,7 +197,7 @@ export function parseLocation(text, countryCode) {
   // Preserve an explicitly named orientation point even when it is not in the
   // curated landmark table, e.g. `Ориентир: Seoul Mun`.
   const orientation = text.match(
-    /(?:ориентир|mo['’`ʻʼ]?ljal|landmark)\s*[:\-–—]\s*([^\r\n]{2,60})/i,
+    /(?:ориентир|mo['’`ʻʼ]?ljal|landmark)\s*(?:[:\-–—]\s*)?([^\r\n]{2,60})/i,
   );
   if (orientation && result.nearby.length < 6) {
     const name = orientation[1].replace(/\s+/g, ' ').trim().replace(/[.,;:]+$/, '');

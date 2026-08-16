@@ -208,7 +208,11 @@ export function parseResidentialComplex(text) {
     /(?:жк|жм|ж\/к|residential complex|ansamblu(?: rezidential)?|turar[- ]?joy majmuasi)\s*["'«»„“]?\s*([^"'«»„“\n,.;()]{2,40})/i,
   );
   if (!m) return null;
-  const name = m[1].trim().replace(/\s{2,}/g, ' ');
+  const name = m[1]
+    .trim()
+    // Hashtags commonly remove spaces: `#ЖКАссаломСохил`.
+    .replace(/([\p{Ll}\d])(\p{Lu})/gu, '$1 $2')
+    .replace(/\s{2,}/g, ' ');
   // Reject captures that are just a number or too short to be a name.
   return /[a-zA-Zа-яёіїґ]{2,}/i.test(name) ? name : null;
 }
@@ -316,7 +320,10 @@ export function parseFloor(text) {
       const tm = t.match(
         /(?:этажность|этажей|поверхови|поверховість|qavatlar(?:\s*soni)?|qavatli|қабатты?)\D{0,6}(\d{1,2})/,
       );
-      const total = tm ? Number(tm[1]) : null;
+      const leadingTotal = t.match(
+        /([1-9]\d?)\s*-?\s*(?:этажн[а-яё]*|поверхов[а-яіїґ]*|qavatli|қабатты?)\s*(?:дом|здани|будин|uy|bino)?/i,
+      );
+      const total = tm ? Number(tm[1]) : leadingTotal ? Number(leadingTotal[1]) : null;
       return { floor, totalFloors: total && total >= floor && total <= 200 ? total : null };
     }
   }
@@ -372,6 +379,9 @@ export function parseBedrooms(text) {
 export function classifyAudience(text) {
   if (!text) return null;
   const t = text.toLowerCase();
+  // Families and single tenants are both accepted: this is not a restriction.
+  if (/(?:семейн|для семь)[^.\n]{0,80}(?:одиноч|мужчин|женщин)|(?:одиноч|мужчин|женщин)[^.\n]{0,80}(?:семейн|для семь)/.test(t))
+    return null;
   if (/(для семь|семейн|для сім|для родин|for famil|families?|pentru famil|oila(?:ga| uchun|\s+qo['’`]?yiladi|\s+quyiladi)|отбасы)/.test(t))
     return 'family';
   if (/(девуш|девоч|для дівч|дівчат|for girls|for women|only girls|doar fete|\bfete\b|qizlar(ga| uchun)?|қыздар)/.test(t))
@@ -579,9 +589,9 @@ export function parseCommunalSeparated(text) {
   if (!text) return null;
   const t = text.toLowerCase();
   // NB: \w does not match Cyrillic in JS regex, so stems use [а-яё]*.
-  if (/(коммунал[а-яё]*\s*(?:отдельно|сверху|плюс|оплачива[а-яё]*\s*отдельно)|свет\s*вода\s*газ\s*отдельно|kommunal\w*\s*(?:alohida|ustiga)|utilities?\s*(?:separate|extra|not included))/i.test(t))
+  if (/(коммунал[а-яё]*(?:\s+услуг[а-яё]*)?\s*(?:отдельно|сверху|плюс|оплачива[а-яё]*\s*отдельно)|свет\s*вода\s*газ\s*отдельно|kommunal\w*\s*(?:alohida|ustiga)|utilities?\s*(?:separate|extra|not included))/i.test(t))
     return true;
-  if (/(коммунал[а-яё]*\s*(?:включ|входит|в ?стоимост)|вс[её] ?включ|all ?inclusive|kommunal\w*\s*(?:kiritilgan|ichida)|utilities?\s*included)/i.test(t))
+  if (/(коммунал[а-яё]*(?:\s+услуг[а-яё]*)?\s*(?:включ|входит|в ?стоимост)|вс[её] ?включ|all ?inclusive|kommunal\w*\s*(?:kiritilgan|ichida)|utilities?\s*included)/i.test(t))
     return false;
   return null;
 }
