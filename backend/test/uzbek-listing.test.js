@@ -192,6 +192,36 @@ test('parses hashtag complex, utilities and transit from a Yashnobod post', () =
   assert.equal(listing.contact, '+998903720270');
 });
 
+test('infers Tashkent from Alay and puts dishwasher into other amenities', () => {
+  const text = `#4комнатная #Ц2 #Алайский #Центр
+
+Сдается хорошая, комфортная квартира в центре города. Отличная локация, рядом метро, школы.
+Имеется вся техника для жизни, в том числе посудомойка.
+
+Комнаты раздельные.
+Цена - 850$ Предоплаты нет, депозит обсуждается на месте.
+
++998903720270 @arenda_tashkent10`;
+  const parsedPrice = parsePriceFromText(text, 'UZS');
+  const listing = makeListing({
+    id: 'alay-c2-test',
+    source: 'telegram',
+    country: 'UZ',
+    title: '#4комнатная #Ц2 #Алайский #Центр',
+    description: text,
+    price: parsedPrice.price,
+    currency: parsedPrice.currency,
+  });
+
+  assert.equal(listing.city, 'Tashkent');
+  assert.equal(listing.rooms, 4);
+  assert.equal(listing.kvartal, 'C-2');
+  assert.equal(listing.price, 850);
+  assert.equal(listing.currency, 'USD');
+  assert.deepEqual(listing.nearby, ['Alay Bazaar', 'C-2', 'School']);
+  assert.deepEqual(listing.amenities, ['Dishwasher', 'Separate rooms']);
+});
+
 test('does not use a following phone number as the deposit amount', () => {
   const text = `Цена 450$\n\nИмеется договорной депозит.\n\n+998903720270 @arenda_tashkent10`;
   assert.deepEqual(parseDeposit(text), { required: true, amount: null });

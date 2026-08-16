@@ -35,6 +35,7 @@ import {
   parseBathrooms,
   parseCommunalSeparated,
   parseKvartal,
+  parseAmenities,
   parseNearbyShops,
   parseRoomsFromText,
   parseAreaFromText,
@@ -170,6 +171,7 @@ export function makeListing(partial) {
   const communalSeparated = partial.communalSeparated ?? parseCommunalSeparated(combined);
   const kvartal = partial.kvartal ?? parseKvartal(combined);
   const nearbyShops = partial.nearbyShops ?? parseNearbyShops(combined);
+  const amenities = Array.isArray(partial.amenities) ? partial.amenities : parseAmenities(combined);
   const parking = partial.parking ?? parseParking(combined);
   const elevator = partial.elevator ?? parseElevator(combined);
   const heating = partial.heating ?? parseHeating(combined);
@@ -239,7 +241,7 @@ export function makeListing(partial) {
     negotiable,
     furnished,
     condition: partial.condition ?? null,
-    amenities: Array.isArray(partial.amenities) ? partial.amenities : [],
+    amenities,
     tags:
       partial.tags ??
       extractTags({

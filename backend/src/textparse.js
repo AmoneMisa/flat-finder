@@ -607,7 +607,23 @@ export function parseKvartal(text) {
     // Tashkent shorthand omits the word "kvartal": "Chilonzor 12" means
     // Chilanzar district, 12th kvartal (not metro Chilonzor + building 12).
     text.match(/(?:чиланзар|chilonzor|chilanzar)\s*[-№#]?\s*(\d{1,2})(?!\d)/i);
-  return m ? `${m[1]} kvartal` : null;
+  if (m) return `${m[1]} kvartal`;
+  const centralBlock = text.match(/(?:^|[^\p{L}\p{N}_])(?:ц|c)\s*[-–]?\s*(\d{1,2})(?:$|[^\p{L}\p{N}_])/iu);
+  return centralBlock ? `C-${centralBlock[1]}` : null;
+}
+
+// Features that do not have a dedicated normalized boolean are rendered in
+// the UI's "Other amenities" row.
+export function parseAmenities(text) {
+  if (!text) return [];
+  const amenities = [];
+  if (/(?:посудомо|посудомийн|dishwasher|idish\s*yuvish|idishyuvg|ma[șs]ina de sp[ăa]lat vase)/i.test(text)) {
+    amenities.push('Dishwasher');
+  }
+  if (/(?:комнат[а-яё]*\s+раздельн|изолированн[а-яё]*\s+комнат|separate\s+rooms?)/i.test(text)) {
+    amenities.push('Separate rooms');
+  }
+  return amenities;
 }
 
 // Named retail chains / malls mentioned (proximity signal). Deduped canonical

@@ -139,6 +139,8 @@ export const LOCATIONS = {
       ],
       landmarks: [
         { name: 'Chorsu Bazaar', re: /чорсу|chorsu/i },
+        { name: 'Alay Bazaar', re: /алайск|олой\s+бозор|alay\s+bazaar/i },
+        { name: 'C-2', re: /(?:^|[^\p{L}\p{N}_])(?:ц|c)\s*[-–]?\s*2(?:$|[^\p{L}\p{N}_])/iu },
         { name: 'Amir Timur Square', re: /амир тимур|амира темура|amir timur/i },
         { name: 'Independence Square', re: /площад[ьи] независимости|mustaqillik maydoni|independence square/i },
         { name: 'Minor Mosque', re: /мечет[ьи] минор|minor masjid|minor mosque/i },
@@ -155,7 +157,7 @@ const GENERIC_NEARBY = [
   { name: 'Park', re: /(?:^|[^\p{L}\p{N}_])(?:парк|park|bog[‘’'`ʻʼ]?i?)(?:$|[^\p{L}\p{N}_])/iu },
   { name: 'Bus stop', re: /автобусн\w*\s+(?:останов|конеч)|остановк\w*\s+автобус|avtobus\s+(?:bekat\w*|kanichka\w*|konichka\w*)/iu },
   { name: 'Clinic', re: /пол[иe]клиник|pol[ei]klinik/iu },
-  { name: 'School', re: /(?:^|[^\p{L}\p{N}_])(?:школ\w*|maktab\w*)(?:$|[^\p{L}\p{N}_])/iu },
+  { name: 'School', re: /(?:^|[^\p{L}\p{N}_])(?:школ[а-яё]*|maktab[a-z]*)(?:$|[^\p{L}\p{N}_])/iu },
   { name: 'Kindergarten', re: /детск\w*\s+сад|bolalar\s+bog[‘’'`ʻʼ]?chasi/iu },
 ];
 
@@ -186,7 +188,10 @@ export function parseLocation(text, countryCode) {
     }
     for (const l of city.landmarks) {
       if (result.nearby.length >= 4) break;
-      if (l.re.test(text) && !result.nearby.includes(l.name)) result.nearby.push(l.name);
+      if (l.re.test(text) && !result.nearby.includes(l.name)) {
+        result.nearby.push(l.name);
+        if (!result.city) result.city = cityName;
+      }
     }
   }
   for (const item of GENERIC_NEARBY) {
