@@ -228,10 +228,11 @@ export function parseFloor(text) {
   const ok = (f, total) =>
     f >= 0 && f <= 200 && (total == null || (total >= f && total <= 200));
 
-  // "X/Y" with a floor word on either side.
+  // "X/Y" (or "X из Y" / "X of Y") with a floor word on either side.
+  const SEP = '(?:\\/|из|iz|of)';
   let m =
-    t.match(new RegExp(`${FLOOR}\\D{0,4}(\\d{1,2})\\s*\\/\\s*(\\d{1,2})`)) ||
-    t.match(new RegExp(`(\\d{1,2})\\s*\\/\\s*(\\d{1,2})\\s*${FLOOR}`));
+    t.match(new RegExp(`${FLOOR}\\D{0,4}(\\d{1,2})\\s*${SEP}\\s*(\\d{1,2})`)) ||
+    t.match(new RegExp(`(\\d{1,2})\\s*${SEP}\\s*(\\d{1,2})\\s*${FLOOR}`));
   if (m) {
     const floor = Number(m[1]);
     const total = Number(m[2]);
@@ -243,8 +244,10 @@ export function parseFloor(text) {
   // "not followed by another letter" lookahead instead. This both fixes "2 этаж"
   // (which `\b` failed to match) and still rejects "5-этажный дом" (5-storey).
   const NOT_LETTER = '(?![a-zа-яёіїґ])';
+  // The number-before-floor form uses horizontal whitespace only, so a count on
+  // the previous line ("Комнат: 4⏎Этаж:") can't be grabbed as the floor.
   let s =
-    t.match(new RegExp(`(\\d{1,2})\\s*-?\\s*(?:й|го|nd|rd|th|st)?\\s*${FLOOR}${NOT_LETTER}`)) ||
+    t.match(new RegExp(`(\\d{1,2})[^\\S\\r\\n]*-?[^\\S\\r\\n]*(?:й|го|nd|rd|th|st)?[^\\S\\r\\n]*${FLOOR}${NOT_LETTER}`)) ||
     t.match(new RegExp(`${FLOOR}\\s*[:№#]?\\s*(\\d{1,2})\\b`));
   if (s) {
     const floor = Number(s[1]);
@@ -394,7 +397,7 @@ export function parseDeposit(text) {
 export function parseCommission(text) {
   if (!text) return { has: null, percent: null };
   const t = text.toLowerCase();
-  const KW = '(?:комисси|комісі|commission|comision|komissiya|комиссионн)';
+  const KW = '(?:комисси|комісі|commission|comision|komissiya|комиссионн|ри[еэ]?лтор|ри[еэ]?лтер|услуг[аи]?\\s*ри[еэ]?лтор|маклер|makler|rieltor|vositachi)';
   if (/(без ?комисси|без ?комісі|no commission|fara comision|fără comision|без ?комиссионн)/i.test(t))
     return { has: false, percent: 0 };
   if (!new RegExp(KW, 'i').test(t)) return { has: null, percent: null };
@@ -447,7 +450,7 @@ export function parseBalcony(text) {
 // Air-conditioner / split system present.
 export function parseAirConditioner(text) {
   if (!text) return null;
-  return /(кондиционер|кондицион|сплит[- ]?систем|konditsioner|klimat|air ?con|\bA\/?C\b|aer condi[țt]ionat)/i.test(text)
+  return /([кk]ондицион|сплит[- ]?систем|konditsioner|klimat|air ?con|\bA\/?C\b|aer condi[țt]ionat)/i.test(text)
     ? true
     : null;
 }
@@ -522,6 +525,13 @@ export function parseNearbyShops(text) {
   if (!text) return [];
   const out = [];
   for (const [name, re] of SHOP_CHAINS) if (re.test(text) && !out.includes(name)) out.push(name);
+  // Named malls: "High Town Mall", "Compass Mall", "Samarqand moll". Name words
+  // are Latin (mall brands almost always are), so we don't trip over Cyrillic
+  // word boundaries (JS \w skips Cyrillic).
+  const named = text.match(/([A-Za-z][A-Za-z'’.&-]*(?:\s+[A-Za-z][A-Za-z'’.&-]*){0,3}\s+(?:mall|moll|молл))/i);
+  if (named && !out.includes(named[1].trim())) out.push(named[1].trim());
+  const trc = text.match(/(?:трц|тц)\s+([A-Za-z0-9'’.-]{2,25}|[А-Яа-яЁё0-9'’.-]{2,25})/i);
+  if (trc) { const n = 'ТРЦ ' + trc[1].trim(); if (!out.includes(n)) out.push(n); }
   return out;
 }
 

@@ -74,8 +74,11 @@ function parseAddress(text) {
   if (!text) return null;
   const labeled = text.match(/(?:адрес|адреса|manzil|address)\s*[:\-–]\s*([^\n]{3,80})/i);
   if (labeled) return labeled[1].replace(/\s+/g, ' ').trim().replace(/[.;,]+$/, '');
+  // RU street prefixes must be a whole token (followed by a dot/space), so "ул"
+  // never glues onto the next word (e.g. "ули аренда..." from a junk title, or
+  // the "-ули" tail of "махтумкули"). The Uzbek "ko'chasi" is a trailing form.
   const street = text.match(
-    /((?:ул(?:иц[аы])?\.?|улиц[аы]|просп(?:ект)?\.?|проспект|мкр\.?|микрорайон|ko['’]?chasi|k[oó]chasi)\s*[^\n,.;]{2,50}(?:,?\s*\d+[\w/-]*)?)/i,
+    /((?:ул(?:иц[аы])?|просп(?:ект)?|проспект|мкр|микрорайон|проезд|переулок)\.?\s+[^\n,.;]{2,40}(?:,?\s*\d+[\w/-]*)?|[^\n,.;]{2,40}\s+(?:ko['’]?chasi|k[oó]chasi))/i,
   );
   if (street) return street[1].replace(/\s+/g, ' ').trim();
   return null;
