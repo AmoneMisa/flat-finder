@@ -546,32 +546,39 @@ export async function markMissingAfterCompleteCrawl({
     const result =
         await pool.query(
             `
-          UPDATE listings
+                UPDATE listings
 
-          SET
-            missed_runs =
-              missed_runs + 1,
+                SET
+                    missed_runs =
+                        missed_runs + 1,
 
-            active =
-              CASE
-                WHEN missed_runs + 1 >= 3
-                  THEN FALSE
-                ELSE TRUE
-              END,
+                    active =
+                        CASE
+                            WHEN missed_runs + 1 >= 3
+                                THEN FALSE
+                            ELSE TRUE
+                            END,
 
-            updated_at =
-              NOW()
+                    updated_at =
+                        NOW()
 
-          WHERE
-            source = $1
+                WHERE
+                    source = $1
 
-            AND country = $2
+                  AND country = $2
 
-            AND active = TRUE
+                  AND active = TRUE
 
-            AND last_seen_at <
-              $3::timestamptz
-          `,
+                  AND last_seen_at <
+                      $3::timestamptz
+
+            RETURNING
+              source,
+              country,
+              source_id,
+              active,
+              missed_runs;
+            `,
             [
                 String(source)
                     .toLowerCase(),
@@ -583,14 +590,41 @@ export async function markMissingAfterCompleteCrawl({
             ],
         );
 
+    const deactivated =
+        result.rows
+            .filter(
+                (row) =>
+                    row.active === false,
+            )
+            .map(
+                (row) => ({
+                    source:
+                    row.source,
+
+                    country:
+                    row.country,
+
+                    id:
+                        String(
+                            row.source_id,
+                        ),
+                }),
+            );
+
     if (result.rowCount) {
         console.log(
             `[postgres] ${source}/${country}: ` +
-            `${result.rowCount} listings missed`,
+            `${result.rowCount} listings missed, ` +
+            `${deactivated.length} deactivated`,
         );
     }
 
-    return result.rowCount;
+    return {
+        missed:
+        result.rowCount,
+
+        deactivated,
+    };
 }
 
 export async function dbHealth() {

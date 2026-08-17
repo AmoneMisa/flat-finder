@@ -15,6 +15,10 @@ import {cacheGet, cacheSet} from '../cache.js';
 import {geocodeListings} from '../geocode.js';
 import {aiFingerprint, aiWorkerEnabled, scheduleAiExtraction,} from '../ai-worker.js';
 import {markMissingAfterCompleteCrawl, upsertListings,} from '../db.js';
+import {
+  deleteListingDocuments,
+  indexListings,
+} from '../elasticsearch.js';
 
 const SOURCES = {
   olx: scrapeOlx,
@@ -348,6 +352,115 @@ function scheduleApartmentAi(cacheKeyValue, entry) {
   return count;
 }
 
+async function persistListings(
+    listings,
+    {
+      source,
+      country,
+      phase = 'unknown',
+    } = {},
+) {
+  if (
+      !Array.isArray(listings) ||
+      !listings.length
+  ) {
+    return {
+      postgres: 0,
+      elasticsearch: 0,
+    };
+  }
+
+  /*
+   * Сначала Postgres.
+   *
+   * Если он не сохранил данные,
+   * Elasticsearch обновлять нельзя:
+   * Postgres — source of truth.
+   */
+  const saved =
+      await upsertListings(
+          listings,
+      );
+
+  let indexed = 0;
+
+  /*
+   * Elasticsearch — производный индекс.
+   *
+   * Его ошибка не должна ломать
+   * scraper / Postgres ingestion.
+   */
+  try {
+    indexed =
+        await indexListings(
+            listings,
+        );
+  } catch (err) {
+    console.warn(
+        `[elasticsearch] ` +
+        `${country}/${source} ` +
+        `${phase} indexing failed: ` +
+        `${err?.message ?? err}`,
+    );
+  }
+
+  return {
+    postgres:
+    saved,
+
+    elasticsearch:
+    indexed,
+  };
+}
+
+async function syncDeactivatedListings(
+    listings,
+    {
+      source,
+      country,
+    } = {},
+) {
+  if (
+      !Array.isArray(listings) ||
+      !listings.length
+  ) {
+    return 0;
+  }
+
+  try {
+    const deleted =
+        await deleteListingDocuments(
+            listings,
+        );
+
+    if (deleted) {
+      console.log(
+          `[elasticsearch] ` +
+          `${country}/${source}: ` +
+          `${deleted} inactive documents removed`,
+      );
+    }
+
+    return deleted;
+  } catch (err) {
+    /*
+     * Не откатываем Postgres.
+     *
+     * Если ES временно упал,
+     * следующий reindex всё восстановит
+     * из source of truth.
+     */
+    console.warn(
+        `[elasticsearch] ` +
+        `${country}/${source} ` +
+        `deactivation sync failed: ` +
+        `${err?.message ?? err}`,
+    );
+
+    return 0;
+  }
+}
+
 // `onProgress({ listings, sourceCounts, sourceErrors })` (optional) is called as
 // chunks/sources arrive so the caller can stream partial snapshots into the cache.
 async function fetchOne(
@@ -435,27 +548,63 @@ async function fetchOne(
         let dbWriting =
             Promise.resolve();
 
-        const queueDbWrite =
+        let persistenceQueue =
+            Promise.resolve();
+
+        const queuePersistence =
             (listings) => {
-              if (!listings?.length) {
+              if (
+                  !Array.isArray(listings) ||
+                  !listings.length
+              ) {
                 return;
               }
 
-              dbWriting =
-                  dbWriting
-                      .then(() =>
-                          upsertListings(
-                              listings,
-                          ),
+              /*
+               * Чанки одного source пишем
+               * последовательно.
+               *
+               * Это сохраняет порядок:
+               *
+               * Postgres
+               *   ↓
+               * Elasticsearch
+               */
+              persistenceQueue =
+                  persistenceQueue
+                      .then(
+                          () =>
+                              persistListings(
+                                  listings,
+                                  {
+                                    source:
+                                    name,
+
+                                    country:
+                                    countryCode,
+
+                                    phase:
+                                        'chunk',
+                                  },
+                              ),
                       )
-                      .catch((err) => {
-                        console.warn(
-                            `[postgres] ` +
-                            `${countryCode}/${name} ` +
-                            `chunk upsert failed: ` +
-                            `${err?.message ?? err}`,
-                        );
-                      });
+                      .catch(
+                          (err) => {
+                            /*
+                             * Сюда попадёт в основном
+                             * ошибка Postgres.
+                             *
+                             * ES errors уже обработаны
+                             * внутри persistListings().
+                             */
+                            console.warn(
+                                `[postgres] ` +
+                                `${countryCode}/${name} ` +
+                                `chunk persistence failed: ` +
+                                `${err?.message ?? err}`,
+                            );
+                          },
+                      );
             };
 
         const onChunk =
@@ -476,7 +625,7 @@ async function fetchOne(
 
               // OLX сохраняется в PostgreSQL
               // прямо постранично.
-              queueDbWrite(
+              queuePersistence(
                   chunk,
               );
 
@@ -568,23 +717,67 @@ async function fetchOne(
                * безопасен и просто обновит
                * last_seen_at/data.
                */
+              /*
+ * Сначала ждём все page/chunk writes.
+ */
+              await persistenceQueue;
+
               try {
-                await upsertListings(
+                /*
+                 * Финальный authoritative result.
+                 *
+                 * Повторный upsert/index безопасен:
+                 * document id в обеих БД стабилен.
+                 */
+                await persistListings(
                     listings,
+                    {
+                      source:
+                      name,
+
+                      country:
+                      countryCode,
+
+                      phase:
+                          'final',
+                    },
                 );
 
                 /*
-                 * НИКОГДА не помечаем
-                 * пропущенные объявления,
-                 * если crawl был partial.
+                 * Missing/deactivation считаем
+                 * ТОЛЬКО после полного crawl.
                  */
                 if (complete) {
-                  await markMissingAfterCompleteCrawl({
-                    source: name,
-                    country:
-                    countryCode,
-                    crawlStartedAt,
-                  });
+                  const missingResult =
+                      await markMissingAfterCompleteCrawl({
+                        source:
+                        name,
+
+                        country:
+                        countryCode,
+
+                        crawlStartedAt,
+                      });
+
+                  /*
+                   * После третьего miss Postgres
+                   * переводит listing в active=false.
+                   *
+                   * Такие документы сразу убираем
+                   * из Elasticsearch.
+                   */
+                  await syncDeactivatedListings(
+                      missingResult
+                          ?.deactivated ??
+                      [],
+                      {
+                        source:
+                        name,
+
+                        country:
+                        countryCode,
+                      },
+                  );
                 }
               } catch (err) {
                 console.warn(
