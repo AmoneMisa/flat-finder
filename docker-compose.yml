@@ -143,7 +143,7 @@ services:
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
 
     volumes:
-      - flat-finder-elasticsearch-data:/usr/share/elasticsearch/data
+      - /mnt/docker-data/elasticsearch-data:/usr/share/elasticsearch/data
 
     expose:
       - "9200"
@@ -152,16 +152,15 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null || exit 1"
+          "curl -fsS 'http://localhost:9200/' >/dev/null || exit 1"
         ]
       interval: 10s
-      timeout: 8s
+      timeout: 5s
       retries: 20
       start_period: 40s
 
 volumes:
   flat-finder-postgres-data:
-  flat-finder-elasticsearch-data:
 
 networks:
   ai-net:
