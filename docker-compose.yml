@@ -101,7 +101,7 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ./postgres.env
+      - ./.env
 
     volumes:
       - flat-finder-postgres-data:/var/lib/postgresql/data
