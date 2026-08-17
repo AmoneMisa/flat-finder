@@ -14,6 +14,7 @@ import {generateMock} from '../mock.js';
 import {cacheGet, cacheSet} from '../cache.js';
 import {geocodeListings} from '../geocode.js';
 import {aiFingerprint, aiWorkerEnabled, scheduleAiExtraction,} from '../ai-worker.js';
+import {markMissingAfterCompleteCrawl, upsertListings,} from '../db.js';
 
 const SOURCES = {
   olx: scrapeOlx,
@@ -349,8 +350,14 @@ function scheduleApartmentAi(cacheKeyValue, entry) {
 
 // `onProgress({ listings, sourceCounts, sourceErrors })` (optional) is called as
 // chunks/sources arrive so the caller can stream partial snapshots into the cache.
-async function fetchOne(countryCode, filters, onProgress) {
-  const country = COUNTRIES[countryCode];
+async function fetchOne(
+    countryCode,
+    filters,
+    onProgress,
+) {
+  const country =
+      COUNTRIES[countryCode];
+
   if (!country) {
     return {
       listings: [],
@@ -361,147 +368,377 @@ async function fetchOne(countryCode, filters, onProgress) {
     };
   }
 
-  const sources = country.sources ?? ['olx'];
+  const sources =
+      country.sources ?? ['olx'];
+
   const sourceCounts = {};
-  const sourceErrors = [];
+  const sourceErrors = {};
   const sourceStatus = {};
 
   let merged = [];
+
+  // sourceErrors дальше нужен как массив.
+  const errors = [];
+
   const emit = () => {
-    if (onProgress) onProgress({ listings: merged, sourceCounts: { ...sourceCounts }, sourceErrors: [...sourceErrors], sourceStatus: {...sourceStatus} });
+    if (!onProgress) {
+      return;
+    }
+
+    onProgress({
+      listings: merged,
+
+      sourceCounts: {
+        ...sourceCounts,
+      },
+
+      sourceErrors: [
+        ...errors,
+      ],
+
+      sourceStatus: {
+        ...sourceStatus,
+      },
+    });
   };
 
-  const tasks = sources.map((name) => {
-    const fn = SOURCES[name];
-    if (!fn) { sourceCounts[name] = 0; return Promise.resolve(); }
-    sourceCounts[name] = 0;
-    // Sources that support it (OLX pages) stream partial results per chunk so the
-    // count climbs during the scrape; others just resolve once at the end.
-    const onChunk = (chunk) => {
-      if (!chunk?.length) return;
-      sourceCounts[name] += chunk.length;
-      merged = dedupe(merged.concat(chunk));
-      emit();
-    };
+  const tasks =
+      sources.map((name) => {
+        const fn =
+            SOURCES[name];
 
-    const timeoutResult = {
-      listings: [],
-      complete: false,
-      errors: [
-        {
-          error: `Source deadline exceeded after ${SOURCE_DEADLINE_MS}ms`,
-        },
-      ],
-    };
+        if (!fn) {
+          sourceCounts[name] = 0;
 
-    const sourcePromise = fn(
-        country,
-        filters,
-        onChunk,
-    );
+          return Promise.resolve();
+        }
 
-    const guardedPromise =
-        name === 'olx'
-            ? sourcePromise
-            : withDeadline(
-                sourcePromise,
-                SOURCE_DEADLINE_MS,
-                timeoutResult,
+        sourceCounts[name] = 0;
+
+        /*
+         * Время ДО первого запроса.
+         *
+         * После полного crawl всё,
+         * у чего last_seen_at старше этого
+         * времени, считается пропущенным.
+         */
+        const crawlStartedAt =
+            new Date()
+                .toISOString();
+
+        /*
+         * PostgreSQL-записи одного source
+         * выполняем последовательно,
+         * чтобы page chunks не гонялись
+         * друг с другом.
+         */
+        let dbWriting =
+            Promise.resolve();
+
+        const queueDbWrite =
+            (listings) => {
+              if (!listings?.length) {
+                return;
+              }
+
+              dbWriting =
+                  dbWriting
+                      .then(() =>
+                          upsertListings(
+                              listings,
+                          ),
+                      )
+                      .catch((err) => {
+                        console.warn(
+                            `[postgres] ` +
+                            `${countryCode}/${name} ` +
+                            `chunk upsert failed: ` +
+                            `${err?.message ?? err}`,
+                        );
+                      });
+            };
+
+        const onChunk =
+            (chunk) => {
+              if (!chunk?.length) {
+                return;
+              }
+
+              sourceCounts[name] +=
+                  chunk.length;
+
+              merged =
+                  dedupe(
+                      merged.concat(
+                          chunk,
+                      ),
+                  );
+
+              // OLX сохраняется в PostgreSQL
+              // прямо постранично.
+              queueDbWrite(
+                  chunk,
+              );
+
+              emit();
+            };
+
+        const timeoutResult = {
+          listings: [],
+          complete: false,
+
+          errors: [
+            {
+              error:
+                  `Source deadline exceeded ` +
+                  `after ${SOURCE_DEADLINE_MS}ms`,
+            },
+          ],
+        };
+
+        const sourcePromise =
+            fn(
+                country,
+                filters,
+                onChunk,
             );
 
-    return guardedPromise.then(
-        (result) => {
-          // Старые scrapers (например Telegram)
-          // по-прежнему возвращают массив.
-          const isLegacyArray = Array.isArray(result);
+        const guardedPromise =
+            name === 'olx'
+                ? sourcePromise
+                : withDeadline(
+                    sourcePromise,
+                    SOURCE_DEADLINE_MS,
+                    timeoutResult,
+                );
 
-          const listings = isLegacyArray
-              ? result
-              : Array.isArray(result?.listings)
-                  ? result.listings
-                  : [];
+        return guardedPromise.then(
+            async (result) => {
+              const isLegacyArray =
+                  Array.isArray(
+                      result,
+                  );
 
-          const complete = isLegacyArray
-              ? true
-              : result?.complete !== false;
+              const listings =
+                  isLegacyArray
+                      ? result
+                      : Array.isArray(
+                          result?.listings,
+                      )
+                          ? result.listings
+                          : [];
 
-          sourceStatus[name] = {
-            complete,
-          };
+              const complete =
+                  isLegacyArray
+                      ? true
+                      : result?.complete !==
+                      false;
 
-          merged = dedupe(
-              merged.concat(listings),
-          );
+              sourceStatus[name] = {
+                complete,
+              };
 
-          sourceCounts[name] = Math.max(
-              sourceCounts[name] ?? 0,
-              listings.length,
-          );
+              merged =
+                  dedupe(
+                      merged.concat(
+                          listings,
+                      ),
+                  );
 
-          if (!complete) {
-            const errors =
-                Array.isArray(result?.errors) &&
-                result.errors.length
-                    ? result.errors
-                    : [{ error: 'Incomplete scrape' }];
+              sourceCounts[name] =
+                  Math.max(
+                      sourceCounts[name] ??
+                      0,
 
-            for (const item of errors) {
-              sourceErrors.push({
+                      listings.length,
+                  );
+
+              /*
+               * Ждём все page writes.
+               */
+              await dbWriting;
+
+              /*
+               * Telegram не стримит OLX-style
+               * chunks, поэтому сохраняем
+               * authoritative final result
+               * ещё раз.
+               *
+               * Для OLX повторный upsert
+               * безопасен и просто обновит
+               * last_seen_at/data.
+               */
+              try {
+                await upsertListings(
+                    listings,
+                );
+
+                /*
+                 * НИКОГДА не помечаем
+                 * пропущенные объявления,
+                 * если crawl был partial.
+                 */
+                if (complete) {
+                  await markMissingAfterCompleteCrawl({
+                    source: name,
+                    country:
+                    countryCode,
+                    crawlStartedAt,
+                  });
+                }
+              } catch (err) {
+                console.warn(
+                    `[postgres] ` +
+                    `${countryCode}/${name} ` +
+                    `final persistence failed: ` +
+                    `${err?.message ?? err}`,
+                );
+              }
+
+              if (!complete) {
+                const resultErrors =
+                    Array.isArray(
+                        result?.errors,
+                    ) &&
+                    result.errors.length
+                        ? result.errors
+                        : [
+                          {
+                            error:
+                                'Incomplete scrape',
+                          },
+                        ];
+
+                for (
+                    const item
+                    of resultErrors
+                    ) {
+                  errors.push({
+                    source: name,
+                    country:
+                    countryCode,
+                    page:
+                    item.page,
+                    segment:
+                    item.segment,
+                    stopReason:
+                    item.stopReason,
+                    error:
+                        item.error ??
+                        'Incomplete scrape',
+                  });
+                }
+              }
+
+              emit();
+            },
+
+            async (err) => {
+              const msg =
+                  err?.message ??
+                  String(err);
+
+              sourceStatus[name] = {
+                complete: false,
+              };
+
+              errors.push({
                 source: name,
-                country: countryCode,
-                page: item.page,
-                segment: item.segment,
-                error:
-                    item.error ??
-                    'Incomplete scrape',
+                country:
+                countryCode,
+                error: msg,
               });
-            }
-          }
 
-          emit();
-        },
+              console.warn(
+                  `[scraper] ` +
+                  `${countryCode}/${name} ` +
+                  `failed: ${msg}`,
+              );
 
-        (err) => {
-          const msg =
-              err?.message ??
-              String(err);
+              await dbWriting;
 
-          sourceStatus[name] = {
-            complete: false,
-          };
+              /*
+               * Здесь markMissing НЕ вызываем:
+               * source завершился ошибкой.
+               */
 
-          sourceErrors.push({
-            source: name,
-            country: countryCode,
-            error: msg,
-          });
+              emit();
+            },
+        );
+      });
 
-          console.warn(
-              `[scraper] ${countryCode}/${name} failed: ${msg}`,
-          );
+  await Promise.allSettled(
+      tasks,
+  );
 
-          emit();
-        },
-    );
-  });
-  await Promise.allSettled(tasks);
+  if (
+      Array.isArray(
+          filters.customSources,
+      ) &&
+      filters.customSources.length
+  ) {
+    const custom =
+        await scrapeCustom(
+            country,
+            filters,
+        );
 
-  // User-provided custom sources: fetched per URL, failures surfaced individually.
-  if (Array.isArray(filters.customSources) && filters.customSources.length) {
-    const custom = await scrapeCustom(country, filters);
-    sourceCounts.custom = custom.listings.length;
-    merged = dedupe(merged.concat(custom.listings));
-    for (const e of custom.errors) {
-      sourceErrors.push({ source: 'custom', country: countryCode, url: e.url, error: e.error });
+    sourceCounts.custom =
+        custom.listings.length;
+
+    merged =
+        dedupe(
+            merged.concat(
+                custom.listings,
+            ),
+        );
+
+    for (
+        const error
+        of custom.errors
+        ) {
+      errors.push({
+        source: 'custom',
+        country:
+        countryCode,
+        url:
+        error.url,
+        error:
+        error.error,
+      });
     }
+
     emit();
   }
 
   if (!merged.length) {
-    console.warn(`[scraper] ${countryCode} all sources empty -> mock`);
-    return { listings: generateMock(countryCode), degraded: true, sourceCounts, sourceErrors, sourceStatus };
+    console.warn(
+        `[scraper] ${countryCode} ` +
+        `all sources empty -> mock`,
+    );
+
+    return {
+      listings:
+          generateMock(
+              countryCode,
+          ),
+
+      degraded: true,
+      sourceCounts,
+      sourceErrors:
+      errors,
+      sourceStatus,
+    };
   }
-  return { listings: merged, degraded: false, sourceCounts, sourceErrors, sourceStatus };
+
+  return {
+    listings: merged,
+    degraded: false,
+    sourceCounts,
+    sourceErrors:
+    errors,
+    sourceStatus,
+  };
 }
 
 // Scrape a country fresh and store the result in the (Redis or in-memory) cache.

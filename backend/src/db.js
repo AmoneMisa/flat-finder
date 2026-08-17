@@ -1,0 +1,640 @@
+import pg from 'pg';
+
+const { Pool } = pg;
+
+const pool = new Pool({
+    host:
+        process.env.PGHOST ||
+        'flat-finder-postgres',
+
+    port:
+        Number(process.env.PGPORT) ||
+        5432,
+
+    database:
+        process.env.POSTGRES_DB ||
+        'flatfinder',
+
+    user:
+        process.env.POSTGRES_USER ||
+        'flatfinder',
+
+    password:
+    process.env.POSTGRES_PASSWORD,
+
+    max:
+        Number(process.env.PG_POOL_MAX) ||
+        10,
+
+    idleTimeoutMillis:
+        30_000,
+
+    connectionTimeoutMillis:
+        10_000,
+});
+
+pool.on('error', (err) => {
+    console.error(
+        '[postgres] idle client error:',
+        err.message,
+    );
+});
+
+function finiteNumber(value) {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ''
+    ) {
+        return null;
+    }
+
+    const number = Number(value);
+
+    return Number.isFinite(number)
+        ? number
+        : null;
+}
+
+function finiteInteger(value) {
+    const number =
+        finiteNumber(value);
+
+    return number == null
+        ? null
+        : Math.trunc(number);
+}
+
+function safeTimestamp(value) {
+    if (!value) {
+        return null;
+    }
+
+    const time =
+        Date.parse(value);
+
+    if (!Number.isFinite(time)) {
+        return null;
+    }
+
+    return new Date(time)
+        .toISOString();
+}
+
+function dbListing(listing) {
+    return {
+        source:
+            String(
+                listing.source || '',
+            ).toLowerCase(),
+
+        country:
+            String(
+                listing.country || '',
+            ).toUpperCase(),
+
+        source_id:
+            String(
+                listing.id,
+            ),
+
+        title:
+            listing.title ?? '',
+
+        description:
+            listing.description ?? '',
+
+        property_type:
+            listing.propertyType ?? null,
+
+        deal_type:
+            listing.dealType ?? null,
+
+        city:
+            listing.city ?? null,
+
+        district:
+            listing.district ?? null,
+
+        area:
+            listing.area ??
+            listing.kvartal ??
+            null,
+
+        metro:
+            listing.metro ?? null,
+
+        address:
+            listing.address ?? null,
+
+        residence_complex:
+            listing.residenceComplex ?? null,
+
+        price:
+            finiteNumber(
+                listing.price,
+            ),
+
+        currency:
+            listing.currency ?? null,
+
+        rooms:
+            finiteInteger(
+                listing.rooms,
+            ),
+
+        area_sqm:
+            finiteNumber(
+                listing.areaSqm,
+            ),
+
+        by_agency:
+            Boolean(
+                listing.byAgency,
+            ),
+
+        created_at:
+            safeTimestamp(
+                listing.createdAt,
+            ),
+
+        // Полный normalized Listing.
+        // ES позже будем строить именно из него.
+        data: listing,
+    };
+}
+
+export async function initDb() {
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS listings (
+      id BIGSERIAL PRIMARY KEY,
+
+      source VARCHAR(32) NOT NULL,
+      country VARCHAR(8) NOT NULL,
+      source_id TEXT NOT NULL,
+
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+
+      property_type VARCHAR(32),
+      deal_type VARCHAR(32),
+
+      city TEXT,
+      district TEXT,
+      area TEXT,
+      metro TEXT,
+      address TEXT,
+      residence_complex TEXT,
+
+      price DOUBLE PRECISION,
+      currency VARCHAR(16),
+
+      rooms INTEGER,
+      area_sqm DOUBLE PRECISION,
+
+      by_agency BOOLEAN NOT NULL DEFAULT FALSE,
+
+      created_at TIMESTAMPTZ,
+
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      missed_runs INTEGER NOT NULL DEFAULT 0,
+
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+      CONSTRAINT listings_source_country_id_unique
+        UNIQUE (
+          source,
+          country,
+          source_id
+        )
+    );
+  `);
+
+    await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+      listings_active_idx
+    ON listings(active);
+  `);
+
+    await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+      listings_country_active_idx
+    ON listings(country, active);
+  `);
+
+    await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+      listings_source_country_active_idx
+    ON listings(
+      source,
+      country,
+      active
+    );
+  `);
+
+    await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+      listings_created_at_idx
+    ON listings(created_at DESC);
+  `);
+
+    await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+      listings_last_seen_at_idx
+    ON listings(last_seen_at DESC);
+  `);
+
+    await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+      listings_city_idx
+    ON listings(city);
+  `);
+
+    await pool.query(`
+    CREATE INDEX IF NOT EXISTS
+      listings_district_idx
+    ON listings(district);
+  `);
+
+    console.log(
+        '[postgres] schema ready',
+    );
+}
+
+const UPSERT_SQL = `
+  INSERT INTO listings (
+    source,
+    country,
+    source_id,
+
+    title,
+    description,
+
+    property_type,
+    deal_type,
+
+    city,
+    district,
+    area,
+    metro,
+    address,
+    residence_complex,
+
+    price,
+    currency,
+
+    rooms,
+    area_sqm,
+
+    by_agency,
+
+    created_at,
+
+    active,
+    missed_runs,
+
+    first_seen_at,
+    last_seen_at,
+    updated_at,
+
+    data
+  )
+
+  SELECT
+    input.source,
+    input.country,
+    input.source_id,
+
+    input.title,
+    input.description,
+
+    input.property_type,
+    input.deal_type,
+
+    input.city,
+    input.district,
+    input.area,
+    input.metro,
+    input.address,
+    input.residence_complex,
+
+    input.price,
+    input.currency,
+
+    input.rooms,
+    input.area_sqm,
+
+    input.by_agency,
+
+    input.created_at,
+
+    TRUE,
+    0,
+
+    NOW(),
+    NOW(),
+    NOW(),
+
+    input.data
+
+  FROM jsonb_to_recordset(
+    $1::jsonb
+  ) AS input (
+    source TEXT,
+    country TEXT,
+    source_id TEXT,
+
+    title TEXT,
+    description TEXT,
+
+    property_type TEXT,
+    deal_type TEXT,
+
+    city TEXT,
+    district TEXT,
+    area TEXT,
+    metro TEXT,
+    address TEXT,
+    residence_complex TEXT,
+
+    price DOUBLE PRECISION,
+    currency TEXT,
+
+    rooms INTEGER,
+    area_sqm DOUBLE PRECISION,
+
+    by_agency BOOLEAN,
+
+    created_at TIMESTAMPTZ,
+
+    data JSONB
+  )
+
+  ON CONFLICT (
+    source,
+    country,
+    source_id
+  )
+
+  DO UPDATE SET
+    title =
+      EXCLUDED.title,
+
+    description =
+      EXCLUDED.description,
+
+    property_type =
+      EXCLUDED.property_type,
+
+    deal_type =
+      EXCLUDED.deal_type,
+
+    city =
+      EXCLUDED.city,
+
+    district =
+      EXCLUDED.district,
+
+    area =
+      EXCLUDED.area,
+
+    metro =
+      EXCLUDED.metro,
+
+    address =
+      EXCLUDED.address,
+
+    residence_complex =
+      EXCLUDED.residence_complex,
+
+    price =
+      EXCLUDED.price,
+
+    currency =
+      EXCLUDED.currency,
+
+    rooms =
+      EXCLUDED.rooms,
+
+    area_sqm =
+      EXCLUDED.area_sqm,
+
+    by_agency =
+      EXCLUDED.by_agency,
+
+    created_at =
+      EXCLUDED.created_at,
+
+    active =
+      TRUE,
+
+    missed_runs =
+      0,
+
+    last_seen_at =
+      NOW(),
+
+    updated_at =
+      NOW(),
+
+    data =
+      EXCLUDED.data;
+`;
+
+export async function upsertListings(
+    listings,
+) {
+    if (
+        !Array.isArray(listings) ||
+        !listings.length
+    ) {
+        return 0;
+    }
+
+    /*
+     * Заодно убираем дубли внутри batch.
+     *
+     * PostgreSQL ON CONFLICT не должен
+     * получить один и тот же unique key
+     * дважды внутри одного INSERT.
+     */
+    const unique =
+        new Map();
+
+    for (const listing of listings) {
+        if (
+            !listing?.source ||
+            !listing?.country ||
+            listing?.id == null
+        ) {
+            continue;
+        }
+
+        const normalized =
+            dbListing(listing);
+
+        const key = [
+            normalized.source,
+            normalized.country,
+            normalized.source_id,
+        ].join(':');
+
+        unique.set(
+            key,
+            normalized,
+        );
+    }
+
+    const rows = [
+        ...unique.values(),
+    ];
+
+    if (!rows.length) {
+        return 0;
+    }
+
+    const BATCH_SIZE = 500;
+
+    let saved = 0;
+
+    for (
+        let offset = 0;
+        offset < rows.length;
+        offset += BATCH_SIZE
+    ) {
+        const batch =
+            rows.slice(
+                offset,
+                offset + BATCH_SIZE,
+            );
+
+        await pool.query(
+            UPSERT_SQL,
+            [
+                JSON.stringify(
+                    batch,
+                ),
+            ],
+        );
+
+        saved += batch.length;
+    }
+
+    return saved;
+}
+
+/*
+ * Вызывать ТОЛЬКО после полного,
+ * успешного crawl источника.
+ *
+ * Все объявления, которые существовали
+ * до начала crawl, но в новом полном
+ * проходе не встретились, получают miss.
+ *
+ * После трёх последовательных miss:
+ * active = false.
+ */
+export async function markMissingAfterCompleteCrawl({
+                                                        source,
+                                                        country,
+                                                        crawlStartedAt,
+                                                    }) {
+    const result =
+        await pool.query(
+            `
+          UPDATE listings
+
+          SET
+            missed_runs =
+              missed_runs + 1,
+
+            active =
+              CASE
+                WHEN missed_runs + 1 >= 3
+                  THEN FALSE
+                ELSE TRUE
+              END,
+
+            updated_at =
+              NOW()
+
+          WHERE
+            source = $1
+
+            AND country = $2
+
+            AND active = TRUE
+
+            AND last_seen_at <
+              $3::timestamptz
+          `,
+            [
+                String(source)
+                    .toLowerCase(),
+
+                String(country)
+                    .toUpperCase(),
+
+                crawlStartedAt,
+            ],
+        );
+
+    if (result.rowCount) {
+        console.log(
+            `[postgres] ${source}/${country}: ` +
+            `${result.rowCount} listings missed`,
+        );
+    }
+
+    return result.rowCount;
+}
+
+export async function dbHealth() {
+    await pool.query(
+        'SELECT 1',
+    );
+
+    return true;
+}
+
+export async function getDbStats() {
+    const result =
+        await pool.query(`
+        SELECT
+          source,
+          country,
+
+          COUNT(*)::int
+            AS total,
+
+          COUNT(*) FILTER (
+            WHERE active = TRUE
+          )::int
+            AS active,
+
+          COUNT(*) FILTER (
+            WHERE active = FALSE
+          )::int
+            AS inactive
+
+        FROM listings
+
+        GROUP BY
+          source,
+          country
+
+        ORDER BY
+          country,
+          source;
+      `);
+
+    return result.rows;
+}
+
+export async function closeDb() {
+    await pool.end();
+}

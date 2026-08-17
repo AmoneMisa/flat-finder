@@ -8,6 +8,12 @@ import { validateSource } from './scrapers/custom.js';
 import { applyFilters } from './normalize.js';
 import { getRates } from './fx.js';
 import { startScheduler, refreshAll, getLastRun } from './scheduler.js';
+import {
+  closeDb,
+  dbHealth,
+  getDbStats,
+  initDb,
+} from './db.js';
 
 const app = express();
 app.use(cors());
@@ -265,7 +271,43 @@ app.get('/api/tg-photo/:channel/:id', async (req, res) => {
   }
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/health', async (_req, res) => {
+  try {
+    await dbHealth();
+
+    res.json({
+      ok: true,
+      postgres: true,
+    });
+  } catch (err) {
+    res.status(503).json({
+      ok: false,
+      postgres: false,
+      error:
+          err?.message ??
+          String(err),
+    });
+  }
+});
+
+app.get('/api/db-stats', async (_req, res) => {
+  try {
+    const rows =
+        await getDbStats();
+
+    res.json({
+      ok: true,
+      rows,
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error:
+          err?.message ??
+          String(err),
+    });
+  }
+});
 
 // Status of the background refresher (last run stats).
 app.get('/api/refresh', (_req, res) => res.json({ lastRun: getLastRun() }));
@@ -276,8 +318,64 @@ app.post('/api/refresh', async (_req, res) => {
   res.json({ ok: true, result });
 });
 
-app.listen(PORT, () => {
-  console.log(`flat-finder backend listening on http://localhost:${PORT}`);
-  console.log(`countries: ${COUNTRY_CODES.join(', ')}`);
-  startScheduler();
+async function start() {
+  await initDb();
+
+  const server =
+      app.listen(
+          PORT,
+          () => {
+            console.log(
+                `flat-finder backend listening ` +
+                `on http://localhost:${PORT}`,
+            );
+
+            console.log(
+                `countries: ` +
+                `${COUNTRY_CODES.join(', ')}`,
+            );
+
+            startScheduler();
+          },
+      );
+
+  async function shutdown(signal) {
+    console.log(
+        `[server] ${signal}, shutting down`,
+    );
+
+    server.close(
+        async () => {
+          try {
+            await closeDb();
+          } finally {
+            process.exit(0);
+          }
+        },
+    );
+
+    setTimeout(
+        () => process.exit(1),
+        10_000,
+    ).unref();
+  }
+
+  process.once(
+      'SIGTERM',
+      () => void shutdown('SIGTERM'),
+  );
+
+  process.once(
+      'SIGINT',
+      () => void shutdown('SIGINT'),
+  );
+}
+
+start().catch((err) => {
+  console.error(
+      '[server] startup failed:',
+      err,
+  );
+
+  process.exit(1);
 });
