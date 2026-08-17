@@ -130,28 +130,20 @@ services:
       start_period: 10s
 
   flat-finder-elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.2
+    build:
+      context: ./elasticsearch
 
     restart: unless-stopped
 
     environment:
       - discovery.type=single-node
-
-      # ES доступен только внутри docker network,
-      # поэтому отдельную auth пока не включаем.
       - xpack.security.enabled=false
       - xpack.security.enrollment.enabled=false
-
-      # ML нам для Flat Finder не нужен.
       - xpack.ml.enabled=false
-
-      # Для нашего объёма объявлений этого
-      # достаточно на первом этапе.
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
 
     volumes:
       - flat-finder-elasticsearch-data:/usr/share/elasticsearch/data
-      - ./elasticsearch/elasticsearch-plugins.yml:/usr/share/elasticsearch/config/elasticsearch-plugins.yml:ro
 
     expose:
       - "9200"
