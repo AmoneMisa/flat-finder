@@ -507,26 +507,96 @@ async function fetchOne(countryCode, filters, onProgress) {
 // Scrape a country fresh and store the result in the (Redis or in-memory) cache.
 // Concurrent callers for the same key share a single in-flight scrape.
 function refresh(countryCode, filters, key) {
-  if (inFlight.has(key)) return inFlight.get(key);
+  if (inFlight.has(key)) {
+    return inFlight.get(key);
+  }
+
   const p = (async () => {
-    // Preserve AI provenance/results across deterministic source refreshes when
-    // the source text and known facts are unchanged.
-    const previousEntry = await cacheGet(key);
-    const previousAi = previousEntry?.ai || {};
-    // Stream partial snapshots into the cache as chunks arrive so the client's
-    // warm-poll sees the count/results climb. Partial writes are throttled and
-    // serialized, and skip geocoding (that runs once on the final snapshot) to
-    // keep them cheap. Marked complete:false so getListings keeps `warming` on.
+    const previousEntry =
+        await cacheGet(key);
+
+    const previousAi =
+        previousEntry?.ai || {};
+
+    const previousListings =
+        Array.isArray(previousEntry?.listings)
+            ? previousEntry.listings
+            : [];
+
     let lastWrite = 0;
     let writing = Promise.resolve();
+    let acceptProgress = true;
 
-    const hasStablePrevious =
-        previousEntry?.complete === true &&
-        Array.isArray(previousEntry.listings) &&
-        previousEntry.listings.length > 0;
+    function mergeProgressListings(
+        previous,
+        fresh,
+    ) {
+      const byId = new Map();
+
+      // Сначала старый snapshot.
+      for (const listing of previous) {
+        if (!listing?.id) {
+          continue;
+        }
+
+        const id = [
+          listing.source ?? '',
+          listing.country ?? '',
+          listing.id,
+        ].join(':');
+
+        byId.set(
+            id,
+            listing,
+        );
+      }
+
+      // Свежие объявления заменяют
+      // старые объявления с тем же ID.
+      for (const listing of fresh) {
+        if (!listing?.id) {
+          continue;
+        }
+
+        const id = [
+          listing.source ?? '',
+          listing.country ?? '',
+          listing.id,
+        ].join(':');
+
+        byId.set(
+            id,
+            listing,
+        );
+      }
+
+      return dedupe([
+        ...byId.values(),
+      ]);
+    }
+
+    function countSources(listings) {
+      const counts = {};
+
+      for (const listing of listings) {
+        const source =
+            String(
+                listing?.source || '',
+            ).toLowerCase();
+
+        if (!source) {
+          continue;
+        }
+
+        counts[source] =
+            (counts[source] ?? 0) + 1;
+      }
+
+      return counts;
+    }
 
     const onProgress = (partial) => {
-      if (hasStablePrevious) {
+      if (!acceptProgress) {
         return;
       }
 
@@ -541,31 +611,98 @@ function refresh(countryCode, filters, key) {
 
       lastWrite = now;
 
+      const partialListings =
+          Array.isArray(partial?.listings)
+              ? partial.listings
+              : [];
+
+      const mergedListings =
+          mergeProgressListings(
+              previousListings,
+              partialListings,
+          );
+
+      const sourceCounts =
+          countSources(
+              mergedListings,
+          );
+
+      const progressiveEntry = {
+        at: Date.now(),
+
+        listings:
+        mergedListings,
+
+        sourceCounts,
+
+        sourceErrors:
+            Array.isArray(
+                partial?.sourceErrors,
+            )
+                ? partial.sourceErrors
+                : [],
+
+        sourceStatus:
+            partial?.sourceStatus ?? {},
+
+        degraded:
+            Boolean(
+                previousEntry?.degraded ||
+                partial?.degraded,
+            ),
+
+        // Весь refresh ещё не завершён.
+        complete: false,
+      };
+
       writing = writing
           .then(() =>
               cacheSet(
                   key,
-                  {
-                    at: Date.now(),
-                    ...partial,
-                    degraded: false,
-                    complete: false,
-                  },
+                  progressiveEntry,
                   STALE_TTL_MS,
               ),
           )
-          .catch(() => {});
+          .catch((err) => {
+            console.warn(
+                `[scraper] progressive cache ` +
+                `${countryCode} failed: ` +
+                `${err?.message ?? err}`,
+            );
+          });
     };
 
-    const result = await fetchOne(countryCode, snapshotFilters(filters), onProgress);
-    await writing; // ensure the final write below lands after any partial write
-    const olxIncomplete =
-        result.sourceStatus?.olx?.complete === false;
+    const result =
+        await fetchOne(
+            countryCode,
+            snapshotFilters(filters),
+            onProgress,
+        );
 
+    // После fetchOne больше никакие поздние
+    // chunks не должны затереть final snapshot.
+    acceptProgress = false;
+
+    // Дожидаемся последней уже поставленной
+    // progressive-записи.
+    await writing;
+
+    const olxIncomplete =
+        result.sourceStatus
+            ?.olx
+            ?.complete === false;
+
+    /*
+     * Если OLX завершился частично,
+     * сохраняем объявления из предыдущего
+     * стабильного snapshot.
+     */
     if (
         olxIncomplete &&
         previousEntry?.complete === true &&
-        Array.isArray(previousEntry.listings)
+        Array.isArray(
+            previousEntry.listings,
+        )
     ) {
       const previousOlx =
           previousEntry.listings.filter(
@@ -585,19 +722,24 @@ function refresh(countryCode, filters, key) {
                   listing.source !== 'olx',
           );
 
-      // Новые данные имеют приоритет.
-      // Старые объявления дополняют то,
-      // что crawler не успел получить.
-      const olxById = new Map();
+      const olxById =
+          new Map();
 
-      for (const listing of previousOlx) {
+      for (
+          const listing
+          of previousOlx
+          ) {
         olxById.set(
             `${listing.country}:${listing.id}`,
             listing,
         );
       }
 
-      for (const listing of freshOlx) {
+      // Новый OLX имеет приоритет.
+      for (
+          const listing
+          of freshOlx
+          ) {
         olxById.set(
             `${listing.country}:${listing.id}`,
             listing,
@@ -613,8 +755,10 @@ function refresh(countryCode, filters, key) {
         ...preservedOlx,
       ];
 
-      result.sourceCounts.olx =
-          preservedOlx.length;
+      result.sourceCounts = {
+        ...result.sourceCounts,
+        olx: preservedOlx.length,
+      };
 
       result.degraded = true;
 
@@ -627,31 +771,113 @@ function refresh(countryCode, filters, key) {
       );
     }
 
-    // Place coordinate-less listings (Telegram/custom) on the map by geocoding
-    // their address > metro > district > city. Throttled + cached; runs here in
-    // the background refresh so it never delays a user request.
+    /*
+     * Геокодирование делаем только один раз
+     * после завершения source crawling.
+     */
     try {
-      await geocodeListings(result.listings, COUNTRIES[countryCode]);
+      await geocodeListings(
+          result.listings,
+          COUNTRIES[countryCode],
+      );
     } catch (err) {
-      console.warn(`[geocode] ${countryCode} failed: ${err.message}`);
+      console.warn(
+          `[geocode] ${countryCode} failed: ` +
+          `${err?.message ?? err}`,
+      );
     }
+
+    /*
+     * Восстанавливаем уже готовые AI results,
+     * если исходные данные объявления
+     * не изменились.
+     */
     const ai = {};
-    result.listings = result.listings.map((listing) => {
-      const id = listingKey(listing);
-      const input = apartmentAiInput(listing);
-      const prior = previousAi[id];
-      if (prior?.fingerprint !== input.fingerprint) return listing;
-      ai[id] = prior;
-      return prior.status === 'completed' && prior.data
-        ? mergeApartmentAi(listing, prior.data)
-        : listing;
-    });
-    const entry = { at: Date.now(), ...result, ai, complete: true };
-    await cacheSet(key, entry, STALE_TTL_MS);
-    if (scheduleApartmentAi(key, entry)) await cacheSet(key, entry, STALE_TTL_MS);
+
+    result.listings =
+        result.listings.map(
+            (listing) => {
+              const id =
+                  listingKey(listing);
+
+              const input =
+                  apartmentAiInput(
+                      listing,
+                  );
+
+              const prior =
+                  previousAi[id];
+
+              if (
+                  prior?.fingerprint !==
+                  input.fingerprint
+              ) {
+                return listing;
+              }
+
+              ai[id] = prior;
+
+              if (
+                  prior.status ===
+                  'completed' &&
+                  prior.data
+              ) {
+                return mergeApartmentAi(
+                    listing,
+                    prior.data,
+                );
+              }
+
+              return listing;
+            },
+        );
+
+    /*
+     * Final snapshot.
+     *
+     * complete:true означает:
+     * refresh закончился.
+     *
+     * Состояние отдельных sources находится
+     * в sourceStatus.
+     */
+    const entry = {
+      at: Date.now(),
+      ...result,
+      ai,
+      complete: true,
+    };
+
+    await cacheSet(
+        key,
+        entry,
+        STALE_TTL_MS,
+    );
+
+    if (
+        scheduleApartmentAi(
+            key,
+            entry,
+        )
+    ) {
+      await cacheSet(
+          key,
+          entry,
+          STALE_TTL_MS,
+      );
+    }
+
     return entry;
-  })().finally(() => inFlight.delete(key));
-  inFlight.set(key, p);
+  })()
+      .finally(() => {
+        inFlight.delete(key);
+      });
+
+  inFlight.set(
+      key,
+      p,
+  );
+
   return p;
 }
 
