@@ -318,14 +318,24 @@ function scheduleApartmentAi(cacheKeyValue, entry) {
 // chunks/sources arrive so the caller can stream partial snapshots into the cache.
 async function fetchOne(countryCode, filters, onProgress) {
   const country = COUNTRIES[countryCode];
-  if (!country) return { listings: [], degraded: false, sourceCounts: {}, sourceErrors: [] };
+  if (!country) {
+    return {
+      listings: [],
+      degraded: false,
+      sourceCounts: {},
+      sourceErrors: [],
+      sourceStatus: {},
+    };
+  }
 
   const sources = country.sources ?? ['olx'];
   const sourceCounts = {};
   const sourceErrors = [];
+  const sourceStatus = {};
+
   let merged = [];
   const emit = () => {
-    if (onProgress) onProgress({ listings: merged, sourceCounts: { ...sourceCounts }, sourceErrors: [...sourceErrors] });
+    if (onProgress) onProgress({ listings: merged, sourceCounts: { ...sourceCounts }, sourceErrors: [...sourceErrors], sourceStatus: {...sourceStatus} });
   };
 
   const tasks = sources.map((name) => {
@@ -340,61 +350,91 @@ async function fetchOne(countryCode, filters, onProgress) {
       merged = dedupe(merged.concat(chunk));
       emit();
     };
+
+    const timeoutResult = {
+      listings: [],
+      complete: false,
+      errors: [
+        {
+          error: `Source deadline exceeded after ${SOURCE_DEADLINE_MS}ms`,
+        },
+      ],
+    };
+
     return withDeadline(
         fn(country, filters, onChunk),
         SOURCE_DEADLINE_MS,
-        name === 'olx'
-            ? {
-              listings: [],
-              complete: false,
-              errors: [
-                {
-                  error: 'Source deadline exceeded',
-                },
-              ],
-            }
-            : [],
+        timeoutResult
     ).then(
         (result) => {
           // Старые scrapers (например Telegram)
           // по-прежнему возвращают массив.
-          const listings = Array.isArray(result)
+          const isLegacyArray = Array.isArray(result);
+
+          const listings = isLegacyArray
               ? result
               : Array.isArray(result?.listings)
                   ? result.listings
                   : [];
+
+          const complete = isLegacyArray
+              ? true
+              : result?.complete !== false;
+
+          sourceStatus[name] = {
+            complete,
+          };
 
           merged = dedupe(
               merged.concat(listings),
           );
 
           sourceCounts[name] = Math.max(
-              sourceCounts[name],
+              sourceCounts[name] ?? 0,
               listings.length,
           );
 
-          // Новый OLX contract.
-          if (
-              !Array.isArray(result) &&
-              result?.complete === false
-          ) {
+          if (!complete) {
             const errors =
-                Array.isArray(result.errors) &&
+                Array.isArray(result?.errors) &&
                 result.errors.length
                     ? result.errors
-                    : [{error: 'Incomplete scrape'}];
+                    : [{ error: 'Incomplete scrape' }];
 
-            for (const error of errors) {
+            for (const item of errors) {
               sourceErrors.push({
                 source: name,
                 country: countryCode,
-                page: error.page,
+                page: item.page,
+                segment: item.segment,
                 error:
-                    error.error ??
+                    item.error ??
                     'Incomplete scrape',
               });
             }
           }
+
+          emit();
+        },
+
+        (err) => {
+          const msg =
+              err?.message ??
+              String(err);
+
+          sourceStatus[name] = {
+            complete: false,
+          };
+
+          sourceErrors.push({
+            source: name,
+            country: countryCode,
+            error: msg,
+          });
+
+          console.warn(
+              `[scraper] ${countryCode}/${name} failed: ${msg}`,
+          );
 
           emit();
         },
@@ -415,9 +455,9 @@ async function fetchOne(countryCode, filters, onProgress) {
 
   if (!merged.length) {
     console.warn(`[scraper] ${countryCode} all sources empty -> mock`);
-    return { listings: generateMock(countryCode), degraded: true, sourceCounts, sourceErrors };
+    return { listings: generateMock(countryCode), degraded: true, sourceCounts, sourceErrors, sourceStatus };
   }
-  return { listings: merged, degraded: false, sourceCounts, sourceErrors };
+  return { listings: merged, degraded: false, sourceCounts, sourceErrors, sourceStatus };
 }
 
 // Scrape a country fresh and store the result in the (Redis or in-memory) cache.
@@ -427,24 +467,122 @@ function refresh(countryCode, filters, key) {
   const p = (async () => {
     // Preserve AI provenance/results across deterministic source refreshes when
     // the source text and known facts are unchanged.
-    const previousAi = (await cacheGet(key))?.ai || {};
+    const previousEntry = await cacheGet(key);
+    const previousAi = previousEntry?.ai || {};
     // Stream partial snapshots into the cache as chunks arrive so the client's
     // warm-poll sees the count/results climb. Partial writes are throttled and
     // serialized, and skip geocoding (that runs once on the final snapshot) to
     // keep them cheap. Marked complete:false so getListings keeps `warming` on.
     let lastWrite = 0;
     let writing = Promise.resolve();
+
+    const hasStablePrevious =
+        previousEntry?.complete === true &&
+        Array.isArray(previousEntry.listings) &&
+        previousEntry.listings.length > 0;
+
     const onProgress = (partial) => {
+      if (hasStablePrevious) {
+        return;
+      }
+
       const now = Date.now();
-      if (now - lastWrite < PARTIAL_WRITE_MS) return;
+
+      if (
+          now - lastWrite <
+          PARTIAL_WRITE_MS
+      ) {
+        return;
+      }
+
       lastWrite = now;
+
       writing = writing
-        .then(() => cacheSet(key, { at: Date.now(), ...partial, degraded: false, complete: false }, STALE_TTL_MS))
-        .catch(() => {});
+          .then(() =>
+              cacheSet(
+                  key,
+                  {
+                    at: Date.now(),
+                    ...partial,
+                    degraded: false,
+                    complete: false,
+                  },
+                  STALE_TTL_MS,
+              ),
+          )
+          .catch(() => {});
     };
 
     const result = await fetchOne(countryCode, snapshotFilters(filters), onProgress);
     await writing; // ensure the final write below lands after any partial write
+    const olxIncomplete =
+        result.sourceStatus?.olx?.complete === false;
+
+    if (
+        olxIncomplete &&
+        previousEntry?.complete === true &&
+        Array.isArray(previousEntry.listings)
+    ) {
+      const previousOlx =
+          previousEntry.listings.filter(
+              (listing) =>
+                  listing.source === 'olx',
+          );
+
+      const freshOlx =
+          result.listings.filter(
+              (listing) =>
+                  listing.source === 'olx',
+          );
+
+      const nonOlx =
+          result.listings.filter(
+              (listing) =>
+                  listing.source !== 'olx',
+          );
+
+      // Новые данные имеют приоритет.
+      // Старые объявления дополняют то,
+      // что crawler не успел получить.
+      const olxById = new Map();
+
+      for (const listing of previousOlx) {
+        olxById.set(
+            `${listing.country}:${listing.id}`,
+            listing,
+        );
+      }
+
+      for (const listing of freshOlx) {
+        olxById.set(
+            `${listing.country}:${listing.id}`,
+            listing,
+        );
+      }
+
+      const preservedOlx = [
+        ...olxById.values(),
+      ];
+
+      result.listings = [
+        ...nonOlx,
+        ...preservedOlx,
+      ];
+
+      result.sourceCounts.olx =
+          preservedOlx.length;
+
+      result.degraded = true;
+
+      console.warn(
+          `[scraper] ${countryCode}/olx incomplete; ` +
+          `preserving previous OLX snapshot ` +
+          `(fresh=${freshOlx.length}, ` +
+          `previous=${previousOlx.length}, ` +
+          `merged=${preservedOlx.length})`,
+      );
+    }
+
     // Place coordinate-less listings (Telegram/custom) on the map by geocoding
     // their address > metro > district > city. Throttled + cached; runs here in
     // the background refresh so it never delays a user request.
