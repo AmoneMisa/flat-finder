@@ -5,19 +5,15 @@
 // nothing (all blocked/empty), we fall back to generated demo data so the
 // client never sees an empty screen for that country.
 
-import { createHash } from 'node:crypto';
-import { COUNTRIES } from '../countries.js';
-import { scrapeOlx } from './olx.js';
-import { scrapeTelegram } from './telegram.js';
-import { scrapeCustom } from './custom.js';
-import { generateMock } from '../mock.js';
-import { cacheGet, cacheSet } from '../cache.js';
-import { geocodeListings } from '../geocode.js';
-import {
-  aiFingerprint,
-  aiWorkerEnabled,
-  scheduleAiExtraction,
-} from '../ai-worker.js';
+import {createHash} from 'node:crypto';
+import {COUNTRIES} from '../countries.js';
+import {scrapeOlx} from './olx.js';
+import {scrapeTelegram} from './telegram.js';
+import {scrapeCustom} from './custom.js';
+import {generateMock} from '../mock.js';
+import {cacheGet, cacheSet} from '../cache.js';
+import {geocodeListings} from '../geocode.js';
+import {aiFingerprint, aiWorkerEnabled, scheduleAiExtraction,} from '../ai-worker.js';
 
 const SOURCES = {
   olx: scrapeOlx,
@@ -344,21 +340,64 @@ async function fetchOne(countryCode, filters, onProgress) {
       merged = dedupe(merged.concat(chunk));
       emit();
     };
-    return withDeadline(fn(country, filters, onChunk), SOURCE_DEADLINE_MS, []).then(
-      (listings) => {
-        // Merge the source's authoritative result (no-op for chunks already
-        // streamed; picks up non-streaming sources like Telegram). Reconcile the
-        // per-source count to the source's own de-duplicated total.
-        merged = dedupe(merged.concat(listings));
-        sourceCounts[name] = Math.max(sourceCounts[name], listings.length);
-        emit();
-      },
-      (err) => {
-        const msg = err?.message ?? String(err);
-        sourceErrors.push({ source: name, country: countryCode, error: msg });
-        console.warn(`[scraper] ${countryCode}/${name} failed: ${msg}`);
-        emit();
-      },
+    return withDeadline(
+        fn(country, filters, onChunk),
+        SOURCE_DEADLINE_MS,
+        name === 'olx'
+            ? {
+              listings: [],
+              complete: false,
+              errors: [
+                {
+                  error: 'Source deadline exceeded',
+                },
+              ],
+            }
+            : [],
+    ).then(
+        (result) => {
+          // Старые scrapers (например Telegram)
+          // по-прежнему возвращают массив.
+          const listings = Array.isArray(result)
+              ? result
+              : Array.isArray(result?.listings)
+                  ? result.listings
+                  : [];
+
+          merged = dedupe(
+              merged.concat(listings),
+          );
+
+          sourceCounts[name] = Math.max(
+              sourceCounts[name],
+              listings.length,
+          );
+
+          // Новый OLX contract.
+          if (
+              !Array.isArray(result) &&
+              result?.complete === false
+          ) {
+            const errors =
+                Array.isArray(result.errors) &&
+                result.errors.length
+                    ? result.errors
+                    : [{error: 'Incomplete scrape'}];
+
+            for (const error of errors) {
+              sourceErrors.push({
+                source: name,
+                country: countryCode,
+                page: error.page,
+                error:
+                    error.error ??
+                    'Incomplete scrape',
+              });
+            }
+          }
+
+          emit();
+        },
     );
   });
   await Promise.allSettled(tasks);

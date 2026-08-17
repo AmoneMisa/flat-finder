@@ -33,6 +33,11 @@ const OLX_JITTER_MS = Number(process.env.OLX_JITTER_MS) || 500;
 // On HTTP 429 (Too Many Requests), back off this long before the caller retries.
 const OLX_BACKOFF_MS = Number(process.env.OLX_BACKOFF_MS) || 5_000;
 
+const OLX_SEGMENTS = [
+  'flat:longRent',
+  'flat:sale',
+];
+
 const UA_HEADER =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -67,19 +72,46 @@ function browserHeaders(country) {
 const OLX_FETCHER_URL = process.env.OLX_FETCHER_URL || '';
 
 // One rate-limited page fetch via the sidecar. Node throttles here (1:1 with the
-// sidecar's outbound OLX request) so we stay a polite client to OLX.
-async function fetchStatePage(country, page) {
-  await throttle(`olx:${country.olxHost}`, OLX_MIN_INTERVAL_MS, OLX_JITTER_MS);
+// sidecar's outbound OLX request), so we stay a polite client to OLX.
+async function fetchStatePage(country, segment, page) {
+  await throttle(
+      `olx:${country.olxHost}`,
+      OLX_MIN_INTERVAL_MS,
+      OLX_JITTER_MS,
+  );
+
   const base = OLX_FETCHER_URL.replace(/\/$/, '');
-  const url = `${base}/olx/listings?country=${country.code}&page=${page}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+
+  const params = new URLSearchParams({
+    country: country.code,
+    segment,
+    page: String(page),
+  });
+
+  const res = await fetch(
+      `${base}/olx/listings?${params}`,
+      {
+        signal: AbortSignal.timeout(30_000),
+      },
+  );
+
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
-    try { detail = (await res.json())?.error || detail; } catch { /* non-JSON body */ }
-    throw new Error(`olx-fetcher ${country.code}: ${detail}`);
+
+    try {
+      detail = (await res.json())?.error || detail;
+    } catch {}
+
+    throw new Error(
+        `olx-fetcher ${country.code}/${segment}: ${detail}`,
+    );
   }
+
   const data = await res.json();
-  return Array.isArray(data?.ads) ? data.ads : [];
+
+  return Array.isArray(data?.ads)
+      ? data.ads
+      : [];
 }
 
 // Find a listing parameter by key or human name. Web-state params look like
@@ -110,6 +142,79 @@ function stateArea(item) {
   const raw = stateParam(item, /area|m2|total_area|ploshch|maydon|kvadrat/i, /площад|area|m²|кв\.?\s*м|maydon|майдон/i);
   const n = raw != null ? Number(String(raw).replace(',', '.').match(/\d+(?:\.\d+)?/)?.[0]) : null;
   return n || null;
+}
+
+async function scrapeSegment(country, segment, onChunk) {
+  const out = [];
+  const seen = new Set();
+
+  const maxPages =
+      Number(process.env.OLX_MAX_PAGES_PER_SEGMENT) || 40;
+
+  let complete = true;
+  let stopReason = 'max_pages';
+
+  for (let page = 1; page <= maxPages; page++) {
+    let ads;
+
+    try {
+      ads = await fetchStatePage(
+          country,
+          segment,
+          page,
+      );
+    } catch (error) {
+      complete = false;
+      stopReason = 'page_error';
+
+      return {
+        listings: out,
+        complete,
+        stopReason,
+        failedPage: page,
+        error: error.message,
+      };
+    }
+
+    if (!ads.length) {
+      stopReason = 'empty_page';
+      break;
+    }
+
+    const fresh = [];
+
+    for (const item of ads) {
+      if (item?.id == null) continue;
+
+      const id = String(item.id);
+
+      if (seen.has(id)) continue;
+      seen.add(id);
+
+      const mapped = mapStateItem(
+          item,
+          country,
+      );
+
+      out.push(mapped);
+      fresh.push(mapped);
+    }
+
+    if (fresh.length) {
+      onChunk?.(fresh);
+    }
+
+    if (ads.length < 40) {
+      stopReason = 'short_page';
+      break;
+    }
+  }
+
+  return {
+    listings: out,
+    complete,
+    stopReason,
+  };
 }
 
 // Map one ad from a page's __PRERENDERED_STATE__ (a richer shape than /api/v1).
@@ -262,31 +367,57 @@ async function olxFetch(country, url) {
 // and let applyFilters narrow it in memory afterwards — `filters` is unused here.
 // `onChunk(pageListings)` (optional) is called after each page so the caller can
 // stream partial results into the cache and the UI count can climb during a scrape.
-export async function scrapeOlx(country, _filters, onChunk) {
-  if (!OLX_FETCHER_URL) return []; // OLX disabled until the fetch sidecar is set
-  const out = [];
-  const seen = new Set();
-  const started = Date.now();
-  for (let page = 1; page <= OLX_MAX_PAGES; page++) {
-    if (page > 1 && Date.now() - started > OLX_BUDGET_MS) break; // time budget
-    let ads;
-    try {
-      ads = await fetchStatePage(country, page);
-    } catch (err) {
-      if (page === 1) throw err; // first page must succeed (caller falls back to mock)
-      break; // later-page hiccup: keep what we already have
-    }
-    if (!ads.length) break;
-    const fresh = [];
-    for (const item of ads) {
-      if (item?.id == null || seen.has(item.id)) continue;
-      seen.add(item.id);
-      const mapped = mapStateItem(item, country);
-      out.push(mapped);
-      fresh.push(mapped);
-    }
-    if (onChunk && fresh.length) onChunk(fresh); // stream this page
-    if (ads.length < 40) break; // short page → end of results
+export async function scrapeOlx(
+    country,
+    _filters,
+    onChunk,
+) {
+  if (!OLX_FETCHER_URL) {
+    return {
+      listings: [],
+      complete: false,
+      stopReason: 'fetcher_disabled',
+    };
   }
-  return out;
+
+  const listings = [];
+  const errors = [];
+  let complete = true;
+
+  for (const segment of OLX_SEGMENTS) {
+    const result = await scrapeSegment(
+        country,
+        segment,
+        onChunk,
+    );
+
+    listings.push(...result.listings);
+
+    if (!result.complete) {
+      complete = false;
+
+      errors.push({
+        segment,
+        error: result.error,
+        failedPage: result.failedPage,
+      });
+    }
+  }
+
+  return {
+    listings: dedupeOlx(listings),
+    complete,
+    errors,
+  };
+}
+
+function dedupeOlx(listings) {
+  return [
+    ...new Map(
+        listings.map(item => [
+          `${item.country}:${item.id}`,
+          item,
+        ]),
+    ).values(),
+  ];
 }

@@ -22,10 +22,41 @@ app = Flask(__name__)
 # OLX real-estate landing path + Accept-Language per portal. These HTML pages
 # carry __PRERENDERED_STATE__; they are not the guarded JSON API.
 PORTALS = {
-    "RO": ("https://www.olx.ro", "imobiliare", "ro-RO,ro;q=0.9,en;q=0.7"),
-    "UA": ("https://www.olx.ua", "nedvizhimost", "uk-UA,uk;q=0.9,ru;q=0.7,en;q=0.5"),
-    "KZ": ("https://www.olx.kz", "nedvizhimost", "ru-RU,ru;q=0.9,kk;q=0.7,en;q=0.5"),
-    "UZ": ("https://www.olx.uz", "nedvizhimost", "ru-RU,ru;q=0.9,uz;q=0.7,en;q=0.5"),
+    "UZ": {
+        "host": "https://www.olx.uz",
+        "lang": "ru-RU,ru;q=0.9,uz;q=0.7,en;q=0.5",
+        "paths": {
+            "flat:longRent": "nedvizhimost/kvartiry/arenda-dolgosrochnaya",
+            "flat:sale": "nedvizhimost/kvartiry/prodazha",
+        },
+    },
+
+    "KZ": {
+        "host": "https://www.olx.kz",
+        "lang": "ru-RU,ru;q=0.9,kk;q=0.7,en;q=0.5",
+        "paths": {
+            "flat:longRent": "nedvizhimost/arenda-kvartiry",
+            "flat:sale": "nedvizhimost/prodazha-kvartiry",
+        },
+    },
+
+    "UA": {
+        "host": "https://www.olx.ua",
+        "lang": "uk-UA,uk;q=0.9,ru;q=0.7,en;q=0.5",
+        "paths": {
+            "flat:longRent": "nedvizhimost/kvartiry/dolgosrochnaya-arenda-kvartir",
+            "flat:sale": "nedvizhimost/kvartiry/prodazha-kvartir",
+        },
+    },
+
+    "RO": {
+        "host": "https://www.olx.ro",
+        "lang": "ro-RO,ro;q=0.9,en;q=0.7",
+        "paths": {
+            "flat:longRent": "imobiliare/apartamente-garsoniere-de-inchiriat",
+            "flat:sale": "imobiliare/apartamente-garsoniere-de-vanzare",
+        },
+    },
 }
 
 # curl_cffi TLS/JA3 impersonation target. Override if a curl_cffi version needs a
@@ -62,34 +93,55 @@ def health():
 @app.get("/olx/listings")
 def olx_listings():
     code = (request.args.get("country") or "").upper()
-    if code not in PORTALS:
-        return jsonify(error="unknown country %r" % request.args.get("country")), 400
+    segment = request.args.get("segment") or "flat:longRent"
+
+    portal = PORTALS.get(code)
+    if not portal:
+        return jsonify(error=f"unknown country {code!r}"), 400
+
+    path = portal["paths"].get(segment)
+    if not path:
+        return jsonify(error=f"unsupported OLX segment {segment!r}"), 400
+
     try:
         page = max(1, int(request.args.get("page", "1")))
     except (TypeError, ValueError):
         page = 1
 
-    host, path, accept_lang = PORTALS[code]
-    # Newest first so the 3-week freshness window keeps as many live rows as it can.
-    url = "%s/%s/?page=%d&search%%5Border%%5D=created_at%%3Adesc" % (host, path, page)
+    url = (
+        f'{portal["host"]}/{path}/'
+        f'?page={page}&search%5Border%5D=created_at%3Adesc'
+    )
+
     try:
         resp = cffi.get(
             url,
             impersonate=IMPERSONATE,
             timeout=TIMEOUT,
-            headers={"Accept-Language": accept_lang},
+            headers={"Accept-Language": portal["lang"]},
         )
-    except Exception as e:  # network / TLS error
-        return jsonify(error="fetch error: %s" % e), 502
+    except Exception as e:
+        return jsonify(error=f"fetch error: {e}"), 502
 
     if resp.status_code != 200:
-        return jsonify(error="OLX %s HTTP %d" % (code, resp.status_code)), 502
+        return jsonify(
+            error=f"OLX {code} {segment} HTTP {resp.status_code}"
+        ), 502
 
     ads = extract_ads(resp.text)
-    if ads is None:
-        return jsonify(error="OLX %s: no __PRERENDERED_STATE__ (blocked or markup change)" % code), 502
 
-    return jsonify(country=code, page=page, count=len(ads), ads=ads)
+    if ads is None:
+        return jsonify(
+            error=f"OLX {code}: no __PRERENDERED_STATE__"
+        ), 502
+
+    return jsonify(
+        country=code,
+        segment=segment,
+        page=page,
+        count=len(ads),
+        ads=ads,
+    )
 
 
 if __name__ == "__main__":
