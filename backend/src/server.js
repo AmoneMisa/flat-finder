@@ -1,26 +1,20 @@
 import express from 'express';
 import cors from 'cors';
-import { COUNTRIES, COUNTRY_CODES } from './countries.js';
-import { cityLocations } from './locations.js';
-import { getListings } from './scrapers/index.js';
-import { fetchOlxOffer } from './scrapers/olx.js';
-import { validateSource } from './scrapers/custom.js';
-import { applyFilters } from './normalize.js';
-import { getRates } from './fx.js';
-import { startScheduler, refreshAll, getLastRun } from './scheduler.js';
-import {
-  closeDb,
-  dbHealth,
-  getDbStats,
-  initDb,
-} from './db.js';
+import {COUNTRIES, COUNTRY_CODES} from './countries.js';
+import {cityLocations} from './locations.js';
+import {getListings} from './scrapers/index.js';
+import {fetchOlxOffer} from './scrapers/olx.js';
+import {validateSource} from './scrapers/custom.js';
+import {applyFilters} from './normalize.js';
+import {getRates} from './fx.js';
+import {getLastRun, refreshAll, startScheduler} from './scheduler.js';
+import {closeDb, dbHealth, getDbStats, initDb,} from './db.js';
 import {
   closeElasticsearch,
   elasticsearchHealth,
-  getElasticsearchStats,
   initElasticsearch,
+  searchListingMatches,
 } from './elasticsearch.js';
-
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -119,87 +113,439 @@ function parseFilters(q) {
   };
 }
 
+function listingSearchKey(listing) {
+  return [
+    String(
+        listing.source || '',
+    ).toLowerCase(),
+
+    String(
+        listing.country || '',
+    ).toUpperCase(),
+
+    String(
+        listing.id,
+    ),
+  ].join(':');
+}
+
+function compareListingsByDate(a, b) {
+  const ta =
+      a.createdAt
+          ? Date.parse(
+              a.createdAt,
+          )
+          : NaN;
+
+  const tb =
+      b.createdAt
+          ? Date.parse(
+              b.createdAt,
+          )
+          : NaN;
+
+  const va =
+      Number.isNaN(ta)
+          ? -Infinity
+          : ta;
+
+  const vb =
+      Number.isNaN(tb)
+          ? -Infinity
+          : tb;
+
+  return vb - va;
+}
+
 // Main search endpoint. Accepts a comma-separated list of country codes.
 // GET /api/listings?countries=RO,UA&propertyType=flat&agency=owner&priceMin=&priceMax=&query=
 app.get('/api/listings', async (req, res) => {
-  // "Reload all": bypass the stale-while-revalidate cache and scrape fresh.
-  // Flood-protected so it can't be spammed (normal searches are untouched).
-  const force = req.query.refresh === '1' || req.query.refresh === 'true';
-  if (force && !checkRate(req, res, 'reloadAll', 8000)) return;
+  const force =
+      req.query.refresh === '1' ||
+      req.query.refresh === 'true';
 
-  const filters = parseFilters(req.query);
-  const requested = String(req.query.countries || COUNTRY_CODES.join(','))
-    .split(',')
-    .map((s) => s.trim().toUpperCase())
-    .filter((c) => COUNTRY_CODES.includes(c));
+  if (
+      force &&
+      !checkRate(
+          req,
+          res,
+          'reloadAll',
+          8000,
+      )
+  ) {
+    return;
+  }
 
-  const codes = requested.length ? requested : COUNTRY_CODES;
+  const filters =
+      parseFilters(
+          req.query,
+      );
 
-  // Resolve the selected city to its localized forms (OLX/posts use Cyrillic or
-  // diacritics, the dropdown sends the English name), so the city filter matches.
+  const requested =
+      String(
+          req.query.countries ||
+          COUNTRY_CODES.join(','),
+      )
+          .split(',')
+          .map(
+              (value) =>
+                  value
+                      .trim()
+                      .toUpperCase(),
+          )
+          .filter(
+              (country) =>
+                  COUNTRY_CODES.includes(
+                      country,
+                  ),
+          );
+
+  const codes =
+      requested.length
+          ? requested
+          : COUNTRY_CODES;
+
+  /*
+   * Локализованные названия города.
+   */
   if (filters.city) {
-    const forms = new Set([filters.city]);
-    for (const code of codes) {
-      for (const alias of COUNTRIES[code]?.cityAliases?.[filters.city] ?? []) forms.add(alias);
+    const forms =
+        new Set([
+          filters.city,
+        ]);
+
+    for (
+        const code
+        of codes
+        ) {
+      for (
+          const alias
+          of (
+          COUNTRIES[code]
+              ?.cityAliases
+              ?.[filters.city] ??
+          []
+      )
+          ) {
+        forms.add(
+            alias,
+        );
+      }
     }
-    filters.cityAliases = [...forms];
+
+    filters.cityAliases =
+        [...forms];
   }
 
   try {
-    const results = await Promise.all(codes.map((code) => getListings(code, filters, { force })));
+    /*
+     * Поиск и получение snapshot можно
+     * запускать параллельно.
+     */
+    let searchError =
+        null;
+
+    const searchPromise =
+        filters.query
+            ? searchListingMatches(
+                filters.query,
+                {
+                  countries:
+                  codes,
+
+                  sources:
+                  filters.sources,
+                },
+            ).catch(
+                (err) => {
+                  searchError =
+                      err?.message ??
+                      String(err);
+
+                  console.warn(
+                      `[elasticsearch] ` +
+                      `search fallback: ` +
+                      `${searchError}`,
+                  );
+
+                  return null;
+                },
+            )
+            : Promise.resolve(
+                null,
+            );
+
+    const [
+      results,
+      searchMatches,
+    ] =
+        await Promise.all([
+          Promise.all(
+              codes.map(
+                  (code) =>
+                      getListings(
+                          code,
+                          filters,
+                          {
+                            force,
+                          },
+                      ),
+              ),
+          ),
+
+          searchPromise,
+        ]);
+
     const degraded = [];
+
     const sourceCounts = {};
+
     const sourceErrors = [];
-    let warming = false;
-    let listings = [];
-    results.forEach((r, i) => {
-      if (r.degraded) degraded.push(codes[i]);
-      if (r.warming) warming = true;
-      for (const [name, n] of Object.entries(r.sourceCounts ?? {})) {
-        sourceCounts[name] = (sourceCounts[name] ?? 0) + n;
-      }
-      if (Array.isArray(r.sourceErrors)) sourceErrors.push(...r.sourceErrors);
-      listings = listings.concat(r.listings);
-    });
 
-    // Enforce filters the source could not (e.g. mock fallback, agency guess).
-    // Pass FX rates so price filters compare across currencies (USD-normalized).
-    let fxRates = null;
+    let warming =
+        false;
+
+    let listings =
+        [];
+
+    results.forEach(
+        (result, index) => {
+          if (
+              result.degraded
+          ) {
+            degraded.push(
+                codes[index],
+            );
+          }
+
+          if (
+              result.warming
+          ) {
+            warming =
+                true;
+          }
+
+          for (
+              const [
+                name,
+                count,
+              ]
+              of Object.entries(
+              result.sourceCounts ??
+              {},
+          )
+              ) {
+            sourceCounts[name] =
+                (
+                    sourceCounts[name] ??
+                    0
+                ) + count;
+          }
+
+          if (
+              Array.isArray(
+                  result.sourceErrors,
+              )
+          ) {
+            sourceErrors.push(
+                ...result.sourceErrors,
+            );
+          }
+
+          listings =
+              listings.concat(
+                  result.listings,
+              );
+        },
+    );
+
+    /*
+     * FX для обычных price filters.
+     */
+    let fxRates =
+        null;
+
     try {
-      fxRates = (await getRates()).rates;
+      fxRates =
+          (
+              await getRates()
+          ).rates;
     } catch {
-      /* rates unavailable -> raw same-currency price comparison */
+      /*
+       * FX недоступен —
+       * остаётся старое поведение.
+       */
     }
-    listings = applyFilters(listings, filters, fxRates);
 
-    // Interleave sources by recency. Without this the array is just each
-    // source concatenated in registry order (all OLX, then all Telegram), so a
-    // paginated client that reads from the top would show only OLX when both
-    // are selected and never reach the appended Telegram posts. Newest first;
-    // listings with no/unparseable date sort last (stable among themselves).
-    listings.sort((a, b) => {
-      const ta = a.createdAt ? Date.parse(a.createdAt) : NaN;
-      const tb = b.createdAt ? Date.parse(b.createdAt) : NaN;
-      const va = Number.isNaN(ta) ? -Infinity : ta;
-      const vb = Number.isNaN(tb) ? -Infinity : tb;
-      return vb - va;
-    });
+    /*
+     * Если Elasticsearch успешно
+     * отработал query, applyFilters
+     * больше НЕ должен повторно
+     * делать hay.includes().
+     *
+     * Если ES недоступен —
+     * оставляем original filters,
+     * поэтому старый includes()
+     * автоматически становится fallback.
+     */
+    const memoryFilters =
+        searchMatches
+            ? {
+              ...filters,
 
-    const count = listings.length;
-    const offset = Math.max(0, filters.offset || 0);
-    const page = listings.slice(offset, offset + filters.limit);
+              query:
+                  '',
+            }
+            : filters;
+
+    listings =
+        applyFilters(
+            listings,
+            memoryFilters,
+            fxRates,
+        );
+
+    /*
+     * ES определяет:
+     *
+     * 1. какие объявления совпали;
+     * 2. порядок relevance.
+     */
+    if (searchMatches) {
+      listings =
+          listings.filter(
+              (listing) =>
+                  searchMatches
+                      .rank
+                      .has(
+                          listingSearchKey(
+                              listing,
+                          ),
+                      ),
+          );
+
+      listings.sort(
+          (a, b) => {
+            const keyA =
+                listingSearchKey(
+                    a,
+                );
+
+            const keyB =
+                listingSearchKey(
+                    b,
+                );
+
+            const rankA =
+                searchMatches
+                    .rank
+                    .get(
+                        keyA,
+                    );
+
+            const rankB =
+                searchMatches
+                    .rank
+                    .get(
+                        keyB,
+                    );
+
+            if (
+                rankA !==
+                rankB
+            ) {
+              return (
+                  rankA -
+                  rankB
+              );
+            }
+
+            /*
+             * Одинаковая relevance —
+             * свежее объявление выше.
+             */
+            return compareListingsByDate(
+                a,
+                b,
+            );
+          },
+      );
+    } else {
+      /*
+       * Без query либо если ES
+       * недоступен — старое поведение.
+       */
+      listings.sort(
+          compareListingsByDate,
+      );
+    }
+
+    const count =
+        listings.length;
+
+    const offset =
+        Math.max(
+            0,
+            filters.offset ||
+            0,
+        );
+
+    const page =
+        listings.slice(
+            offset,
+            offset +
+            filters.limit,
+        );
 
     res.json({
       count,
-      degradedCountries: degraded, // countries currently served from demo data
-      sourceCounts, // live listings fetched per source before filtering
-      sourceErrors, // per-source failures (name/country/url + message)
-      warming, // cold/stale snapshots are refreshing in the background
+
+      degradedCountries:
+      degraded,
+
+      sourceCounts,
+
+      sourceErrors,
+
+      warming,
+
       filters,
-      listings: page,
+
+      /*
+       * Удобно для проверки,
+       * какой search path реально
+       * использовался.
+       */
+      searchEngine:
+          filters.query
+              ? (
+                  searchMatches
+                      ? 'elasticsearch'
+                      : 'fallback'
+              )
+              : null,
+
+      searchIndexedMatches:
+          searchMatches
+              ?.total ??
+          null,
+
+      searchTruncated:
+          searchMatches
+              ?.truncated ??
+          false,
+
+      listings:
+      page,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res
+        .status(500)
+        .json({
+          error:
+              err?.message ??
+              String(err),
+        });
   }
 });
 

@@ -855,6 +855,465 @@ export async function deleteListingDocuments(
     return ids.size;
 }
 
+const SEARCH_FIELDS = [
+    'title^10',
+    'title.latin^10',
+
+    'residenceComplex^9',
+    'residenceComplex.latin^9',
+
+    'address^8',
+    'address.latin^8',
+
+    'district^7',
+    'district.latin^7',
+
+    'area^7',
+    'area.latin^7',
+
+    'kvartal^6',
+    'kvartal.latin^6',
+
+    'city^6',
+    'city.latin^6',
+
+    'metro^5',
+    'metro.latin^5',
+
+    'nearby^4',
+    'nearby.latin^4',
+
+    'nearbyShops^3',
+    'nearbyShops.latin^3',
+
+    'tags^3',
+    'tags.latin^3',
+
+    'amenities^2',
+    'amenities.latin^2',
+
+    'description',
+    'description.latin',
+
+    'contact',
+    'contact.latin',
+];
+
+function searchTokens(query) {
+    const text =
+        String(
+            query ?? '',
+        ).trim();
+
+    if (!text) {
+        return [];
+    }
+
+    const matches =
+        text.match(
+            /[\p{L}\p{N}]+/gu,
+        ) ?? [];
+
+    return [
+        ...new Set(
+            matches.map(
+                (token) =>
+                    token.toLowerCase(),
+            ),
+        ),
+    ].slice(
+        0,
+        16,
+    );
+}
+
+function buildTextSearchQuery(
+    query,
+    {
+        countries = [],
+        sources = [],
+    } = {},
+) {
+    const text =
+        String(
+            query ?? '',
+        ).trim();
+
+    const tokens =
+        searchTokens(
+            text,
+        );
+
+    if (!tokens.length) {
+        return {
+            match_none: {},
+        };
+    }
+
+    const filter = [
+        {
+            term: {
+                active: true,
+            },
+        },
+    ];
+
+    const countryValues =
+        [
+            ...new Set(
+                countries
+                    .map(
+                        (country) =>
+                            String(country)
+                                .trim()
+                                .toUpperCase(),
+                    )
+                    .filter(Boolean),
+            ),
+        ];
+
+    if (
+        countryValues.length
+    ) {
+        filter.push({
+            terms: {
+                country:
+                countryValues,
+            },
+        });
+    }
+
+    const sourceValues =
+        [
+            ...new Set(
+                sources
+                    .map(
+                        (source) =>
+                            String(source)
+                                .trim()
+                                .toLowerCase(),
+                    )
+                    .filter(Boolean),
+            ),
+        ];
+
+    if (
+        sourceValues.length
+    ) {
+        filter.push({
+            terms: {
+                source:
+                sourceValues,
+            },
+        });
+    }
+
+    const must =
+        tokens.map(
+            (token) => {
+                const options = {
+                    query:
+                    token,
+
+                    fields:
+                    SEARCH_FIELDS,
+
+                    type:
+                        'best_fields',
+
+                    operator:
+                        'and',
+                };
+
+                /*
+                 * Для достаточно длинных слов
+                 * разрешаем опечатки.
+                 *
+                 * Например:
+                 *
+                 * Чиланзар
+                 * Chilanzar
+                 *
+                 * После ICU-транслитерации
+                 * различие уже может быть
+                 * обработано fuzzy search.
+                 */
+                if (
+                    [
+                        ...token,
+                    ].length >= 4
+                ) {
+                    options.fuzziness =
+                        'AUTO';
+
+                    options.prefix_length =
+                        1;
+                }
+
+                return {
+                    multi_match:
+                    options,
+                };
+            },
+        );
+
+    return {
+        bool: {
+            filter,
+
+            must,
+
+            /*
+             * Эти условия не обязательны,
+             * а только повышают relevance
+             * хороших совпадений.
+             */
+            should: [
+                {
+                    multi_match: {
+                        query:
+                        text,
+
+                        fields:
+                        SEARCH_FIELDS,
+
+                        type:
+                            'phrase',
+
+                        slop:
+                            1,
+
+                        boost:
+                            6,
+                    },
+                },
+
+                {
+                    multi_match: {
+                        query:
+                        text,
+
+                        fields:
+                        SEARCH_FIELDS,
+
+                        type:
+                            'best_fields',
+
+                        operator:
+                            'and',
+
+                        boost:
+                            3,
+                    },
+                },
+            ],
+        },
+    };
+}
+
+export async function searchListingMatches(
+    query,
+    {
+        countries = [],
+        sources = [],
+    } = {},
+) {
+    const text =
+        String(
+            query ?? '',
+        ).trim();
+
+    if (!text) {
+        return {
+            rank:
+                new Map(),
+
+            scores:
+                new Map(),
+
+            total:
+                0,
+
+            truncated:
+                false,
+        };
+    }
+
+    const PAGE_SIZE =
+        1000;
+
+    const MAX_MATCHES =
+        50_000;
+
+    const rank =
+        new Map();
+
+    const scores =
+        new Map();
+
+    let searchAfter =
+        null;
+
+    let total =
+        0;
+
+    while (
+        rank.size <
+        MAX_MATCHES
+        ) {
+        const response =
+            await client.search({
+                index:
+                SEARCH_INDEX,
+
+                size:
+                    Math.min(
+                        PAGE_SIZE,
+                        MAX_MATCHES -
+                        rank.size,
+                    ),
+
+                _source:
+                    false,
+
+                track_total_hits:
+                    true,
+
+                track_scores:
+                    true,
+
+                query:
+                    buildTextSearchQuery(
+                        text,
+                        {
+                            countries,
+                            sources,
+                        },
+                    ),
+
+                sort: [
+                    {
+                        _score: {
+                            order:
+                                'desc',
+                        },
+                    },
+
+                    {
+                        source: {
+                            order:
+                                'asc',
+                        },
+                    },
+
+                    {
+                        country: {
+                            order:
+                                'asc',
+                        },
+                    },
+
+                    {
+                        id: {
+                            order:
+                                'asc',
+                        },
+                    },
+                ],
+
+                ...(
+                    searchAfter
+                        ? {
+                            search_after:
+                            searchAfter,
+                        }
+                        : {}
+                ),
+            });
+
+        const hits =
+            response.hits
+                ?.hits ?? [];
+
+        if (
+            typeof response.hits
+                ?.total ===
+            'number'
+        ) {
+            total =
+                response.hits.total;
+        } else {
+            total =
+                response.hits
+                    ?.total
+                    ?.value ??
+                total;
+        }
+
+        if (!hits.length) {
+            break;
+        }
+
+        for (
+            const hit
+            of hits
+            ) {
+            if (
+                rank.has(
+                    hit._id,
+                )
+            ) {
+                continue;
+            }
+
+            rank.set(
+                hit._id,
+                rank.size,
+            );
+
+            scores.set(
+                hit._id,
+                Number(
+                    hit._score ?? 0,
+                ),
+            );
+        }
+
+        if (
+            hits.length <
+            PAGE_SIZE
+        ) {
+            break;
+        }
+
+        const lastHit =
+            hits[
+            hits.length - 1
+                ];
+
+        if (
+            !Array.isArray(
+                lastHit.sort,
+            )
+        ) {
+            break;
+        }
+
+        searchAfter =
+            lastHit.sort;
+    }
+
+    return {
+        rank,
+        scores,
+
+        total,
+
+        truncated:
+            rank.size < total,
+    };
+}
+
 export async function rebuildSearchIndex() {
     await client.ping();
 
