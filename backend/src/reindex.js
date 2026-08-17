@@ -1,4 +1,3 @@
-
 import {
     closeDb,
     initDb,
@@ -6,15 +5,12 @@ import {
 
 import {
     closeElasticsearch,
-    initElasticsearch,
     rebuildSearchIndex,
 } from './elasticsearch.js';
 
 async function main() {
     try {
         await initDb();
-
-        await initElasticsearch();
 
         const result =
             await rebuildSearchIndex();

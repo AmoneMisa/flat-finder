@@ -471,23 +471,49 @@ export async function initElasticsearch() {
 
     const exists =
         await client.indices.exists({
-            index:
-            SEARCH_INDEX,
+            index: SEARCH_INDEX,
         });
 
     if (!exists) {
-        await client.indices.create({
-            index:
-            SEARCH_INDEX,
+        const created =
+            await client.indices.create({
+                index: SEARCH_INDEX,
 
-            ...indexDefinition(),
-        });
+                ...indexDefinition(),
+
+                wait_for_active_shards:
+                    'all',
+
+                timeout:
+                    '30s',
+            });
+
+        if (
+            created.shards_acknowledged ===
+            false
+        ) {
+            throw new Error(
+                `Elasticsearch index ${SEARCH_INDEX} ` +
+                `created, but primary shard is not active`,
+            );
+        }
 
         console.log(
             `[elasticsearch] index ` +
             `${SEARCH_INDEX} created`,
         );
     }
+
+    await client.cluster.health({
+        index:
+        SEARCH_INDEX,
+
+        wait_for_status:
+            'yellow',
+
+        timeout:
+            '30s',
+    });
 
     console.log(
         `[elasticsearch] connected ` +
@@ -830,31 +856,129 @@ export async function deleteListingDocuments(
 }
 
 export async function rebuildSearchIndex() {
-    await initElasticsearch();
+    await client.ping();
 
     console.log(
         `[elasticsearch] rebuilding ` +
         `${SEARCH_INDEX}`,
     );
 
+    const exists =
+        await client.indices.exists({
+            index:
+            SEARCH_INDEX,
+        });
+
     /*
-     * Индекс/его mapping оставляем,
-     * удаляем только документы.
+     * Rebuild означает полный rebuild.
+     *
+     * Не делаем deleteByQuery:
+     * он требует рабочий search shard.
+     *
+     * Старый индекс нам вообще не нужен,
+     * потому что source of truth = Postgres.
      */
-    await client.deleteByQuery({
-        index:
-        SEARCH_INDEX,
+    if (exists) {
+        console.log(
+            `[elasticsearch] deleting old ` +
+            `index ${SEARCH_INDEX}`,
+        );
 
-        conflicts:
-            'proceed',
+        await client.indices.delete({
+            index:
+            SEARCH_INDEX,
+        });
+    }
 
-        refresh:
-            true,
+    console.log(
+        `[elasticsearch] creating fresh ` +
+        `index ${SEARCH_INDEX}`,
+    );
 
-        query: {
-            match_all: {},
-        },
-    });
+    const created =
+        await client.indices.create({
+            index:
+            SEARCH_INDEX,
+
+            ...indexDefinition(),
+
+            /*
+             * У нас:
+             *
+             * shards = 1
+             * replicas = 0
+             *
+             * Поэтому all = дождаться
+             * единственного primary shard.
+             */
+            wait_for_active_shards:
+                'all',
+
+            timeout:
+                '30s',
+        });
+
+    if (
+        created.shards_acknowledged ===
+        false
+    ) {
+        /*
+         * Сразу получаем нормальную причину,
+         * а не падаем потом где-нибудь
+         * внутри bulk/search.
+         */
+        let explanation = null;
+
+        try {
+            explanation =
+                await client.cluster
+                    .allocationExplain({
+                        index:
+                        SEARCH_INDEX,
+
+                        shard:
+                            0,
+
+                        primary:
+                            true,
+                    });
+        } catch {
+            // Не маскируем исходную ошибку.
+        }
+
+        throw new Error(
+            `Primary shard for ${SEARCH_INDEX} ` +
+            `was not allocated. ` +
+            (
+                explanation
+                    ? JSON.stringify(
+                        explanation,
+                    )
+                    : ''
+            ),
+        );
+    }
+
+    /*
+     * Дополнительно ждём, пока индекс
+     * станет доступен для search/write.
+     */
+    const health =
+        await client.cluster.health({
+            index:
+            SEARCH_INDEX,
+
+            wait_for_status:
+                'yellow',
+
+            timeout:
+                '30s',
+        });
+
+    console.log(
+        `[elasticsearch] index ready: ` +
+        `${health.status}`,
+    );
 
     const BATCH_SIZE =
         500;
