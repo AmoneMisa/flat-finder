@@ -24,7 +24,19 @@ const OLX_MIN_INTERVAL_MS = Number(process.env.OLX_MIN_INTERVAL_MS) || 900;
 const OLX_JITTER_MS = Number(process.env.OLX_JITTER_MS) || 500;
 // On HTTP 429 (Too Many Requests), back off this long before the caller retries.
 const OLX_BACKOFF_MS = Number(process.env.OLX_BACKOFF_MS) || 5_000;
+const OLX_PAGE_RETRIES =
+    Number(process.env.OLX_PAGE_RETRIES) || 3;
 
+const OLX_RETRY_BASE_MS =
+    Number(process.env.OLX_RETRY_BASE_MS) || 1500;
+
+function isHardOlxError(error) {
+  const message =
+      error?.message ??
+      String(error);
+
+  return /\b(?:401|403|429)\b/.test(message);
+}
 const OLX_SEGMENTS = [
   'flat:longRent',
   'flat:sale',
@@ -143,6 +155,7 @@ async function scrapeSegment(
 ) {
   const out = [];
   const seen = new Set();
+  const errors = [];
 
   const maxPages =
       Number(
@@ -170,38 +183,91 @@ async function scrapeSegment(
         complete: false,
         stopReason: 'budget_exceeded',
         page,
+        errors,
         error:
             `OLX ${country.code}/${segment} ` +
-            `segment budget exceeded after ${budgetMs}ms`,
+            `budget exceeded after ${budgetMs}ms`,
       };
     }
 
-    let ads;
+    let ads = null;
+    let pageError = null;
 
-    try {
-      ads = await fetchStatePage(
-          country,
-          segment,
+    for (
+        let attempt = 1;
+        attempt <= OLX_PAGE_RETRIES;
+        attempt++
+    ) {
+      try {
+        ads = await fetchStatePage(
+            country,
+            segment,
+            page,
+        );
+
+        pageError = null;
+        break;
+      } catch (error) {
+        pageError = error;
+
+        if (isHardOlxError(error)) {
+          break;
+        }
+
+        if (attempt < OLX_PAGE_RETRIES) {
+          await sleep(
+              OLX_RETRY_BASE_MS *
+              attempt,
+          );
+        }
+      }
+    }
+
+    if (ads === null) {
+      const message =
+          pageError?.message ??
+          String(pageError);
+
+      // 401 / 403 / 429:
+      // прекращаем весь сегмент.
+      if (isHardOlxError(pageError)) {
+        return {
+          listings: out,
+          complete: false,
+          stopReason: 'blocked',
           page,
-      );
-    } catch (error) {
-      return {
-        listings: out,
-        complete: false,
-        stopReason: 'page_error',
+          errors: [
+            ...errors,
+            {
+              page,
+              error: message,
+            },
+          ],
+          error: message,
+        };
+      }
+
+      // Timeout / 5xx конкретной страницы.
+      // Записываем ошибку, но продолжаем
+      // со следующей страницы.
+      errors.push({
         page,
-        error:
-            error?.message ??
-            String(error),
-      };
+        error: message,
+      });
+
+      continue;
     }
 
-    // Реальный конец pagination.
     if (!ads.length) {
       return {
         listings: out,
-        complete: true,
-        stopReason: 'empty_page',
+        complete:
+            errors.length === 0,
+        stopReason:
+            errors.length
+                ? 'completed_with_gaps'
+                : 'empty_page',
+        errors,
       };
     }
 
@@ -233,27 +299,28 @@ async function scrapeSegment(
       onChunk?.(fresh);
     }
 
-    // Пока оставляем существующую эвристику.
     if (ads.length < 40) {
       return {
         listings: out,
-        complete: true,
-        stopReason: 'short_page',
+        complete:
+            errors.length === 0,
+        stopReason:
+            errors.length
+                ? 'completed_with_gaps'
+                : 'short_page',
+        errors,
       };
     }
   }
 
-  // ВАЖНО:
-  // достигли нашего искусственного лимита,
-  // а OLX сам не сообщил конец выдачи.
   return {
     listings: out,
     complete: false,
     stopReason: 'max_pages',
     page: maxPages,
+    errors,
     error:
-        `Reached OLX_MAX_PAGES_PER_SEGMENT=${maxPages} ` +
-        `before end of ${segment}`,
+        `Reached OLX_MAX_PAGES_PER_SEGMENT=${maxPages}`,
   };
 }
 
@@ -416,12 +483,18 @@ export async function scrapeOlx(
     return {
       listings: [],
       complete: false,
-      stopReason: 'fetcher_disabled',
+      errors: [
+        {
+          error: 'OLX_FETCHER_URL is not configured',
+          stopReason: 'fetcher_disabled',
+        },
+      ],
     };
   }
 
   const listings = [];
   const errors = [];
+
   let complete = true;
 
   for (const segment of OLX_SEGMENTS) {
@@ -431,22 +504,43 @@ export async function scrapeOlx(
         onChunk,
     );
 
-    listings.push(...result.listings);
+    listings.push(
+        ...result.listings,
+    );
 
     if (!result.complete) {
       complete = false;
 
-      errors.push({
-        segment,
-        error: result.error,
-        page: result.page,
-        stopReason: result.stopReason,
-      });
+      if (
+          Array.isArray(result.errors) &&
+          result.errors.length
+      ) {
+        for (const item of result.errors) {
+          errors.push({
+            segment,
+            page: item.page,
+            error: item.error,
+            stopReason:
+            result.stopReason,
+          });
+        }
+      } else {
+        errors.push({
+          segment,
+          page: result.page,
+          error:
+              result.error ??
+              'Incomplete OLX scrape',
+          stopReason:
+          result.stopReason,
+        });
+      }
     }
   }
 
   return {
-    listings: dedupeOlx(listings),
+    listings:
+        dedupeOlx(listings),
     complete,
     errors,
   };
