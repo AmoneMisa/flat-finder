@@ -5,8 +5,7 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ./flatfinder.env
-      - ./postgres.env
+      - ./.env
 
     environment:
       - REDIS_URL=redis://flat-finder-redis:6379
