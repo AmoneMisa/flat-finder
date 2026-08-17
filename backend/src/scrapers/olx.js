@@ -13,17 +13,9 @@
 // (fetchOlxOffer); it will 403 from a blocked server until it is also routed
 // through the sidecar.
 
-import { makeListing } from '../normalize.js';
-import { guessPropertyType } from '../textparse.js';
-import { throttle, sleep } from '../ratelimit.js';
-
-// Pull several newest-first pages so enough recent listings survive the 3-week
-// freshness filter. One page is ~50 ads; this ceiling (~500) bounds latency.
-const OLX_MAX_PAGES = Number(process.env.OLX_MAX_PAGES) || 10;
-// Stop paging once this much wall-clock has elapsed and return what we have.
-// Must stay below index.js's SOURCE_DEADLINE_MS (24s) so OLX yields partial
-// results instead of being cut off and discarded entirely.
-const OLX_BUDGET_MS = Number(process.env.OLX_BUDGET_MS) || 20_000;
+import {makeListing} from '../normalize.js';
+import {guessPropertyType} from '../textparse.js';
+import {sleep, throttle} from '../ratelimit.js';
 
 // Rate limiting: keep at least OLX_MIN_INTERVAL_MS (+ up to OLX_JITTER_MS random)
 // between requests to the same OLX portal so we don't hammer it. Keyed per host,
@@ -144,17 +136,46 @@ function stateArea(item) {
   return n || null;
 }
 
-async function scrapeSegment(country, segment, onChunk) {
+async function scrapeSegment(
+    country,
+    segment,
+    onChunk,
+) {
   const out = [];
   const seen = new Set();
 
   const maxPages =
-      Number(process.env.OLX_MAX_PAGES_PER_SEGMENT) || 40;
+      Number(
+          process.env.OLX_MAX_PAGES_PER_SEGMENT,
+      ) || 40;
 
-  let complete = true;
-  let stopReason = 'max_pages';
+  const budgetMs =
+      Number(
+          process.env.OLX_SEGMENT_BUDGET_MS,
+      ) || 90_000;
 
-  for (let page = 1; page <= maxPages; page++) {
+  const startedAt = Date.now();
+
+  for (
+      let page = 1;
+      page <= maxPages;
+      page++
+  ) {
+    if (
+        page > 1 &&
+        Date.now() - startedAt >= budgetMs
+    ) {
+      return {
+        listings: out,
+        complete: false,
+        stopReason: 'budget_exceeded',
+        page,
+        error:
+            `OLX ${country.code}/${segment} ` +
+            `segment budget exceeded after ${budgetMs}ms`,
+      };
+    }
+
     let ads;
 
     try {
@@ -164,31 +185,39 @@ async function scrapeSegment(country, segment, onChunk) {
           page,
       );
     } catch (error) {
-      complete = false;
-      stopReason = 'page_error';
-
       return {
         listings: out,
-        complete,
-        stopReason,
-        failedPage: page,
-        error: error.message,
+        complete: false,
+        stopReason: 'page_error',
+        page,
+        error:
+            error?.message ??
+            String(error),
       };
     }
 
+    // Реальный конец pagination.
     if (!ads.length) {
-      stopReason = 'empty_page';
-      break;
+      return {
+        listings: out,
+        complete: true,
+        stopReason: 'empty_page',
+      };
     }
 
     const fresh = [];
 
     for (const item of ads) {
-      if (item?.id == null) continue;
+      if (item?.id == null) {
+        continue;
+      }
 
       const id = String(item.id);
 
-      if (seen.has(id)) continue;
+      if (seen.has(id)) {
+        continue;
+      }
+
       seen.add(id);
 
       const mapped = mapStateItem(
@@ -204,16 +233,27 @@ async function scrapeSegment(country, segment, onChunk) {
       onChunk?.(fresh);
     }
 
+    // Пока оставляем существующую эвристику.
     if (ads.length < 40) {
-      stopReason = 'short_page';
-      break;
+      return {
+        listings: out,
+        complete: true,
+        stopReason: 'short_page',
+      };
     }
   }
 
+  // ВАЖНО:
+  // достигли нашего искусственного лимита,
+  // а OLX сам не сообщил конец выдачи.
   return {
     listings: out,
-    complete,
-    stopReason,
+    complete: false,
+    stopReason: 'max_pages',
+    page: maxPages,
+    error:
+        `Reached OLX_MAX_PAGES_PER_SEGMENT=${maxPages} ` +
+        `before end of ${segment}`,
   };
 }
 
@@ -399,7 +439,8 @@ export async function scrapeOlx(
       errors.push({
         segment,
         error: result.error,
-        failedPage: result.failedPage,
+        page: result.page,
+        stopReason: result.stopReason,
       });
     }
   }

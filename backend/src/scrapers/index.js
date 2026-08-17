@@ -128,15 +128,48 @@ function dedupe(listings) {
   const seenId = new Set();
   const seenContent = new Set();
   const out = [];
-  for (const l of listings) {
-    const id = `${l.source}:${l.id}`;
-    if (seenId.has(id)) continue;
-    const fp = contentFingerprint(l);
-    if (seenContent.has(fp)) continue; // identical repost — keep the first
+
+  for (const listing of listings) {
+    const id = [
+      listing.source,
+      listing.country ?? '',
+      listing.id,
+    ].join(':');
+
+    // Для всех источников ID всегда первичен.
+    if (seenId.has(id)) {
+      continue;
+    }
+
+    const fingerprint =
+        contentFingerprint(listing);
+
+    /*
+     * OLX:
+     *
+     * разные OLX id = разные объявления.
+     *
+     * Content fingerprint НЕ должен удалять
+     * второе OLX объявление.
+     *
+     * Но сам fingerprint сохраняем в
+     * seenContent, чтобы Telegram-репост
+     * того же объявления всё ещё можно
+     * было удалить.
+     */
+    if (
+        listing.source !== 'olx' &&
+        seenContent.has(fingerprint)
+    ) {
+      continue;
+    }
+
     seenId.add(id);
-    seenContent.add(fp);
-    out.push(l);
+    seenContent.add(fingerprint);
+
+    out.push(listing);
   }
+
   return out;
 }
 
@@ -361,11 +394,22 @@ async function fetchOne(countryCode, filters, onProgress) {
       ],
     };
 
-    return withDeadline(
-        fn(country, filters, onChunk),
-        SOURCE_DEADLINE_MS,
-        timeoutResult
-    ).then(
+    const sourcePromise = fn(
+        country,
+        filters,
+        onChunk,
+    );
+
+    const guardedPromise =
+        name === 'olx'
+            ? sourcePromise
+            : withDeadline(
+                sourcePromise,
+                SOURCE_DEADLINE_MS,
+                timeoutResult,
+            );
+
+    return guardedPromise.then(
         (result) => {
           // Старые scrapers (например Telegram)
           // по-прежнему возвращают массив.
