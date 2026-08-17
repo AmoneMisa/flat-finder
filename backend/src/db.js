@@ -635,6 +635,60 @@ export async function getDbStats() {
     return result.rows;
 }
 
+export async function getActiveListingsBatch(
+    afterId = 0,
+    limit = 500,
+) {
+    const safeLimit =
+        Math.max(
+            1,
+            Math.min(
+                Number(limit) || 500,
+                2000,
+            ),
+        );
+
+    const result =
+        await pool.query(
+            `
+            SELECT
+              id AS db_id,
+
+              source,
+              country,
+              source_id,
+
+              first_seen_at,
+              last_seen_at,
+              updated_at,
+
+              data
+
+            FROM listings
+
+            WHERE
+              active = TRUE
+
+              AND id >
+                $1::bigint
+
+            ORDER BY
+              id ASC
+
+            LIMIT $2
+            `,
+            [
+                String(
+                    afterId || 0,
+                ),
+
+                safeLimit,
+            ],
+        );
+
+    return result.rows;
+}
+
 export async function closeDb() {
     await pool.end();
 }

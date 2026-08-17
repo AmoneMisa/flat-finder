@@ -14,6 +14,12 @@ import {
   getDbStats,
   initDb,
 } from './db.js';
+import {
+  closeElasticsearch,
+  elasticsearchHealth,
+  getElasticsearchStats,
+  initElasticsearch,
+} from './elasticsearch.js';
 
 const app = express();
 app.use(cors());
@@ -272,22 +278,47 @@ app.get('/api/tg-photo/:channel/:id', async (req, res) => {
 });
 
 app.get('/health', async (_req, res) => {
+  let postgres = false;
+  let elasticsearch = false;
+  let elasticsearchStatus = null;
+
   try {
     await dbHealth();
+    postgres = true;
+  } catch {}
 
-    res.json({
-      ok: true,
-      postgres: true,
-    });
-  } catch (err) {
-    res.status(503).json({
-      ok: false,
-      postgres: false,
-      error:
-          err?.message ??
-          String(err),
-    });
-  }
+  try {
+    const health =
+        await elasticsearchHealth();
+
+    elasticsearch =
+        health.ok === true;
+
+    elasticsearchStatus =
+        health.status ?? null;
+  } catch {}
+
+  /*
+   * Пока выдача ещё работает через
+   * Redis/Postgres pipeline, ES не делаем
+   * причиной падения всего backend.
+   */
+  const ok =
+      postgres;
+
+  res
+      .status(
+          ok ? 200 : 503,
+      )
+      .json({
+        ok,
+
+        postgres,
+
+        elasticsearch,
+
+        elasticsearchStatus,
+      });
 });
 
 app.get('/api/db-stats', async (_req, res) => {
@@ -321,6 +352,24 @@ app.post('/api/refresh', async (_req, res) => {
 async function start() {
   await initDb();
 
+  /*
+   * ES пока является дополнительным
+   * search layer.
+   *
+   * Если он временно недоступен,
+   * существующий Flat Finder продолжает
+   * работать.
+   */
+  try {
+    await initElasticsearch();
+  } catch (err) {
+    console.warn(
+        '[elasticsearch] startup failed:',
+        err?.message ??
+        String(err),
+    );
+  }
+
   const server =
       app.listen(
           PORT,
@@ -339,7 +388,9 @@ async function start() {
           },
       );
 
-  async function shutdown(signal) {
+  async function shutdown(
+      signal,
+  ) {
     console.log(
         `[server] ${signal}, shutting down`,
     );
@@ -347,7 +398,10 @@ async function start() {
     server.close(
         async () => {
           try {
-            await closeDb();
+            await Promise.allSettled([
+              closeElasticsearch(),
+              closeDb(),
+            ]);
           } finally {
             process.exit(0);
           }
@@ -355,19 +409,26 @@ async function start() {
     );
 
     setTimeout(
-        () => process.exit(1),
+        () =>
+            process.exit(1),
         10_000,
     ).unref();
   }
 
   process.once(
       'SIGTERM',
-      () => void shutdown('SIGTERM'),
+      () =>
+          void shutdown(
+              'SIGTERM',
+          ),
   );
 
   process.once(
       'SIGINT',
-      () => void shutdown('SIGINT'),
+      () =>
+          void shutdown(
+              'SIGINT',
+          ),
   );
 }
 

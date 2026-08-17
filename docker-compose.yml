@@ -2,6 +2,7 @@ services:
   flat-finder-backend:
     build:
       context: ./backend
+
     restart: unless-stopped
 
     env_file:
@@ -10,14 +11,14 @@ services:
     environment:
       - REDIS_URL=redis://flat-finder-redis:6379
 
-      # PostgreSQL lives inside the compose network.
       - PGHOST=flat-finder-postgres
       - PGPORT=5432
 
-      # Private shared enrichment service.
+      - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
+      - ELASTICSEARCH_INDEX=flat-listings-v1
+
       - AI_WORKER_URL=http://ai-worker:4030
 
-      # OLX curl_cffi sidecar.
       - OLX_FETCHER_URL=http://flat-finder-olx-fetcher:4020
 
     depends_on:
@@ -25,6 +26,9 @@ services:
         condition: service_healthy
 
       flat-finder-postgres:
+        condition: service_healthy
+
+      flat-finder-elasticsearch:
         condition: service_healthy
 
       flat-finder-olx-fetcher:
@@ -48,7 +52,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   flat-finder-olx-fetcher:
     build:
@@ -89,7 +93,12 @@ services:
       ]
 
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -106,6 +115,9 @@ services:
     volumes:
       - flat-finder-postgres-data:/var/lib/postgresql/data
 
+    expose:
+      - "5432"
+
     healthcheck:
       test:
         [
@@ -117,13 +129,47 @@ services:
       retries: 10
       start_period: 10s
 
-    # Наружу PostgreSQL не публикуем.
-    # Backend ходит сюда через docker network.
+  flat-finder-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.2
+
+    restart: unless-stopped
+
+    environment:
+      - discovery.type=single-node
+
+      # ES доступен только внутри docker network,
+      # поэтому отдельную auth пока не включаем.
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+
+      # ML нам для Flat Finder не нужен.
+      - xpack.ml.enabled=false
+
+      # Для нашего объёма объявлений этого
+      # достаточно на первом этапе.
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+
+    volumes:
+      - flat-finder-elasticsearch-data:/usr/share/elasticsearch/data
+      - ./elasticsearch/elasticsearch-plugins.yml:/usr/share/elasticsearch/config/elasticsearch-plugins.yml:ro
+
     expose:
-      - "5432"
+      - "9200"
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null || exit 1"
+        ]
+      interval: 10s
+      timeout: 8s
+      retries: 20
+      start_period: 40s
 
 volumes:
   flat-finder-postgres-data:
+  flat-finder-elasticsearch-data:
 
 networks:
   ai-net:
