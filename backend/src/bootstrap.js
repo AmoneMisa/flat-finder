@@ -7,6 +7,7 @@ import { installTranslationRoutes } from './translation-routes.js';
 const originalListen = express.application.listen;
 express.application.listen = function patchedListen(...args) {
   installTranslationRoutes(this);
+  express.application.listen = originalListen;
   return originalListen.apply(this, args);
 };
 
