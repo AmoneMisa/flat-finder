@@ -77,43 +77,77 @@ const OLX_FETCHER_URL = process.env.OLX_FETCHER_URL || '';
 
 // One rate-limited page fetch via the sidecar. Node throttles here (1:1 with the
 // sidecar's outbound OLX request), so we stay a polite client to OLX.
-async function fetchStatePage(country, segment, page) {
+async function fetchStatePage(
+    country,
+    segment,
+    page,
+    citySlug = null,
+) {
   await throttle(
       `olx:${country.olxHost}`,
       OLX_MIN_INTERVAL_MS,
       OLX_JITTER_MS,
   );
 
-  const base = OLX_FETCHER_URL.replace(/\/$/, '');
+  const base =
+      OLX_FETCHER_URL
+          .replace(/\/$/, '');
 
-  const params = new URLSearchParams({
-    country: country.code,
-    segment,
-    page: String(page),
-  });
+  const params =
+      new URLSearchParams({
+        country:
+        country.code,
 
-  const res = await fetch(
-      `${base}/olx/listings?${params}`,
-      {
-        signal: AbortSignal.timeout(30_000),
-      },
-  );
+        segment,
 
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
+        page:
+            String(page),
+      });
 
-    try {
-      detail = (await res.json())?.error || detail;
-    } catch {}
-
-    throw new Error(
-        `olx-fetcher ${country.code}/${segment}: ${detail}`,
+  if (citySlug) {
+    params.set(
+        'city',
+        citySlug,
     );
   }
 
-  const data = await res.json();
+  const res =
+      await fetch(
+          `${base}/olx/listings?${params}`,
+          {
+            signal:
+                AbortSignal.timeout(
+                    30_000,
+                ),
+          },
+      );
 
-  return Array.isArray(data?.ads)
+  if (!res.ok) {
+    let detail =
+        `HTTP ${res.status}`;
+
+    try {
+      detail =
+          (await res.json())
+              ?.error ||
+          detail;
+    } catch {}
+
+    throw new Error(
+        `olx-fetcher ` +
+        `${country.code}/` +
+        `${segment}/` +
+        `${citySlug || 'all'}: ` +
+        detail,
+    );
+  }
+
+  const data =
+      await res.json();
+
+  return Array.isArray(
+      data?.ads,
+  )
       ? data.ads
       : [];
 }
@@ -152,22 +186,34 @@ async function scrapeSegment(
     country,
     segment,
     onChunk,
+    {
+      citySlug = null,
+      forcedCity = null,
+
+      maxPages =
+          Number(
+              process.env
+                  .OLX_MAX_PAGES_PER_SEGMENT,
+          ) || 40,
+
+      budgetMs =
+          Number(
+              process.env
+                  .OLX_SEGMENT_BUDGET_MS,
+          ) || 90_000,
+
+      partialExpected =
+      false,
+    } = {},
 ) {
   const out = [];
-  const seen = new Set();
+  const seen =
+      new Set();
+
   const errors = [];
 
-  const maxPages =
-      Number(
-          process.env.OLX_MAX_PAGES_PER_SEGMENT,
-      ) || 40;
-
-  const budgetMs =
-      Number(
-          process.env.OLX_SEGMENT_BUDGET_MS,
-      ) || 90_000;
-
-  const startedAt = Date.now();
+  const startedAt =
+      Date.now();
 
   for (
       let page = 1;
@@ -176,45 +222,76 @@ async function scrapeSegment(
   ) {
     if (
         page > 1 &&
-        Date.now() - startedAt >= budgetMs
+        Date.now() -
+        startedAt >=
+        budgetMs
     ) {
       return {
-        listings: out,
-        complete: false,
-        stopReason: 'budget_exceeded',
+        listings:
+        out,
+
+        complete:
+            false,
+
+        partialExpected,
+
+        stopReason:
+            'budget_exceeded',
+
         page,
+
         errors,
+
         error:
-            `OLX ${country.code}/${segment} ` +
-            `budget exceeded after ${budgetMs}ms`,
+            `OLX ${country.code}/` +
+            `${segment}/` +
+            `${forcedCity || 'all'} ` +
+            `budget exceeded after ` +
+            `${budgetMs}ms`,
       };
     }
 
-    let ads = null;
-    let pageError = null;
+    let ads =
+        null;
+
+    let pageError =
+        null;
 
     for (
         let attempt = 1;
-        attempt <= OLX_PAGE_RETRIES;
+        attempt <=
+        OLX_PAGE_RETRIES;
         attempt++
     ) {
       try {
-        ads = await fetchStatePage(
-            country,
-            segment,
-            page,
-        );
+        ads =
+            await fetchStatePage(
+                country,
+                segment,
+                page,
+                citySlug,
+            );
 
-        pageError = null;
+        pageError =
+            null;
+
         break;
       } catch (error) {
-        pageError = error;
+        pageError =
+            error;
 
-        if (isHardOlxError(error)) {
+        if (
+            isHardOlxError(
+                error,
+            )
+        ) {
           break;
         }
 
-        if (attempt < OLX_PAGE_RETRIES) {
+        if (
+            attempt <
+            OLX_PAGE_RETRIES
+        ) {
           await sleep(
               OLX_RETRY_BASE_MS *
               attempt,
@@ -228,31 +305,46 @@ async function scrapeSegment(
           pageError?.message ??
           String(pageError);
 
-      // 401 / 403 / 429:
-      // прекращаем весь сегмент.
-      if (isHardOlxError(pageError)) {
+      if (
+          isHardOlxError(
+              pageError,
+          )
+      ) {
         return {
-          listings: out,
-          complete: false,
-          stopReason: 'blocked',
+          listings:
+          out,
+
+          complete:
+              false,
+
+          partialExpected:
+              false,
+
+          stopReason:
+              'blocked',
+
           page,
+
           errors: [
             ...errors,
+
             {
               page,
-              error: message,
+              error:
+              message,
             },
           ],
-          error: message,
+
+          error:
+          message,
         };
       }
 
-      // Timeout / 5xx конкретной страницы.
-      // Записываем ошибку, но продолжаем
-      // со следующей страницы.
       errors.push({
         page,
-        error: message,
+
+        error:
+        message,
       });
 
       continue;
@@ -260,67 +352,137 @@ async function scrapeSegment(
 
     if (!ads.length) {
       return {
-        listings: out,
+        listings:
+        out,
+
         complete:
-            errors.length === 0,
+            errors.length ===
+            0,
+
+        partialExpected:
+            false,
+
         stopReason:
             errors.length
                 ? 'completed_with_gaps'
                 : 'empty_page',
+
         errors,
       };
     }
 
     const fresh = [];
 
-    for (const item of ads) {
-      if (item?.id == null) {
+    for (
+        const item
+        of ads
+        ) {
+      if (
+          item?.id == null
+      ) {
         continue;
       }
 
-      const id = String(item.id);
+      const id =
+          String(
+              item.id,
+          );
 
-      if (seen.has(id)) {
+      if (
+          seen.has(id)
+      ) {
         continue;
       }
 
       seen.add(id);
 
-      const mapped = mapStateItem(
-          item,
-          country,
+      const mapped =
+          mapStateItem(
+              item,
+              country,
+          );
+
+      /*
+       * Городская OLX-страница уже
+       * ограничена конкретным городом.
+       *
+       * Поэтому сохраняем canonical
+       * значение вместо смеси:
+       *
+       * Чернівці / Черновцы /
+       * Chernivtsi.
+       */
+      if (forcedCity) {
+        mapped.city =
+            forcedCity;
+      }
+
+      out.push(
+          mapped,
       );
 
-      out.push(mapped);
-      fresh.push(mapped);
+      fresh.push(
+          mapped,
+      );
     }
 
     if (fresh.length) {
-      onChunk?.(fresh);
+      onChunk?.(
+          fresh,
+      );
     }
 
-    if (ads.length < 40) {
+    if (
+        ads.length < 40
+    ) {
       return {
-        listings: out,
+        listings:
+        out,
+
         complete:
-            errors.length === 0,
+            errors.length ===
+            0,
+
+        partialExpected:
+            false,
+
         stopReason:
             errors.length
                 ? 'completed_with_gaps'
                 : 'short_page',
+
         errors,
       };
     }
   }
 
+  /*
+   * Для targeted crawl maxPages —
+   * нормальный лимит, а не ошибка.
+   *
+   * complete=false нужен,
+   * чтобы нельзя было считать,
+   * что мы увидели абсолютно весь OLX.
+   */
   return {
-    listings: out,
-    complete: false,
-    stopReason: 'max_pages',
-    page: maxPages,
+    listings:
+    out,
+
+    complete:
+        false,
+
+    partialExpected,
+
+    stopReason:
+        'max_pages',
+
+    page:
+    maxPages,
+
     errors,
+
     error:
-        `Reached OLX_MAX_PAGES_PER_SEGMENT=${maxPages}`,
+        `Reached maxPages=${maxPages}`,
   };
 }
 
@@ -474,6 +636,173 @@ async function olxFetch(country, url) {
 // and let applyFilters narrow it in memory afterwards — `filters` is unused here.
 // `onChunk(pageListings)` (optional) is called after each page so the caller can
 // stream partial results into the cache and the UI count can climb during a scrape.
+const OLX_UA_CITIES_PER_RUN =
+    Math.max(
+        4,
+        Number(
+            process.env
+                .OLX_UA_CITIES_PER_RUN,
+        ) || 8,
+    );
+
+const OLX_UA_CITY_MAX_PAGES =
+    Math.max(
+        1,
+        Number(
+            process.env
+                .OLX_UA_CITY_MAX_PAGES,
+        ) || 5,
+    );
+
+const OLX_UA_CITY_BUDGET_MS =
+    Math.max(
+        10_000,
+        Number(
+            process.env
+                .OLX_UA_CITY_BUDGET_MS,
+        ) || 30_000,
+    );
+
+const OLX_UA_NATIONAL_MAX_PAGES =
+    Math.max(
+        1,
+        Number(
+            process.env
+                .OLX_UA_NATIONAL_MAX_PAGES,
+        ) || 5,
+    );
+
+const OLX_UA_NATIONAL_BUDGET_MS =
+    Math.max(
+        10_000,
+        Number(
+            process.env
+                .OLX_UA_NATIONAL_BUDGET_MS,
+        ) || 30_000,
+    );
+
+const OLX_UA_PRIORITY_CITIES =
+    new Set([
+      'Chernivtsi',
+      'Lutsk',
+      'Uzhhorod',
+      'Mukachevo',
+    ]);
+
+let uaCityCursor =
+    null;
+
+function selectUaOlxCities(
+    country,
+) {
+  const all =
+      Array.isArray(
+          country.olxCities,
+      )
+          ? country.olxCities
+          : [];
+
+  if (!all.length) {
+    return [];
+  }
+
+  if (
+      all.length <=
+      OLX_UA_CITIES_PER_RUN
+  ) {
+    return all;
+  }
+
+  const priority =
+      all.filter(
+          (item) =>
+              OLX_UA_PRIORITY_CITIES
+                  .has(
+                      item.city,
+                  ),
+      );
+
+  const rotating =
+      all.filter(
+          (item) =>
+              !OLX_UA_PRIORITY_CITIES
+                  .has(
+                      item.city,
+                  ),
+      );
+
+  const remainingSlots =
+      Math.max(
+          0,
+          OLX_UA_CITIES_PER_RUN -
+          priority.length,
+      );
+
+  if (
+      !Number.isInteger(
+          uaCityCursor,
+      )
+  ) {
+    /*
+     * После restart не начинаем
+     * каждый раз с одного города.
+     */
+    uaCityCursor =
+        rotating.length
+            ? Math.floor(
+                Date.now() /
+                3_600_000,
+            ) %
+            rotating.length
+            : 0;
+  }
+
+  const selected = [
+    ...priority,
+  ];
+
+  for (
+      let index = 0;
+      index <
+      remainingSlots &&
+      index <
+      rotating.length;
+      index++
+  ) {
+    selected.push(
+        rotating[
+        (
+            uaCityCursor +
+            index
+        ) %
+        rotating.length
+            ],
+    );
+  }
+
+  if (
+      rotating.length
+  ) {
+    uaCityCursor =
+        (
+            uaCityCursor +
+            remainingSlots
+        ) %
+        rotating.length;
+  }
+
+  return [
+    ...new Map(
+        selected.map(
+            (item) => [
+              item.city,
+              item,
+            ],
+        ),
+    ).values(),
+  ];
+}
+
 export async function scrapeOlx(
     country,
     _filters,
@@ -482,55 +811,251 @@ export async function scrapeOlx(
   if (!OLX_FETCHER_URL) {
     return {
       listings: [],
-      complete: false,
+
+      complete:
+          false,
+
+      partialExpected:
+          false,
+
       errors: [
         {
-          error: 'OLX_FETCHER_URL is not configured',
-          stopReason: 'fetcher_disabled',
+          error:
+              'OLX_FETCHER_URL is not configured',
+
+          stopReason:
+              'fetcher_disabled',
         },
       ],
     };
   }
 
+  /*
+   * Для остальных стран пока
+   * сохраняем существующий crawler.
+   */
+  if (
+      country.code !== 'UA'
+  ) {
+    const listings = [];
+    const errors = [];
+
+    let complete =
+        true;
+
+    for (
+        const segment
+        of OLX_SEGMENTS
+        ) {
+      const result =
+          await scrapeSegment(
+              country,
+              segment,
+              onChunk,
+          );
+
+      listings.push(
+          ...result.listings,
+      );
+
+      if (
+          !result.complete
+      ) {
+        complete =
+            false;
+
+        if (
+            Array.isArray(
+                result.errors,
+            ) &&
+            result.errors.length
+        ) {
+          for (
+              const item
+              of result.errors
+              ) {
+            errors.push({
+              segment,
+
+              page:
+              item.page,
+
+              error:
+              item.error,
+
+              stopReason:
+              result.stopReason,
+            });
+          }
+        } else {
+          errors.push({
+            segment,
+
+            page:
+            result.page,
+
+            error:
+                result.error ??
+                'Incomplete OLX scrape',
+
+            stopReason:
+            result.stopReason,
+          });
+        }
+      }
+    }
+
+    return {
+      listings:
+          dedupeOlx(
+              listings,
+          ),
+
+      complete,
+
+      partialExpected:
+          false,
+
+      errors,
+    };
+  }
+
+  /*
+   * Украина:
+   *
+   * 1. короткий country-wide crawl;
+   * 2. несколько конкретных городов;
+   * 3. города ротируются между runs;
+   * 4. проблемные малые города
+   *    проходят каждый раз.
+   */
   const listings = [];
   const errors = [];
 
-  let complete = true;
+  /*
+   * Catch-all нужен для городов,
+   * которых ещё нет в olxCities.
+   */
+  for (
+      const segment
+      of OLX_SEGMENTS
+      ) {
+    const result =
+        await scrapeSegment(
+            country,
+            segment,
+            onChunk,
+            {
+              maxPages:
+              OLX_UA_NATIONAL_MAX_PAGES,
 
-  for (const segment of OLX_SEGMENTS) {
-    const result = await scrapeSegment(
-        country,
-        segment,
-        onChunk,
-    );
+              budgetMs:
+              OLX_UA_NATIONAL_BUDGET_MS,
+
+              /*
+               * Мы намеренно не читаем
+               * всю Украину до конца.
+               */
+              partialExpected:
+                  true,
+            },
+        );
 
     listings.push(
         ...result.listings,
     );
 
-    if (!result.complete) {
-      complete = false;
+    /*
+     * Реальные page errors сохраняем.
+     * Сам expected max_pages —
+     * не source error.
+     */
+    for (
+        const item
+        of result.errors ??
+    []
+        ) {
+      errors.push({
+        scope:
+            'national',
 
-      if (
-          Array.isArray(result.errors) &&
-          result.errors.length
+        segment,
+
+        page:
+        item.page,
+
+        error:
+        item.error,
+
+        stopReason:
+        result.stopReason,
+      });
+    }
+  }
+
+  const selectedCities =
+      selectUaOlxCities(
+          country,
+      );
+
+  for (
+      const target
+      of selectedCities
       ) {
-        for (const item of result.errors) {
-          errors.push({
-            segment,
-            page: item.page,
-            error: item.error,
-            stopReason:
-            result.stopReason,
-          });
-        }
-      } else {
+    for (
+        const segment
+        of OLX_SEGMENTS
+        ) {
+      const result =
+          await scrapeSegment(
+              country,
+              segment,
+              onChunk,
+              {
+                citySlug:
+                target.slug,
+
+                forcedCity:
+                target.city,
+
+                maxPages:
+                OLX_UA_CITY_MAX_PAGES,
+
+                budgetMs:
+                OLX_UA_CITY_BUDGET_MS,
+
+                partialExpected:
+                    true,
+              },
+          );
+
+      listings.push(
+          ...result.listings,
+      );
+
+      for (
+          const item
+          of result.errors ??
+      []
+          ) {
         errors.push({
+          scope:
+              'city',
+
+          city:
+          target.city,
+
+          citySlug:
+          target.slug,
+
           segment,
-          page: result.page,
+
+          page:
+          item.page,
+
           error:
-              result.error ??
-              'Incomplete OLX scrape',
+          item.error,
+
           stopReason:
           result.stopReason,
         });
@@ -538,10 +1063,46 @@ export async function scrapeOlx(
     }
   }
 
+  console.log(
+      `[olx] UA targeted cities: ` +
+      selectedCities
+          .map(
+              (item) =>
+                  item.city,
+          )
+          .join(', '),
+  );
+
   return {
     listings:
-        dedupeOlx(listings),
-    complete,
+        dedupeOlx(
+            listings,
+        ),
+
+    /*
+     * Один run намеренно не является
+     * полным обходом всего OLX UA.
+     *
+     * Поэтому markMissingAfterCompleteCrawl
+     * не должен деактивировать объявления,
+     * города которых были в другой ротации.
+     */
+    complete:
+        false,
+
+    /*
+     * Это штатная progressive rotation,
+     * а не ошибка источника.
+     */
+    partialExpected:
+        errors.length === 0,
+
+    processedCities:
+        selectedCities.map(
+            (item) =>
+                item.city,
+        ),
+
     errors,
   };
 }

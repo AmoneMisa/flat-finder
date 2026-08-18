@@ -74,7 +74,6 @@ export const COUNTRIES = {
       'Mykolaiv',
       'Kropyvnytskyi',
     ],
-
     cityAliases: {
       Kyiv: [
         'київ',
@@ -228,6 +227,36 @@ export const COUNTRIES = {
         'kirovohrad',
       ],
     },
+    olxCities: [
+      // Сначала города, которые хуже покрываются общей лентой.
+      { city: 'Chernivtsi', slug: 'chernovtsy' },
+      { city: 'Lutsk', slug: 'lutsk' },
+      { city: 'Uzhhorod', slug: 'uzhgorod' },
+      { city: 'Mukachevo', slug: 'mukachevo' },
+
+      { city: 'Rivne', slug: 'rovno' },
+      { city: 'Ternopil', slug: 'ternopol' },
+      { city: 'Khmelnytskyi', slug: 'khmelnitskiy' },
+      { city: 'Zhytomyr', slug: 'zhitomir' },
+
+      { city: 'Cherkasy', slug: 'cherkassy' },
+      { city: 'Poltava', slug: 'poltava' },
+      { city: 'Chernihiv', slug: 'chernigov' },
+      { city: 'Sumy', slug: 'sumy' },
+
+      { city: 'Mykolaiv', slug: 'nikolaev' },
+      { city: 'Kropyvnytskyi', slug: 'kropivnitskiy' },
+      { city: 'Vinnytsia', slug: 'vinnitsa' },
+      { city: 'Ivano-Frankivsk', slug: 'ivano-frankovsk' },
+
+      { city: 'Zaporizhzhia', slug: 'zaporozhe' },
+      { city: 'Lviv', slug: 'lvov' },
+      { city: 'Kharkiv', slug: 'kharkov' },
+      { city: 'Dnipro', slug: 'dnepr' },
+
+      { city: 'Odesa', slug: 'odessa' },
+      { city: 'Kyiv', slug: 'kiev' },
+    ],
     telegramChannels: [
       // Kyiv
       { name: 'orenda_kyiv_city', city: 'Kyiv' },

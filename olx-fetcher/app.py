@@ -92,25 +92,73 @@ def health():
 
 @app.get("/olx/listings")
 def olx_listings():
-    code = (request.args.get("country") or "").upper()
-    segment = request.args.get("segment") or "flat:longRent"
+    code = (
+        request.args.get("country")
+        or ""
+    ).upper()
+
+    segment = (
+        request.args.get("segment")
+        or "flat:longRent"
+    )
+
+    city = (
+        request.args.get("city")
+        or ""
+    ).strip().lower()
 
     portal = PORTALS.get(code)
+
     if not portal:
-        return jsonify(error=f"unknown country {code!r}"), 400
+        return jsonify(
+            error=f"unknown country {code!r}"
+        ), 400
 
     path = portal["paths"].get(segment)
+
     if not path:
-        return jsonify(error=f"unsupported OLX segment {segment!r}"), 400
+        return jsonify(
+            error=(
+                f"unsupported OLX "
+                f"segment {segment!r}"
+            )
+        ), 400
+
+    if city:
+        if not re.fullmatch(
+            r"[a-z0-9-]+",
+            city,
+        ):
+            return jsonify(
+                error=(
+                    f"invalid OLX city "
+                    f"slug {city!r}"
+                )
+            ), 400
+
+        path = f"{path}/{city}"
 
     try:
-        page = max(1, int(request.args.get("page", "1")))
-    except (TypeError, ValueError):
+        page = max(
+            1,
+            int(
+                request.args.get(
+                    "page",
+                    "1",
+                )
+            ),
+        )
+    except (
+        TypeError,
+        ValueError,
+    ):
         page = 1
 
     url = (
         f'{portal["host"]}/{path}/'
-        f'?page={page}&search%5Border%5D=created_at%3Adesc'
+        f'?page={page}'
+        f'&search%5Border%5D='
+        f'created_at%3Adesc'
     )
 
     try:
@@ -118,31 +166,48 @@ def olx_listings():
             url,
             impersonate=IMPERSONATE,
             timeout=TIMEOUT,
-            headers={"Accept-Language": portal["lang"]},
+            headers={
+                "Accept-Language":
+                    portal["lang"],
+            },
         )
     except Exception as e:
-        return jsonify(error=f"fetch error: {e}"), 502
+        return jsonify(
+            error=f"fetch error: {e}"
+        ), 502
 
     if resp.status_code != 200:
         return jsonify(
-            error=f"OLX {code} {segment} HTTP {resp.status_code}"
+            error=(
+                f"OLX {code} "
+                f"{segment} "
+                f"{city or 'all'} "
+                f"HTTP {resp.status_code}"
+            )
         ), 502
 
-    ads = extract_ads(resp.text)
+    ads = extract_ads(
+        resp.text
+    )
 
     if ads is None:
         return jsonify(
-            error=f"OLX {code}: no __PRERENDERED_STATE__"
+            error=(
+                f"OLX {code} "
+                f"{segment} "
+                f"{city or 'all'}: "
+                f"no __PRERENDERED_STATE__"
+            )
         ), 502
 
     return jsonify(
         country=code,
         segment=segment,
+        city=city or None,
         page=page,
         count=len(ads),
         ads=ads,
     )
-
 
 if __name__ == "__main__":
     # Dev only; production uses gunicorn (see Dockerfile).
