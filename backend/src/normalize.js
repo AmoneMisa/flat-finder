@@ -382,9 +382,9 @@ export function applyFilters(listings, filters, rates = null) {
     if (yearMax != null && (l.buildingYear == null || l.buildingYear > yearMax)) return false;
     // Audience is an explicit restriction, so match strictly when requested.
     if (audience && audience !== 'any' && l.audience !== audience) return false;
-    // Tenant conditions: only drop on an explicit contradiction. A listing that
-    // does not state a policy (null) is kept, like the lenient numeric ranges.
-    if (pets === true && l.petsAllowed === false) return false;
+    // Pet-friendly is an explicit positive filter: unknown policy is not enough.
+    // When requested, only listings that explicitly allow pets are returned.
+    if (pets === true && l.petsAllowed !== true) return false;
     if (children === true && l.childrenAllowed === false) return false;
     // Room-only (partial rent): when requested, show only shared-room posts.
     if (roomOnly === true && !l.roomOnly) return false;
