@@ -167,7 +167,7 @@ export function makeListing(partial) {
   const newBuilding =
     partial.newBuilding ??
     (parseNewBuilding(combined) ||
-      (buildingYear && buildingYear >= new Date().getFullYear() - 3 ? true : null));
+      (buildingYear && buildingYear >= new Date().getFullYear() - 5 ? true : null));
   // UZ note: utilities are usually included when unstated (null); the UI reflects that.
   const communalSeparated = partial.communalSeparated ?? parseCommunalSeparated(combined);
   const parsedKvartal = parseKvartal(combined);
@@ -290,9 +290,9 @@ function normCity(s) {
 export function applyFilters(listings, filters, rates = null) {
   const {
     propertyType, agency, priceMin, priceMax, priceTolerance, priceCurrency, query, dealType,
-    roomsMin, roomsMax, bedroomsMin, bedroomsMax,
-    floorMin, floorMax, yearMin, yearMax, audience, city,
-    cityAliases, district, metro, listingId,
+    roomsMin, roomsMax, bedroomsMin, bedroomsMax, areaMin, areaMax,
+    floorMin, floorMax, totalFloorsMin, totalFloorsMax, yearMin, yearMax,
+    newBuilding, audience, city, cityAliases, district, metro, listingId,
     pets, children, roomOnly, maxAgeDays, sources,
   } = filters;
   // Cross-currency price filtering: when the client says which currency the
@@ -376,10 +376,15 @@ export function applyFilters(listings, filters, rates = null) {
     if (roomsMax != null && (l.rooms == null || l.rooms > roomsMax)) return false;
     if (bedroomsMin != null && (l.bedrooms == null || l.bedrooms < bedroomsMin)) return false;
     if (bedroomsMax != null && (l.bedrooms == null || l.bedrooms > bedroomsMax)) return false;
+    if (areaMin != null && (l.areaSqm == null || l.areaSqm < areaMin)) return false;
+    if (areaMax != null && (l.areaSqm == null || l.areaSqm > areaMax)) return false;
     if (floorMin != null && (l.floor == null || l.floor < floorMin)) return false;
     if (floorMax != null && (l.floor == null || l.floor > floorMax)) return false;
+    if (totalFloorsMin != null && (l.totalFloors == null || l.totalFloors < totalFloorsMin)) return false;
+    if (totalFloorsMax != null && (l.totalFloors == null || l.totalFloors > totalFloorsMax)) return false;
     if (yearMin != null && (l.buildingYear == null || l.buildingYear < yearMin)) return false;
     if (yearMax != null && (l.buildingYear == null || l.buildingYear > yearMax)) return false;
+    if (newBuilding === true && l.newBuilding !== true) return false;
     // Audience is an explicit restriction, so match strictly when requested.
     if (audience && audience !== 'any' && l.audience !== audience) return false;
     // Pet-friendly is an explicit positive filter: unknown policy is not enough.
