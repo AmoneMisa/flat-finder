@@ -1,0 +1,81 @@
+status=0
+ok 26 - parses a daily Chilanzar listing with explicit Uzbek sum and amenities
+  ---
+  duration_ms: 1.100975
+  type: 'test'
+  ...
+# Subtest: parses an Uzbek roommate listing as a long-term women-only room
+ok 27 - parses an Uzbek roommate listing as a long-term women-only room
+  ---
+  duration_ms: 0.822962
+  type: 'test'
+  ...
+# Subtest: parses Cyrillic Uzbek shared rent, included utilities and local price
+ok 28 - parses Cyrillic Uzbek shared rent, included utilities and local price
+  ---
+  duration_ms: 1.046669
+  type: 'test'
+  ...
+# Subtest: parses Sergeli hudud, realtor shorthand and bare daily UZS
+ok 29 - parses Sergeli hudud, realtor shorthand and bare daily UZS
+  ---
+  duration_ms: 6.149108
+  type: 'test'
+  ...
+# Subtest: parses the channel-specific 2 / 2 / 3 shorthand as three rooms on floor two of three
+ok 30 - parses the channel-specific 2 / 2 / 3 shorthand as three rooms on floor two of three
+  ---
+  duration_ms: 1.228458
+  type: 'test'
+  ...
+# Subtest: parses separate floor and building-height labels from a Yunusabad rental
+ok 31 - parses separate floor and building-height labels from a Yunusabad rental
+  ---
+  duration_ms: 0.277982
+  type: 'test'
+  ...
+# Subtest: parses Glinka as a named Yakkasaray microdistrict
+ok 32 - parses Glinka as a named Yakkasaray microdistrict
+  ---
+  duration_ms: 0.497821
+  type: 'test'
+  ...
+# Subtest: exposes all twelve Tashkent administrative districts
+ok 33 - exposes all twelve Tashkent administrative districts
+  ---
+  duration_ms: 0.189457
+  type: 'test'
+  ...
+# Subtest: maps numbered Chilanzar areas to their actual districts
+ok 34 - maps numbered Chilanzar areas to their actual districts
+  ---
+  duration_ms: 0.12705
+  type: 'test'
+  ...
+# Subtest: resolves Kuylyuk ranges and preserves a bare ambiguous area
+ok 35 - resolves Kuylyuk ranges and preserves a bare ambiguous area
+  ---
+  duration_ms: 0.464693
+  type: 'test'
+  ...
+# Subtest: resolves Sergeli legacy addresses without guessing a bare massif
+ok 36 - resolves Sergeli legacy addresses without guessing a bare massif
+  ---
+  duration_ms: 1.196348
+  type: 'test'
+  ...
+# Subtest: maps legacy C-codes and named massifs to current districts
+ok 37 - maps legacy C-codes and named massifs to current districts
+  ---
+  duration_ms: 1.278595
+  type: 'test'
+  ...
+1..37
+# tests 37
+# suites 0
+# pass 37
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 159.795276
