@@ -94,8 +94,22 @@ function distanceToMeters(value, unit) {
   return /км|km/i.test(unit) ? Math.round(amount * 1000) : Math.round(amount)
 }
 
+function listingText(listing) {
+  return `${listing?.title || ''}\n${listing?.description || ''}`
+}
+
+function detectedPoiNames(listing) {
+  const text = listingText(listing)
+  if (!text.trim()) return []
+  const names = []
+  for (const [name, alias] of Object.entries(POI_ALIASES)) {
+    if (new RegExp(`(?:${alias})`, 'iu').test(text)) names.push(name)
+  }
+  return names
+}
+
 export function poiDistanceM(listing, name) {
-  const text = `${listing?.title || ''}\n${listing?.description || ''}`
+  const text = listingText(listing)
   if (!text.trim() || !name) return null
   const poi = POI_ALIASES[name] || escapeRegExp(name)
   const unit = '(км|km|м|m|метр\\p{L}*)'
@@ -118,10 +132,19 @@ function contextParts(listing, country) {
 }
 
 function poiCandidates(listing, city, countryName) {
-  const names = uniq([...(listing.nearbyShops || []), ...(listing.nearby || [])])
-  const localContext = listing.area || listing.kvartal || listing.district || city
+  // Keep parser-provided POIs, but also scan the raw listing for known aliases.
+  // This catches grammatical forms such as Russian "от корзинки", even if an
+  // upstream shop parser only recognized the nominative form "Корзинка".
+  const names = uniq([
+    ...(listing.nearbyShops || []),
+    ...(listing.nearby || []),
+    ...detectedPoiNames(listing),
+  ])
+  const area = listing.area || listing.kvartal
   return names.map((name) => ({
-    q: [name, localContext, city, countryName].filter(Boolean).join(', '),
+    // Scope repeated chains/POIs by every known geographic level. "Korzinka,
+    // 1 kvartal, Uchtepa, Tashkent" is much safer than "Korzinka, 1 kvartal".
+    q: [name, area, listing.district, city, countryName].filter(Boolean).join(', '),
     source: 'nearby',
     jit: 0,
     // A POI is not the building itself. If the post says "500 m from Korzinka",
