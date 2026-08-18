@@ -1,11 +1,11 @@
 # OLX fetcher sidecar.
 #
 # OLX's WAF (AWS CloudFront) 403s plain HTTP clients from our server by TLS/JA3
-# fingerprint, but lets a real Chrome fingerprint through even from the same
-# datacenter IP. curl_cffi's `impersonate` replicates that fingerprint, so this
-# tiny service can fetch the SEO-facing HTML listing pages (NOT the blocked
-# /api/v1 endpoint) and hand the flat-finder Node backend the structured ad
-# objects embedded in each page's `window.__PRERENDERED_STATE__`.
+# fingerprint, but lets a real Chrome fingerprint through even from the same IP.
+# curl_cffi's `impersonate` replicates that fingerprint, so this tiny service can
+# fetch the SEO-facing HTML listing pages (NOT the blocked /api/v1 endpoint) and
+# hand the flat-finder Node backend the structured ad objects embedded in each
+# page's `window.__PRERENDERED_STATE__`.
 #
 # The Node backend owns all normalization/filtering; this only does the fetch +
 # extract. Callers are expected to rate-limit (the Node side throttles per host).
@@ -62,7 +62,10 @@ PORTALS = {
 # curl_cffi TLS/JA3 impersonation target. Override if a curl_cffi version needs a
 # different label (e.g. "chrome131") — no code change required.
 IMPERSONATE = os.environ.get("OLX_IMPERSONATE", "chrome124")
-TIMEOUT = int(os.environ.get("OLX_TIMEOUT", "25"))
+# We observed occasional OLX requests exceeding the former 25s default while a
+# retry to the same city completed normally. Keep enough headroom for those tail
+# latencies; compose can still override this per fetcher pool.
+TIMEOUT = int(os.environ.get("OLX_TIMEOUT", "45"))
 
 # window.__PRERENDERED_STATE__ = "<json string, escaped again as a JS string>";
 _STATE_RE = re.compile(
