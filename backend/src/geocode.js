@@ -1,8 +1,8 @@
 // Best-effort geocoding for listings that arrive without GPS coordinates.
 //
 // Precision order (highest -> lowest):
-//   source coordinates -> exact address -> metro -> nearby POI -> area/kvartal
-//   -> district -> city.
+//   source coordinates -> exact address -> metro -> spatial POI constraints
+//   -> nearby POI -> area/kvartal -> district -> city.
 //
 // Coordinates come from Nominatim (OpenStreetMap). Requests are throttled and
 // cached because geocoding runs during background refreshes, never on the
@@ -17,6 +17,7 @@ const MISS_TTL_MS = 24 * 60 * 60 * 1000
 const ERR_TTL_MS = 60 * 1000
 const MIN_INTERVAL_MS = 1100
 const MAX_LOOKUPS_PER_RUN = Number(process.env.GEOCODE_BUDGET) || 60
+const EARTH_RADIUS_M = 6_371_000
 
 const POI_ALIASES = {
   Korzinka: 'korzinka|корзинк\\p{L}*',
@@ -132,26 +133,24 @@ function contextParts(listing, country) {
 }
 
 function poiCandidates(listing, city, countryName) {
-  // Keep parser-provided POIs, but also scan the raw listing for known aliases.
-  // This catches grammatical forms such as Russian "от корзинки", even if an
-  // upstream shop parser only recognized the nominative form "Корзинка".
   const names = uniq([
     ...(listing.nearbyShops || []),
     ...(listing.nearby || []),
     ...detectedPoiNames(listing),
   ])
   const area = listing.area || listing.kvartal
-  return names.map((name) => ({
-    // Scope repeated chains/POIs by every known geographic level. "Korzinka,
-    // 1 kvartal, Uchtepa, Tashkent" is much safer than "Korzinka, 1 kvartal".
-    q: [name, area, listing.district, city, countryName].filter(Boolean).join(', '),
-    source: 'nearby',
-    jit: 0,
-    // A POI is not the building itself. If the post says "500 m from Korzinka",
-    // preserve that as the uncertainty radius; otherwise use a conservative
-    // neighbourhood-level estimate.
-    accuracyM: poiDistanceM(listing, name) || 500,
-  }))
+  return names.map((name) => {
+    const distanceM = poiDistanceM(listing, name)
+    return {
+      // Scope repeated chains/POIs by every known geographic level.
+      q: [name, area, listing.district, city, countryName].filter(Boolean).join(', '),
+      source: 'nearby',
+      name,
+      distanceM,
+      jit: 0,
+      accuracyM: distanceM || 500,
+    }
+  })
 }
 
 // Pure helper exported for unit tests and future UI/debug diagnostics.
@@ -194,11 +193,134 @@ export function geocodeCandidates(listing, country) {
   return candidates.filter(Boolean)
 }
 
+function projectPoint(point, origin) {
+  const lat0 = (origin.lat * Math.PI) / 180
+  return {
+    x: ((point.lng - origin.lng) * Math.PI / 180) * EARTH_RADIUS_M * Math.cos(lat0),
+    y: ((point.lat - origin.lat) * Math.PI / 180) * EARTH_RADIUS_M,
+  }
+}
+
+function unprojectPoint(point, origin) {
+  const lat0 = (origin.lat * Math.PI) / 180
+  return {
+    lat: origin.lat + (point.y / EARTH_RADIUS_M) * (180 / Math.PI),
+    lng: origin.lng + (point.x / (EARTH_RADIUS_M * Math.cos(lat0))) * (180 / Math.PI),
+  }
+}
+
+function spatialResidual(point, anchors) {
+  const squared = anchors.map((anchor) => {
+    const d = Math.hypot(point.x - anchor.x, point.y - anchor.y)
+    return (d - anchor.distanceM) ** 2
+  })
+  return Math.sqrt(squared.reduce((sum, value) => sum + value, 0) / squared.length)
+}
+
+function circlePairCandidates(a, b) {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const d = Math.hypot(dx, dy)
+  if (d < 0.001) return []
+
+  const ux = dx / d
+  const uy = dy / d
+  const along = (a.distanceM ** 2 - b.distanceM ** 2 + d ** 2) / (2 * d)
+  const base = { x: a.x + along * ux, y: a.y + along * uy }
+  const h2 = a.distanceM ** 2 - along ** 2
+
+  if (h2 >= 0) {
+    const h = Math.sqrt(h2)
+    return [
+      { x: base.x - uy * h, y: base.y + ux * h },
+      { x: base.x + uy * h, y: base.y - ux * h },
+    ]
+  }
+
+  // Inconsistent/noisy stated distances: use the midpoint between the nearest
+  // points on the two circles as a least-surprise candidate instead of failing.
+  const edgeA = { x: a.x + ux * a.distanceM, y: a.y + uy * a.distanceM }
+  const edgeB = { x: b.x - ux * b.distanceM, y: b.y - uy * b.distanceM }
+  return [{ x: (edgeA.x + edgeB.x) / 2, y: (edgeA.y + edgeB.y) / 2 }]
+}
+
+// Resolve 2+ POI-distance constraints into the most likely listing coordinate.
+// A broad area/district/city centroid is used only to choose between otherwise
+// equally valid circle intersections; it never outranks the POI constraints.
+export function solveSpatialPoint(rawAnchors, prior = null) {
+  const anchors = (rawAnchors || []).filter(
+    (anchor) => Number.isFinite(anchor?.lat) && Number.isFinite(anchor?.lng) && Number(anchor?.distanceM) > 0,
+  )
+  if (anchors.length < 2) return null
+
+  const origin = {
+    lat: anchors.reduce((sum, anchor) => sum + anchor.lat, 0) / anchors.length,
+    lng: anchors.reduce((sum, anchor) => sum + anchor.lng, 0) / anchors.length,
+  }
+  const localAnchors = anchors.map((anchor) => ({
+    ...projectPoint(anchor, origin),
+    distanceM: Number(anchor.distanceM),
+  }))
+  const priorLocal = prior && Number.isFinite(prior.lat) && Number.isFinite(prior.lng)
+    ? projectPoint(prior, origin)
+    : null
+
+  const candidates = []
+  for (let i = 0; i < localAnchors.length; i++) {
+    for (let j = i + 1; j < localAnchors.length; j++) {
+      candidates.push(...circlePairCandidates(localAnchors[i], localAnchors[j]))
+    }
+  }
+
+  // Useful fallback for 3+ noisy constraints where no pair intersects cleanly.
+  const totalWeight = localAnchors.reduce((sum, anchor) => sum + 1 / anchor.distanceM, 0)
+  candidates.push({
+    x: localAnchors.reduce((sum, anchor) => sum + anchor.x / anchor.distanceM, 0) / totalWeight,
+    y: localAnchors.reduce((sum, anchor) => sum + anchor.y / anchor.distanceM, 0) / totalWeight,
+  })
+  if (priorLocal) candidates.push(priorLocal)
+
+  let best = null
+  for (const candidate of candidates) {
+    const residualM = spatialResidual(candidate, localAnchors)
+    // The prior only breaks ambiguous ties; POI distance residual dominates.
+    const priorPenalty = priorLocal ? Math.hypot(candidate.x - priorLocal.x, candidate.y - priorLocal.y) * 0.01 : 0
+    const score = residualM + priorPenalty
+    if (!best || score < best.score) best = { point: candidate, residualM, score }
+  }
+  if (!best) return null
+
+  return {
+    ...unprojectPoint(best.point, origin),
+    residualM: best.residualM,
+    anchorCount: anchors.length,
+  }
+}
+
 export async function geocodeListings(listings, country) {
   if (!Array.isArray(listings) || !country) return listings
   const center = cityCenter(country)
   const defaultCity = country?.cities?.[0] || ''
   let budget = MAX_LOOKUPS_PER_RUN
+
+  async function lookup(candidate) {
+    if (!candidate?.q) return null
+    let coords = await getCachedGeo(candidate.q)
+    if (coords === undefined) {
+      if (budget <= 0) return null
+      coords = await fetchGeo(candidate.q)
+      budget--
+    }
+    return coords || null
+  }
+
+  function applyCandidate(listing, candidate, coords) {
+    const [dLat, dLng] = jitter(String(listing.id || ''), candidate.jit)
+    listing.lat = coords.lat + dLat
+    listing.lng = coords.lng + dLng
+    listing.locationSource = candidate.source
+    listing.locationAccuracyM = candidate.accuracyM
+  }
 
   for (const listing of listings) {
     if (listing.lat != null && listing.lng != null) {
@@ -207,22 +329,64 @@ export async function geocodeListings(listings, country) {
       continue
     }
 
-    let placed = false
-    for (const candidate of geocodeCandidates(listing, country)) {
-      let coords = await getCachedGeo(candidate.q)
-      if (coords === undefined) {
-        // Keep checking later candidates because they may already be cached.
-        if (budget <= 0) continue
-        coords = await fetchGeo(candidate.q)
-        budget--
-      }
-      if (!coords) continue
+    const candidates = geocodeCandidates(listing, country)
+    const exactCandidates = candidates.filter((candidate) => candidate.source === 'address' || candidate.source === 'metro')
+    const nearbyCandidates = candidates.filter((candidate) => candidate.source === 'nearby')
+    const broadCandidates = candidates.filter((candidate) => ['area', 'district', 'city'].includes(candidate.source))
 
-      const [dLat, dLng] = jitter(String(listing.id || ''), candidate.jit)
-      listing.lat = coords.lat + dLat
-      listing.lng = coords.lng + dLng
-      listing.locationSource = candidate.source
-      listing.locationAccuracyM = candidate.accuracyM
+    let placed = false
+
+    // Exact address and metro always outrank inferred POI geometry.
+    for (const candidate of exactCandidates) {
+      const coords = await lookup(candidate)
+      if (!coords) continue
+      applyCandidate(listing, candidate, coords)
+      placed = true
+      break
+    }
+    if (placed) continue
+
+    // Two or more explicit distances allow actual spatial inference rather than
+    // simply dropping the pin onto the first named shop/landmark.
+    const constrainedPoi = nearbyCandidates.filter((candidate) => candidate.distanceM != null)
+    if (constrainedPoi.length >= 2) {
+      const anchors = []
+      for (const candidate of constrainedPoi) {
+        const coords = await lookup(candidate)
+        if (coords) anchors.push({ ...coords, distanceM: candidate.distanceM, name: candidate.name })
+      }
+
+      if (anchors.length >= 2) {
+        const priorCandidate = broadCandidates[0]
+        const prior = priorCandidate ? await lookup(priorCandidate) : center
+        const spatial = solveSpatialPoint(anchors, prior)
+        if (spatial) {
+          listing.lat = spatial.lat
+          listing.lng = spatial.lng
+          listing.locationSource = 'spatial'
+          listing.locationAccuracyM = Math.max(100, Math.round(spatial.residualM + 100))
+          listing.locationAnchorCount = spatial.anchorCount
+          placed = true
+        }
+      }
+    }
+    if (placed) continue
+
+    // One POI, or POIs without explicit distances: approximate at the POI and
+    // expose the uncertainty instead of pretending the listing coordinate is exact.
+    for (const candidate of nearbyCandidates) {
+      const coords = await lookup(candidate)
+      if (!coords) continue
+      applyCandidate(listing, candidate, coords)
+      placed = true
+      break
+    }
+    if (placed) continue
+
+    for (const candidate of broadCandidates) {
+      const coords = await lookup(candidate)
+      if (!coords) continue
+      applyCandidate(listing, candidate, coords)
       placed = true
       break
     }
