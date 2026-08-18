@@ -1,8 +1,8 @@
 // Best-effort geocoding for listings that arrive without GPS coordinates.
 //
 // Precision order (highest -> lowest):
-//   source coordinates -> exact address -> metro -> spatial POI constraints
-//   -> nearby POI -> area/kvartal -> district -> city.
+//   source coordinates -> exact address -> residential complex -> metro
+//   -> spatial POI constraints -> nearby POI -> area/kvartal -> district -> city.
 //
 // Coordinates come from Nominatim (OpenStreetMap). Requests are throttled and
 // cached because geocoding runs during background refreshes, never on the
@@ -38,7 +38,6 @@ async function throttle() {
 }
 
 function geoKey(query) {
-  // v2 deliberately invalidates old district/address-only cache semantics.
   return `geo:v2:${query.toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
@@ -142,7 +141,6 @@ function poiCandidates(listing, city, countryName) {
   return names.map((name) => {
     const distanceM = poiDistanceM(listing, name)
     return {
-      // Scope repeated chains/POIs by every known geographic level.
       q: [name, area, listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'nearby',
       name,
@@ -153,7 +151,6 @@ function poiCandidates(listing, city, countryName) {
   })
 }
 
-// Pure helper exported for unit tests and future UI/debug diagnostics.
 export function geocodeCandidates(listing, country) {
   const { city, countryName } = contextParts(listing, country)
   const area = listing.area || listing.kvartal
@@ -163,6 +160,12 @@ export function geocodeCandidates(listing, country) {
       source: 'address',
       jit: 0,
       accuracyM: 40,
+    },
+    listing.residenceComplex && {
+      q: [listing.residenceComplex, listing.district, city, countryName].filter(Boolean).join(', '),
+      source: 'residentialComplex',
+      jit: 0,
+      accuracyM: 300,
     },
     listing.metro && {
       q: [`${listing.metro} metro station`, city, countryName].filter(Boolean).join(', '),
@@ -237,16 +240,11 @@ function circlePairCandidates(a, b) {
     ]
   }
 
-  // Inconsistent/noisy stated distances: use the midpoint between the nearest
-  // points on the two circles as a least-surprise candidate instead of failing.
   const edgeA = { x: a.x + ux * a.distanceM, y: a.y + uy * a.distanceM }
   const edgeB = { x: b.x - ux * b.distanceM, y: b.y - uy * b.distanceM }
   return [{ x: (edgeA.x + edgeB.x) / 2, y: (edgeA.y + edgeB.y) / 2 }]
 }
 
-// Resolve 2+ POI-distance constraints into the most likely listing coordinate.
-// A broad area/district/city centroid is used only to choose between otherwise
-// equally valid circle intersections; it never outranks the POI constraints.
 export function solveSpatialPoint(rawAnchors, prior = null) {
   const anchors = (rawAnchors || []).filter(
     (anchor) => Number.isFinite(anchor?.lat) && Number.isFinite(anchor?.lng) && Number(anchor?.distanceM) > 0,
@@ -272,7 +270,6 @@ export function solveSpatialPoint(rawAnchors, prior = null) {
     }
   }
 
-  // Useful fallback for 3+ noisy constraints where no pair intersects cleanly.
   const totalWeight = localAnchors.reduce((sum, anchor) => sum + 1 / anchor.distanceM, 0)
   candidates.push({
     x: localAnchors.reduce((sum, anchor) => sum + anchor.x / anchor.distanceM, 0) / totalWeight,
@@ -283,7 +280,6 @@ export function solveSpatialPoint(rawAnchors, prior = null) {
   let best = null
   for (const candidate of candidates) {
     const residualM = spatialResidual(candidate, localAnchors)
-    // The prior only breaks ambiguous ties; POI distance residual dominates.
     const priorPenalty = priorLocal ? Math.hypot(candidate.x - priorLocal.x, candidate.y - priorLocal.y) * 0.01 : 0
     const score = residualM + priorPenalty
     if (!best || score < best.score) best = { point: candidate, residualM, score }
@@ -330,13 +326,14 @@ export async function geocodeListings(listings, country) {
     }
 
     const candidates = geocodeCandidates(listing, country)
-    const exactCandidates = candidates.filter((candidate) => candidate.source === 'address' || candidate.source === 'metro')
+    const exactCandidates = candidates.filter((candidate) =>
+      ['address', 'residentialComplex', 'metro'].includes(candidate.source),
+    )
     const nearbyCandidates = candidates.filter((candidate) => candidate.source === 'nearby')
     const broadCandidates = candidates.filter((candidate) => ['area', 'district', 'city'].includes(candidate.source))
 
     let placed = false
 
-    // Exact address and metro always outrank inferred POI geometry.
     for (const candidate of exactCandidates) {
       const coords = await lookup(candidate)
       if (!coords) continue
@@ -346,8 +343,6 @@ export async function geocodeListings(listings, country) {
     }
     if (placed) continue
 
-    // Two or more explicit distances allow actual spatial inference rather than
-    // simply dropping the pin onto the first named shop/landmark.
     const constrainedPoi = nearbyCandidates.filter((candidate) => candidate.distanceM != null)
     if (constrainedPoi.length >= 2) {
       const anchors = []
@@ -372,8 +367,6 @@ export async function geocodeListings(listings, country) {
     }
     if (placed) continue
 
-    // One POI, or POIs without explicit distances: approximate at the POI and
-    // expose the uncertainty instead of pretending the listing coordinate is exact.
     for (const candidate of nearbyCandidates) {
       const coords = await lookup(candidate)
       if (!coords) continue
@@ -391,8 +384,6 @@ export async function geocodeListings(listings, country) {
       break
     }
 
-    // The country-level center is only a safe fallback for the configured
-    // default city. Never place Kharkiv at Kyiv's center, Cluj at Bucharest, etc.
     const listingCity = listing.city || defaultCity
     if (!placed && center && (!listing.city || listingCity === defaultCity)) {
       const [dLat, dLng] = jitter(String(listing.id || ''), 0.02)
