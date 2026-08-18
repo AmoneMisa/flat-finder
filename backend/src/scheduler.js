@@ -8,6 +8,7 @@
 
 import { COUNTRY_CODES } from './countries.js';
 import { warmCountry } from './scrapers/index.js';
+import { scheduleCountryVision } from './vision-enrichment.js';
 
 const REFRESH_MINUTES = Math.max(1, Number(process.env.REFRESH_MINUTES) || 60);
 const REFRESH_MS = REFRESH_MINUTES * 60 * 1000;
@@ -17,7 +18,8 @@ let running = false;
 let lastRun = null; // { at, ok, total, sourceCounts, degraded }
 
 // Refresh all countries in parallel. Never throws — individual failures are
-// swallowed so one bad source can't stop the schedule.
+// swallowed so one bad source can't stop the schedule. Photo analysis is queued
+// only after the fresh snapshot exists and therefore never delays scraping.
 export async function refreshAll(reason = 'scheduled') {
   if (running) {
     console.log('[scheduler] refresh already in progress, skipping');
@@ -39,6 +41,14 @@ export async function refreshAll(reason = 'scheduled') {
       if (r.value.degraded) degraded.push(COUNTRY_CODES[i]);
       for (const [name, n] of Object.entries(r.value.sourceCounts ?? {})) {
         sourceCounts[name] = (sourceCounts[name] ?? 0) + n;
+      }
+
+      // Free-tier vision enrichment is deliberately background-only. The
+      // provider/result cache prevents repeated external calls for unchanged photos.
+      try {
+        scheduleCountryVision(COUNTRY_CODES[i], r.value);
+      } catch (error) {
+        console.warn(`[scheduler] ${COUNTRY_CODES[i]} vision scheduling failed: ${error.message}`);
       }
     });
     lastRun = { at: new Date().toISOString(), ok, total: COUNTRY_CODES.length, sourceCounts, degraded };
