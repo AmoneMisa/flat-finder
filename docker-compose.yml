@@ -2,12 +2,9 @@ services:
   flat-finder-backend:
     build:
       context: ./backend
-
     restart: unless-stopped
-
     env_file:
       - ./.env
-
     environment:
       - REDIS_URL=redis://flat-finder-redis:6379
       - PGHOST=flat-finder-postgres
@@ -16,7 +13,6 @@ services:
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
-
     depends_on:
       flat-finder-redis:
         condition: service_healthy
@@ -26,25 +22,50 @@ services:
         condition: service_healthy
       flat-finder-olx-router:
         condition: service_healthy
-
     ports:
       - "127.0.0.1:4000:4000"
-
     networks:
       - default
       - ai-net
-
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-        ]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 15s
+
+  flat-finder-queue-task-api:
+    build:
+      context: ./backend
+    command: ["node", "src/queue-task-server.js"]
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - PGHOST=flat-finder-postgres
+      - PGPORT=5432
+      - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
+      - ELASTICSEARCH_INDEX=flat-listings-v1
+      - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
+      - QUEUE_TASK_PORT=4010
+      - QUEUE_INTERNAL_KEY=${QUEUE_INTERNAL_KEY}
+    expose:
+      - "4010"
+    networks:
+      - default
+      - ai-net
+    depends_on:
+      flat-finder-postgres:
+        condition: service_healthy
+      flat-finder-elasticsearch:
+        condition: service_healthy
+      flat-finder-olx-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4010/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
       start_period: 15s
 
   flat-finder-rabbitmq:
@@ -75,12 +96,13 @@ services:
     environment:
       QUEUE_MODE: dispatcher
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
-      FLAT_BACKEND_URL: http://flat-finder-backend:4000
+      QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
+      QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
       QUEUE_REFRESH_SECONDS: ${QUEUE_REFRESH_SECONDS:-1800}
     depends_on:
       flat-finder-rabbitmq:
         condition: service_healthy
-      flat-finder-backend:
+      flat-finder-queue-task-api:
         condition: service_healthy
 
   flat-finder-queue-worker-1:
@@ -90,13 +112,14 @@ services:
     environment:
       QUEUE_MODE: worker
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
-      FLAT_BACKEND_URL: http://flat-finder-backend:4000
+      QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
+      QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
       QUEUE_PREFETCH: ${QUEUE_PREFETCH:-1}
       QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
     depends_on:
       flat-finder-rabbitmq:
         condition: service_healthy
-      flat-finder-backend:
+      flat-finder-queue-task-api:
         condition: service_healthy
 
   flat-finder-queue-worker-2:
@@ -106,13 +129,14 @@ services:
     environment:
       QUEUE_MODE: worker
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
-      FLAT_BACKEND_URL: http://flat-finder-backend:4000
+      QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
+      QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
       QUEUE_PREFETCH: ${QUEUE_PREFETCH:-1}
       QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
     depends_on:
       flat-finder-rabbitmq:
         condition: service_healthy
-      flat-finder-backend:
+      flat-finder-queue-task-api:
         condition: service_healthy
 
   flat-finder-olx-fetcher:
@@ -124,13 +148,7 @@ services:
     expose:
       - "4020"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4020/health',timeout=3).status==200 else 1)"
-        ]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4020/health',timeout=3).status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -145,13 +163,7 @@ services:
     expose:
       - "4020"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4020/health',timeout=3).status==200 else 1)"
-        ]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4020/health',timeout=3).status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -170,11 +182,7 @@ services:
       flat-finder-olx-fetcher-ua:
         condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -q -O - 'http://localhost:4021/health' >/dev/null || exit 1"
-        ]
+      test: ["CMD-SHELL", "wget -q -O - 'http://localhost:4021/health' >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -183,16 +191,7 @@ services:
   flat-finder-redis:
     image: redis:8-alpine
     restart: unless-stopped
-    command:
-      [
-        "redis-server",
-        "--maxmemory",
-        "128mb",
-        "--maxmemory-policy",
-        "allkeys-lru",
-        "--save",
-        ""
-      ]
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
