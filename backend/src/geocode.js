@@ -1,26 +1,21 @@
-// Best-effort geocoding for listings that arrive without GPS coordinates
-// (Telegram posts, most custom sources). We place a flat on the map at the most
-// specific location it names, falling back down the chain:
+// Best-effort geocoding for listings that arrive without GPS coordinates.
 //
-//   address (highest)  ->  metro station  ->  district  ->  city center (lowest)
+// Precision order (highest -> lowest):
+//   source coordinates -> exact address -> metro -> nearby POI -> area/kvartal
+//   -> district -> city.
 //
-// Coordinates come from Nominatim (OpenStreetMap). Nominatim's usage policy caps
-// requests at ~1/s and requires a User-Agent, so every lookup is throttled and
-// cached (in Redis via cache.js, keyed by the query) — a district/address is only
-// ever geocoded once. This runs inside the background refresh (scrapers/index.js),
-// never on the request path.
+// Coordinates come from Nominatim (OpenStreetMap). Requests are throttled and
+// cached because geocoding runs during background refreshes, never on the
+// request path.
 
 import { cacheGet, cacheSet } from './cache.js'
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 const UA = 'flat-finder/1.0 (housing aggregator; contact: admin@whiteslove.me)'
-const HIT_TTL_MS = 30 * 24 * 60 * 60 * 1000 // coords don't move — cache a month
-const MISS_TTL_MS = 24 * 60 * 60 * 1000 // retry "not found" the next day
-const ERR_TTL_MS = 60 * 1000 // transient error — retry soon
-const MIN_INTERVAL_MS = 1100 // stay under Nominatim's ~1 req/s
-// Cap live lookups per refresh so a big cold batch can't run for many minutes;
-// whatever isn't geocoded this round falls back to the city center and is
-// resolved on a later refresh (the cache persists between runs).
+const HIT_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const MISS_TTL_MS = 24 * 60 * 60 * 1000
+const ERR_TTL_MS = 60 * 1000
+const MIN_INTERVAL_MS = 1100
 const MAX_LOOKUPS_PER_RUN = Number(process.env.GEOCODE_BUDGET) || 60
 
 let lastCallAt = 0
@@ -31,10 +26,10 @@ async function throttle() {
 }
 
 function geoKey(query) {
-  return `geo:${query.toLowerCase().replace(/\s+/g, ' ').trim()}`
+  // v2 deliberately invalidates old district/address-only cache semantics.
+  return `geo:v2:${query.toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
-// undefined = never looked up; null = looked up, no result; {lat,lng} = hit.
 async function getCachedGeo(query) {
   const cached = await cacheGet(geoKey(query))
   return cached ? cached.coords : undefined
@@ -54,15 +49,14 @@ async function fetchGeo(query) {
     const coords = first ? { lat: Number(first.lat), lng: Number(first.lon) } : null
     await cacheSet(geoKey(query), { coords }, coords ? HIT_TTL_MS : MISS_TTL_MS)
     return coords
-  } catch (err) {
+  } catch {
     await cacheSet(geoKey(query), { coords: null }, ERR_TTL_MS)
     return null
   }
 }
 
-// Deterministic ~metre-scale jitter from the listing id, so many pins sharing a
-// district/city centroid don't stack on the exact same point.
 function jitter(id, amount) {
+  if (!amount) return [0, 0]
   let h = 0
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
   const a = ((h & 0xffff) / 0xffff - 0.5) * 2 * amount
@@ -75,44 +69,111 @@ function cityCenter(country) {
   return c && typeof c.lat === 'number' && typeof c.lng === 'number' ? c : null
 }
 
-// Mutates each listing without lat/lng, setting coordinates from the best signal.
+function uniq(values) {
+  return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))]
+}
+
+function contextParts(listing, country) {
+  const city = listing.city || country?.cities?.[0] || ''
+  const countryName = country?.name || ''
+  return { city, countryName }
+}
+
+function poiCandidates(listing, city, countryName) {
+  const names = uniq([...(listing.nearbyShops || []), ...(listing.nearby || [])])
+  const localContext = listing.area || listing.kvartal || listing.district || city
+  return names.map((name) => ({
+    q: [name, localContext, city, countryName].filter(Boolean).join(', '),
+    source: 'nearby',
+    jit: 0,
+    // A POI tells us the surrounding neighbourhood, not the building itself.
+    // Keep an explicit uncertainty radius rather than pretending it is exact.
+    accuracyM: 500,
+  }))
+}
+
+// Pure helper exported for unit tests and for future UI/debug diagnostics.
+export function geocodeCandidates(listing, country) {
+  const { city, countryName } = contextParts(listing, country)
+  const area = listing.area || listing.kvartal
+  const candidates = [
+    listing.address && {
+      q: [listing.address, city, countryName].filter(Boolean).join(', '),
+      source: 'address',
+      jit: 0,
+      accuracyM: 40,
+    },
+    listing.metro && {
+      q: [`${listing.metro} metro station`, city, countryName].filter(Boolean).join(', '),
+      source: 'metro',
+      jit: 0,
+      accuracyM: 250,
+    },
+    ...poiCandidates(listing, city, countryName),
+    area && {
+      q: [area, listing.district, city, countryName].filter(Boolean).join(', '),
+      source: 'area',
+      jit: 0.003,
+      accuracyM: 700,
+    },
+    listing.district && {
+      q: [listing.district, city, countryName].filter(Boolean).join(', '),
+      source: 'district',
+      jit: 0.008,
+      accuracyM: 2500,
+    },
+    city && {
+      q: [city, countryName].filter(Boolean).join(', '),
+      source: 'city',
+      jit: 0.02,
+      accuracyM: 8000,
+    },
+  ]
+  return candidates.filter(Boolean)
+}
+
 export async function geocodeListings(listings, country) {
   if (!Array.isArray(listings) || !country) return listings
   const center = cityCenter(country)
-  const cityName = country.name
+  const defaultCity = country?.cities?.[0] || ''
   let budget = MAX_LOOKUPS_PER_RUN
 
   for (const listing of listings) {
-    if (listing.lat != null && listing.lng != null) continue
-    const place = listing.city || cityName
-    // Priority: address > metro > district. `jit` widens with vagueness.
-    const candidates = [
-      listing.address && { q: `${listing.address}, ${place}, ${cityName}`, jit: 0 },
-      listing.metro && { q: `${listing.metro} metro station, ${place}, ${cityName}`, jit: 0.003 },
-      listing.district && { q: `${listing.district}, ${place}, ${cityName}`, jit: 0.008 },
-    ].filter(Boolean)
+    if (listing.lat != null && listing.lng != null) {
+      listing.locationSource ??= 'coordinates'
+      listing.locationAccuracyM ??= 25
+      continue
+    }
 
     let placed = false
-    for (const candidate of candidates) {
+    for (const candidate of geocodeCandidates(listing, country)) {
       let coords = await getCachedGeo(candidate.q)
       if (coords === undefined) {
-        if (budget <= 0) break // out of live-lookup budget this run
+        // Keep checking later candidates because they may already be cached.
+        if (budget <= 0) continue
         coords = await fetchGeo(candidate.q)
         budget--
       }
-      if (coords) {
-        const [dLat, dLng] = jitter(listing.id, candidate.jit)
-        listing.lat = coords.lat + dLat
-        listing.lng = coords.lng + dLng
-        placed = true
-        break
-      }
+      if (!coords) continue
+
+      const [dLat, dLng] = jitter(String(listing.id || ''), candidate.jit)
+      listing.lat = coords.lat + dLat
+      listing.lng = coords.lng + dLng
+      listing.locationSource = candidate.source
+      listing.locationAccuracyM = candidate.accuracyM
+      placed = true
+      break
     }
 
-    if (!placed && center) {
-      const [dLat, dLng] = jitter(listing.id, 0.02) // spread around the city centre
+    // The country-level center is only a safe fallback for the configured
+    // default city. Never place Kharkiv at Kyiv's center, Cluj at Bucharest, etc.
+    const listingCity = listing.city || defaultCity
+    if (!placed && center && (!listing.city || listingCity === defaultCity)) {
+      const [dLat, dLng] = jitter(String(listing.id || ''), 0.02)
       listing.lat = center.lat + dLat
       listing.lng = center.lng + dLng
+      listing.locationSource = 'city'
+      listing.locationAccuracyM = 8000
     }
   }
   return listings
