@@ -71,3 +71,66 @@ test('broker mention alone does not imply commission', () => {
     assert.deepEqual(parseCommission(sample), { has: null, percent: null }, sample);
   }
 });
+
+test('structured Yunusobod listing prefers Xonalari layout and allows both genders', () => {
+  const listing = makeListing({
+    id: 'yunusobod-2',
+    source: 'telegram',
+    country: 'UZ',
+    title: 'Manzili: Yunusobod 2-kvartal',
+    description: `Manzili: Yunusobod 2-kvartal\nMegaplanet, Yunusobod metro yaqinida\nNarxi: 600$ QIZLAR yoki YIGITLAR\n(6/7tagacha)\nXonalari: 2/2/4\nMaydoni: 57 m²`,
+  });
+
+  assert.equal(listing.rooms, 2);
+  assert.equal(listing.floor, 2);
+  assert.equal(listing.totalFloors, 4);
+  assert.equal(listing.audience, null);
+  assert.equal(listing.district, 'Yunusabad');
+});
+
+test('explicit Bektemir district outranks Kuylyuk area inference', () => {
+  const listing = makeListing({
+    id: 'bektemir-kuylyuk',
+    source: 'telegram',
+    country: 'UZ',
+    title: '•Аренда:',
+    description: `•Аренда:\n- Бектемирский район, Куйлюк.\n- 2 комнатная, 12 этаж, 15 этажный дом, новостройка, мебель и техника, интернет, цена: 500$`,
+  });
+
+  assert.equal(listing.district, 'Bektemir');
+  assert.equal(listing.rooms, 2);
+  assert.equal(listing.floor, 12);
+  assert.equal(listing.totalFloors, 15);
+});
+
+test('Yakkasaray Residence ЖК stops before area and compact layout tail', () => {
+  const listing = makeListing({
+    id: 'yakkasaray-residence',
+    source: 'telegram',
+    country: 'UZ',
+    title: 'Сдается квартира Яккасарайский район ЖК Yakkasaray Residence Глинка 3/10/10 90 кв',
+    description: 'С мебелью и техникой',
+  });
+
+  assert.equal(listing.district, 'Yakkasaray');
+  assert.equal(listing.residenceComplex, 'Yakkasaray Residence');
+  assert.equal(listing.rooms, 3);
+  assert.equal(listing.floor, 10);
+  assert.equal(listing.totalFloors, 10);
+});
+
+test('Buyuk Ipak Yuli area does not override explicit Mirzo Ulugbek district', () => {
+  const listing = makeListing({
+    id: 'c1-eco-park',
+    source: 'telegram',
+    country: 'UZ',
+    title: '•Аренда:',
+    description: `•Аренда:\n- Ц-1, ЭКО парк.\n- 3 комнатная, 3 этаж, 9 этажный дом, хороший ремонт, мебель и техника, интернет, цена: 1000$`,
+    district: 'Mirzo Ulugbek',
+  });
+
+  assert.equal(listing.district, 'Mirzo Ulugbek');
+  assert.equal(listing.rooms, 3);
+  assert.equal(listing.floor, 3);
+  assert.equal(listing.totalFloors, 9);
+});
