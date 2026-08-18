@@ -1,28 +1,21 @@
 import json
 import os
 import time
-import urllib.parse
 import urllib.request
 
 import pika
 
 RABBITMQ_URL = os.environ.get("RABBITMQ_URL", "amqp://crawler:crawler@flat-finder-rabbitmq:5672/%2F")
-BACKEND_URL = os.environ.get("FLAT_BACKEND_URL", "http://flat-finder-backend:4000").rstrip("/")
+TASK_API_URL = os.environ.get("QUEUE_TASK_API_URL", "http://flat-finder-queue-task-api:4010").rstrip("/")
+QUEUE_INTERNAL_KEY = os.environ.get("QUEUE_INTERNAL_KEY", "")
 MODE = os.environ.get("QUEUE_MODE", "worker").strip().lower()
 REFRESH_SECONDS = max(60, int(os.environ.get("QUEUE_REFRESH_SECONDS", "1800")))
 PREFETCH = max(1, int(os.environ.get("QUEUE_PREFETCH", "1")))
 MAX_ATTEMPTS = max(1, int(os.environ.get("QUEUE_MAX_ATTEMPTS", "5")))
 
-MAIN_QUEUE = "crawl.flats.refresh"
-RETRY_QUEUE = "crawl.flats.refresh.retry"
-DEAD_QUEUE = "crawl.flats.refresh.dead"
-
-COUNTRIES = [
-    ("UA", 10),
-    ("RO", 5),
-    ("KZ", 5),
-    ("UZ", 5),
-]
+MAIN_QUEUE = "crawl.flats.tasks"
+RETRY_QUEUE = "crawl.flats.tasks.retry"
+DEAD_QUEUE = "crawl.flats.tasks.dead"
 
 
 def connect():
@@ -33,11 +26,7 @@ def connect():
 
 
 def declare(channel):
-    channel.queue_declare(
-        MAIN_QUEUE,
-        durable=True,
-        arguments={"x-max-priority": 10},
-    )
+    channel.queue_declare(MAIN_QUEUE, durable=True, arguments={"x-max-priority": 10})
     channel.queue_declare(
         RETRY_QUEUE,
         durable=True,
@@ -66,6 +55,45 @@ def publish(channel, queue, payload, *, priority=0, attempt=0):
     )
 
 
+def api_request(path, payload=None, timeout=60):
+    if len(QUEUE_INTERNAL_KEY) < 16:
+        raise RuntimeError("QUEUE_INTERNAL_KEY must be at least 16 characters")
+
+    data = None
+    method = "GET"
+    headers = {
+        "X-Queue-Key": QUEUE_INTERNAL_KEY,
+        "User-Agent": "flat-finder-rabbit-worker/2.0",
+    }
+
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        method = "POST"
+        headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(
+        f"{TASK_API_URL}{path}",
+        method=method,
+        data=data,
+        headers=headers,
+    )
+
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def dispatch_once(channel):
+    plan = api_request("/internal/queue-plan", timeout=30)
+    tasks = plan.get("tasks") or []
+
+    for task in tasks:
+        priority = int(task.pop("priority", 0))
+        task["queuedAt"] = int(time.time())
+        publish(channel, MAIN_QUEUE, task, priority=priority)
+
+    print(f"[queue:dispatcher] queued {len(tasks)} granular tasks", flush=True)
+
+
 def dispatch_forever():
     while True:
         try:
@@ -73,20 +101,7 @@ def dispatch_forever():
             channel = connection.channel()
             channel.confirm_delivery()
             declare(channel)
-
-            for country, priority in COUNTRIES:
-                publish(
-                    channel,
-                    MAIN_QUEUE,
-                    {
-                        "type": "flat.refresh.country",
-                        "country": country,
-                        "queuedAt": int(time.time()),
-                    },
-                    priority=priority,
-                )
-
-            print("[queue:dispatcher] queued country refreshes", flush=True)
+            dispatch_once(channel)
             connection.close()
         except Exception as exc:
             print(f"[queue:dispatcher] error: {exc}", flush=True)
@@ -95,30 +110,7 @@ def dispatch_forever():
 
 
 def execute_task(payload):
-    if payload.get("type") != "flat.refresh.country":
-        raise ValueError(f"unsupported task type {payload.get('type')!r}")
-
-    country = str(payload.get("country") or "").upper()
-    if country not in {code for code, _ in COUNTRIES}:
-        raise ValueError(f"unsupported country {country!r}")
-
-    query = urllib.parse.urlencode(
-        {
-            "countries": country,
-            "refresh": "1",
-            "limit": "1",
-        }
-    )
-
-    request = urllib.request.Request(
-        f"{BACKEND_URL}/api/listings?{query}",
-        headers={"User-Agent": "flat-finder-rabbit-worker/1.0"},
-    )
-
-    with urllib.request.urlopen(request, timeout=300) as response:
-        if response.status < 200 or response.status >= 300:
-            raise RuntimeError(f"backend HTTP {response.status}")
-        response.read(1)
+    return api_request("/internal/queue-task", payload=payload, timeout=180)
 
 
 def worker_forever():
@@ -132,10 +124,11 @@ def worker_forever():
             def on_message(ch, method, properties, body):
                 try:
                     payload = json.loads(body.decode("utf-8"))
-                    execute_task(payload)
+                    result = execute_task(payload)
                     ch.basic_ack(method.delivery_tag)
                     print(
-                        f"[queue:worker] completed {payload.get('country')}",
+                        f"[queue:worker] completed {payload.get('type')} "
+                        f"country={payload.get('country')} fetched={result.get('fetched', 0)}",
                         flush=True,
                     )
                 except Exception as exc:
@@ -147,13 +140,7 @@ def worker_forever():
                         payload = {"raw": body.decode("utf-8", errors="replace")}
 
                     target = RETRY_QUEUE if attempt < MAX_ATTEMPTS else DEAD_QUEUE
-                    publish(
-                        ch,
-                        target,
-                        payload,
-                        priority=priority,
-                        attempt=attempt,
-                    )
+                    publish(ch, target, payload, priority=priority, attempt=attempt)
                     ch.basic_ack(method.delivery_tag)
                     print(
                         f"[queue:worker] failed attempt={attempt} target={target}: {exc}",
@@ -161,7 +148,7 @@ def worker_forever():
                     )
 
             channel.basic_consume(MAIN_QUEUE, on_message_callback=on_message)
-            print("[queue:worker] consuming", flush=True)
+            print("[queue:worker] consuming granular tasks", flush=True)
             channel.start_consuming()
         except Exception as exc:
             print(f"[queue:worker] connection error: {exc}", flush=True)
