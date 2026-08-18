@@ -50,7 +50,7 @@ export const COUNTRIES = {
     realEstateRoot: 1,
     terms: { flat: 'квартира', house: 'будинок' },
     dealTerms: { sale: 'продаж', longRent: 'оренда', shortRent: 'подобово' },
-    cities: ['Kyiv', 'Lviv', 'Odesa', 'Kharkiv', 'Dnipro', 'Vinnytsia', 'Ivano-Frankivsk'],
+    cities: ['Kyiv', 'Lviv', 'Odesa', 'Kharkiv', 'Dnipro', 'Vinnytsia', 'Ivano-Frankivsk', 'Mukachevo'],
     cityAliases: {
       Kyiv: ['київ', 'киев', 'kyiv', 'kiev'],
       Lviv: ['львів', 'львов', 'lviv'],
@@ -59,10 +59,102 @@ export const COUNTRIES = {
       Dnipro: ['дніпро', 'днепр', 'dnipro'],
       Vinnytsia: ['вінниця', 'винница', 'vinnytsia'],
       'Ivano-Frankivsk': ['івано-франківськ', 'ивано-франковск', 'ivano-frankivsk'],
+      Mukachevo: ['мукачево', 'мукачеве', 'mukachevo', 'mukacheve', 'munkacs']
     },
     telegramChannels: [
-      'davnich', 'davnichprodaga', 'davnichK', 'kharkov_apartment',
-      'nedvizhimost_odessa', 'arenda_dnepr',
+      // Kyiv
+      { name: 'orenda_kyiv_city', city: 'Kyiv' },
+      { name: 'orendaky', city: 'Kyiv' },
+      { name: 'arenda_kvartiry_kiev', city: 'Kyiv' },
+      { name: 'x_arenda_kyiv', city: 'Kyiv' },
+      { name: 'orendakvartyr_kyiv', city: 'Kyiv' },
+// Davnich network
+      { name: 'davnichK', city: 'Kyiv' },
+      { name: 'davnich', city: 'Kharkiv' },
+
+// Продажа квартир, разные города
+      { name: 'davnichprodaga', city: null, dealType: 'sale' },
+      // Kharkiv
+      { name: 'x_arenda_kharkov', city: 'Kharkiv' },
+      { name: 'kharkov_apartment', city: 'Kharkiv' },
+
+      // Odesa
+      { name: 'x_orenda_odesa', city: 'Odesa' },
+      { name: 'arenda_odessaa', city: 'Odesa' },
+      { name: 'rentsodessa', city: 'Odesa' },
+      { name: 'nedvizhimost_odessa', city: 'Odesa' },
+
+      // Dnipro
+      { name: 'x_orenda_dnipro', city: 'Dnipro' },
+      { name: 'arenda_dnepr', city: 'Dnipro' },
+
+      // Lviv
+      { name: 'orendakvarturlviv', city: 'Lviv' },
+      { name: 'orenda_Lviw', city: 'Lviv' },
+      { name: 'rentalviv', city: 'Lviv' },
+      { name: 'smartin_lviv', city: 'Lviv' },
+      { name: 'davnichL', city: 'Lviv' },
+
+      // Vinnytsia
+      { name: 'vinnytsia_rent', city: 'Vinnytsia' },
+      { name: 'vinnitsia_dom', city: 'Vinnytsia' },
+      { name: 'okvinnytsya', city: 'Vinnytsia' },
+      { name: 'rentin_vinnitsa', city: 'Vinnytsia' },
+
+      // Ivano-Frankivsk
+      { name: 'rent_frankivsk', city: 'Ivano-Frankivsk' },
+
+      // Chernivtsi
+      { name: 'direct_rent_cv', city: 'Chernivtsi' },
+      { name: 'rentCV', city: 'Chernivtsi' },
+      { name: 'RENTIN_CHERNIVTSI', city: 'Chernivtsi' },
+      { name: 'neruhomistrus', city: 'Chernivtsi' },
+
+      // Zaporizhzhia
+      { name: 'dreamservice_zp', city: 'Zaporizhzhia' },
+      { name: 'RENTUA_ZAPORIZHZHIA', city: 'Zaporizhzhia' },
+
+      // Poltava
+      { name: 'okpoltava', city: 'Poltava' },
+      { name: 'RENTIN_POLTAVA', city: 'Poltava' },
+
+      // Cherkasy
+      { name: 'arenda_che', city: 'Cherkasy' },
+      { name: 'kvartiri_cherkasy', city: 'Cherkasy' },
+
+      // Ternopil
+      { name: 'orenda_ternopill', city: 'Ternopil' },
+      { name: 'orenda_ternopil_ua', city: 'Ternopil' },
+
+      // Lutsk
+      { name: 'LUTSK_ORENDA', city: 'Lutsk' },
+
+      // Khmelnytskyi
+      { name: 'orenda_khmelnytsk', city: 'Khmelnytskyi' },
+      { name: 'orendakm', city: 'Khmelnytskyi' },
+
+      // Uzhhorod
+      { name: 'smartin_uzhhorod', city: 'Uzhhorod' },
+      { name: 'rentin_uzhhorod', city: 'Uzhhorod' },
+
+      // Kropyvnytskyi
+      { name: 'RENTIN_KROPYVNYTSKYI', city: 'Kropyvnytskyi' },
+
+      // Mykolaiv
+      { name: 'SMARTIN_MYKOLAYIV', city: 'Mykolaiv' },
+
+      // Sumy
+      { name: 'sumy_rent', city: 'Sumy' },
+      { name: 'premiersumy', city: 'Sumy' },
+
+      // Chernihiv
+      { name: 'smartin_chernihiv', city: 'Chernihiv' },
+
+      // Rivne
+      { name: 'direct_rent_rivne', city: 'Rivne' },
+
+      // Zhytomyr
+      { name: 'RENTIN_ZHYTOMYR', city: 'Zhytomyr' },
     ],
   },
   KZ: {

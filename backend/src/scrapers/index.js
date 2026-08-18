@@ -788,7 +788,7 @@ async function fetchOne(
                 );
               }
 
-              if (!complete) {
+              if (!complete && result?.partialExpected !== true) {
                 const resultErrors =
                     Array.isArray(
                         result?.errors,
