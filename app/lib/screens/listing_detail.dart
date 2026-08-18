@@ -37,6 +37,11 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   Listing get listing => _listing;
   bool _reloading = false;
 
+  bool _translating = false;
+  String? _translatedText;
+  String? _translatedLang;
+  bool _showTranslated = false;
+
   @override
   void initState() {
     super.initState();
@@ -54,7 +59,12 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       final fresh = await context.read<AppState>().reloadListing(_listing);
       if (!mounted) return;
       if (fresh != null) {
-        setState(() => _listing = fresh);
+        setState(() {
+          _listing = fresh;
+          _translatedText = null;
+          _translatedLang = null;
+          _showTranslated = false;
+        });
         _snack(s.t('reloaded'));
       } else {
         _snack(s.t('reloadFailed'));
@@ -65,6 +75,51 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       _snack(s.t('reloadFailed'));
     } finally {
       if (mounted) setState(() => _reloading = false);
+    }
+  }
+
+  String _localized(SettingsState settings, String en, String ru) =>
+      settings.lang == 'ru' ? ru : en;
+
+  /// Translate on demand into the selected UI language. The API call itself is
+  /// asynchronous submit + polling, so this screen can survive long CPU-only
+  /// inference without a single request timing out after 2–3 minutes.
+  Future<void> _translate(SettingsState settings) async {
+    if (_translating) return;
+
+    final lang = settings.lang;
+    final alreadyTranslated =
+        _translatedText != null && _translatedLang == lang;
+    if (alreadyTranslated) {
+      setState(() => _showTranslated = !_showTranslated);
+      return;
+    }
+
+    final sourceText = listing.description.trim().isNotEmpty
+        ? listing.description.trim()
+        : listing.title.trim();
+    if (sourceText.isEmpty) return;
+
+    setState(() => _translating = true);
+    try {
+      final translated = await context.read<AppState>().translateText(
+            sourceText,
+            targetLanguage: lang,
+          );
+      if (!mounted) return;
+      setState(() {
+        _translatedText = translated;
+        _translatedLang = lang;
+        _showTranslated = true;
+      });
+    } catch (_) {
+      _snack(_localized(
+        settings,
+        'Could not translate the listing. Try again.',
+        'Не удалось перевести объявление. Попробуйте ещё раз.',
+      ));
+    } finally {
+      if (mounted) setState(() => _translating = false);
     }
   }
 
@@ -145,6 +200,12 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final favorites = context.watch<FavoritesState>();
     final s = settings.s;
     final isFav = favorites.isFavorite(listing.id);
+    final hasTranslation =
+        _translatedText != null && _translatedLang == settings.lang;
+    final showTranslated = hasTranslation && _showTranslated;
+    final hasTranslatableText =
+        listing.description.trim().isNotEmpty || listing.title.trim().isNotEmpty;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('${countryFlags[listing.country] ?? ''} ${listing.city}'),
@@ -317,7 +378,44 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         .toList(),
                   ),
                 ],
-                if (listing.description.trim().isNotEmpty) ...[
+                if (hasTranslatableText) ...[
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _translating ? null : () => _translate(settings),
+                        icon: _translating
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(showTranslated
+                                ? Icons.article_outlined
+                                : Icons.translate),
+                        label: Text(
+                          _translating
+                              ? _localized(settings, 'Translating…', 'Перевод…')
+                              : showTranslated
+                                  ? _localized(settings, 'Show original', 'Показать оригинал')
+                                  : _localized(settings, 'Translate', 'Перевести'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (showTranslated) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    _localized(settings, 'Translation', 'Перевод'),
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    _translatedText!,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ] else if (listing.description.trim().isNotEmpty) ...[
                   const SizedBox(height: 20),
                   Text(s.t('description'), style: theme.textTheme.titleSmall),
                   const SizedBox(height: 8),
