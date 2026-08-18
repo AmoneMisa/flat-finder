@@ -50,16 +50,183 @@ export const COUNTRIES = {
     realEstateRoot: 1,
     terms: { flat: 'квартира', house: 'будинок' },
     dealTerms: { sale: 'продаж', longRent: 'оренда', shortRent: 'подобово' },
-    cities: ['Kyiv', 'Lviv', 'Odesa', 'Kharkiv', 'Dnipro', 'Vinnytsia', 'Ivano-Frankivsk', 'Mukachevo'],
+    cities: [
+      'Kyiv',
+      'Kharkiv',
+      'Odesa',
+      'Dnipro',
+      'Lviv',
+      'Zaporizhzhia',
+      'Vinnytsia',
+      'Ivano-Frankivsk',
+      'Chernivtsi',
+      'Uzhhorod',
+      'Mukachevo',
+      'Lutsk',
+      'Rivne',
+      'Ternopil',
+      'Khmelnytskyi',
+      'Zhytomyr',
+      'Cherkasy',
+      'Poltava',
+      'Chernihiv',
+      'Sumy',
+      'Mykolaiv',
+      'Kropyvnytskyi',
+    ],
+
     cityAliases: {
-      Kyiv: ['київ', 'киев', 'kyiv', 'kiev'],
-      Lviv: ['львів', 'львов', 'lviv'],
-      Odesa: ['одеса', 'одесса', 'odesa', 'odessa'],
-      Kharkiv: ['харків', 'харьков', 'kharkiv'],
-      Dnipro: ['дніпро', 'днепр', 'dnipro'],
-      Vinnytsia: ['вінниця', 'винница', 'vinnytsia'],
-      'Ivano-Frankivsk': ['івано-франківськ', 'ивано-франковск', 'ivano-frankivsk'],
-      Mukachevo: ['мукачево', 'мукачеве', 'mukachevo', 'mukacheve', 'munkacs']
+      Kyiv: [
+        'київ',
+        'киев',
+        'kyiv',
+        'kiev',
+      ],
+
+      Kharkiv: [
+        'харків',
+        'харьков',
+        'kharkiv',
+        'kharkov',
+      ],
+
+      Odesa: [
+        'одеса',
+        'одесса',
+        'odesa',
+        'odessa',
+      ],
+
+      Dnipro: [
+        'дніпро',
+        'днепр',
+        'dnipro',
+        'dnepr',
+      ],
+
+      Lviv: [
+        'львів',
+        'львов',
+        'lviv',
+        'lvov',
+      ],
+
+      Zaporizhzhia: [
+        'запоріжжя',
+        'запорожье',
+        'zaporizhzhia',
+        'zaporozhye',
+      ],
+
+      Vinnytsia: [
+        'вінниця',
+        'винница',
+        'vinnytsia',
+        'vinnitsa',
+      ],
+
+      'Ivano-Frankivsk': [
+        'івано-франківськ',
+        'ивано-франковск',
+        'ivano-frankivsk',
+        'frankivsk',
+      ],
+
+      Chernivtsi: [
+        'чернівці',
+        'черновцы',
+        'chernivtsi',
+        'chernovtsy',
+        'chernovcy',
+      ],
+
+      Uzhhorod: [
+        'ужгород',
+        'uzhhorod',
+        'uzhgorod',
+      ],
+
+      Mukachevo: [
+        'мукачево',
+        'мукачеве',
+        'mukachevo',
+        'mukacheve',
+        'munkacs',
+      ],
+
+      Lutsk: [
+        'луцьк',
+        'луцк',
+        'lutsk',
+      ],
+
+      Rivne: [
+        'рівне',
+        'ровно',
+        'rivne',
+        'rovno',
+      ],
+
+      Ternopil: [
+        'тернопіль',
+        'тернополь',
+        'ternopil',
+        'ternopol',
+      ],
+
+      Khmelnytskyi: [
+        'хмельницький',
+        'хмельницкий',
+        'khmelnytskyi',
+        'khmelnitsky',
+      ],
+
+      Zhytomyr: [
+        'житомир',
+        'zhytomyr',
+        'zhitomir',
+      ],
+
+      Cherkasy: [
+        'черкаси',
+        'черкассы',
+        'cherkasy',
+        'cherkassy',
+      ],
+
+      Poltava: [
+        'полтава',
+        'poltava',
+      ],
+
+      Chernihiv: [
+        'чернігів',
+        'чернигов',
+        'chernihiv',
+        'chernigov',
+      ],
+
+      Sumy: [
+        'суми',
+        'сумы',
+        'sumy',
+      ],
+
+      Mykolaiv: [
+        'миколаїв',
+        'николаев',
+        'mykolaiv',
+        'nikolaev',
+      ],
+
+      Kropyvnytskyi: [
+        'кропивницький',
+        'кропивницкий',
+        'кіровоград',
+        'кировоград',
+        'kropyvnytskyi',
+        'kirovohrad',
+      ],
     },
     telegramChannels: [
       // Kyiv
