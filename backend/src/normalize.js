@@ -13,43 +13,44 @@
 //   tags: string[],             // derived card tags
 // }
 
-import { extractTags } from './tags.js';
+import {extractTags} from './tags.js';
 import {
-  classifyDealType,
-  parseFloor,
-  parseYear,
-  parseBedrooms,
   classifyAudience,
-  parseContact,
-  looksCommercial,
-  parseResidentialComplex,
-  classifyPets,
   classifyChildren,
+  classifyDealType,
+  classifyPets,
+  looksCommercial,
+  looksHousingWanted,
   looksRoomOnly,
-  parseDeposit,
-  parseCommission,
-  parseBalcony,
   parseAirConditioner,
-  parseGasSupply,
-  parseNewBuilding,
-  parseBathrooms,
-  parseCommunalSeparated,
-  parseKvartal,
   parseAmenities,
-  parseNearbyShops,
-  parseRoomsFromText,
   parseAreaFromText,
-  parseParking,
+  parseBalcony,
+  parseBathrooms,
+  parseBedrooms,
+  parseCommission,
+  parseCommunalSeparated,
+  parseContact,
+  parseDeposit,
   parseElevator,
+  parseFloor,
+  parseFurnished,
+  parseGasSupply,
   parseHeating,
   parseHotWater,
   parseInternet,
-  parseSmoking,
+  parseKvartal,
+  parseNearbyShops,
   parseNegotiable,
-  parseFurnished,
+  parseNewBuilding,
+  parseParking,
+  parseResidentialComplex,
+  parseRoomsFromText,
+  parseSmoking,
+  parseYear,
 } from './textparse.js';
-import { parseLocation, canonicalDistrict } from './locations.js';
-import { toUsd } from './fx.js';
+import {canonicalDistrict, parseLocation} from './locations.js';
+import {toUsd} from './fx.js';
 
 // Turn source HTML (Telegram/OLX posts arrive with <br />, entities, etc.) into
 // clean plain text so the app doesn't render raw markup.
@@ -310,6 +311,33 @@ export function applyFilters(listings, filters, rates = null) {
   return listings.filter((l) => {
     if (listingId && String(l.id) !== String(listingId)) return false;
     if (sources?.length && !sources.includes(String(l.source).toLowerCase())) return false;
+
+    /*
+ * Также скрываем старые demand-посты,
+ * которые уже успели попасть в
+ * Redis/Postgres/Elasticsearch до
+ * добавления ingestion-фильтра.
+ */
+    if (
+        String(l.source).toLowerCase() === 'telegram'
+    ) {
+      const listingText =
+          [
+            l.title,
+            l.description,
+          ]
+              .filter(Boolean)
+              .join('\n');
+
+      if (
+          looksHousingWanted(
+              listingText,
+          )
+      ) {
+        return false;
+      }
+    }
+
     // Never show offices / commercial premises among housing results.
     if (l.commercial) return false;
     // Freshness: drop anything with a known post date older than 3 weeks. Posts

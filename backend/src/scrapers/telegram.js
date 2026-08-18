@@ -8,11 +8,12 @@
 
 import {makeListing, MAX_AGE_MS} from '../normalize.js';
 import {
-  classifyAgency,
-  guessPropertyType,
-  parseAreaFromText,
   parsePriceFromText,
   parseRoomsFromText,
+  parseAreaFromText,
+  guessPropertyType,
+  classifyAgency,
+  looksHousingWanted,
 } from '../textparse.js';
 
 // Base URL of the MTProto worker (set in docker-compose). When unset the
@@ -40,6 +41,18 @@ function messageToListing(
       (msg.text || '')
           .replace(/[ \t]+/g, ' ')
           .trim();
+  /*
+   * Flat Finder показывает предложения жилья,
+   * а не объявления людей, которые ищут
+   * целую квартиру/дом.
+   *
+   * "Ищу на подселение" здесь НЕ отсекается,
+   * потому что looksHousingWanted()
+   * специально оставляет room/shared posts.
+   */
+  if (looksHousingWanted(text)) {
+    return null;
+  }
 
   if (text.length < 10) {
     return null;

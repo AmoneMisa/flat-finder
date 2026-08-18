@@ -462,11 +462,78 @@ export function classifyChildren(text) {
   return null;
 }
 
-// True when the post is renting only a room (not the whole flat), a.k.a.
-// "подселение" / partial rent / room in a shared flat.
 export function looksRoomOnly(text) {
-  if (!text) return false;
-  return /(подселени|подселение|комнату в|сдаётся комната|сдается комната|сдам комнату|здам кімнат|кімнату в|room in a (shared |)flat|room for rent|shared (flat|apartment|room)|roommate|xona ijaraga|xona\s+beriladi|sherik(?:ka|lik)|шерик(?:ка|лик)|(?:1|бир)\s*та\s*(?:бола|киши|қиз|киз)\s*керак|1\s*хонага[^\r\n]{0,40}(?:киши|одам)\s*турилади|бөлме жалға|închiriez camer[ăa])/i.test(text);
+  if (!text) {
+    return false;
+  }
+
+  return /подселени|підселен|комнату\s+в|кімнату\s+в|сда[её]тся\s+комната|сдается\s+комната|сдам\s+комнату|здам\s+кімнат|room\s+in\s+a\s+(?:shared\s+)?flat|room\s+for\s+rent|shared\s+(?:flat|apartment|room)|roommate|flatmate|xona\s+ijaraga|xona\s+beriladi|sherik(?:ka|lik)|шерик(?:ка|лик)|(?:1|бир)\s*та\s*(?:бола|киши|қиз|киз)\s*керак|1\s*хонага[^\r\n]{0,40}(?:киши|одам)\s*турилади|бөлме\s+жалға|închiriez\s+camer[ăa]|ищу[^\r\n]{0,60}сосед|ищем[^\r\n]{0,60}сосед|нужен[^\r\n]{0,60}сосед|нужна[^\r\n]{0,60}сосед|шукаю[^\r\n]{0,60}сусід|шукаємо[^\r\n]{0,60}сусід|потрібен[^\r\n]{0,60}сусід|потрібна[^\r\n]{0,60}сусід|співмешкан|співжител|соседк|сусідк/i.test(
+      text,
+  );
+}
+
+/**
+ * Demand-side housing post:
+ *
+ *   "ищу квартиру"
+ *   "ищем 2-комнатную квартиру"
+ *   "сниму квартиру"
+ *   "нужна квартира"
+ *   "шукаю квартиру в оренду"
+ *   "шукаємо 2-кімнатну квартиру"
+ *   "потрібна квартира"
+ *
+ * Roommate / shared-flat posts are deliberately NOT classified
+ * as wanted housing and remain in Flat Finder.
+ */
+export function looksHousingWanted(text) {
+  if (!text) {
+    return false;
+  }
+
+  const value =
+      String(text)
+          .replace(/\s+/g, ' ')
+          .trim();
+
+  if (!value) {
+    return false;
+  }
+
+  /*
+   * Explicit exception:
+   *
+   * "ищу на подселение"
+   * "ищу соседку"
+   * "шукаю співмешканця"
+   */
+  if (looksRoomOnly(value)) {
+    return false;
+  }
+
+  const seeker =
+      /ищу|ищем|ищет|ищут|шукаю|шукаємо|шукає|шукають|сниму|снимем|снимет|зніму|знімемо|зніме|хочу\s+снять|хотим\s+снять|хочемо\s+зняти|хочу\s+зняти|хочу\s+орендувати|хочемо\s+орендувати|потрібн(?:а|е|ий)|нужн(?:а|о|ы|ен)/iu;
+
+  const housing =
+      /квартир[\p{L}-]*|кімнат[\p{L}-]*|комнат[\p{L}-]*|будин[\p{L}-]*|житл[\p{L}-]*|жиль[\p{L}-]*|апартамент[\p{L}-]*|студи[\p{L}-]*|однушк[\p{L}-]*|двушк[\p{L}-]*|тр[её]шк[\p{L}-]*|коттедж[\p{L}-]*|\d+\s*[-–]?\s*(?:к|кк|кімнатн[\p{L}-]*|комнатн[\p{L}-]*)/iu;
+
+  if (
+      seeker.test(value) &&
+      housing.test(value)
+  ) {
+    return true;
+  }
+
+  /*
+   * Частые объявления без слова
+   * "квартира":
+   *
+   * "сниму 2к"
+   * "шукаю 1к"
+   */
+  return /(?:ищу|ищем|шукаю|шукаємо|сниму|зніму)[\s\S]{0,50}\d+\s*[-–]?\s*[кk](?:\s|$|[,.])/iu.test(
+      value,
+  );
 }
 
 // Security deposit required? true/false/null. Also returns the amount when the
