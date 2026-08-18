@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
@@ -40,6 +41,36 @@ class SourceValidation {
   final int count;
   final String? error;
   SourceValidation({required this.ok, required this.count, this.error});
+}
+
+/// Snapshot returned by the asynchronous translation endpoints.
+class TranslationJob {
+  final String status;
+  final String? key;
+  final String? translatedText;
+  final String? sourceLanguage;
+  final String? error;
+
+  const TranslationJob({
+    required this.status,
+    this.key,
+    this.translatedText,
+    this.sourceLanguage,
+    this.error,
+  });
+
+  factory TranslationJob.fromJson(Map<String, dynamic> j) {
+    final data = j['data'] is Map<String, dynamic>
+        ? j['data'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    return TranslationJob(
+      status: (j['status'] ?? 'failed').toString(),
+      key: j['key']?.toString(),
+      translatedText: data['translatedText']?.toString(),
+      sourceLanguage: data['sourceLanguage']?.toString(),
+      error: j['error']?.toString(),
+    );
+  }
 }
 
 class ApiService {
@@ -152,6 +183,88 @@ class ApiService {
     } catch (e) {
       return SourceValidation(ok: false, count: 0, error: 'Could not reach server');
     }
+  }
+
+  Future<TranslationJob> _startTranslation(
+    String text,
+    String targetLanguage,
+  ) async {
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/translation'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'text': text,
+            'targetLanguage': targetLanguage,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw Exception(json['error']?.toString() ?? 'translation HTTP ${res.statusCode}');
+    }
+    return TranslationJob.fromJson(json);
+  }
+
+  Future<TranslationJob> _translationResult(String key) async {
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/translation/$key'))
+        .timeout(const Duration(seconds: 15));
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw Exception(json['error']?.toString() ?? 'translation HTTP ${res.statusCode}');
+    }
+    return TranslationJob.fromJson(json);
+  }
+
+  /// Translate listing text without holding one HTTP request open while Ollama
+  /// works. Submission returns a key immediately and this method polls the
+  /// cached BullMQ result. The overall deadline intentionally exceeds the
+  /// worker's 180-second translation inference budget and leaves room for queue
+  /// wait behind one already-running CPU job.
+  Future<String> translateText(
+    String text, {
+    required String targetLanguage,
+    Duration timeout = const Duration(minutes: 5),
+  }) async {
+    final normalized = text.trim();
+    if (normalized.isEmpty) return '';
+
+    var job = await _startTranslation(normalized, targetLanguage);
+    if (job.status == 'completed' && job.translatedText?.trim().isNotEmpty == true) {
+      return job.translatedText!.trim();
+    }
+    if (job.status == 'disabled') throw Exception('translation disabled');
+    if (job.status == 'failed') throw Exception(job.error ?? 'translation failed');
+    final key = job.key;
+    if (key == null || key.isEmpty) throw Exception('translation key missing');
+
+    final deadline = DateTime.now().add(timeout);
+    var consecutivePollErrors = 0;
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      try {
+        job = await _translationResult(key);
+        consecutivePollErrors = 0;
+      } catch (_) {
+        // A short backend/worker hiccup must not discard an already-running AI
+        // job. Retry polling, but fail after several consecutive transport errors.
+        consecutivePollErrors += 1;
+        if (consecutivePollErrors >= 5) rethrow;
+        continue;
+      }
+
+      if (job.status == 'completed') {
+        final translated = job.translatedText?.trim() ?? '';
+        if (translated.isEmpty) throw Exception('translation was empty');
+        return translated;
+      }
+      if (job.status == 'failed' || job.status == 'not_found' || job.status == 'disabled') {
+        throw Exception(job.error ?? 'translation ${job.status}');
+      }
+    }
+
+    throw TimeoutException('translation did not finish before the client deadline');
   }
 
   /// Exchange rates relative to USD (units of currency per 1 USD), used to
