@@ -49,7 +49,7 @@ function sendWorkerError(res, error) {
   if (error?.code === 'AI_DISABLED') {
     return res.status(503).json({ status: 'disabled', error: error.message });
   }
-  if (error?.name === 'TimeoutError') {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
     return res.status(504).json({ status: 'unavailable', error: 'AI worker request timed out' });
   }
   const status = Number(error?.status);
