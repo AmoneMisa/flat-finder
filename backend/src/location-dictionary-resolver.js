@@ -6,9 +6,20 @@ import {
   matchUkraineRegion,
   matchUkraineSecondaryCity,
 } from './location-dictionaries-ua-regions.js';
+import { TASHKENT_METRO, tashkentMetroLabels } from './tashkent-metro.js';
 
 function mergedCountry(countryCode) {
   const base = LOCATION_DICTIONARIES[countryCode] || {};
+  if (countryCode === 'UZ' && base.Tashkent) {
+    return {
+      ...base,
+      Tashkent: {
+        ...base.Tashkent,
+        // One authoritative list for both parser matching and filter metadata.
+        metro: TASHKENT_METRO,
+      },
+    };
+  }
   if (countryCode !== 'UA') return base;
   return { ...UA_EXTRA_LOCATION_DICTIONARIES, ...base };
 }
@@ -58,10 +69,7 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     if (!result.metro && metro) result.metro = metro.name;
     if (!result.residentialComplex && residentialComplex) result.residentialComplex = residentialComplex.name;
 
-    // A district, metro, or ЖК is usually city-specific enough to infer the city.
-    // Do not infer from a microdistrict alone because names like "Center" recur.
     if (!result.city && (district || metro || residentialComplex)) result.city = cityName;
-
     if (result.district && result.microdistrict && result.metro && result.residentialComplex && result.city) break;
   }
 
@@ -96,6 +104,7 @@ export function dictionaryLocationLists(countryCode) {
       metro: (data.metro || []).map((x) => x.name),
       microdistricts: (data.microdistricts || []).map((x) => x.name),
       residentialComplexes: (data.residentialComplexes || []).map((x) => x.name),
+      ...(countryCode === 'UZ' && city === 'Tashkent' ? { metroLabels: tashkentMetroLabels() } : {}),
     };
   }
   return out;
