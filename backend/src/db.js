@@ -726,3 +726,63 @@ export async function getActiveListingsBatch(
 export async function closeDb() {
     await pool.end();
 }
+
+export async function getAvailableListingLocations(
+    countryCode,
+) {
+    const country =
+        String(countryCode ?? '')
+            .trim()
+            .toUpperCase();
+
+    if (!country) {
+        return [];
+    }
+
+    const result =
+        await pool.query(
+            `
+            SELECT
+              BTRIM(city) AS city,
+
+              NULLIF(
+                BTRIM(district),
+                ''
+              ) AS district,
+
+              COUNT(*)::int AS listings_count
+
+            FROM listings
+
+            WHERE
+              active = TRUE
+
+              AND country = $1
+
+              AND city IS NOT NULL
+
+              AND BTRIM(city) <> ''
+
+            GROUP BY
+              BTRIM(city),
+
+              NULLIF(
+                BTRIM(district),
+                ''
+              )
+
+            ORDER BY
+              BTRIM(city) ASC,
+
+              NULLIF(
+                BTRIM(district),
+                ''
+              ) ASC NULLS LAST
+            `,
+            [
+                country,
+            ],
+        );
+
+    return result.rows;
+}

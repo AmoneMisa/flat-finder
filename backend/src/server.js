@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import {COUNTRIES, COUNTRY_CODES} from './countries.js';
+import {canonicalCityName, COUNTRIES, COUNTRY_CODES,} from './countries.js';
 import {cityLocations} from './locations.js';
 import {getListings} from './scrapers/index.js';
 import {fetchOlxOffer} from './scrapers/olx.js';
@@ -8,13 +8,9 @@ import {validateSource} from './scrapers/custom.js';
 import {applyFilters} from './normalize.js';
 import {getRates} from './fx.js';
 import {getLastRun, refreshAll, startScheduler} from './scheduler.js';
-import {closeDb, dbHealth, getDbStats, initDb,} from './db.js';
-import {
-  closeElasticsearch,
-  elasticsearchHealth,
-  initElasticsearch,
-  searchListingMatches,
-} from './elasticsearch.js';
+import {closeDb, dbHealth, getAvailableListingLocations, getDbStats, initDb,} from './db.js';
+import {closeElasticsearch, elasticsearchHealth, initElasticsearch, searchListingMatches,} from './elasticsearch.js';
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -22,20 +18,186 @@ app.use(express.json());
 const PORT = process.env.PORT || 4000;
 
 // Metadata for the app: which countries/currencies/map centers exist.
-app.get('/api/countries', (_req, res) => {
-  res.json(
-    COUNTRY_CODES.map((code) => {
-      const c = COUNTRIES[code];
-      return {
-        code: c.code,
-        name: c.name,
-        currency: c.currency,
-        center: c.center,
-        cities: c.cities ?? [],
-        locations: cityLocations(c.code), // { city: { districts, metro } }
-      };
-    }),
-  );
+app.get('/api/countries', async (_req, res) => {
+    try {
+        const result =
+            await Promise.all(
+                COUNTRY_CODES.map(
+                    async (code) => {
+                        const country =
+                            COUNTRIES[code];
+
+                        const locations =
+                            cityLocations(
+                                code,
+                            );
+
+                        const cities =
+                            new Set(
+                                country.cities ??
+                                [],
+                            );
+
+                        /*
+                         * Пока расширяем автоматически
+                         * именно Украину.
+                         *
+                         * Остальные страны продолжают
+                         * работать по существующему
+                         * curated-списку.
+                         */
+                        if (code === 'UA') {
+                            try {
+                                const rows =
+                                    await getAvailableListingLocations(
+                                        code,
+                                    );
+
+                                for (
+                                    const row
+                                    of rows
+                                    ) {
+                                    const city =
+                                        canonicalCityName(
+                                            code,
+                                            row.city,
+                                        );
+
+                                    if (!city) {
+                                        continue;
+                                    }
+
+                                    cities.add(
+                                        city,
+                                    );
+
+                                    if (
+                                        !locations[city]
+                                    ) {
+                                        locations[city] = {
+                                            districts: [],
+                                            metro: [],
+                                        };
+                                    }
+
+                                    const district =
+                                        String(
+                                            row.district ??
+                                            '',
+                                        ).trim();
+
+                                    if (
+                                        district &&
+                                        !locations[
+                                            city
+                                            ].districts
+                                            .includes(
+                                                district,
+                                            )
+                                    ) {
+                                        locations[
+                                            city
+                                            ].districts
+                                            .push(
+                                                district,
+                                            );
+                                    }
+                                }
+                            } catch (err) {
+                                /*
+                                 * Ошибка Postgres metadata
+                                 * не должна ломать загрузку
+                                 * Flat Finder.
+                                 *
+                                 * В этом случае UI просто
+                                 * получит старый static list.
+                                 */
+                                console.warn(
+                                    `[locations] ` +
+                                    `${code} dynamic locations failed: ` +
+                                    `${err?.message ?? err}`,
+                                );
+                            }
+                        }
+
+                        for (
+                            const location
+                            of Object.values(
+                            locations,
+                        )
+                            ) {
+                            location.districts =
+                                [
+                                    ...new Set(
+                                        location
+                                            .districts ??
+                                        [],
+                                    ),
+                                ].sort(
+                                    (a, b) =>
+                                        a.localeCompare(
+                                            b,
+                                            'uk',
+                                        ),
+                                );
+
+                            location.metro =
+                                [
+                                    ...new Set(
+                                        location
+                                            .metro ??
+                                        [],
+                                    ),
+                                ].sort(
+                                    (a, b) =>
+                                        a.localeCompare(
+                                            b,
+                                            'uk',
+                                        ),
+                                );
+                        }
+
+                        return {
+                            code:
+                            country.code,
+
+                            name:
+                            country.name,
+
+                            currency:
+                            country.currency,
+
+                            center:
+                            country.center,
+
+                            cities:
+                                [...cities]
+                                    .sort(
+                                        (a, b) =>
+                                            a.localeCompare(
+                                                b,
+                                                'uk',
+                                            ),
+                                    ),
+
+                            locations,
+                        };
+                    },
+                ),
+            );
+
+        res.json(
+            result,
+        );
+    } catch (err) {
+        res
+            .status(500)
+            .json({
+                error:
+                    err?.message ??
+                    String(err),
+            });
+    }
 });
 
 const VALID_SOURCES = ['olx', 'telegram'];

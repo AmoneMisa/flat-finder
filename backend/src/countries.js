@@ -119,4 +119,64 @@ export const COUNTRIES = {
   },
 };
 
+function normalizeCityName(value) {
+  return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+}
+
+export function canonicalCityName(
+    countryCode,
+    value,
+) {
+  const raw =
+      String(value ?? '')
+          .trim();
+
+  if (!raw) {
+    return '';
+  }
+
+  const country =
+      COUNTRIES[countryCode];
+
+  if (!country) {
+    return raw;
+  }
+
+  const normalized =
+      normalizeCityName(raw);
+
+  for (
+      const city
+      of country.cities ?? []
+      ) {
+    const forms = [
+      city,
+      ...(country.cityAliases?.[city] ?? []),
+    ];
+
+    if (
+        forms.some(
+            (form) =>
+                normalizeCityName(form) ===
+                normalized,
+        )
+    ) {
+      return city;
+    }
+  }
+
+  /*
+   * Неизвестный нам город сохраняем
+   * как его вернул источник.
+   *
+   * Таким образом новые города OLX
+   * автоматически появляются в UI.
+   */
+  return raw;
+}
+
 export const COUNTRY_CODES = Object.keys(COUNTRIES);
