@@ -28,7 +28,6 @@ import {
   parseBalcony,
   parseBathrooms,
   parseBedrooms,
-  parseCommission,
   parseCommunalSeparated,
   parseContact,
   parseDeposit,
@@ -44,11 +43,11 @@ import {
   parseNegotiable,
   parseNewBuilding,
   parseParking,
-  parseResidentialComplex,
   parseRoomsFromText,
   parseSmoking,
   parseYear,
 } from './textparse.js';
+import {parseCommission, parseResidentialComplex} from './textparse-overrides.js';
 import {canonicalDistrict, parseLocation} from './locations.js';
 import {toUsd} from './fx.js';
 
