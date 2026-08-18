@@ -18,6 +18,17 @@ const ERR_TTL_MS = 60 * 1000
 const MIN_INTERVAL_MS = 1100
 const MAX_LOOKUPS_PER_RUN = Number(process.env.GEOCODE_BUDGET) || 60
 
+const POI_ALIASES = {
+  Korzinka: 'korzinka|корзинк\\p{L}*',
+  Makro: 'makro|макро',
+  Havas: '[xh]avas|хавас',
+  Carrefour: 'carrefour|карфур',
+  Magnum: 'magnum|магнум',
+  Clinic: 'clinic|поликлиник\\p{L}*|poliklinik\\p{L}*',
+  Hospital: 'hospital|больниц\\p{L}*|shifoxon\\p{L}*',
+  School: 'school|школ\\p{L}*|maktab\\p{L}*',
+}
+
 let lastCallAt = 0
 async function throttle() {
   const wait = lastCallAt + MIN_INTERVAL_MS - Date.now()
@@ -73,6 +84,33 @@ function uniq(values) {
   return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))]
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function distanceToMeters(value, unit) {
+  const amount = Number(String(value).replace(',', '.'))
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  return /км|km/i.test(unit) ? Math.round(amount * 1000) : Math.round(amount)
+}
+
+export function poiDistanceM(listing, name) {
+  const text = `${listing?.title || ''}\n${listing?.description || ''}`
+  if (!text.trim() || !name) return null
+  const poi = POI_ALIASES[name] || escapeRegExp(name)
+  const unit = '(км|km|м|m|метр\\p{L}*)'
+  const number = '(\\d+(?:[.,]\\d+)?)'
+  const patterns = [
+    new RegExp(`${number}\\s*${unit}\\s*(?:от|до|from|to)?\\s*(?:${poi})`, 'iu'),
+    new RegExp(`(?:${poi})[^\\r\\n]{0,35}?${number}\\s*${unit}`, 'iu'),
+  ]
+  for (const re of patterns) {
+    const match = text.match(re)
+    if (match) return distanceToMeters(match[1], match[2])
+  }
+  return null
+}
+
 function contextParts(listing, country) {
   const city = listing.city || country?.cities?.[0] || ''
   const countryName = country?.name || ''
@@ -86,13 +124,14 @@ function poiCandidates(listing, city, countryName) {
     q: [name, localContext, city, countryName].filter(Boolean).join(', '),
     source: 'nearby',
     jit: 0,
-    // A POI tells us the surrounding neighbourhood, not the building itself.
-    // Keep an explicit uncertainty radius rather than pretending it is exact.
-    accuracyM: 500,
+    // A POI is not the building itself. If the post says "500 m from Korzinka",
+    // preserve that as the uncertainty radius; otherwise use a conservative
+    // neighbourhood-level estimate.
+    accuracyM: poiDistanceM(listing, name) || 500,
   }))
 }
 
-// Pure helper exported for unit tests and for future UI/debug diagnostics.
+// Pure helper exported for unit tests and future UI/debug diagnostics.
 export function geocodeCandidates(listing, country) {
   const { city, countryName } = contextParts(listing, country)
   const area = listing.area || listing.kvartal
