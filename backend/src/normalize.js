@@ -15,7 +15,6 @@
 
 import {extractTags} from './tags.js';
 import {
-  classifyAudience,
   classifyChildren,
   classifyDealType,
   classifyPets,
@@ -32,7 +31,6 @@ import {
   parseContact,
   parseDeposit,
   parseElevator,
-  parseFloor,
   parseFurnished,
   parseGasSupply,
   parseHeating,
@@ -43,11 +41,17 @@ import {
   parseNegotiable,
   parseNewBuilding,
   parseParking,
-  parseRoomsFromText,
   parseSmoking,
   parseYear,
 } from './textparse.js';
-import {parseCommission, parseResidentialComplex} from './textparse-overrides.js';
+import {
+  classifyAudience,
+  parseCommission,
+  parseExplicitDistrict,
+  parseFloor,
+  parseResidentialComplex,
+  parseRoomsFromText,
+} from './textparse-overrides.js';
 import {canonicalDistrict, parseLocation} from './locations.js';
 import {toUsd} from './fx.js';
 
@@ -76,9 +80,6 @@ function parseAddress(text) {
   if (!text) return null;
   const labeled = text.match(/(?:адрес|адреса|manzil|address)\s*[:\-–]\s*([^\n]{3,80})/i);
   if (labeled) return labeled[1].replace(/\s+/g, ' ').trim().replace(/[.;,]+$/, '');
-  // RU street prefixes must be a whole token (followed by a dot/space), so "ул"
-  // never glues onto the next word (e.g. "ули аренда..." from a junk title, or
-  // the "-ули" tail of "махтумкули"). The Uzbek "ko'chasi" is a trailing form.
   const street = text.match(
     /((?:ул(?:иц[аы])?|просп(?:ект)?|проспект|мкр|микрорайон|проезд|переулок)\.?\s+[^\n,.;]{2,40}(?:,?\s*\d+[\w/-]*)?|[^\n,.;]{2,40}\s+(?:ko['’]?chasi|k[oó]chasi))/i,
   );
@@ -95,13 +96,6 @@ export function makeListing(partial) {
   const rooms = partial.rooms != null ? Number(partial.rooms) : parseRoomsFromText(combined);
   let dealType = partial.dealType ?? classifyDealType(combined);
 
-  // Sale-scale price guard. A price far above any plausible monthly rent is a
-  // purchase, so classify it as a sale — even when the text names no deal type
-  // (very common on OLX sale listings: "ЖК Мадрид ... 4х комнатная квартира"
-  // at 3.1 billion UZS with no "продажа" word → no sale badge before this).
-  // Currency-aware floors, each comfortably above the top of the rental range.
-  // Only overrides an unknown or text-derived longRent — never an explicit
-  // source dealType, and never a short-term rent.
   const SALE_FLOOR = {
     USD: 10000, EUR: 10000, GBP: 10000, UYE: 10000,
     UZS: 100_000_000, KZT: 5_000_000, UAH: 500_000, RON: 50_000,
@@ -117,8 +111,6 @@ export function makeListing(partial) {
     if (floor && Number(partial.price) >= floor) dealType = 'sale';
   }
 
-  // Structured fields: prefer an explicit value from the source, otherwise parse
-  // them out of the post text (works across EN/RU/UZ/KZ/RO/UA).
   const parsedFloor = parseFloor(combined);
   const floor = partial.floor != null ? Number(partial.floor) : parsedFloor.floor;
   const totalFloors =
@@ -129,24 +121,16 @@ export function makeListing(partial) {
   const audience = partial.audience ?? classifyAudience(combined);
   const contact = partial.contact ?? parseContact(combined);
 
-  // Intra-city location: district, nearest metro/transit station, and nearby
-  // landmarks, detected from the post text unless the source provided them.
   const loc = parseLocation(combined, partial.country);
-  // A source-provided district (e.g. OLX's raw "Чиланзарский район") is mapped to
-  // our canonical value so the district filter matches; text-parsed districts are
-  // already canonical. Unknown names are kept as-is.
-  const district = canonicalDistrict(partial.district ?? loc.district, partial.country);
+  const explicitDistrict = parseExplicitDistrict(combined, partial.country);
+  const district = canonicalDistrict(partial.district ?? explicitDistrict ?? loc.district, partial.country);
   const metro = partial.metro ?? loc.metro;
   const nearby = partial.nearby ?? loc.nearby;
   const residenceComplex = partial.residenceComplex ?? parseResidentialComplex(combined);
   const address = partial.address ?? parseAddress(combined);
 
-  // Flag non-residential (office / commercial) posts so the housing search can
-  // drop them. An explicit propertyType from the source overrides the guess.
   const commercial = partial.commercial ?? looksCommercial(combined);
 
-  // Tenant conditions + costs pulled from the post text unless the source
-  // provided them. petsAllowed/childrenAllowed are true/false/null (unstated).
   const petsAllowed = partial.petsAllowed ?? classifyPets(combined);
   const childrenAllowed = partial.childrenAllowed ?? classifyChildren(combined);
   const roomOnly = partial.roomOnly ?? looksRoomOnly(combined);
@@ -157,8 +141,6 @@ export function makeListing(partial) {
   const commission = partial.commission ?? com.has;
   const commissionPercent = partial.commissionPercent ?? com.percent;
 
-  // Amenities / structured extras for the normalized spec table. Prefer a value
-  // the source gave us, else parse it from the text. `null` renders as "n/d".
   const balcony = partial.balcony ?? parseBalcony(combined);
   const airConditioner = partial.airConditioner ?? parseAirConditioner(combined);
   const gas = partial.gas ?? parseGasSupply(combined);
@@ -167,12 +149,9 @@ export function makeListing(partial) {
     partial.newBuilding ??
     (parseNewBuilding(combined) ||
       (buildingYear && buildingYear >= new Date().getFullYear() - 5 ? true : null));
-  // UZ note: utilities are usually included when unstated (null); the UI reflects that.
   const communalSeparated = partial.communalSeparated ?? parseCommunalSeparated(combined);
   const parsedKvartal = parseKvartal(combined);
   const area = partial.area ?? loc.area ?? partial.kvartal ?? parsedKvartal;
-  // Keep `kvartal` as a backwards-compatible API field while exposing `area`
-  // separately for named massifs/microdistricts and legacy address codes.
   const kvartal = partial.kvartal ?? area;
   const nearbyShops = partial.nearbyShops ?? parseNearbyShops(combined);
   const amenities = Array.isArray(partial.amenities) ? partial.amenities : parseAmenities(combined);
@@ -273,11 +252,8 @@ export function makeListing(partial) {
   };
 }
 
-// Only surface listings posted within this window — older posts are treated as
-// stale/inactive and dropped. (3 weeks, per product requirement.)
 export const MAX_AGE_MS = 21 * 24 * 60 * 60 * 1000;
 
-// Lowercase and strip diacritics so "București" matches "bucuresti" etc.
 function normCity(s) {
   return String(s ?? '')
     .toLowerCase()
@@ -285,7 +261,6 @@ function normCity(s) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-// Apply the user-facing filters that a source could not enforce server-side.
 export function applyFilters(listings, filters, rates = null) {
   const {
     propertyType, agency, priceMin, priceMax, priceTolerance, priceCurrency, query, dealType,
@@ -294,53 +269,23 @@ export function applyFilters(listings, filters, rates = null) {
     newBuilding, audience, city, cityAliases, district, metro, listingId,
     pets, children, roomOnly, maxAgeDays, sources,
   } = filters;
-  // Cross-currency price filtering: when the client says which currency the
-  // min/max are in and we have FX rates, compare everything in USD so a bound
-  // in one currency matches listings priced in any. Otherwise fall back to a
-  // raw same-currency comparison (unchanged behaviour).
   const convertPrices = !!(rates && priceCurrency);
   const now = Date.now();
-  // Optional "posted within N days" freshness cap on top of MAX_AGE_MS.
   const ageCapMs =
     maxAgeDays != null && maxAgeDays > 0
       ? Math.min(maxAgeDays * 24 * 60 * 60 * 1000, MAX_AGE_MS)
       : MAX_AGE_MS;
-  // Accept the selected city or any of its localized aliases (from countries.js).
   const cityForms = city ? (cityAliases?.length ? cityAliases : [city]).map(normCity) : null;
   return listings.filter((l) => {
     if (listingId && String(l.id) !== String(listingId)) return false;
     if (sources?.length && !sources.includes(String(l.source).toLowerCase())) return false;
 
-    /*
- * Также скрываем старые demand-посты,
- * которые уже успели попасть в
- * Redis/Postgres/Elasticsearch до
- * добавления ingestion-фильтра.
- */
-    if (
-        String(l.source).toLowerCase() === 'telegram'
-    ) {
-      const listingText =
-          [
-            l.title,
-            l.description,
-          ]
-              .filter(Boolean)
-              .join('\n');
-
-      if (
-          looksHousingWanted(
-              listingText,
-          )
-      ) {
-        return false;
-      }
+    if (String(l.source).toLowerCase() === 'telegram') {
+      const listingText = [l.title, l.description].filter(Boolean).join('\n');
+      if (looksHousingWanted(listingText)) return false;
     }
 
-    // Never show offices / commercial premises among housing results.
     if (l.commercial) return false;
-    // Freshness: drop anything with a known post date older than 3 weeks. Posts
-    // with no/unparseable date are kept (lenient, like the numeric ranges).
     if (l.createdAt) {
       const t = Date.parse(l.createdAt);
       if (!Number.isNaN(t) && now - t > ageCapMs) return false;
@@ -349,15 +294,11 @@ export function applyFilters(listings, filters, rates = null) {
     if (dealType && dealType !== 'any' && l.dealType !== dealType) return false;
     if (agency === 'agency' && !l.byAgency) return false;
     if (agency === 'owner' && l.byAgency) return false;
-    // Once the user selects a numeric constraint, an unknown value is not a
-    // valid match. Previously unknown prices/room counts slipped through and
-    // made the controls appear to do nothing.
-    // Optional tolerance: allow listings up to priceMax + priceTolerance through.
     const effMax = priceMax != null ? priceMax + (priceTolerance ?? 0) : null;
     if (priceMin != null || effMax != null) {
       if (convertPrices) {
         const priceUsd = toUsd(l.price, l.currency, rates);
-        if (priceUsd == null) return false; // unknown / unconvertible price
+        if (priceUsd == null) return false;
         if (priceMin != null) {
           const minUsd = toUsd(priceMin, priceCurrency, rates);
           if (minUsd != null && priceUsd < minUsd) return false;
@@ -384,21 +325,15 @@ export function applyFilters(listings, filters, rates = null) {
     if (yearMin != null && (l.buildingYear == null || l.buildingYear < yearMin)) return false;
     if (yearMax != null && (l.buildingYear == null || l.buildingYear > yearMax)) return false;
     if (newBuilding === true && l.newBuilding !== true) return false;
-    // Audience is an explicit restriction, so match strictly when requested.
     if (audience && audience !== 'any' && l.audience !== audience) return false;
-    // Pet-friendly is an explicit positive filter: unknown policy is not enough.
-    // When requested, only listings that explicitly allow pets are returned.
     if (pets === true && l.petsAllowed !== true) return false;
     if (children === true && l.childrenAllowed === false) return false;
-    // Room-only (partial rent): when requested, show only shared-room posts.
     if (roomOnly === true && !l.roomOnly) return false;
     if (cityForms) {
       const hay = normCity(l.city);
       if (!cityForms.some((f) => hay.includes(f))) return false;
     }
-    // District / metro are structured picks: match strictly (drop unknowns).
-    if (district && (l.district ?? '').toLowerCase() !== String(district).toLowerCase())
-      return false;
+    if (district && (l.district ?? '').toLowerCase() !== String(district).toLowerCase()) return false;
     if (metro && (l.metro ?? '').toLowerCase() !== String(metro).toLowerCase()) return false;
     if (query) {
       const hay = [l.title, l.description, l.city, l.district, l.metro, ...(l.tags ?? [])]
