@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 const workerUrl = String(process.env.AI_WORKER_URL || '').replace(/\/$/, '');
 const workerKey = process.env.AI_WORKER_KEY || '';
 const requestTimeoutMs = Math.max(500, Number(process.env.AI_WORKER_REQUEST_TIMEOUT_MS) || 3000);
-const visionTimeoutMs = Math.max(5000, Number(process.env.AI_WORKER_VISION_TIMEOUT_MS) || 35000);
+// Groq is normally fast, but when it is unavailable Cloudflare may inspect up to
+// four photos sequentially. Keep the outer budget above that complete fallback
+// path instead of aborting the request while the second provider is still useful.
+const visionTimeoutMs = Math.max(5000, Number(process.env.AI_WORKER_VISION_TIMEOUT_MS) || 150000);
 const pollIntervalMs = Math.max(1000, Number(process.env.AI_WORKER_POLL_MS) || 5000);
 const maxQueued = Math.max(1, Number(process.env.AI_WORKER_MAX_PENDING) || 60);
 const submitConcurrency = Math.max(1, Number(process.env.AI_WORKER_SUBMIT_CONCURRENCY) || 4);
