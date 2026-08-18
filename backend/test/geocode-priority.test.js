@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { geocodeCandidates } from '../src/geocode.js';
+import { geocodeCandidates, poiDistanceM } from '../src/geocode.js';
 
 const country = {
   name: 'Uzbekistan',
@@ -48,4 +48,24 @@ test('adds an explicit city candidate instead of relying on the country center',
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].source, 'city');
   assert.equal(candidates[0].q, 'Samarkand, Uzbekistan');
+});
+
+test('keeps stated POI distance as geocoding uncertainty', () => {
+  const listing = {
+    id: 'distance',
+    city: 'Tashkent',
+    district: 'Yunusabad',
+    nearbyShops: ['Korzinka'],
+    title: 'Квартира в аренду',
+    description: '500 м от Корзинки, рядом с парком',
+  };
+
+  assert.equal(poiDistanceM(listing, 'Korzinka'), 500);
+  const nearby = geocodeCandidates(listing, country).find((candidate) => candidate.source === 'nearby');
+  assert.equal(nearby.accuracyM, 500);
+});
+
+test('converts kilometre POI distance to metres', () => {
+  const listing = { description: 'Korzinka 1.2 km' };
+  assert.equal(poiDistanceM(listing, 'Korzinka'), 1200);
 });
