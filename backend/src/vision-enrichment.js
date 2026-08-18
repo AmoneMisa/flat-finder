@@ -1,6 +1,7 @@
 import { cacheGet, cacheSet } from './cache.js';
 import { upsertListings } from './db.js';
 import { indexListings } from './elasticsearch.js';
+import { detectExactDuplicatePhotos } from './photo-antifake.js';
 import {
   aiWorkerEnabled,
   scheduleVisionAnalysis,
@@ -9,6 +10,7 @@ import {
 
 const STALE_TTL_MS = 60 * 60 * 1000;
 const FULL_FEED_VERSION = 'full-feed-v8';
+const antiFakeRunning = new Set();
 
 function defaultCacheKey(countryCode) {
   return `${FULL_FEED_VERSION}|${countryCode}|all-sources|`;
@@ -36,6 +38,7 @@ function needsVision(listing) {
     listing.airConditioner,
     listing.balcony,
     listing.bathrooms,
+    listing.bathroomLayout,
     listing.bedrooms,
     listing.furnished,
     listing.parking,
@@ -60,6 +63,7 @@ function mergeVision(listing, result) {
   fill('airConditioner', data.airConditioner);
   fill('balcony', data.balcony);
   fill('bathrooms', data.bathroomsVisible);
+  fill('bathroomLayout', data.bathroomLayoutVisible);
   fill('bedrooms', data.bedroomsVisible);
   fill('furnished', data.furnished);
   fill('parking', data.parkingVisible);
@@ -72,6 +76,8 @@ function mergeVision(listing, result) {
     washingMachineVisible: 'washing_machine',
     dishwasherVisible: 'dishwasher',
     tvVisible: 'tv',
+    gasWaterHeaterVisible: 'gas_water_heater',
+    waterBoilerVisible: 'water_boiler',
   };
   const amenities = new Set(merged.amenities || []);
   for (const [visionField, amenity] of Object.entries(amenityMap)) {
@@ -79,6 +85,13 @@ function mergeVision(listing, result) {
     if (accepted(item) && item.value === true) amenities.add(amenity);
   }
   merged.amenities = [...amenities];
+
+  if ((merged.gasWaterHeater == null || merged.gasWaterHeater === '') && accepted(data.gasWaterHeaterVisible)) {
+    merged.gasWaterHeater = data.gasWaterHeaterVisible.value;
+  }
+  if ((merged.waterBoiler == null || merged.waterBoiler === '') && accepted(data.waterBoilerVisible)) {
+    merged.waterBoiler = data.waterBoilerVisible.value;
+  }
 
   // Keep provenance/evidence available to the API/UI without allowing vision to
   // silently overwrite deterministic/text facts.
@@ -123,20 +136,79 @@ async function applyResult(countryCode, id, fingerprint, result) {
   await persistMerged(merged);
 }
 
+async function applyAntiFake(countryCode, id, fingerprint, result) {
+  const key = defaultCacheKey(countryCode);
+  const entry = await cacheGet(key);
+  if (!entry?.complete || !Array.isArray(entry.listings)) return;
+  const index = entry.listings.findIndex((listing) => listingKey(listing) === id);
+  if (index < 0) return;
+
+  const current = entry.listings[index];
+  if (visionFingerprint(listingImages(current)) !== fingerprint) return;
+
+  const merged = {
+    ...current,
+    antiFake: result,
+    duplicatePhotoRisk: result.risk,
+    exactDuplicatePhoto: result.exactDuplicatePhoto,
+  };
+  entry.listings[index] = merged;
+  entry.antiFake = entry.antiFake || {};
+  entry.antiFake[id] = {
+    fingerprint,
+    status: 'completed',
+    risk: result.risk,
+    matches: result.matches.length,
+    checkedAt: result.checkedAt,
+  };
+  await cacheSet(key, entry, STALE_TTL_MS);
+  await persistMerged(merged);
+}
+
+function scheduleAntiFake(countryCode, listing, images, fingerprint) {
+  const id = listingKey(listing);
+  const runKey = `${countryCode}:${id}:${fingerprint}`;
+  if (antiFakeRunning.has(runKey)) return false;
+  antiFakeRunning.add(runKey);
+
+  void detectExactDuplicatePhotos(listing, images)
+    .then((result) => applyAntiFake(countryCode, id, fingerprint, result))
+    .catch((error) => console.warn(`[flats:antifake] ${id} failed: ${error.message}`))
+    .finally(() => antiFakeRunning.delete(runKey));
+  return true;
+}
+
 export function scheduleCountryVision(countryCode, entry) {
-  if (!aiWorkerEnabled() || !entry?.complete || !Array.isArray(entry.listings)) return 0;
+  if (!entry?.complete || !Array.isArray(entry.listings)) return 0;
 
   const batchSize = Math.max(1, Number(process.env.AI_WORKER_VISION_BATCH) || 3);
   entry.vision = entry.vision || {};
+  entry.antiFake = entry.antiFake || {};
   let queued = 0;
+  let antiFakeQueued = 0;
 
   for (const listing of entry.listings) {
-    if (queued >= batchSize) break;
-    if (!needsVision(listing)) continue;
+    if (queued >= batchSize && antiFakeQueued >= batchSize) break;
+    if (!listing || String(listing.source || '').startsWith('mock')) continue;
 
     const images = listingImages(listing);
+    if (!images.length) continue;
     const fingerprint = visionFingerprint(images);
     const id = listingKey(listing);
+
+    // Exact-photo anti-fake is independent of external AI and runs even when all
+    // visual amenity fields are already known from text/source metadata.
+    const priorAntiFake = entry.antiFake[id];
+    if (
+      antiFakeQueued < batchSize &&
+      !(priorAntiFake?.fingerprint === fingerprint && priorAntiFake.status === 'completed') &&
+      scheduleAntiFake(countryCode, listing, images, fingerprint)
+    ) {
+      entry.antiFake[id] = { fingerprint, status: 'pending', updatedAt: new Date().toISOString() };
+      antiFakeQueued += 1;
+    }
+
+    if (!aiWorkerEnabled() || queued >= batchSize || !needsVision(listing)) continue;
     const prior = entry.vision[id];
     if (prior?.fingerprint === fingerprint && prior.status === 'completed') continue;
 
@@ -169,6 +241,8 @@ export function scheduleCountryVision(countryCode, entry) {
     }
   }
 
-  if (queued) console.log(`[flats:vision] queued ${queued} listings for ${countryCode}`);
-  return queued;
+  if (queued || antiFakeQueued) {
+    console.log(`[flats:vision] queued vision=${queued}, antifake=${antiFakeQueued} for ${countryCode}`);
+  }
+  return queued + antiFakeQueued;
 }
