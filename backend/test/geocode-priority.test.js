@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { geocodeCandidates, poiDistanceM } from '../src/geocode.js';
+import { geocodeCandidates, poiDistanceM, solveSpatialPoint } from '../src/geocode.js';
 
 const country = {
   name: 'Uzbekistan',
@@ -68,4 +68,47 @@ test('keeps stated POI distance as geocoding uncertainty', () => {
 test('converts kilometre POI distance to metres', () => {
   const listing = { description: 'Korzinka 1.2 km' };
   assert.equal(poiDistanceM(listing, 'Korzinka'), 1200);
+});
+
+test('detects inflected Korzinka text and scopes the POI by area and district', () => {
+  const listing = {
+    city: 'Tashkent',
+    district: 'Uchtepa',
+    area: '1 kvartal',
+    description: 'Учтепинский район, Квартал 1, от корзинки 500м',
+  };
+  const nearby = geocodeCandidates(listing, country).find((candidate) => candidate.source === 'nearby');
+
+  assert.ok(nearby);
+  assert.equal(nearby.name, 'Korzinka');
+  assert.equal(nearby.distanceM, 500);
+  assert.equal(nearby.q, 'Korzinka, 1 kvartal, Uchtepa, Tashkent, Uzbekistan');
+});
+
+test('solves two POI circles and uses the geographic prior to choose the intended intersection', () => {
+  // Two anchors about 800 m apart with equal 500 m radii have two intersections.
+  // The northern prior should choose the northern solution.
+  const anchors = [
+    { lat: 41.3000, lng: 69.2000, distanceM: 500 },
+    { lat: 41.3000, lng: 69.2096, distanceM: 500 },
+  ];
+  const prior = { lat: 41.3030, lng: 69.2048 };
+  const solved = solveSpatialPoint(anchors, prior);
+
+  assert.ok(solved);
+  assert.equal(solved.anchorCount, 2);
+  assert.ok(solved.lat > 41.3000);
+  assert.ok(solved.residualM < 5);
+});
+
+test('keeps a finite best-effort point for inconsistent POI distances', () => {
+  const solved = solveSpatialPoint([
+    { lat: 41.3000, lng: 69.2000, distanceM: 100 },
+    { lat: 41.3000, lng: 69.2100, distanceM: 100 },
+  ]);
+
+  assert.ok(solved);
+  assert.ok(Number.isFinite(solved.lat));
+  assert.ok(Number.isFinite(solved.lng));
+  assert.ok(solved.residualM > 0);
 });
