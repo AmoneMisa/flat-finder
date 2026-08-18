@@ -10,29 +10,20 @@ services:
 
     environment:
       - REDIS_URL=redis://flat-finder-redis:6379
-
       - PGHOST=flat-finder-postgres
       - PGPORT=5432
-
       - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
       - ELASTICSEARCH_INDEX=flat-listings-v1
-
       - AI_WORKER_URL=http://ai-worker:4030
-
-      # Route OLX requests through the internal dispatcher. UA gets its own
-      # fetcher pool so RO/KZ/UZ cannot occupy the workers needed by Ukraine.
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
 
     depends_on:
       flat-finder-redis:
         condition: service_healthy
-
       flat-finder-postgres:
         condition: service_healthy
-
       flat-finder-elasticsearch:
         condition: service_healthy
-
       flat-finder-olx-router:
         condition: service_healthy
 
@@ -56,19 +47,82 @@ services:
       retries: 3
       start_period: 15s
 
-  # Default OLX pool for RO/KZ/UZ and any future non-UA portals.
+  flat-finder-rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-crawler}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-crawler}
+    volumes:
+      - flat-finder-rabbitmq-data:/var/lib/rabbitmq
+    expose:
+      - "5672"
+      - "15672"
+    networks:
+      - default
+      - ai-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  flat-finder-queue-dispatcher:
+    build:
+      context: ./queue-worker
+    restart: unless-stopped
+    environment:
+      QUEUE_MODE: dispatcher
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
+      FLAT_BACKEND_URL: http://flat-finder-backend:4000
+      QUEUE_REFRESH_SECONDS: ${QUEUE_REFRESH_SECONDS:-1800}
+    depends_on:
+      flat-finder-rabbitmq:
+        condition: service_healthy
+      flat-finder-backend:
+        condition: service_healthy
+
+  flat-finder-queue-worker-1:
+    build:
+      context: ./queue-worker
+    restart: unless-stopped
+    environment:
+      QUEUE_MODE: worker
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
+      FLAT_BACKEND_URL: http://flat-finder-backend:4000
+      QUEUE_PREFETCH: ${QUEUE_PREFETCH:-1}
+      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
+    depends_on:
+      flat-finder-rabbitmq:
+        condition: service_healthy
+      flat-finder-backend:
+        condition: service_healthy
+
+  flat-finder-queue-worker-2:
+    build:
+      context: ./queue-worker
+    restart: unless-stopped
+    environment:
+      QUEUE_MODE: worker
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
+      FLAT_BACKEND_URL: http://flat-finder-backend:4000
+      QUEUE_PREFETCH: ${QUEUE_PREFETCH:-1}
+      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
+    depends_on:
+      flat-finder-rabbitmq:
+        condition: service_healthy
+      flat-finder-backend:
+        condition: service_healthy
+
   flat-finder-olx-fetcher:
     build:
       context: ./olx-fetcher
-
     restart: unless-stopped
-
     environment:
       - OLX_TIMEOUT=45
-
     expose:
       - "4020"
-
     healthcheck:
       test:
         [
@@ -82,21 +136,14 @@ services:
       retries: 3
       start_period: 15s
 
-  # Dedicated OLX Ukraine pool. Keeping it separate prevents simultaneous
-  # refreshes of RO/KZ/UZ from consuming all Gunicorn workers while the UA
-  # crawler is walking targeted city pages such as Lutsk and Chernivtsi.
   flat-finder-olx-fetcher-ua:
     build:
       context: ./olx-fetcher
-
     restart: unless-stopped
-
     environment:
       - OLX_TIMEOUT=45
-
     expose:
       - "4020"
-
     healthcheck:
       test:
         [
@@ -110,26 +157,18 @@ services:
       retries: 3
       start_period: 15s
 
-  # Small internal dispatcher. It preserves the existing OLX_FETCHER_URL
-  # contract for the Node backend and selects the worker pool by ?country=.
   flat-finder-olx-router:
     image: nginx:1.27-alpine
-
     restart: unless-stopped
-
     volumes:
       - ./olx-router/nginx.conf:/etc/nginx/nginx.conf:ro
-
     expose:
       - "4021"
-
     depends_on:
       flat-finder-olx-fetcher:
         condition: service_healthy
-
       flat-finder-olx-fetcher-ua:
         condition: service_healthy
-
     healthcheck:
       test:
         [
@@ -143,9 +182,7 @@ services:
 
   flat-finder-redis:
     image: redis:8-alpine
-
     restart: unless-stopped
-
     command:
       [
         "redis-server",
@@ -156,14 +193,8 @@ services:
         "--save",
         ""
       ]
-
     healthcheck:
-      test:
-        [
-          "CMD",
-          "redis-cli",
-          "ping"
-        ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -171,24 +202,15 @@ services:
 
   flat-finder-postgres:
     image: postgres:17-alpine
-
     restart: unless-stopped
-
     env_file:
       - ./.env
-
     volumes:
       - flat-finder-postgres-data:/var/lib/postgresql/data
-
     expose:
       - "5432"
-
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
-        ]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -197,28 +219,22 @@ services:
   flat-finder-elasticsearch:
     build:
       context: ./elasticsearch
-
     restart: unless-stopped
-
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - xpack.security.enrollment.enabled=false
       - xpack.ml.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
-
     volumes:
       - /mnt/docker-data/elasticsearch-data:/usr/share/elasticsearch/data
-
     expose:
       - "9200"
-
+    networks:
+      - default
+      - ai-net
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -fsS 'http://localhost:9200/' >/dev/null || exit 1"
-        ]
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/' >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -226,6 +242,7 @@ services:
 
 volumes:
   flat-finder-postgres-data:
+  flat-finder-rabbitmq-data:
 
 networks:
   ai-net:
