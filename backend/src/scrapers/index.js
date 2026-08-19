@@ -42,9 +42,11 @@ const inFlight = new Map(); // key -> Promise
 // internal budgets; this only fires in pathological cases and yields whatever
 // the source returned before the deadline (empty on timeout).
 // Must sit above telegram's own budget (TG_BUDGET_MS ~12s) plus one in-flight
-// page fetch (~8s), so telegram returns its partial set on the budget rather
-// than being killed here and discarded entirely (which showed as demo data).
-const SOURCE_DEADLINE_MS = Number(process.env.SOURCE_DEADLINE_MS) || 24000;
+// page fetch, AND above OLX's now multi-segment/city fetch through the sidecar
+// (whose curl_cffi calls retry, ~90s worst case) so a slow-but-successful OLX
+// scrape isn't guillotined here and discarded (see #4). Runs in the background
+// refresh, so a larger backstop doesn't delay user requests.
+const SOURCE_DEADLINE_MS = Number(process.env.SOURCE_DEADLINE_MS) || 60000;
 
 function withDeadline(promise, ms, onTimeout) {
   return new Promise((resolve, reject) => {

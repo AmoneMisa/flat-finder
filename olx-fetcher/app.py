@@ -13,6 +13,7 @@
 import os
 import re
 import json
+import time
 
 from flask import Flask, request, jsonify
 from curl_cffi import requests as cffi
@@ -66,6 +67,10 @@ IMPERSONATE = os.environ.get("OLX_IMPERSONATE", "chrome124")
 # retry to the same city completed normally. Keep enough headroom for those tail
 # latencies; compose can still override this per fetcher pool.
 TIMEOUT = int(os.environ.get("OLX_TIMEOUT", "45"))
+# Retry a transient OLX failure (timeout / non-200 / missing state) once before
+# returning 502, since an immediate repeat of the same city usually succeeds.
+ATTEMPTS = max(1, int(os.environ.get("OLX_ATTEMPTS", "2")))
+RETRY_BACKOFF = float(os.environ.get("OLX_RETRY_BACKOFF", "1.5"))
 
 # window.__PRERENDERED_STATE__ = "<json string, escaped again as a JS string>";
 _STATE_RE = re.compile(
@@ -164,53 +169,38 @@ def olx_listings():
         f'created_at%3Adesc'
     )
 
-    try:
-        resp = cffi.get(
-            url,
-            impersonate=IMPERSONATE,
-            timeout=TIMEOUT,
-            headers={
-                "Accept-Language":
-                    portal["lang"],
-            },
-        )
-    except Exception as e:
-        return jsonify(
-            error=f"fetch error: {e}"
-        ), 502
-
-    if resp.status_code != 200:
-        return jsonify(
-            error=(
-                f"OLX {code} "
-                f"{segment} "
-                f"{city or 'all'} "
-                f"HTTP {resp.status_code}"
+    where = f"OLX {code} {segment} {city or 'all'}"
+    last_err = None
+    for attempt in range(ATTEMPTS):
+        try:
+            resp = cffi.get(
+                url,
+                impersonate=IMPERSONATE,
+                timeout=TIMEOUT,
+                headers={"Accept-Language": portal["lang"]},
             )
-        ), 502
-
-    ads = extract_ads(
-        resp.text
-    )
-
-    if ads is None:
-        return jsonify(
-            error=(
-                f"OLX {code} "
-                f"{segment} "
-                f"{city or 'all'}: "
-                f"no __PRERENDERED_STATE__"
-            )
-        ), 502
-
-    return jsonify(
-        country=code,
-        segment=segment,
-        city=city or None,
-        page=page,
-        count=len(ads),
-        ads=ads,
-    )
+        except Exception as e:  # network / TLS / timeout
+            last_err = f"fetch error: {e}"
+        else:
+            if resp.status_code == 200:
+                ads = extract_ads(resp.text)
+                if ads is not None:
+                    return jsonify(
+                        country=code,
+                        segment=segment,
+                        city=city or None,
+                        page=page,
+                        count=len(ads),
+                        ads=ads,
+                    )
+                last_err = f"{where}: no __PRERENDERED_STATE__"
+            else:
+                last_err = f"{where} HTTP {resp.status_code}"
+        # A repeat of the same city usually succeeds, so retry transient failures
+        # once before surfacing a 502 (see #4).
+        if attempt + 1 < ATTEMPTS:
+            time.sleep(RETRY_BACKOFF)
+    return jsonify(error=last_err or f"{where}: failed"), 502
 
 if __name__ == "__main__":
     # Dev only; production uses gunicorn (see Dockerfile).

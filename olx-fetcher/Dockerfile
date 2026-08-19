@@ -12,4 +12,9 @@ EXPOSE 4020
 # Keep a small process pool per fetcher service. max-requests periodically
 # recycles long-lived curl_cffi/libcurl state so one degraded worker cannot stay
 # unhealthy indefinitely. The UA service gets its own identical pool in compose.
-CMD ["gunicorn", "--bind", "0.0.0.0:4020", "--workers", "2", "--timeout", "60", "--max-requests", "100", "--max-requests-jitter", "20", "app:app"]
+# Threaded workers: work is I/O-bound (waiting on OLX), so threads give cheap
+# concurrency for parallel country/segment fetches. Timeout must exceed the
+# worst-case retrying request (curl_cffi TIMEOUT x ATTEMPTS + backoff, ~90s).
+# max-requests periodically recycles long-lived curl_cffi/libcurl state so one
+# degraded worker cannot stay unhealthy indefinitely.
+CMD ["gunicorn", "--bind", "0.0.0.0:4020", "--worker-class", "gthread", "--workers", "2", "--threads", "4", "--timeout", "120", "--max-requests", "100", "--max-requests-jitter", "20", "app:app"]

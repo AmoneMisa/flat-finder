@@ -115,9 +115,11 @@ async function fetchStatePage(
       await fetch(
           `${base}/olx/listings?${params}`,
           {
+            // Above the sidecar's own curl_cffi timeout so its internal retry
+            // can complete rather than being cut off here (see #4).
             signal:
                 AbortSignal.timeout(
-                    30_000,
+                    60_000,
                 ),
           },
       );
