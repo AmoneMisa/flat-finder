@@ -80,11 +80,6 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-crawler}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-crawler}
-      # Bound the broker's memory explicitly. The default watermark is a share of
-      # host RAM, which on this box means RabbitMQ believes it may use several GB
-      # while Ollama and Elasticsearch are competing for the same 16 GB — the
-      # shape of failure that ends in the container being OOM-killed.
-      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: ${RABBITMQ_MEMORY_WATERMARK:-512MiB}
     volumes:
       - flat-finder-rabbitmq-data:/var/lib/rabbitmq
     expose:
