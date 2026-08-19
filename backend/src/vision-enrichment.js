@@ -20,13 +20,29 @@ function listingKey(listing) {
   return `${listing.source}:${listing.id}`;
 }
 
+// Where the AI worker can fetch our own Telegram photos. They are stored as
+// relative `/api/tg-photo/...` paths, and requiring an absolute URL here used to
+// drop them entirely — so vision never ran on Telegram listings, which are
+// precisely the ones with the most missing fields. The worker shares the ai-net
+// network with this service, so the internal address is the cheapest route (and
+// the on-disk photo cache makes repeat fetches fast).
+const PHOTO_BASE_URL = (process.env.VISION_PHOTO_BASE_URL || 'http://flat-finder-backend:4000').replace(/\/$/, '');
+
+function absolutePhotoUrl(raw) {
+  const url = String(raw || '').trim();
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/api/tg-photo/')) return `${PHOTO_BASE_URL}${url}`;
+  return null;
+}
+
 function listingImages(listing) {
   const source = Array.isArray(listing.photos) && listing.photos.length
     ? listing.photos
     : listing.photo
       ? [listing.photo]
       : [];
-  return [...new Set(source.map(String).filter((url) => /^https?:\/\//i.test(url)))]
+  return [...new Set(source.map(absolutePhotoUrl).filter(Boolean))]
     .slice(0, 4)
     .map((url, index) => ({ id: `photo_${index + 1}`, url }));
 }
