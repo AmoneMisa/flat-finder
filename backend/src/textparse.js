@@ -331,7 +331,10 @@ export function parseFloor(text) {
   // The number-before-floor form uses horizontal whitespace only, so a count on
   // the previous line ("Комнат: 4⏎Этаж:") can't be grabbed as the floor.
   let s =
-    t.match(new RegExp(`(\\d{1,2})[^\\S\\r\\n]*-?[^\\S\\r\\n]*(?:й|го|nd|rd|th|st)?[^\\S\\r\\n]*${FLOOR}${NOT_LETTER}`)) ||
+    // Ordinal endings: RU short forms decline ("на 5-м/5-ом/2-го этаже"), so the
+    // list needs more than "й" — without "м" the most common spoken form,
+    // "на 5-м этаже", parsed as no floor at all. Longest alternatives first.
+    t.match(new RegExp(`(\\d{1,2})[^\\S\\r\\n]*-?[^\\S\\r\\n]*(?:го|ом|ым|ой|ий|nd|rd|th|st|й|м|е)?[^\\S\\r\\n]*${FLOOR}${NOT_LETTER}`)) ||
     t.match(new RegExp(`${FLOOR}\\s*[:№#]?\\s*(\\d{1,2})\\b`));
   if (s) {
     const floor = Number(s[1]);
