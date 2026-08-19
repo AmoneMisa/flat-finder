@@ -7,6 +7,7 @@ import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateSource} from './scrapers/custom.js';
 import {applyFilters} from './normalize.js';
 import {getRates} from './fx.js';
+import {readPhoto, writePhoto} from './photoCache.js';
 import {getLastRun, refreshAll, startScheduler} from './scheduler.js';
 import {closeDb, dbHealth, getAvailableListingLocations, getDbStats, initDb,} from './db.js';
 import {closeElasticsearch, elasticsearchHealth, initElasticsearch, searchListingMatches,} from './elasticsearch.js';
@@ -774,6 +775,17 @@ app.get('/api/tg-photo/:channel/:id', async (req, res) => {
   if (!/^[A-Za-z0-9_]{3,64}$/.test(channel) || !/^\d+$/.test(id)) {
     return res.status(400).end();
   }
+  // Serve from the on-disk cache when we already have these bytes: the worker
+  // round-trip (backend -> MTProto -> Telegram) is slow enough that social
+  // preview crawlers abandon the image fetch.
+  const cached = await readPhoto(channel, id);
+  if (cached) {
+    res.setHeader('Content-Type', cached.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    res.setHeader('X-Photo-Cache', 'hit');
+    return res.send(cached.buffer);
+  }
+
   try {
     const params = new URLSearchParams({ channel, id });
     const r = await fetch(`${TG_WORKER_URL}/photo?${params}`, {
@@ -781,10 +793,14 @@ app.get('/api/tg-photo/:channel/:id', async (req, res) => {
     });
     if (!r.ok) return res.status(r.status === 404 ? 404 : 502).end();
     const buf = Buffer.from(await r.arrayBuffer());
-    res.setHeader('Content-Type', r.headers.get('content-type') || 'image/jpeg');
+    const contentType = r.headers.get('content-type') || 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
     // Photos for a given post never change, so let the app / any CDN cache hard.
     res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    res.setHeader('X-Photo-Cache', 'miss');
     res.send(buf);
+    // Populate the cache after responding so the client never waits on disk.
+    void writePhoto(channel, id, buf, contentType);
   } catch (err) {
     res.status(502).end();
   }

@@ -13,6 +13,12 @@ services:
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
+      # Telegram photo bytes are cached on disk (a container /tmp would be lost
+      # on every recreate, forcing a slow MTProto refetch for every image).
+      - PHOTO_CACHE_DIR=/var/cache/flat-photos
+      - PHOTO_CACHE_MAX_MB=${PHOTO_CACHE_MAX_MB:-512}
+    volumes:
+      - flat-finder-photo-cache:/var/cache/flat-photos
     depends_on:
       flat-finder-redis:
         condition: service_healthy
@@ -242,6 +248,7 @@ services:
 volumes:
   flat-finder-postgres-data:
   flat-finder-rabbitmq-data:
+  flat-finder-photo-cache:
 
 networks:
   ai-net:
