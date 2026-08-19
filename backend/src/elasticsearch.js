@@ -1111,6 +1111,45 @@ function buildTextSearchQuery(
     };
 }
 
+/*
+ * Один и тот же запрос повторяется
+ * постоянно: клиент шлёт его заново
+ * на каждую страницу (offset) и на
+ * каждый повторный рендер, а результат
+ * при этом не меняется.
+ *
+ * Без кэша каждый такой вызов заново
+ * прокручивал весь индекс через
+ * search_after — десятки round-trip
+ * к Elasticsearch на один поиск.
+ */
+const SEARCH_CACHE_TTL_MS =
+    60_000;
+
+const SEARCH_CACHE_MAX =
+    64;
+
+const searchCache =
+    new Map();
+
+function searchCacheKey(
+    text,
+    countries,
+    sources,
+) {
+    return [
+        text,
+
+        [...countries]
+            .sort()
+            .join('+'),
+
+        [...sources]
+            .sort()
+            .join('+'),
+    ].join('|');
+}
+
 export async function searchListingMatches(
     query,
     {
@@ -1139,8 +1178,37 @@ export async function searchListingMatches(
         };
     }
 
+    const cacheKey =
+        searchCacheKey(
+            text,
+            countries,
+            sources,
+        );
+
+    const cached =
+        searchCache.get(
+            cacheKey,
+        );
+
+    if (
+        cached &&
+        Date.now() - cached.at <
+        SEARCH_CACHE_TTL_MS
+    ) {
+        return cached.value;
+    }
+
+    /*
+     * search_after не ограничен
+     * max_result_window, но size одной
+     * страницы — ограничен (10 000 по
+     * умолчанию). Берём максимум: строки
+     * идут без _source, поэтому это просто
+     * id + score, зато round-trip'ов в
+     * десять раз меньше.
+     */
     const PAGE_SIZE =
-        1000;
+        10_000;
 
     const MAX_MATCHES =
         50_000;
@@ -1303,7 +1371,7 @@ export async function searchListingMatches(
             lastHit.sort;
     }
 
-    return {
+    const value = {
         rank,
         scores,
 
@@ -1312,9 +1380,49 @@ export async function searchListingMatches(
         truncated:
             rank.size < total,
     };
+
+    /*
+     * Простейший LRU: самый старый ключ
+     * уходит первым. Map хранит порядок
+     * вставки, поэтому достаточно удалить
+     * первый ключ.
+     */
+    if (
+        searchCache.size >=
+        SEARCH_CACHE_MAX
+    ) {
+        const oldest =
+            searchCache
+                .keys()
+                .next()
+                .value;
+
+        searchCache.delete(
+            oldest,
+        );
+    }
+
+    searchCache.set(
+        cacheKey,
+        {
+            at:
+                Date.now(),
+
+            value,
+        },
+    );
+
+    return value;
 }
 
 export async function rebuildSearchIndex() {
+    /*
+     * Кэш ранжирования ссылается на
+     * документы старого индекса — после
+     * пересборки он бессмыслен.
+     */
+    searchCache.clear();
+
     await client.ping();
 
     console.log(
