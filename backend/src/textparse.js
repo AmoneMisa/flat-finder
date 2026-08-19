@@ -233,7 +233,8 @@ export function parseResidentialComplex(text) {
 export function parseAreaFromText(text) {
   if (!text) return null;
   const m =
-    text.match(/(\d{2,4})\s*(?:m2|m²|мкв|м2|м²|sq ?m|кв\.?\s*м)/i) ||
+    // "80 квадратов" / "80 квадрат" is a common colloquial form for m².
+    text.match(/(\d{2,4})\s*(?:m2|m²|мкв|м2|м²|sq ?m|кв\.?\s*м|квадрат[а-яё]*)/i) ||
     // Telegram shorthand often puts a bare `кв` area after
     // rooms/floor/storeys: `2/5/16 56кв`. Requiring the three-part prefix
     // avoids mistaking district labels such as `Chilonzor 16кв` for an area.
@@ -273,7 +274,10 @@ export function classifyDealType(text) {
 export function parseFloor(text) {
   if (!text) return { floor: null, totalFloors: null };
   const t = text.toLowerCase();
-  const FLOOR = '(?:этаж(?:да)?|поверх|qavat|қабат|қабатт|etaj|floor|эт\\.?)';
+  // The "эт." abbreviation requires its dot: as a bare "эт" the alternation
+  // backtracked into "этажный"/"этажей" (whose real suffixes are rejected below)
+  // and matched a building's storey count as the flat's floor.
+  const FLOOR = '(?:этаж(?:да)?|поверх|qavat|қабат|қабатт|etaj|floor|эт\\.)';
   const ok = (f, total) =>
     f >= 0 && f <= 200 && (total == null || (total >= f && total <= 200));
 
@@ -319,7 +323,11 @@ export function parseFloor(text) {
   // Cyrillic letter is unreliable (Cyrillic isn't `\w`), so we use an explicit
   // "not followed by another letter" lookahead instead. This both fixes "2 этаж"
   // (which `\b` failed to match) and still rejects "5-этажный дом" (5-storey).
-  const NOT_LETTER = '(?![a-zа-яёіїґ])';
+  // Reject only the suffixes that change the meaning, not every letter: a bare
+  // "(?![a-zа-яёіїґ])" also killed the valid prepositional/genitive forms, so
+  // "на 3 этаже" parsed as no floor at all. Blocked: этажный/этажная (a
+  // 5-storey BUILDING), этажей/этажність (total floors), этажка, floors.
+  const NOT_LETTER = '(?!н|ей|ів|ност|ка|ки|s)';
   // The number-before-floor form uses horizontal whitespace only, so a count on
   // the previous line ("Комнат: 4⏎Этаж:") can't be grabbed as the floor.
   let s =
@@ -556,7 +564,24 @@ export function parseDeposit(text) {
   );
   const m = withoutPhones.match(/(?:^|[^\d])(\d{1,3}(?:[ \u00a0.,]\d{3})+|\d{2,8})(?!\d)/);
   const amount = m ? Number(m[1].replace(/[\s.,]/g, '')) : null;
-  return { required: true, amount: amount && amount >= 10 ? amount : null };
+  // A deposit is often quoted in a different currency from the rent (e.g. rent
+  // in UZS but "\u0414\u0435\u043f\u043e\u0437\u0438\u0442 1000USD"). Capture the currency written next to the
+  // amount so the UI stops mislabelling it with the listing's currency.
+  let currency = null;
+  if (m) {
+    const near = withoutPhones.slice(Math.max(0, m.index), m.index + m[0].length + 12);
+    if (/\$|usd|\u0434\u043e\u043b\u043b\u0430\u0440|\u0443\.?\u0435\.?|\b\u0443\u0435\b/i.test(near)) currency = 'USD';
+    else if (/\u20ac|eur|\u0435\u0432\u0440\u043e/i.test(near)) currency = 'EUR';
+    else if (/\u0441\u0443\u043c|so'?m|uzs/i.test(near)) currency = 'UZS';
+    else if (/\u0442\u0433|\u20b8|kzt|\u0442\u0435\u043d\u0433\u0435/i.test(near)) currency = 'KZT';
+    else if (/\u0433\u0440\u043d|\u20b4|uah|\u0433\u0440\u0438\u0432\u043d/i.test(near)) currency = 'UAH';
+    else if (/lei|ron/i.test(near)) currency = 'RON';
+  }
+  return {
+    required: true,
+    amount: amount && amount >= 10 ? amount : null,
+    currency: amount && amount >= 10 ? currency : null,
+  };
 }
 
 // Agency commission. Returns { has: bool|null, percent: number|null } — percent
@@ -662,9 +687,10 @@ export function parseNewBuilding(text) {
 // Number of bathrooms / санузлы. "2 санузла", "sanuzel 2", "2 bathrooms".
 export function parseBathrooms(text) {
   if (!text) return null;
+  // "сан узел" is often written with a space, so the stem allows one.
   const m =
-    text.match(/(\d)\s*(?:санузл|с\/?у\b|ванн[аы]|bathroom|sanuzel|hammom)/i) ||
-    text.match(/(?:санузл\w*|bathrooms?|sanuzel|hammom)\D{0,4}(\d)/i);
+    text.match(/(\d)\s*(?:сан\s?узл|с\/?у\b|ванн[аы]|bathroom|sanuzel|hammom)/i) ||
+    text.match(/(?:сан\s?узл[а-яё]*|bathrooms?|sanuzel|hammom)\D{0,4}(\d)/i);
   const n = m ? Number(m[1]) : null;
   return n != null && n >= 1 && n <= 5 ? n : null;
 }
@@ -736,6 +762,34 @@ const SHOP_CHAINS = [
   ['Bravo', /\bbravo\b|браво/i],
   ['Metro C&C', /\bmetro\s*(?:cash|c\s*&\s*c|market)|метро\s*кэш/i],
 ];
+// Named civic/landmark places a post lists as orientation points ("рядом ЗАГС
+// Чиланзарского района, рынок Катартал"). These are the "nearby landmarks" the
+// LOCATIONS dictionary can't cover, because the names are local and open-ended.
+// Each rule captures the following proper name when there is one, so the label
+// stays informative ("Рынок Катартал") rather than a bare category.
+const PLACE_KINDS = [
+  ['Рынок', /(?:рынок|базар|bozor)\s+([A-ZА-ЯЁ][\wА-Яа-яЁё'’-]{2,24})/u],
+  // No \b before Cyrillic: JS word boundaries only understand ASCII letters.
+  ['ЗАГС', /(?:^|[^A-Za-zА-Яа-яЁё])ЗАГС(?:\s+([A-ZА-ЯЁ][\wА-Яа-яЁё'’-]{2,24}(?:\s+район[а-яё]*)?))?/u],
+  ['Парк', /(?:парк)\s+([A-ZА-ЯЁ][\wА-Яа-яЁё'’-]{2,24})/u],
+  ['Школа', /(?:школа)\s*(№\s*\d{1,4})/iu],
+  ['Клиника', /(?:клиника|поликлиника|больница)\s+([A-ZА-ЯЁ][\wА-Яа-яЁё'’-]{2,24})/u],
+  ['Стадион', /(?:стадион)\s+([A-ZА-ЯЁ][\wА-Яа-яЁё'’-]{2,24})/u],
+  ['Университет', /(?:университет|институт)\s+([A-ZА-ЯЁ][\wА-Яа-яЁё'’-]{2,24})/u],
+];
+
+export function parseNearbyPlaces(text) {
+  if (!text) return [];
+  const out = [];
+  for (const [kind, re] of PLACE_KINDS) {
+    const m = text.match(re);
+    if (!m) continue;
+    const label = m[1] ? `${kind} ${m[1].trim()}` : kind;
+    if (!out.includes(label)) out.push(label);
+  }
+  return out;
+}
+
 export function parseNearbyShops(text) {
   if (!text) return [];
   const out = [];
@@ -753,7 +807,9 @@ export function parseNearbyShops(text) {
 // --- More amenities / conditions (positive-only unless a negation is stated) ---
 export function parseParking(text) {
   if (!text) return null;
-  return /паркинг|парковк|машино[- ]?мест|parking|avtoturargoh|mashina\s*joyi/i.test(text) ? true : null;
+  // "парков" stem covers парковка / парковочное место / парковки — the narrower
+  // "парковк" missed "своё личное парковочное место".
+  return /паркинг|парков|машино[- ]?мест|parking|avtoturargoh|mashina\s*joyi/i.test(text) ? true : null;
 }
 export function parseElevator(text) {
   if (!text) return null;

@@ -4,7 +4,7 @@ import {
   classifyChildren, classifyDealType, classifyPets, looksCommercial, looksHousingWanted, looksRoomOnly,
   parseAirConditioner, parseAmenities, parseAreaFromText, parseBalcony, parseBathrooms, parseBedrooms,
   parseCommunalSeparated, parseContact, parseDeposit, parseElevator, parseFurnished, parseGasSupply,
-  parseHeating, parseHotWater, parseInternet, parseKvartal, parseNearbyShops, parseNegotiable,
+  parseHeating, parseHotWater, parseInternet, parseKvartal, parseNearbyShops, parseNearbyPlaces, parseNegotiable,
   parseNewBuilding, parseParking, parseSmoking, parseYear,
 } from './textparse.js';
 import {
@@ -52,7 +52,10 @@ export function makeListing(partial) {
   const explicitDistrict = parseExplicitDistrict(combined, partial.country);
   const district = canonicalDistrict(partial.district ?? explicitDistrict ?? loc.district, partial.country);
   const metro = partial.metro ?? loc.metro;
-  const nearby = partial.nearby ?? loc.nearby;
+  // Dictionary landmarks (LOCATIONS) plus open-ended local ones written in the
+  // post itself ("рынок Катартал", "ЗАГС Чиланзарского района").
+  const nearby = partial.nearby
+    ?? [...new Set([...(loc.nearby || []), ...parseNearbyPlaces(combined)])];
   // Explicit source value > labelled free-text parser > curated dictionary.
   const residenceComplex = partial.residenceComplex ?? parseResidentialComplex(combined) ?? loc.residentialComplex;
   const address = partial.address ?? parseAddress(combined);
@@ -61,6 +64,9 @@ export function makeListing(partial) {
   const childrenAllowed = partial.childrenAllowed ?? classifyChildren(combined);
   const roomOnly = partial.roomOnly ?? looksRoomOnly(combined);
   const dep = parseDeposit(combined); const deposit = partial.deposit ?? dep.required; const depositAmount = partial.depositAmount ?? dep.amount;
+  // The deposit is frequently quoted in another currency than the rent
+  // ("Депозит 1000USD" on a UZS listing), so carry its own currency when stated.
+  const depositCurrency = partial.depositCurrency ?? dep.currency ?? null;
   const com = parseCommission(combined); const commission = partial.commission ?? com.has; const commissionPercent = partial.commissionPercent ?? com.percent;
   const balcony = partial.balcony ?? parseBalcony(combined); const airConditioner = partial.airConditioner ?? parseAirConditioner(combined);
   const gas = partial.gas ?? parseGasSupply(combined); const bathrooms = partial.bathrooms != null ? Number(partial.bathrooms) : parseBathrooms(combined);
@@ -82,7 +88,7 @@ export function makeListing(partial) {
     description, dealType, floor, totalFloors, buildingYear, bedrooms, audience, contact, district, area,
     areaAmbiguous:partial.areaAmbiguous ?? loc.areaAmbiguous ?? false, locationConfidence:partial.locationConfidence ?? loc.locationConfidence ?? null,
     requireExactAddress:partial.requireExactAddress ?? loc.requireExactAddress ?? false, metro, nearby, residenceComplex,
-    commercial, petsAllowed, childrenAllowed, roomOnly, deposit, depositAmount, commission, commissionPercent, balcony,
+    commercial, petsAllowed, childrenAllowed, roomOnly, deposit, depositAmount, depositCurrency, commission, commissionPercent, balcony,
     airConditioner, gas, bathrooms, newBuilding, communalSeparated, kvartal, nearbyShops, parking, elevator, heating,
     hotWater, internet, smokingAllowed, negotiable, furnished, condition:partial.condition ?? null, amenities,
     tags:partial.tags ?? extractTags({title,description,propertyType,byAgency,rooms,dealType,audience,district,nearby,residenceComplex,petsAllowed,childrenAllowed,roomOnly,deposit,commission,commissionPercent}),
