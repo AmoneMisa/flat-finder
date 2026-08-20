@@ -305,6 +305,7 @@ export const COUNTRIES = {
       { name: 'rentCV', city: 'Chernivtsi' },
       { name: 'RENTIN_CHERNIVTSI', city: 'Chernivtsi' },
       { name: 'neruhomistrus', city: 'Chernivtsi' },
+      { name: 'orendari_chernivtsi', city: 'Chernivtsi' },
 
       // Zaporizhzhia
       { name: 'dreamservice_zp', city: 'Zaporizhzhia' },
