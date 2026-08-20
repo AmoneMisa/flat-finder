@@ -83,8 +83,7 @@ export function installHiringRoutes(app) {
           checkedAt: req.body?.checkedAt || null,
         });
       }
-      const pruned = await pruneHiringCandidates();
-      return res.json({ ok: true, saved, pruned });
+      return res.json({ ok: true, saved });
     } catch (error) {
       return res.status(500).json({ error: error?.message || String(error) });
     }
