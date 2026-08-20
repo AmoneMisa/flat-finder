@@ -1,0 +1,39 @@
+# Local build definitions. Production pulls prebuilt images from GHCR (see
+# .github/workflows/deploy.yml) and never loads this file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+#
+# Deliberately not named docker-compose.override.yml -- compose auto-loads that
+# name, which would put image building back on the server.
+services:
+  flat-finder-backend:
+    build:
+      context: ./backend
+
+  flat-finder-queue-task-api:
+    build:
+      context: ./backend
+
+  flat-finder-queue-dispatcher:
+    build:
+      context: ./queue-worker
+
+  flat-finder-queue-worker-1:
+    build:
+      context: ./queue-worker
+
+  flat-finder-queue-worker-2:
+    build:
+      context: ./queue-worker
+
+  flat-finder-olx-fetcher:
+    build:
+      context: ./olx-fetcher
+
+  flat-finder-olx-fetcher-ua:
+    build:
+      context: ./olx-fetcher
+
+  flat-finder-elasticsearch:
+    build:
+      context: ./elasticsearch
