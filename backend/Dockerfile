@@ -13,4 +13,8 @@ COPY package.json package-lock.json ./
 COPY src ./src
 
 EXPOSE 4000
-CMD ["node", "src/server.js"]
+# bootstrap.js is the entrypoint, not server.js: it patches
+# express.application.listen to install the /api/translation routes before
+# the app binds, then imports server.js. Running server.js directly starts a
+# server that 404s every translation request.
+CMD ["node", "src/bootstrap.js"]
