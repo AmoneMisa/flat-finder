@@ -255,6 +255,9 @@ function parseFilters(q) {
     bedroomsMax: num(q.bedroomsMax),
     areaMin: num(q.areaMin),
     areaMax: num(q.areaMax),
+    // Price per square metre, expressed in priceCurrency like priceMin/priceMax.
+    pricePerSqmMin: num(q.pricePerSqmMin),
+    pricePerSqmMax: num(q.pricePerSqmMax),
     floorMin: num(q.floorMin),
     floorMax: num(q.floorMax),
     totalFloorsMin: num(q.totalFloorsMin),
