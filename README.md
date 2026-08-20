@@ -41,7 +41,7 @@ naming it. So the app is always usable.
 ### Enabling / configuring sources
 
 - **OLX**: runs the `olx-fetcher` sidecar (see `docker-compose.yml`). The backend
-  reaches it via `OLX_FETCHER_URL` (set to `http://flat-finder-olx-fetcher:4020`
+  reaches it via `OLX_FETCHER_URL` (set to `http://flat-finder-olx-router:4021`
   in compose). Override the impersonation target with `OLX_IMPERSONATE` on the
   sidecar if a curl_cffi upgrade renames it. If the sidecar is unset/down, OLX
   simply yields nothing and the other sources still work.
