@@ -188,7 +188,7 @@ export async function recordHiringSourceRun({
       checked_at, last_success_at, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8::timestamptz,
-      CASE WHEN $4 = 'ok' THEN $8::timestamptz ELSE NULL END,
+      CASE WHEN $4 <> 'error' THEN $8::timestamptz ELSE NULL END,
       NOW()
     )
     ON CONFLICT (source, handle)
@@ -200,7 +200,7 @@ export async function recordHiringSourceRun({
       error = EXCLUDED.error,
       checked_at = EXCLUDED.checked_at,
       last_success_at = CASE
-        WHEN EXCLUDED.status = 'ok' THEN EXCLUDED.checked_at
+        WHEN EXCLUDED.status <> 'error' THEN EXCLUDED.checked_at
         ELSE hiring_source_runs.last_success_at
       END,
       updated_at = NOW();
