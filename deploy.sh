@@ -61,6 +61,29 @@ else
   echo "Keeping the existing Elasticsearch container unchanged"
 fi
 
+# --no-deps below bypasses every depends_on condition, not just the
+# Elasticsearch one, so on a cold start the API can outrace Postgres and Redis.
+# Wait for the hard dependencies explicitly, in the same degrade-rather-than-fail
+# style used for Elasticsearch: warn on timeout and carry on, since both
+# services restart automatically once their dependency appears.
+wait_for_healthy() {
+  local service="$1" deadline=$((SECONDS + ${2:-120})) cid status
+  while [[ $SECONDS -lt $deadline ]]; do
+    cid="$(docker compose ps -q "$service" 2>/dev/null || true)"
+    if [[ -n "$cid" ]]; then
+      status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || true)"
+      if [[ "$status" == "healthy" || "$status" == "none" ]]; then
+        return 0
+      fi
+    fi
+    sleep 3
+  done
+  echo "WARNING: ${service} did not become healthy in time; continuing anyway."
+}
+
+wait_for_healthy flat-finder-postgres 120
+wait_for_healthy flat-finder-redis 60
+
 # Both Node services already degrade gracefully when Elasticsearch is
 # unavailable. --no-deps is deliberate: an unhealthy search node must not block
 # deployment of the API or queue task API.
@@ -73,7 +96,10 @@ docker compose up -d --no-deps \
   flat-finder-queue-worker-1 \
   flat-finder-queue-worker-2
 
-docker image prune -f
+# Plain `image prune -f` drops only dangling layers, and every build keeps its
+# :<sha> tag, so it never collected anything while superseded images piled up.
+# Images still attached to a container are preserved either way.
+docker image prune -af --filter "until=336h"
 
 docker compose ps
 
