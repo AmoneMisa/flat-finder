@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Standalone deploy for the flat-finder backend stack. Run on the server (or via
-# the GitHub Actions SSH step). Rebuilds and restarts only this compose project.
+# Standalone deploy for the flat-finder stack. Images are built in GitHub Actions
+# and pulled from GHCR; the production server never builds application images.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Pull latest code if this is a git checkout on the server.
+IMAGE_TAG="${1:-${IMAGE_TAG:-latest}}"
+export IMAGE_TAG
+
+# Pull the compose/deploy definition matching the pushed revision.
 if [ -d .git ]; then
   git pull --ff-only
 fi
 
-docker compose pull || true
-docker compose up -d --build
+echo "Deploying flat-finder images with tag: ${IMAGE_TAG}"
+docker compose pull
+docker compose up -d --remove-orphans
+docker image prune -f
 docker compose ps

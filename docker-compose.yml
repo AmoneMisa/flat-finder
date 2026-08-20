@@ -1,7 +1,6 @@
 services:
   flat-finder-backend:
-    build:
-      context: ./backend
+    image: ghcr.io/amonemisa/flat-finder-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file:
       - ./.env
@@ -41,8 +40,7 @@ services:
       start_period: 15s
 
   flat-finder-queue-task-api:
-    build:
-      context: ./backend
+    image: ghcr.io/amonemisa/flat-finder-backend:${IMAGE_TAG:-latest}
     command: ["node", "src/queue-task-server.js"]
     restart: unless-stopped
     env_file:
@@ -110,8 +108,7 @@ services:
       start_interval: 5s
 
   flat-finder-queue-dispatcher:
-    build:
-      context: ./queue-worker
+    image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       QUEUE_MODE: dispatcher
@@ -126,8 +123,7 @@ services:
         condition: service_healthy
 
   flat-finder-queue-worker-1:
-    build:
-      context: ./queue-worker
+    image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       QUEUE_MODE: worker
@@ -143,8 +139,7 @@ services:
         condition: service_healthy
 
   flat-finder-queue-worker-2:
-    build:
-      context: ./queue-worker
+    image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       QUEUE_MODE: worker
@@ -160,8 +155,7 @@ services:
         condition: service_healthy
 
   flat-finder-olx-fetcher:
-    build:
-      context: ./olx-fetcher
+    image: ghcr.io/amonemisa/flat-finder-olx-fetcher:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       - OLX_TIMEOUT=45
@@ -175,8 +169,7 @@ services:
       start_period: 15s
 
   flat-finder-olx-fetcher-ua:
-    build:
-      context: ./olx-fetcher
+    image: ghcr.io/amonemisa/flat-finder-olx-fetcher:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       - OLX_TIMEOUT=45
@@ -236,8 +229,7 @@ services:
       start_period: 10s
 
   flat-finder-elasticsearch:
-    build:
-      context: ./elasticsearch
+    image: ghcr.io/amonemisa/flat-finder-elasticsearch:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       - discovery.type=single-node
