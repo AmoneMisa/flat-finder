@@ -253,11 +253,18 @@ services:
       - default
       - ai-net
     healthcheck:
+      # Recovering the indices off the bind-mounted disk takes this node minutes,
+      # not seconds. The old 40s start_period plus 20x10s of retries expired
+      # while ES was still starting, so Docker marked a perfectly good node
+      # unhealthy and every service depending on it refused to start.
+      # start_interval keeps detection fast once it is actually up without a
+      # tight steady-state interval (ignored by Docker < 25).
       test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/' >/dev/null || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 40s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+      start_interval: 5s
 
 volumes:
   flat-finder-postgres-data:
