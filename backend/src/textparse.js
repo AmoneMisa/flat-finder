@@ -213,19 +213,120 @@ export function looksCommercial(text) {
   return text ? COMMERCIAL_RE.test(text) : false;
 }
 
+// Words that end a complex name: everything after them describes the flat, not
+// the building. Without this the capture ran on for its full character budget
+// and swallowed the rest of the title, often cutting a word in half
+// ("Манзара Сити 2комнатная новая ремонт ме").
+const RC_STOP_WORD_RE =
+  /^(?:жк|жм|продаётся|продается|продам|продажа|продаю|срочно|сдаётся|сдается|сдаю|сдам|аренда|арендую|новая|новый|новое|новые|новостройка|вторичка|квартира|квартиры|квартиру|комната|комнаты|комнат|комнатная|комнатной|этаж|этажа|этаж[её]м|ремонт|ремонтом|евроремонт|мебель|мебелью|мебелированная|дом|дома|тел|телефон|цена|торг|собственник|риелтор|посредник|uy|kvartira|xonali|sotiladi|ijaraga|yangi|arzon|tel|narx|new|newbuild|apartment|apartments|flat|for|sale|rent|rooms?|floor|предлагается|предлагаются|предлагаем|продаже|продаж|куплю|обмен|просторные|просторная|две|три|четыре|пять|район|районе|районы|туман|тумани|tumani|district|массив|массиве|massiv|метро|metro|рядом|около|возле|яндекс|город|шахар|shahar)$/iu;
+
+// Tokens that are attributes rather than name parts: "2комнатная", "3/7/12",
+// "56кв", "100м2", bare numbers.
+const RC_ATTRIBUTE_TOKEN_RE = /^\d|^[\d/]+$|^[a-zа-яё]?\d+(?:[а-яёa-z]{1,4})?$/iu;
+
+// Latin brand-style names lead many titles without any "ЖК" in front of them:
+// "PARKENT AVENUE Мирзо-Улугбекский район", "London | 4/7/10". Marketing words
+// look the same but never name a building.
+const RC_LATIN_NOISE_RE =
+  /^(?:vip|lux|luxe|elite|premium|euro|evro|new|top|super|best|hot|urgent|srochno|arenda|ijara|sotiladi|sale|rent|for|home|house|flat|apartment|apartments|kvartira|tashkent|toshkent|wifi|wi|fi|tv|ac|internet|telegram|yandex|google|instagram|whatsapp|iphone|samsung|lg|bosch|artel|km|km2|m2|sqm|usd|uzs|eur)$/iu;
+
+const RC_LATIN_WORD_RE = /^[A-Za-z][A-Za-z'’\-]{1,}$/u;
+
+// Only the headline is searched for a bare Latin name. Descriptions are full of
+// Latin words that name nothing ("Wi-Fi", "Bosch", a Telegram handle), and the
+// building's name, when the post leads with it, is in the first few words.
+const RC_HEADLINE_TOKENS = 12;
+
+/**
+ * A Latin brand-style name in the headline, when it reads as a name rather
+ * than a marketing prefix — "PARKENT AVENUE Мирзо-Улугбекский район",
+ * "Юнусобод Манзара Hi Town 2комнатная". Only used when the post never
+ * writes "ЖК".
+ */
+function leadingLatinName(text) {
+  // A Latin run only reads as a brand when the post around it is Cyrillic.
+  // Plenty of Tashkent posts are written entirely in Uzbek Latin, where the
+  // same rule happily returned "Bez makler" or "Manzil Samarqand Darvoza".
+  const cyrillic = (String(text).match(/[а-яёіїґ]/giu) || []).length;
+  const latin = (String(text).match(/[a-z]/giu) || []).length;
+  if (cyrillic <= latin) return null;
+
+  const tokens = String(text).trim().split(/[\s|,;:!]+/).filter(Boolean).slice(0, RC_HEADLINE_TOKENS);
+  const runs = [];
+  let current = [];
+
+  for (const token of tokens) {
+    const clean = token.replace(/^[«»"'„“]+|[«»"'„“!|,]+$/g, '');
+    // "Wi-Fi" must read as "wifi" for the noise check to catch it.
+    const bare = clean.replace(/[-'’]/g, '');
+    const usable =
+      RC_LATIN_WORD_RE.test(clean) &&
+      !RC_LATIN_NOISE_RE.test(clean) &&
+      !RC_LATIN_NOISE_RE.test(bare) &&
+      !RC_STOP_WORD_RE.test(clean);
+
+    if (usable && current.length < 3) {
+      current.push(clean);
+      continue;
+    }
+    if (current.length) runs.push(current);
+    current = usable ? [clean] : [];
+  }
+  if (current.length) runs.push(current);
+
+  // A run that is the whole headline is as likely to be an English description;
+  // a name is surrounded by the rest of the post.
+  const named = runs.find(
+    (run) => run.some((word) => word.length >= 3) && run.length < tokens.length,
+  );
+  return named ? named.join(' ') : null;
+}
+
+const RC_DISTRICT_MARKER_RE = /^(?:район|районе|районы|туман|тумани|tumani|district)$/iu;
+
+const RC_MARKER_RE =
+  /(?:жк|жм|ж\/к|residential complex|ansamblu(?: rezidential)?|turar[- ]?joy majmuasi)\s*/i;
+
 // Residential-complex ("ЖК ...", "residential complex", "ЖМ", "TP", RO "ansamblu")
 // name, when the post names one. Returns a short trimmed name or null.
 export function parseResidentialComplex(text) {
   if (!text) return null;
-  const m = text.match(
-    /(?:жк|жм|ж\/к|residential complex|ansamblu(?: rezidential)?|turar[- ]?joy majmuasi)\s*["'«»„“]?\s*([^"'«»„“\n,.;()]{2,40})/i,
-  );
-  if (!m) return null;
-  const name = m[1]
+  const marker = text.match(RC_MARKER_RE);
+  if (!marker) return leadingLatinName(text);
+  const rest = text
+    .slice(marker.index + marker[0].length)
+    .replace(/^[\s:；;—–\-·•]+/, '');
+
+  // A quoted name is authoritative — take it whole, however it is written.
+  const quoted = rest.match(/^["'«»„“]\s*([^"'«»„“\n]{2,60})["'«»„“]?/);
+  const candidate = quoted
+    ? quoted[1]
+    // Otherwise read the plain run the old expression used to take wholesale.
+    : (rest.match(/^([^"'«»„“\n,.;:()!|]{2,60})/) || [, ''])[1];
+
+  const parsed = String(candidate)
     .trim()
     // Hashtags commonly remove spaces: `#ЖКАссаломСохил`.
     .replace(/([\p{Ll}\d])(\p{Lu})/gu, '$1 $2')
-    .replace(/\s{2,}/g, ' ');
+    .replace(/\s{2,}/g, ' ')
+    .split(/\s+/)
+    // A name is a couple of words, and it ends where the flat's description
+    // begins — never mid-word at a character budget.
+    .reduce((words, token) => {
+      if (words.stopped || words.list.length >= 4) return { ...words, stopped: true };
+      const clean = token.replace(/^[«»"'„“]+|[«»"'„“!|,]+$/g, '');
+      if (!clean || RC_STOP_WORD_RE.test(clean) || RC_ATTRIBUTE_TOKEN_RE.test(clean)) {
+        return { ...words, stopped: true, by: clean };
+      }
+      return { list: [...words.list, clean], stopped: false, by: words.by };
+    }, { list: [], stopped: false, by: '' })
+
+  // "Bobur Residence Яккасарай район": the word that stopped us proves the one
+  // before it was the district, not part of the name.
+  const words = RC_DISTRICT_MARKER_RE.test(parsed.by) ? parsed.list.slice(0, -1) : parsed.list;
+  while (words.length > 1 && [...words[words.length - 1]].length <= 2) words.pop();
+  const name = words.join(' ').trim();
+
   // Reject captures that are just a number or too short to be a name.
   return /[a-zA-Zа-яёіїґ]{2,}/i.test(name) ? name : null;
 }
