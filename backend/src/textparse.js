@@ -882,16 +882,67 @@ const PLACE_KINDS = [
   ['Университет', /(?:университет|институт)\s+([A-ZА-ЯЁ][\wА-Яа-яЁё'’-]{2,24})/u],
 ];
 
+// Posts routinely spell out their surroundings — "Рядом есть: Миллий Бог,
+// Ташкент сити, NRG U-Tower, Узбекфильм…" — and that list is worth more than
+// the generic kinds below, which only ever recorded that *a* mosque exists.
+const NEARBY_BLOCK_RE =
+  /(?:^|\n)\s*[^\p{L}\p{N}\n]{0,4}(?:р[яa]дом(?:\s+(?:есть|находятся|расположены|с\s+домом))?|непода[лл][её]ку|поблизости|окружени[ие]|инфраструктура|ориентир(?:ы|ами)?|yaqinida|atrofida|yonida|nearby|landmarks?)\s*[:—-]\s*([^\n]{4,500})/iu;
+
+// Words that describe the flat rather than name a place, plus the filler that
+// survives a comma split.
+const NEARBY_NOISE_RE =
+  /^(?:и|а|в|на|у|до|от|все|вс[её]|есть|рядом|близко|недалеко|минут\p{L}*|пешком|транспорт|остановк\p{L}*|магазин|магазины|аптека|аптеки|садик|садики|школа|школы|детский\s+сад|всё\s+необходимое|инфраструктура|развит\p{L}*)$/iu;
+
+/** Named places from an explicit "рядом" enumeration, in the order written. */
+function enumeratedNearby(text) {
+  // A post often carries both a short "Ориентир: X" line and a full
+  // "Рядом есть: ..." list; the first match alone threw the longer one away.
+  const blocks = [...text.matchAll(new RegExp(NEARBY_BLOCK_RE.source, NEARBY_BLOCK_RE.flags + 'g'))]
+    .map((match) => match[1])
+    .filter(Boolean);
+  if (!blocks.length) return [];
+
+  // Case-insensitive dedup: one post writes the same landmark both ways
+  // ("Ориентир: Дружба Нородов" in the header, "Дружба нородов" in the list).
+  const seen = new Set();
+  const items = [];
+
+  for (const item of blocks
+    .join(', ')
+    .split(/[,;•·|]+/)
+    .map((part) =>
+      part
+        .replace(/\s{2,}/g, ' ')
+        .replace(/^[\s\-–—.]+|[\s\-–—.!]+$/g, '')
+        .trim(),
+    )) {
+    if (item.length < 3 || item.length > 45) continue;
+    if (NEARBY_NOISE_RE.test(item)) continue;
+    // Needs at least one real word; "5 мин" and "2" are not places.
+    if (!/\p{L}{3,}/u.test(item)) continue;
+
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(item);
+    if (items.length >= 14) break;
+  }
+
+  return items;
+}
+
 export function parseNearbyPlaces(text) {
   if (!text) return [];
-  const out = [];
+  const out = enumeratedNearby(text);
   for (const [kind, re] of PLACE_KINDS) {
     const m = text.match(re);
     if (!m) continue;
     const label = m[1] ? `${kind} ${m[1].trim()}` : kind;
+    // A generic "Мечеть" adds nothing when the post already named one.
+    if (out.some((item) => item.toLowerCase().includes(kind.toLowerCase()))) continue;
     if (!out.includes(label)) out.push(label);
   }
-  return out;
+  return out.slice(0, 16);
 }
 
 export function parseNearbyShops(text) {
