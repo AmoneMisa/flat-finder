@@ -82,6 +82,39 @@ export async function geocodeQuery(query) {
   return fetchGeo(query)
 }
 
+/**
+ * The bounding box of a place, for area queries. Cached like everything else,
+ * so the places sync does not re-ask for a city's extent every month.
+ */
+export async function geocodeBbox(query) {
+  if (!query) return null
+  const key = `geo:bbox:v1:${query.toLowerCase().trim()}`
+  const cached = await cacheGet(key)
+  if (cached) return cached.bbox
+
+  await throttle()
+  try {
+    const params = new URLSearchParams({ q: query, format: 'json', limit: '1' })
+    const res = await fetch(`${NOMINATIM_URL}?${params}`, {
+      headers: { 'User-Agent': UA, 'Accept-Language': 'en' },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!res.ok) throw new Error(`nominatim ${res.status}`)
+    const data = await res.json()
+    // Nominatim orders it [south, north, west, east].
+    const raw = Array.isArray(data) ? data[0]?.boundingbox : null
+    const numbers = (raw || []).map(Number)
+    const bbox = numbers.length === 4 && numbers.every(Number.isFinite)
+      ? [numbers[0], numbers[2], numbers[1], numbers[3]]
+      : null
+    await cacheSet(key, { bbox }, bbox ? HIT_TTL_MS : MISS_TTL_MS)
+    return bbox
+  } catch {
+    await cacheSet(key, { bbox: null }, ERR_TTL_MS)
+    return null
+  }
+}
+
 function jitter(id, amount) {
   if (!amount) return [0, 0]
   let h = 0

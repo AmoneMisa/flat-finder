@@ -9,7 +9,7 @@
 import { COUNTRY_CODES } from './countries.js';
 import { warmCountry } from './scrapers/index.js';
 import { scheduleCountryVision } from './vision-enrichment.js';
-import { geocodeQuery } from './geocode.js';
+import { geocodeBbox, geocodeQuery } from './geocode.js';
 import { placesFreshness } from './places-db.js';
 import { syncAllPlaces } from './places-sync.js';
 
@@ -87,7 +87,7 @@ export async function refreshPlaces(force = false) {
       console.log(`[places] skipping sync, table filled ${Math.round((Date.now() - newest) / 86_400_000)}d ago`);
       return null;
     }
-    return await syncAllPlaces(geocodeQuery);
+    return await syncAllPlaces(geocodeQuery, geocodeBbox);
   } catch (error) {
     console.warn('[places] sync failed:', error?.message || error);
     return null;
