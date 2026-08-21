@@ -205,8 +205,126 @@ function indexDefinition() {
                 metro:
                     locationText(),
 
+                microdistrict:
+                    locationText(),
+
                 address:
                     locationText(),
+
+                /*
+                 * Что вокруг дома —
+                 * заполняется по координатам
+                 * (nearby-places.js) из
+                 * таблицы places.
+                 *
+                 * nested, а не object:
+                 * иначе «Новза ближе 500 м»
+                 * совпадёт с любым домом, у
+                 * которого есть и Новза, и
+                 * что-нибудь в 500 м — но
+                 * не одновременно.
+                 */
+                metroNearby: {
+                    type:
+                        'nested',
+
+                    properties: {
+                        name: {
+                            type:
+                                'keyword',
+
+                            normalizer:
+                                'flat_keyword',
+                        },
+
+                        nameRu: {
+                            type:
+                                'keyword',
+
+                            normalizer:
+                                'flat_keyword',
+                        },
+
+                        distanceM: {
+                            type:
+                                'integer',
+                        },
+                    },
+                },
+
+                nearbyPlaces: {
+                    type:
+                        'nested',
+
+                    properties: {
+                        name:
+                            searchableText(),
+
+                        kind: {
+                            type:
+                                'keyword',
+                        },
+
+                        distanceM: {
+                            type:
+                                'integer',
+                        },
+                    },
+                },
+
+                landmarksNearby: {
+                    type:
+                        'nested',
+
+                    properties: {
+                        name: {
+                            type:
+                                'keyword',
+
+                            normalizer:
+                                'flat_keyword',
+                        },
+
+                        distanceM: {
+                            type:
+                                'integer',
+                        },
+                    },
+                },
+
+                /*
+                 * Плоская копия названий для
+                 * обычного поиска: nested-поля
+                 * multi_match не видит.
+                 *
+                 * Намеренно НЕ в SEARCH_FIELDS:
+                 * «IT Park» иначе вернёт всё в
+                 * радиусе трёх километров.
+                 * Это поле для отдельного
+                 * фильтра «рядом с ...».
+                 */
+                placeNames:
+                    searchableText(),
+
+                metroDistanceM: {
+                    type:
+                        'integer',
+                },
+
+                metroSource: {
+                    type:
+                        'keyword',
+                },
+
+                placesSource: {
+                    type:
+                        'keyword',
+                },
+
+                adminSource: {
+                    type:
+                        'keyword',
+                },
 
                 residenceComplex:
                     locationText(),
@@ -409,8 +527,26 @@ function toSearchDocument(
             listing.lng,
         );
 
+    const placeNames = [
+        ...(listing.metroNearby || []),
+        ...(listing.nearbyPlaces || []),
+        ...(listing.landmarksNearby || []),
+    ]
+        .map((place) => place?.name)
+        .filter(Boolean);
+
     const document = {
         ...listing,
+
+        ...(placeNames.length
+            ? {
+                placeNames: [
+                    ...new Set(
+                        placeNames,
+                    ),
+                ],
+            }
+            : {}),
 
         id:
             String(
@@ -502,6 +638,39 @@ export async function initElasticsearch() {
             `[elasticsearch] index ` +
             `${SEARCH_INDEX} created`,
         );
+    } else {
+        /*
+         * Маппинг применяется только при
+         * создании индекса, а dynamic:false
+         * означает, что новое поле попадёт
+         * в _source и никогда — в поиск.
+         *
+         * Добавление полей — это merge;
+         * Elasticsearch отвергает только
+         * изменение уже существующих, чего
+         * здесь не происходит.
+         */
+        try {
+            await client.indices.putMapping({
+                index:
+                SEARCH_INDEX,
+
+                properties:
+                indexDefinition()
+                    .mappings
+                    .properties,
+            });
+
+            console.log(
+                `[elasticsearch] mappings ` +
+                `merged into ${SEARCH_INDEX}`,
+            );
+        } catch (error) {
+            console.warn(
+                `[elasticsearch] mapping merge ` +
+                `skipped: ${error?.message ?? error}`,
+            );
+        }
     }
 
     await client.cluster.health({
@@ -855,6 +1024,45 @@ export async function deleteListingDocuments(
     return ids.size;
 }
 
+/*
+ * Поля, где опечатка недопустима.
+ *
+ * После ICU-транслитерации
+ * «новза» → novza, а «новая» →
+ * novaa: одна правка. С
+ * fuzziness AUTO запрос
+ * «Новза» вытаскивал каждую
+ * «новую квартиру» в городе, а
+ * настоящие объявления у метро
+ * тонули среди них.
+ *
+ * Названия локаций короткие и
+ * пишутся правильно — здесь
+ * ищем точно, опечатки
+ * оставляем описанию.
+ */
+const EXACT_ONLY_FIELDS = [
+    'metro',
+    'city',
+    'district',
+    'area',
+    'kvartal',
+];
+
+function isExactOnlyField(field) {
+    const name =
+        String(field)
+            .split('^')[0]
+            .replace(
+                /\.latin$/,
+                '',
+            );
+
+    return EXACT_ONLY_FIELDS.includes(
+        name,
+    );
+}
+
 const SEARCH_FIELDS = [
     'title^10',
     'title.latin^10',
@@ -1037,22 +1245,71 @@ function buildTextSearchQuery(
                  * После ICU-транслитерации
                  * различие уже может быть
                  * обработано fuzzy search.
+                 *
+                 * Порог 6, а не 4: на коротких
+                 * словах одна правка меняет
+                 * смысл (новза/новая,
+                 * минор/мирзо), и такие
+                 * запросы — это почти всегда
+                 * название станции или района.
                  */
-                if (
+                const fuzzy =
                     [
                         ...token,
-                    ].length >= 4
-                ) {
-                    options.fuzziness =
-                        'AUTO';
+                    ].length >= 6;
 
-                    options.prefix_length =
-                        1;
+                if (!fuzzy) {
+                    return {
+                        multi_match:
+                        options,
+                    };
                 }
 
+                /*
+                 * Опечатки — только по
+                 * описательным полям.
+                 * Совпадение по названию
+                 * локации остаётся точным,
+                 * но по-прежнему участвует
+                 * в поиске.
+                 */
                 return {
-                    multi_match:
-                    options,
+                    bool: {
+                        should: [
+                            {
+                                multi_match: {
+                                    ...options,
+
+                                    fields:
+                                        SEARCH_FIELDS.filter(
+                                            (field) =>
+                                                !isExactOnlyField(
+                                                    field,
+                                                ),
+                                        ),
+
+                                    fuzziness:
+                                        'AUTO',
+
+                                    prefix_length:
+                                        1,
+                                },
+                            },
+
+                            {
+                                multi_match: {
+                                    ...options,
+
+                                    fields:
+                                        SEARCH_FIELDS.filter(
+                                            isExactOnlyField,
+                                        ),
+                                },
+                            },
+                        ],
+
+                        minimum_should_match: 1,
+                    },
                 };
             },
         );
