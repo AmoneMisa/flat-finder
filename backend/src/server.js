@@ -255,6 +255,22 @@ function parseFilters(q) {
     bedroomsMax: num(q.bedroomsMax),
     areaMin: num(q.areaMin),
     areaMax: num(q.areaMax),
+
+    /*
+     * Расстояние пешком до
+     * метро и до нужного места
+     * рядом — из координат
+     * (nearby-places.js).
+     *
+     * nearbyKind без nearbyMaxM
+     * означает «просто чтобы
+     * было рядом»: радиус тогда
+     * берётся из умолчаний
+     * категории.
+     */
+    metroMaxM: num(q.metroMaxM),
+    nearbyMaxM: num(q.nearbyMaxM),
+    nearbyKind: q.nearbyKind ? String(q.nearbyKind).toLowerCase() : null,
     // Price per square metre, expressed in priceCurrency like priceMin/priceMax.
     pricePerSqmMin: num(q.pricePerSqmMin),
     pricePerSqmMax: num(q.pricePerSqmMax),

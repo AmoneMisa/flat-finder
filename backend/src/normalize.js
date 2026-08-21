@@ -97,7 +97,7 @@ export function makeListing(partial) {
 export const MAX_AGE_MS = 21*24*60*60*1000;
 function normCity(s){return String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
 export function applyFilters(listings, filters, rates=null){
-  const {propertyType,agency,priceMin,priceMax,priceTolerance,priceCurrency,query,dealType,roomsMin,roomsMax,bedroomsMin,bedroomsMax,areaMin,areaMax,pricePerSqmMin,pricePerSqmMax,floorMin,floorMax,totalFloorsMin,totalFloorsMax,yearMin,yearMax,newBuilding,audience,city,cityAliases,district,metro,listingId,pets,children,roomOnly,maxAgeDays,sources}=filters;
+  const {propertyType,agency,priceMin,priceMax,priceTolerance,priceCurrency,query,dealType,roomsMin,roomsMax,bedroomsMin,bedroomsMax,areaMin,areaMax,pricePerSqmMin,pricePerSqmMax,floorMin,floorMax,totalFloorsMin,totalFloorsMax,yearMin,yearMax,newBuilding,audience,city,cityAliases,district,metro,metroMaxM,nearbyMaxM,nearbyKind,listingId,pets,children,roomOnly,maxAgeDays,sources}=filters;
   const convertPrices=!!(rates&&priceCurrency); const now=Date.now(); const ageCapMs=maxAgeDays!=null&&maxAgeDays>0?Math.min(maxAgeDays*24*60*60*1000,MAX_AGE_MS):MAX_AGE_MS;
   const cityForms=city?(cityAliases?.length?cityAliases:[city]).map(normCity):null;
   return listings.filter((l)=>{
@@ -114,6 +114,15 @@ export function applyFilters(listings, filters, rates=null){
     if(pricePerSqmMin!=null||pricePerSqmMax!=null){const a=l.areaSqm;if(a==null||!(a>0))return false;if(convertPrices){const p=toUsd(l.price,l.currency,rates);if(p==null)return false;const per=p/a;if(pricePerSqmMin!=null){const m=toUsd(pricePerSqmMin,priceCurrency,rates);if(m!=null&&per<m)return false;}if(pricePerSqmMax!=null){const m=toUsd(pricePerSqmMax,priceCurrency,rates);if(m!=null&&per>m)return false;}}else{if(l.price==null)return false;const per=l.price/a;if(pricePerSqmMin!=null&&per<pricePerSqmMin)return false;if(pricePerSqmMax!=null&&per>pricePerSqmMax)return false;}}if(floorMin!=null&&(l.floor==null||l.floor<floorMin))return false;if(floorMax!=null&&(l.floor==null||l.floor>floorMax))return false;if(totalFloorsMin!=null&&(l.totalFloors==null||l.totalFloors<totalFloorsMin))return false;if(totalFloorsMax!=null&&(l.totalFloors==null||l.totalFloors>totalFloorsMax))return false;
     if(yearMin!=null&&(l.buildingYear==null||l.buildingYear<yearMin))return false;if(yearMax!=null&&(l.buildingYear==null||l.buildingYear>yearMax))return false;if(newBuilding===true&&l.newBuilding!==true)return false;if(audience&&audience!=='any'&&l.audience!==audience)return false;if(pets===true&&l.petsAllowed!==true)return false;if(children===true&&l.childrenAllowed===false)return false;if(roomOnly===true&&!l.roomOnly)return false;
     if(cityForms){const hay=normCity(l.city);if(!cityForms.some((f)=>hay.includes(f)))return false;}if(district&&(l.district??'').toLowerCase()!==String(district).toLowerCase())return false;if(metro&&(l.metro??'').toLowerCase()!==String(metro).toLowerCase())return false;
+    // Walking distance filters. A listing with no measured distance cannot
+    // satisfy "within 300 m", so it drops out the way every other numeric
+    // range here treats a missing value.
+    if(metroMaxM!=null){const d=l.metroDistanceM??(l.metroNearby??[])[0]?.distanceM;if(d==null||d>metroMaxM)return false;}
+    if(nearbyKind||nearbyMaxM!=null){
+      const places=(l.nearbyPlaces??[]).filter((p)=>!nearbyKind||String(p.kind).toLowerCase()===nearbyKind);
+      if(!places.length)return false;
+      if(nearbyMaxM!=null&&!places.some((p)=>p.distanceM!=null&&p.distanceM<=nearbyMaxM))return false;
+    }
     if(query){const hay=[l.title,l.description,l.city,l.region,l.district,l.microdistrict,l.metro,l.residenceComplex,...(l.tags??[])].filter(Boolean).join(' ').toLowerCase();if(!hay.includes(String(query).toLowerCase()))return false;}return true;
   });
 }
