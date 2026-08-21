@@ -9,12 +9,20 @@
 import { COUNTRY_CODES } from './countries.js';
 import { warmCountry } from './scrapers/index.js';
 import { scheduleCountryVision } from './vision-enrichment.js';
+import { geocodeQuery } from './geocode.js';
+import { placesFreshness } from './places-db.js';
+import { syncAllPlaces } from './places-sync.js';
 
 const REFRESH_MINUTES = Math.max(1, Number(process.env.REFRESH_MINUTES) || 60);
 const REFRESH_MS = REFRESH_MINUTES * 60 * 1000;
 
+// Shops and stations change on the scale of months, so the places table is
+// refilled far less often than listings — and only when it is actually stale.
+const PLACES_MAX_AGE_MS = Math.max(1, Number(process.env.PLACES_REFRESH_DAYS) || 30) * 24 * 60 * 60 * 1000;
+
 let timer = null;
 let running = false;
+let placesRunning = false;
 let lastRun = null; // { at, ok, total, sourceCounts, degraded }
 
 // Refresh all countries in parallel. Never throws — individual failures are
@@ -62,6 +70,32 @@ export async function refreshAll(reason = 'scheduled') {
   return lastRun;
 }
 
+/**
+ * Refills the places table when it is empty or older than the max age. Failures
+ * are logged and swallowed: listings refresh regardless of what OSM is doing.
+ */
+export async function refreshPlaces(force = false) {
+  if (placesRunning) return null;
+  placesRunning = true;
+  try {
+    const freshness = await placesFreshness();
+    const newest = freshness.reduce(
+      (latest, row) => Math.max(latest, new Date(row.updated_at || 0).getTime() || 0),
+      0,
+    );
+    if (!force && newest && Date.now() - newest < PLACES_MAX_AGE_MS) {
+      console.log(`[places] skipping sync, table filled ${Math.round((Date.now() - newest) / 86_400_000)}d ago`);
+      return null;
+    }
+    return await syncAllPlaces(geocodeQuery);
+  } catch (error) {
+    console.warn('[places] sync failed:', error?.message || error);
+    return null;
+  } finally {
+    placesRunning = false;
+  }
+}
+
 export function getLastRun() {
   return lastRun;
 }
@@ -73,6 +107,9 @@ export function startScheduler() {
   }
   // Warm on boot (don't block server startup), then on the interval.
   refreshAll('startup').catch((e) => console.warn('[scheduler] startup refresh error', e));
+  // Places first-fill happens alongside, so a fresh deployment enriches from the
+  // first refresh instead of waiting a month.
+  refreshPlaces().catch((e) => console.warn('[places] startup sync error', e));
   timer = setInterval(
     () => refreshAll('hourly').catch((e) => console.warn('[scheduler] refresh error', e)),
     REFRESH_MS,

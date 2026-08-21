@@ -9,6 +9,10 @@
 // request path.
 
 import { cacheGet, cacheSet } from './cache.js'
+import { assignNearestMetro } from './metro-nearest.js'
+import { loadCityPlaces } from './places-db.js'
+import { annotateListings } from './nearby-places.js'
+import { applyReverseGeo } from './reverse-geo.js'
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 const UA = 'flat-finder/1.0 (housing aggregator; contact: admin@whiteslove.me)'
@@ -64,6 +68,18 @@ async function fetchGeo(query) {
     await cacheSet(geoKey(query), { coords: null }, ERR_TTL_MS)
     return null
   }
+}
+
+/**
+ * One cached, throttled forward geocode. Used by the places sync to resolve
+ * station and landmark names — it has no per-run budget because it runs on a
+ * monthly schedule, not per listing.
+ */
+export async function geocodeQuery(query) {
+  if (!query) return null
+  const cached = await getCachedGeo(query)
+  if (cached !== undefined) return cached
+  return fetchGeo(query)
 }
 
 function jitter(id, amount) {
@@ -393,5 +409,47 @@ export async function geocodeListings(listings, country) {
       listing.locationAccuracyM = 8000
     }
   }
+
+  // Everything below reads coordinates rather than text, so it runs once every
+  // listing has a position. None of it overwrites what a post stated itself.
+
+  // Administrative hierarchy: mahalla, district, city, country.
+  await applyReverseGeo(listings, country)
+
+  // Surroundings from the places table: metro, shops, landmarks, transport.
+  // One query per city per batch, then arithmetic — no per-listing calls.
+  const placed = await annotateFromPlaces(listings, country)
+
+  // Only if the table has not been filled yet does the old per-station
+  // geocoding path run, so a fresh deployment still names a station.
+  if (!placed) {
+    await assignNearestMetro(listings, country, (query) => lookup({ q: query }))
+  }
+
   return listings
+}
+
+/** Annotates a batch from the places table; false when the table is empty. */
+async function annotateFromPlaces(listings, country) {
+  const cities = new Set(
+    listings
+      .filter((listing) => Number.isFinite(listing.lat) && Number.isFinite(listing.lng))
+      .map((listing) => listing.city || country?.cities?.[0] || ''),
+  )
+  let annotated = 0
+
+  for (const city of cities) {
+    if (!city) continue
+    try {
+      const rows = await loadCityPlaces(country?.code, city)
+      if (!rows.length) continue
+      const batch = listings.filter((listing) => (listing.city || country?.cities?.[0]) === city)
+      annotated += annotateListings(batch, rows)
+    } catch (error) {
+      console.warn(`[places] lookup for ${city} failed:`, error?.message || error)
+    }
+  }
+
+  if (annotated) console.log(`[places] annotated ${annotated} listings from the places table`)
+  return annotated > 0
 }
