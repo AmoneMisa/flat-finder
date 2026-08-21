@@ -75,18 +75,34 @@ const KIND_RULES = [
 ];
 
 export function placeCities() {
-  const cities = [];
-  for (const [country, meta] of Object.entries(COUNTRIES)) {
-    for (const city of meta.cities || []) {
-      cities.push({
-        country,
+  // Round-robin across countries rather than country by country. Walking the
+  // list in declaration order put Tashkent 37th of 43 — some forty minutes of
+  // rate-limited queries after the sync starts — while every capital sat idle
+  // behind another country's seventh city. Now each country's main city is
+  // done in the first pass.
+  const byCountry = Object.entries(COUNTRIES).map(([country, meta]) => ({
+    country,
+    countryName: meta.name || country,
+    cities: [...(meta.cities || [])],
+  }));
+
+  const ordered = [];
+  const deepest = Math.max(0, ...byCountry.map((entry) => entry.cities.length));
+
+  for (let index = 0; index < deepest; index += 1) {
+    for (const entry of byCountry) {
+      const city = entry.cities[index];
+      if (!city) continue;
+      ordered.push({
+        country: entry.country,
         city,
-        countryName: meta.name || country,
-        landmarks: CITY_LANDMARKS[`${country}/${city}`] || [],
+        countryName: entry.countryName,
+        landmarks: CITY_LANDMARKS[`${entry.country}/${city}`] || [],
       });
     }
   }
-  return cities;
+
+  return ordered;
 }
 
 function overpassQuery([south, west, north, east]) {

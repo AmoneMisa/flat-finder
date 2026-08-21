@@ -30,7 +30,7 @@ export const TASHKENT_METRO = Object.freeze([
   // Chilonzor line — 17 stations
   station('Buyuk Ipak Yoli', 'Буюк Ипак Йули', 'Buyuk Ipak Yoli', 'chilonzor', [
     'Buyuk Ipak Yuli', "Buyuk Ipak Yo'li", 'Buyuk Ipak Yo‘li', 'Буюк Ипак Йўли',
-    'БИЙ', 'Максим Горький', 'Максима Горького', 'Maxim Gorky', 'Maksim Gorkiy',
+    'БИЙ', 'Максим Горький', 'Максима Горького', 'Горького', 'Maxim Gorky', 'Maksim Gorkiy',
   ]),
   station('Pushkin', 'Пушкин', 'Pushkin', 'chilonzor'),
   station('Hamid Olimjon', 'Хамид Алимджан', 'Hamid Olimjon', 'chilonzor', [

@@ -886,12 +886,17 @@ const PLACE_KINDS = [
 // Ташкент сити, NRG U-Tower, Узбекфильм…" — and that list is worth more than
 // the generic kinds below, which only ever recorded that *a* mosque exists.
 const NEARBY_BLOCK_RE =
-  /(?:^|\n)\s*[^\p{L}\p{N}\n]{0,4}(?:р[яa]дом(?:\s+(?:есть|находятся|расположены|с\s+домом))?|непода[лл][её]ку|поблизости|окружени[ие]|инфраструктура|ориентир(?:ы|ами)?|yaqinida|atrofida|yonida|nearby|landmarks?)\s*[:—-]\s*([^\n]{4,500})/iu;
+  /(?:^|\n)[^\n]{0,30}?(?:что\s+(?:есть|находится)\s+р[яa]дом|р[яa]дом(?:\s+(?:есть|находятся|расположены|с\s+домом))?|непода[лл][её]ку|поблизости|в\s+шаговой\s+доступности|окружени[ие]|ориентир(?:ы|ами)?|yaqinida|atrofida|yonida|nearby|landmarks?)\s*[:—-]?\s*([^\n]{4,500})/iu;
 
 // Words that describe the flat rather than name a place, plus the filler that
 // survives a comma split.
 const NEARBY_NOISE_RE =
-  /^(?:и|а|в|на|у|до|от|все|вс[её]|есть|рядом|близко|недалеко|минут\p{L}*|пешком|транспорт|остановк\p{L}*|магазин|магазины|аптека|аптеки|садик|садики|школа|школы|детский\s+сад|всё\s+необходимое|инфраструктура|развит\p{L}*)$/iu;
+  /^(?:и|а|в|на|у|до|от|все|вс[её]|есть|рядом|близко|недалеко|минут\p{L}*|пешком|транспорт|остановк\p{L}*|магазин|магазины|аптека|аптеки|садик|садики|всё\s+необходимое|развит\p{L}*)$/iu;
+
+// Phrases that promise surroundings without naming any: keep them out however
+// they are worded ("вся инфраструктура города", "находится вся инфраструктура").
+const NEARBY_FILLER_RE =
+  /(?:инфраструктур\p{L}*|все\s+необходимо|вс[её]\s+рядом|шаговой\s+доступност|развитый\s+район)/iu;
 
 /** Named places from an explicit "рядом" enumeration, in the order written. */
 function enumeratedNearby(text) {
@@ -917,7 +922,7 @@ function enumeratedNearby(text) {
         .trim(),
     )) {
     if (item.length < 3 || item.length > 45) continue;
-    if (NEARBY_NOISE_RE.test(item)) continue;
+    if (NEARBY_NOISE_RE.test(item) || NEARBY_FILLER_RE.test(item)) continue;
     // Needs at least one real word; "5 мин" and "2" are not places.
     if (!/\p{L}{3,}/u.test(item)) continue;
 

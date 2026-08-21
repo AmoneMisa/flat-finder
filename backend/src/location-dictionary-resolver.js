@@ -32,6 +32,17 @@ export function dictionaryCity(countryCode, city) {
   return mergedCountry(countryCode)[city] || null;
 }
 
+/**
+ * Hashtags run words together — "#метроБИЙ", "#МирзоУлугбекский", "#ЖКNestOne"
+ * — and an alias that expects a word boundary never matches inside one. Only
+ * hashtag tokens are split, so ordinary CamelCase names are left alone.
+ */
+function expandHashtags(text) {
+  return String(text).replace(/#(\S+)/gu, (match, body) =>
+    '#' + body.replace(/(\p{Ll}|\d)(\p{Lu})/gu, '$1 $2'),
+  );
+}
+
 export function matchDictionaryEntities(text, countryCode, preferredCity = null) {
   const result = {
     region: null,
@@ -42,6 +53,7 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     residentialComplex: null,
   };
   if (!text || !countryCode) return result;
+  text = expandHashtags(text);
 
   if (countryCode === 'UA') {
     result.region = matchUkraineRegion(text)?.name || null;
