@@ -221,6 +221,13 @@ services:
       - flat-finder-postgres-data:/var/lib/postgresql/data
     expose:
       - "5432"
+    # Also on the shared network: the personal-site candidate board keeps its
+    # durable storage here, in its own `hiring` schema. Without this the site
+    # cannot resolve the host at all and silently falls back to Redis-only,
+    # which loses every candidate and every crawl cursor on a restart.
+    networks:
+      - default
+      - ai-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
