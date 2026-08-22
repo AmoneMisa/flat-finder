@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { COUNTRIES } from './countries.js';
 import { initDb, closeDb } from './db.js';
 import {
@@ -6,11 +7,13 @@ import {
   closeElasticsearch,
 } from './elasticsearch.js';
 import { processQueueTask } from './queueTasks.js';
+import { closeQueueTaskDedup } from './queueTaskDedup.js';
 
 const app = express();
 const port = Number(process.env.QUEUE_TASK_PORT) || 4010;
 const internalKey = String(process.env.QUEUE_INTERNAL_KEY || '');
-const QUEUE_PROTOCOL_VERSION = 2;
+const queueProtocol = Math.max(3, Number(process.env.QUEUE_PROTOCOL_VERSION) || 3);
+const crawlerShards = Math.max(1, Number(process.env.QUEUE_SHARDS) || 2);
 
 app.use(express.json({ limit: '256kb' }));
 
@@ -35,6 +38,48 @@ function channelConfig(value) {
   return null;
 }
 
+function stableHash(value) {
+  let hash = 2166136261;
+  for (const char of String(value || '')) {
+    hash ^= char.codePointAt(0);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+function chainKey(task) {
+  if (task.type === 'flat.olx.page') {
+    return [
+      task.country,
+      task.citySlug || 'all',
+      task.segment || 'all',
+    ].join(':');
+  }
+
+  if (task.type === 'flat.telegram.channel') {
+    return [
+      task.country,
+      'telegram',
+      task.channel || 'unknown',
+    ].join(':');
+  }
+
+  return [task.country || 'unknown', task.type || 'unknown'].join(':');
+}
+
+function crawlerShard(task) {
+  return stableHash(chainKey(task)) % crawlerShards;
+}
+
+function versionTask(task, crawlGeneration) {
+  return {
+    ...task,
+    queueProtocol,
+    crawlGeneration,
+    crawlerShard: crawlerShard(task),
+  };
+}
+
 function taskPriority(task) {
   if (task.type === 'flat.olx.page') {
     if (task.country === 'UA' && task.page === 1 && task.city) return 10;
@@ -56,16 +101,9 @@ function taskPriority(task) {
   return 1;
 }
 
-function queueTask(task) {
-  return {
-    ...task,
-    queueProtocol: QUEUE_PROTOCOL_VERSION,
-    priority: taskPriority(task),
-  };
-}
-
 function buildPlan() {
   const tasks = [];
+  const crawlGeneration = randomUUID();
 
   for (const country of Object.values(COUNTRIES)) {
     if (country.sources?.includes('olx')) {
@@ -74,45 +112,40 @@ function buildPlan() {
       if (country.code === 'UA' && Array.isArray(country.olxCities)) {
         for (const target of country.olxCities) {
           for (const segment of segments) {
-            const task = {
+            const task = versionTask({
               type: 'flat.olx.page',
               country: country.code,
               city: target.city,
               citySlug: target.slug,
               segment,
               page: 1,
-            };
-            tasks.push(queueTask(task));
+            }, crawlGeneration);
+            tasks.push({ ...task, priority: taskPriority(task) });
           }
         }
 
-        // Start one national chain per segment for towns that are not curated.
-        // Every successful OLX page decides whether page N+1 is still inside
-        // the freshness window, so the queue is no longer pre-filled with a
-        // guessed fixed page count.
         for (const segment of segments) {
-          const task = {
+          const task = versionTask({
             type: 'flat.olx.page',
             country: country.code,
             city: null,
             citySlug: null,
             segment,
             page: 1,
-          };
-          tasks.push(queueTask(task));
+          }, crawlGeneration);
+          tasks.push({ ...task, priority: taskPriority(task) });
         }
       } else {
-        // Other OLX portals use the same dynamic page-chain protocol.
         for (const segment of segments) {
-          const task = {
+          const task = versionTask({
             type: 'flat.olx.page',
             country: country.code,
             city: null,
             citySlug: null,
             segment,
             page: 1,
-          };
-          tasks.push(queueTask(task));
+          }, crawlGeneration);
+          tasks.push({ ...task, priority: taskPriority(task) });
         }
       }
     }
@@ -122,18 +155,18 @@ function buildPlan() {
         const channel = channelConfig(raw);
         if (!channel) continue;
 
-        const task = {
+        const task = versionTask({
           type: 'flat.telegram.channel',
           country: country.code,
           channel: channel.name,
           city: channel.city,
-        };
-        tasks.push(queueTask(task));
+        }, crawlGeneration);
+        tasks.push({ ...task, priority: taskPriority(task) });
       }
     }
   }
 
-  return tasks;
+  return { tasks, crawlGeneration };
 }
 
 app.get('/health', (_req, res) => {
@@ -145,11 +178,13 @@ app.get('/internal/queue-plan', (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const tasks = buildPlan();
+  const { tasks, crawlGeneration } = buildPlan();
   return res.json({
     ok: true,
-    queueProtocol: QUEUE_PROTOCOL_VERSION,
     count: tasks.length,
+    queueProtocol,
+    crawlerShards,
+    crawlGeneration,
     tasks,
   });
 });
@@ -175,7 +210,9 @@ await initDb();
 await initElasticsearch();
 
 const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`[queue-task] listening on :${port}`);
+  console.log(
+    `[queue-task] listening on :${port} protocol=${queueProtocol} shards=${crawlerShards}`,
+  );
 });
 
 async function shutdown() {
@@ -183,6 +220,7 @@ async function shutdown() {
     await Promise.allSettled([
       closeDb(),
       closeElasticsearch(),
+      closeQueueTaskDedup(),
     ]);
     process.exit(0);
   });
