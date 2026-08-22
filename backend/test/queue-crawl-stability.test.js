@@ -16,12 +16,27 @@ test('queue plan seeds one OLX page and lets successful tasks extend the chain',
   assert.match(queueTasks, /page:\s*nextPage/);
 });
 
-test('RabbitMQ worker heartbeat exceeds the synchronous task timeout', () => {
-  assert.match(worker, /RABBITMQ_HEARTBEAT/);
-  assert.match(worker, /max\(240,/);
+test('queue protocol survives page chaining and invalidates durable legacy backlog', () => {
+  assert.match(queueServer, /QUEUE_PROTOCOL_VERSION\s*=\s*2/);
+  assert.match(queueServer, /queueProtocol:\s*QUEUE_PROTOCOL_VERSION/);
+  assert.match(queueTasks, /queueProtocol:\s*Number\(task\.queueProtocol\)/);
+  assert.match(worker, /QUEUE_PROTOCOL_VERSION/);
+  assert.match(worker, /dropped legacy task/);
+});
+
+test('worker services AMQP heartbeats while the HTTP task is running', () => {
+  assert.match(worker, /ThreadPoolExecutor/);
+  assert.match(worker, /execute_with_heartbeats/);
+  assert.match(worker, /connection\.process_data_events\(time_limit=1\)/);
+  assert.match(worker, /channel\.basic_get/);
+  assert.doesNotMatch(worker, /start_consuming\(\)/);
   assert.match(worker, /for next_task in result\.get\("nextTasks"\)/);
-  assert.match(worker, /publish_task\(ch, next_task\)/);
-  assert.match(worker, /ch\.basic_ack\(method\.delivery_tag\)/);
+  assert.match(worker, /publish_task\(channel, next_task\)/);
+});
+
+test('dispatcher rechecks quickly while an old crawl backlog is draining', () => {
+  assert.match(worker, /return False/);
+  assert.match(worker, /min\(30, REFRESH_SECONDS\)/);
 });
 
 test('legacy in-process crawler stands down when the durable queue is configured', () => {
