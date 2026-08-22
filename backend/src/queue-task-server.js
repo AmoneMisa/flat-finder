@@ -10,6 +10,7 @@ import { processQueueTask } from './queueTasks.js';
 const app = express();
 const port = Number(process.env.QUEUE_TASK_PORT) || 4010;
 const internalKey = String(process.env.QUEUE_INTERNAL_KEY || '');
+const QUEUE_PROTOCOL_VERSION = 2;
 
 app.use(express.json({ limit: '256kb' }));
 
@@ -55,6 +56,14 @@ function taskPriority(task) {
   return 1;
 }
 
+function queueTask(task) {
+  return {
+    ...task,
+    queueProtocol: QUEUE_PROTOCOL_VERSION,
+    priority: taskPriority(task),
+  };
+}
+
 function buildPlan() {
   const tasks = [];
 
@@ -73,7 +82,7 @@ function buildPlan() {
               segment,
               page: 1,
             };
-            tasks.push({ ...task, priority: taskPriority(task) });
+            tasks.push(queueTask(task));
           }
         }
 
@@ -90,7 +99,7 @@ function buildPlan() {
             segment,
             page: 1,
           };
-          tasks.push({ ...task, priority: taskPriority(task) });
+          tasks.push(queueTask(task));
         }
       } else {
         // Other OLX portals use the same dynamic page-chain protocol.
@@ -103,7 +112,7 @@ function buildPlan() {
             segment,
             page: 1,
           };
-          tasks.push({ ...task, priority: taskPriority(task) });
+          tasks.push(queueTask(task));
         }
       }
     }
@@ -119,7 +128,7 @@ function buildPlan() {
           channel: channel.name,
           city: channel.city,
         };
-        tasks.push({ ...task, priority: taskPriority(task) });
+        tasks.push(queueTask(task));
       }
     }
   }
@@ -137,7 +146,12 @@ app.get('/internal/queue-plan', (req, res) => {
   }
 
   const tasks = buildPlan();
-  return res.json({ ok: true, count: tasks.length, tasks });
+  return res.json({
+    ok: true,
+    queueProtocol: QUEUE_PROTOCOL_VERSION,
+    count: tasks.length,
+    tasks,
+  });
 });
 
 app.post('/internal/queue-task', async (req, res) => {
