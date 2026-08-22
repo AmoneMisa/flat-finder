@@ -9,6 +9,10 @@ import { indexListings } from './elasticsearch.js';
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
 const OLX_MIN_INTERVAL_MS = Number(process.env.OLX_MIN_INTERVAL_MS) || 900;
 const OLX_JITTER_MS = Number(process.env.OLX_JITTER_MS) || 500;
+const OLX_QUEUE_MAX_PAGES = Math.max(
+  1,
+  Number(process.env.OLX_QUEUE_MAX_PAGES) || 1000,
+);
 
 function stateParam(item, keyRe, nameRe) {
   for (const param of item.params ?? []) {
@@ -145,9 +149,20 @@ async function fetchOlxPage({ country, segment, page, citySlug, city }) {
   const body = await response.json();
   const ads = Array.isArray(body?.ads) ? body.ads : [];
 
-  return ads
-    .filter((item) => item?.id != null)
-    .map((item) => mapOlxStateItem(item, config, city || null));
+  return {
+    listings: ads
+      .filter((item) => item?.id != null)
+      .map((item) => mapOlxStateItem(item, config, city || null)),
+    rawCount: Number.isFinite(Number(body?.rawCount))
+      ? Number(body.rawCount)
+      : ads.length,
+    pastCutoff: body?.pastCutoff === true,
+    lookbackDays: Number(body?.lookbackDays) || null,
+    cutoffAt: body?.cutoffAt || null,
+    oldestKnownAt: body?.oldestKnownAt || null,
+    newestKnownAt: body?.newestKnownAt || null,
+    unknownDateCount: Number(body?.unknownDateCount) || 0,
+  };
 }
 
 function findTelegramChannel(country, name) {
@@ -186,6 +201,27 @@ async function persist(listings, task) {
   return { saved, indexed };
 }
 
+function nextOlxTask(task, pageResult, page) {
+  if (
+    pageResult.pastCutoff ||
+    pageResult.rawCount <= 0 ||
+    page >= OLX_QUEUE_MAX_PAGES
+  ) {
+    return null;
+  }
+
+  const nextPage = page + 1;
+  return {
+    type: 'flat.olx.page',
+    country: String(task.country || '').toUpperCase(),
+    city: task.city || null,
+    citySlug: task.citySlug || null,
+    segment: String(task.segment || ''),
+    page: nextPage,
+    priority: Math.max(1, 7 - nextPage),
+  };
+}
+
 export async function processQueueTask(task) {
   const type = String(task?.type || '');
   const country = String(task?.country || '').toUpperCase();
@@ -201,13 +237,14 @@ export async function processQueueTask(task) {
     }
 
     const page = Math.max(1, Math.trunc(Number(task.page) || 1));
-    const listings = await fetchOlxPage({
+    const pageResult = await fetchOlxPage({
       country,
       segment,
       page,
       citySlug: task.citySlug ? String(task.citySlug) : null,
       city: task.city ? String(task.city) : null,
     });
+    const nextTask = nextOlxTask(task, pageResult, page);
 
     return {
       ok: true,
@@ -216,8 +253,16 @@ export async function processQueueTask(task) {
       city: task.city || null,
       segment,
       page,
-      fetched: listings.length,
-      ...(await persist(listings, task)),
+      fetched: pageResult.listings.length,
+      rawCount: pageResult.rawCount,
+      pastCutoff: pageResult.pastCutoff,
+      lookbackDays: pageResult.lookbackDays,
+      cutoffAt: pageResult.cutoffAt,
+      oldestKnownAt: pageResult.oldestKnownAt,
+      newestKnownAt: pageResult.newestKnownAt,
+      unknownDateCount: pageResult.unknownDateCount,
+      nextTasks: nextTask ? [nextTask] : [],
+      ...(await persist(pageResult.listings, task)),
     };
   }
 
@@ -241,6 +286,7 @@ export async function processQueueTask(task) {
       country,
       channel: channelName,
       fetched: listings.length,
+      nextTasks: [],
       ...(await persist(listings, task)),
     };
   }
