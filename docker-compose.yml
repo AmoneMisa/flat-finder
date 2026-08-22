@@ -12,10 +12,17 @@ services:
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
-      # Every configured Ukrainian oblast centre is a breadth target on every
-      # refresh. One page per deal segment keeps that wide crawl bounded.
+      # Every configured Ukrainian oblast centre is crawled every refresh. The
+      # fetcher now emits an empty page only after the sorted feed is completely
+      # older than the supported freshness window, so max-pages is a safety cap
+      # rather than the definition of how much data we keep.
       - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
-      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1}
+      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1000}
+      - OLX_UA_CITY_BUDGET_MS=${OLX_UA_CITY_BUDGET_MS:-600000}
+      # A complete all-city freshness walk can legitimately run for minutes.
+      # It happens in the background once a cache exists; do not cut the OLX
+      # source at the old 60s deadline before Odesa/large cities are reached.
+      - SOURCE_DEADLINE_MS=${SOURCE_DEADLINE_MS:-7200000}
       # Telegram photo bytes are cached on disk (a container /tmp would be lost
       # on every recreate, forcing a slow MTProto refetch for every image).
       - PHOTO_CACHE_DIR=/var/cache/flat-photos
@@ -56,7 +63,9 @@ services:
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
       - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
-      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1}
+      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1000}
+      - OLX_UA_CITY_BUDGET_MS=${OLX_UA_CITY_BUDGET_MS:-600000}
+      - SOURCE_DEADLINE_MS=${SOURCE_DEADLINE_MS:-7200000}
       - QUEUE_TASK_PORT=4010
       - QUEUE_INTERNAL_KEY=${QUEUE_INTERNAL_KEY}
     expose:
@@ -168,6 +177,7 @@ services:
       # One 45s attempt fits below nginx's 55s deadline. RabbitMQ performs the
       # durable retry; two attempts here caused deterministic proxy 504s.
       - OLX_ATTEMPTS=${OLX_ATTEMPTS:-1}
+      - OLX_LOOKBACK_DAYS=${OLX_LOOKBACK_DAYS:-21}
     expose:
       - "4020"
     healthcheck:
@@ -183,6 +193,7 @@ services:
     environment:
       - OLX_TIMEOUT=45
       - OLX_ATTEMPTS=${OLX_ATTEMPTS:-1}
+      - OLX_LOOKBACK_DAYS=${OLX_LOOKBACK_DAYS:-21}
     expose:
       - "4020"
     healthcheck:
