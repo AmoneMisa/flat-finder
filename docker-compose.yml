@@ -12,6 +12,10 @@ services:
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
+      # Every configured Ukrainian oblast centre is a breadth target on every
+      # refresh. One page per deal segment keeps that wide crawl bounded.
+      - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
+      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1}
       # Telegram photo bytes are cached on disk (a container /tmp would be lost
       # on every recreate, forcing a slow MTProto refetch for every image).
       - PHOTO_CACHE_DIR=/var/cache/flat-photos
@@ -51,6 +55,8 @@ services:
       - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
+      - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
+      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1}
       - QUEUE_TASK_PORT=4010
       - QUEUE_INTERNAL_KEY=${QUEUE_INTERNAL_KEY}
     expose:
