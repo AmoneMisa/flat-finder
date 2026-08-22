@@ -10,6 +10,9 @@ RABBITMQ_URL = os.environ.get("RABBITMQ_URL", "amqp://crawler:crawler@flat-finde
 TASK_API_URL = os.environ.get("QUEUE_TASK_API_URL", "http://flat-finder-queue-task-api:4010").rstrip("/")
 QUEUE_INTERNAL_KEY = os.environ.get("QUEUE_INTERNAL_KEY", "")
 MODE = os.environ.get("QUEUE_MODE", "worker").strip().lower()
+WORKER_ROLE = os.environ.get("QUEUE_WORKER_ROLE", "olx").strip().lower()
+if WORKER_ROLE not in {"olx", "telegram"}:
+    raise RuntimeError("QUEUE_WORKER_ROLE must be 'olx' or 'telegram'")
 REFRESH_SECONDS = max(60, int(os.environ.get("QUEUE_REFRESH_SECONDS", "1800")))
 PREFETCH = max(1, int(os.environ.get("QUEUE_PREFETCH", "1")))
 MAX_ATTEMPTS = max(1, int(os.environ.get("QUEUE_MAX_ATTEMPTS", "5")))
@@ -24,6 +27,8 @@ BLOCKED_CONNECTION_TIMEOUT = max(
 
 MAIN_QUEUE_PREFIX = "crawl.flats.tasks.v3"
 RETRY_QUEUE_PREFIX = "crawl.flats.tasks.v3.retry"
+TELEGRAM_QUEUE = "crawl.flats.telegram.v3"
+TELEGRAM_RETRY_QUEUE = "crawl.flats.telegram.v3.retry"
 DEAD_QUEUE = "crawl.flats.tasks.dead"
 LEGACY_MAIN_QUEUE = "crawl.flats.tasks"
 LEGACY_RETRY_QUEUE = "crawl.flats.tasks.retry"
@@ -60,12 +65,25 @@ def declare(channel):
                 "x-dead-letter-routing-key": main_queue(shard),
             },
         )
+
+    channel.queue_declare(
+        TELEGRAM_QUEUE,
+        durable=True,
+        arguments={"x-max-priority": 10},
+    )
+    channel.queue_declare(
+        TELEGRAM_RETRY_QUEUE,
+        durable=True,
+        arguments={
+            "x-message-ttl": 30_000,
+            "x-dead-letter-exchange": "",
+            "x-dead-letter-routing-key": TELEGRAM_QUEUE,
+        },
+    )
     channel.queue_declare(DEAD_QUEUE, durable=True)
 
 
 def purge_legacy_queues(channel):
-    # Re-declare the v2 queues with their original arguments so this is safe
-    # whether the broker still has them or a fresh RabbitMQ volume is used.
     channel.queue_declare(
         LEGACY_MAIN_QUEUE,
         durable=True,
@@ -96,11 +114,16 @@ def queue_depth(channel, queue):
 
 
 def all_pending(channel):
-    return sum(
+    olx_pending = sum(
         queue_depth(channel, main_queue(shard))
         + queue_depth(channel, retry_queue(shard))
         for shard in range(QUEUE_SHARDS)
     )
+    telegram_pending = (
+        queue_depth(channel, TELEGRAM_QUEUE)
+        + queue_depth(channel, TELEGRAM_RETRY_QUEUE)
+    )
+    return olx_pending + telegram_pending
 
 
 def publish(channel, queue, payload, *, priority=0, attempt=0):
@@ -126,12 +149,23 @@ def task_shard(task):
         return 0
 
 
+def task_queue(task):
+    if task.get("type") == "flat.telegram.channel":
+        return TELEGRAM_QUEUE
+    return main_queue(task_shard(task))
+
+
+def task_retry_queue(task):
+    if task.get("type") == "flat.telegram.channel":
+        return TELEGRAM_RETRY_QUEUE
+    return retry_queue(task_shard(task))
+
+
 def publish_task(channel, task):
     payload = dict(task)
     priority = int(payload.pop("priority", 0))
     payload.setdefault("queuedAt", int(time.time()))
-    shard = task_shard(payload)
-    publish(channel, main_queue(shard), payload, priority=priority)
+    publish(channel, task_queue(payload), payload, priority=priority)
 
 
 def api_request(path, payload=None, timeout=60):
@@ -142,7 +176,7 @@ def api_request(path, payload=None, timeout=60):
     method = "GET"
     headers = {
         "X-Queue-Key": QUEUE_INTERNAL_KEY,
-        "User-Agent": "flat-finder-rabbit-worker/3.0",
+        "User-Agent": "flat-finder-rabbit-worker/3.1",
     }
 
     if payload is not None:
@@ -177,12 +211,17 @@ def dispatch_once(channel):
         publish_task(channel, task)
 
     per_shard = [0] * QUEUE_SHARDS
+    telegram_count = 0
     for task in tasks:
-        per_shard[task_shard(task)] += 1
+        if task.get("type") == "flat.telegram.channel":
+            telegram_count += 1
+        else:
+            per_shard[task_shard(task)] += 1
 
     print(
         f"[queue:dispatcher] queued {len(tasks)} tasks "
-        f"generation={plan.get('crawlGeneration')} shards={per_shard}",
+        f"generation={plan.get('crawlGeneration')} "
+        f"olx_shards={per_shard} telegram={telegram_count}",
         flush=True,
     )
     return True
@@ -226,6 +265,17 @@ def execute_with_heartbeats(connection, executor, payload):
     return future.result()
 
 
+def worker_label():
+    return "telegram" if WORKER_ROLE == "telegram" else f"olx:{QUEUE_SHARD}"
+
+
+def task_matches_worker(payload):
+    task_type = payload.get("type")
+    if WORKER_ROLE == "telegram":
+        return task_type == "flat.telegram.channel"
+    return task_type == "flat.olx.page" and task_shard(payload) == QUEUE_SHARD
+
+
 def handle_delivery(connection, channel, executor, method, properties, body):
     try:
         payload = json.loads(body.decode("utf-8"))
@@ -233,14 +283,15 @@ def handle_delivery(connection, channel, executor, method, properties, body):
         payload = {"raw": body.decode("utf-8", errors="replace")}
 
     protocol = task_protocol(payload)
-    shard = task_shard(payload)
+    label = worker_label()
 
-    if protocol != QUEUE_PROTOCOL_VERSION or shard != QUEUE_SHARD:
+    if protocol != QUEUE_PROTOCOL_VERSION or not task_matches_worker(payload):
         channel.basic_ack(method.delivery_tag)
         print(
-            f"[queue:worker:{QUEUE_SHARD}] dropped mismatched task "
-            f"protocol={protocol} shard={shard} type={payload.get('type')} "
-            f"country={payload.get('country')} page={payload.get('page', '-')}",
+            f"[queue:worker:{label}] dropped mismatched task "
+            f"protocol={protocol} shard={task_shard(payload)} "
+            f"type={payload.get('type')} country={payload.get('country')} "
+            f"page={payload.get('page', '-')}",
             flush=True,
         )
         return
@@ -253,8 +304,9 @@ def handle_delivery(connection, channel, executor, method, properties, body):
 
         channel.basic_ack(method.delivery_tag)
         print(
-            f"[queue:worker:{QUEUE_SHARD}] completed {payload.get('type')} "
+            f"[queue:worker:{label}] completed {payload.get('type')} "
             f"country={payload.get('country')} city={payload.get('citySlug') or 'all'} "
+            f"segment={payload.get('segment') or payload.get('channel') or '-'} "
             f"page={payload.get('page', '-')} fetched={result.get('fetched', 0)} "
             f"dedup={1 if result.get('deduplicated') else 0} "
             f"next={len(result.get('nextTasks') or [])}",
@@ -263,27 +315,33 @@ def handle_delivery(connection, channel, executor, method, properties, body):
     except Exception as exc:
         attempt = int((properties.headers or {}).get("attempt", 0)) + 1
         priority = int(properties.priority or 0)
-        target = retry_queue(QUEUE_SHARD) if attempt < MAX_ATTEMPTS else DEAD_QUEUE
+        target = task_retry_queue(payload) if attempt < MAX_ATTEMPTS else DEAD_QUEUE
         publish(channel, target, payload, priority=priority, attempt=attempt)
         channel.basic_ack(method.delivery_tag)
         print(
-            f"[queue:worker:{QUEUE_SHARD}] failed attempt={attempt} target={target}: {exc}",
+            f"[queue:worker:{label}] failed type={payload.get('type')} "
+            f"country={payload.get('country')} city={payload.get('citySlug') or 'all'} "
+            f"segment={payload.get('segment') or payload.get('channel') or '-'} "
+            f"page={payload.get('page', '-')} attempt={attempt} "
+            f"target={target}: {exc}",
             flush=True,
         )
 
 
 def worker_forever():
+    label = worker_label()
+    own_queue = TELEGRAM_QUEUE if WORKER_ROLE == "telegram" else main_queue(QUEUE_SHARD)
+
     while True:
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"queue-http-{QUEUE_SHARD}")
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"queue-http-{label}")
         try:
             connection = connect()
             channel = connection.channel()
             channel.confirm_delivery()
             declare(channel)
             channel.basic_qos(prefetch_count=PREFETCH)
-            own_queue = main_queue(QUEUE_SHARD)
             print(
-                f"[queue:worker:{QUEUE_SHARD}] consuming {own_queue} "
+                f"[queue:worker:{label}] consuming {own_queue} "
                 f"heartbeat={HEARTBEAT}s protocol={QUEUE_PROTOCOL_VERSION}",
                 flush=True,
             )
@@ -306,7 +364,7 @@ def worker_forever():
                     body,
                 )
         except Exception as exc:
-            print(f"[queue:worker:{QUEUE_SHARD}] connection error: {exc}", flush=True)
+            print(f"[queue:worker:{label}] connection error: {exc}", flush=True)
             time.sleep(5)
         finally:
             executor.shutdown(wait=True, cancel_futures=True)
