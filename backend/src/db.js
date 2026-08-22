@@ -165,7 +165,19 @@ function dbListing(listing) {
 }
 
 export async function initDb() {
-    await pool.query(`
+    const client = await pool.connect();
+
+    try {
+        // Backend and queue-task-api start at the same time in production. PostgreSQL
+        // can race even on CREATE TABLE IF NOT EXISTS because both sessions may try
+        // to create the same catalog type concurrently. Serialize only schema DDL;
+        // normal reads/writes never take this lock.
+        await client.query(
+            'SELECT pg_advisory_lock($1)',
+            [742_000],
+        );
+
+    await client.query(`
     CREATE TABLE IF NOT EXISTS listings (
       id BIGSERIAL PRIMARY KEY,
 
@@ -214,19 +226,19 @@ export async function initDb() {
     );
   `);
 
-    await pool.query(`
+    await client.query(`
     CREATE INDEX IF NOT EXISTS
       listings_active_idx
     ON listings(active);
   `);
 
-    await pool.query(`
+    await client.query(`
     CREATE INDEX IF NOT EXISTS
       listings_country_active_idx
     ON listings(country, active);
   `);
 
-    await pool.query(`
+    await client.query(`
     CREATE INDEX IF NOT EXISTS
       listings_source_country_active_idx
     ON listings(
@@ -236,25 +248,25 @@ export async function initDb() {
     );
   `);
 
-    await pool.query(`
+    await client.query(`
     CREATE INDEX IF NOT EXISTS
       listings_created_at_idx
     ON listings(created_at DESC);
   `);
 
-    await pool.query(`
+    await client.query(`
     CREATE INDEX IF NOT EXISTS
       listings_last_seen_at_idx
     ON listings(last_seen_at DESC);
   `);
 
-    await pool.query(`
+    await client.query(`
     CREATE INDEX IF NOT EXISTS
       listings_city_idx
     ON listings(city);
   `);
 
-    await pool.query(`
+    await client.query(`
     CREATE INDEX IF NOT EXISTS
       listings_district_idx
     ON listings(district);
@@ -263,8 +275,17 @@ export async function initDb() {
     console.log(
         '[postgres] schema ready',
     );
+    } finally {
+        try {
+            await client.query(
+                'SELECT pg_advisory_unlock($1)',
+                [742_000],
+            );
+        } finally {
+            client.release();
+        }
+    }
 }
-
 const UPSERT_SQL = `
   INSERT INTO listings (
     source,
