@@ -1,5 +1,6 @@
 // A single normalized Listing shape that the Flutter app consumes.
 import {extractTags} from './tags.js';
+import {canonicalCityName} from './countries.js';
 import {
   classifyChildren, classifyDealType, classifyPets, looksCommercial, looksHousingWanted, looksRoomOnly,
   parseAirConditioner, parseAmenities, parseAreaFromText, parseBalcony, parseBathrooms, parseBedrooms,
@@ -49,6 +50,7 @@ export function makeListing(partial) {
   const audience = partial.audience ?? classifyAudience(combined);
   const contact = partial.contact ?? parseContact(combined);
   const loc = parseLocation(combined, partial.country);
+  const city = canonicalCityName(partial.country, partial.city || loc.city || '');
   const explicitDistrict = parseExplicitDistrict(combined, partial.country);
   const district = canonicalDistrict(partial.district ?? explicitDistrict ?? loc.district, partial.country);
   const metro = partial.metro ?? loc.metro;
@@ -80,7 +82,7 @@ export function makeListing(partial) {
   return {
     id:String(partial.id), source:partial.source, country:partial.country, title, propertyType, byAgency,
     price:partial.price != null ? Number(partial.price):null, currency:partial.currency ?? '', rooms,
-    areaSqm:partial.areaSqm != null ? Number(partial.areaSqm):parseAreaFromText(combined), city:partial.city || loc.city || '',
+    areaSqm:partial.areaSqm != null ? Number(partial.areaSqm):parseAreaFromText(combined), city,
     region:partial.region ?? loc.region ?? null, microdistrict:partial.microdistrict ?? loc.microdistrict ?? null,
     address:address || null, lat:partial.lat != null?Number(partial.lat):null, lng:partial.lng != null?Number(partial.lng):null,
     photo:partial.photo ?? (Array.isArray(partial.photos)?partial.photos[0]:null) ?? null,
