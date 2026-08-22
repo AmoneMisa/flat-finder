@@ -1,0 +1,28 @@
+name: Verify flat listing quality
+
+on:
+  push:
+    branches: [ fix/flat-listing-quality ]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+      - name: Syntax checks
+        run: |
+          node --check backend/src/normalize.js
+          node --check backend/src/textparse-overrides.js
+          node --check backend/test/listing-quality.test.js
+      - name: Run backend tests
+        run: npm test --prefix backend
