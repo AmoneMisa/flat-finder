@@ -12,6 +12,7 @@ services:
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
+      - SOCIAL_FETCHER_URL=http://flat-finder-social-fetcher:4040
       - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
       - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1000}
       - OLX_UA_CITY_BUDGET_MS=${OLX_UA_CITY_BUDGET_MS:-600000}
@@ -243,6 +244,28 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  flat-finder-social-fetcher:
+    image: ghcr.io/amonemisa/flat-finder-social-fetcher:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      - SOCIAL_MAX_ITEMS=${SOCIAL_MAX_ITEMS:-100}
+      - SOCIAL_HTTP_TIMEOUT=${SOCIAL_HTTP_TIMEOUT:-30}
+      - SOCIAL_BROWSER_TIMEOUT_MS=${SOCIAL_BROWSER_TIMEOUT_MS:-45000}
+      - SOCIAL_BROWSER_CONCURRENCY=${SOCIAL_BROWSER_CONCURRENCY:-1}
+      - THREADS_SCROLLS=${THREADS_SCROLLS:-8}
+      - LINKEDIN_MAX_DETAIL_FETCHES=${LINKEDIN_MAX_DETAIL_FETCHES:-15}
+      - SOCIAL_IMPERSONATE=${SOCIAL_IMPERSONATE:-chrome124}
+    expose:
+      - "4040"
+    shm_size: ${SOCIAL_SHM_SIZE:-256mb}
+    mem_limit: ${SOCIAL_WORKER_MEMORY_LIMIT:-768m}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4040/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   flat-finder-redis:
     image: redis:8-alpine
