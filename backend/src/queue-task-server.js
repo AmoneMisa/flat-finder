@@ -65,48 +65,45 @@ function buildPlan() {
       if (country.code === 'UA' && Array.isArray(country.olxCities)) {
         for (const target of country.olxCities) {
           for (const segment of segments) {
-            for (let page = 1; page <= 5; page++) {
-              const task = {
-                type: 'flat.olx.page',
-                country: country.code,
-                city: target.city,
-                citySlug: target.slug,
-                segment,
-                page,
-              };
-              tasks.push({ ...task, priority: taskPriority(task) });
-            }
+            const task = {
+              type: 'flat.olx.page',
+              country: country.code,
+              city: target.city,
+              citySlug: target.slug,
+              segment,
+              page: 1,
+            };
+            tasks.push({ ...task, priority: taskPriority(task) });
           }
         }
 
-        // A short national catch-all remains useful for cities not yet curated.
+        // Start one national chain per segment for towns that are not curated.
+        // Every successful OLX page decides whether page N+1 is still inside
+        // the freshness window, so the queue is no longer pre-filled with a
+        // guessed fixed page count.
         for (const segment of segments) {
-          for (let page = 1; page <= 5; page++) {
-            const task = {
-              type: 'flat.olx.page',
-              country: country.code,
-              city: null,
-              citySlug: null,
-              segment,
-              page,
-            };
-            tasks.push({ ...task, priority: taskPriority(task) });
-          }
+          const task = {
+            type: 'flat.olx.page',
+            country: country.code,
+            city: null,
+            citySlug: null,
+            segment,
+            page: 1,
+          };
+          tasks.push({ ...task, priority: taskPriority(task) });
         }
       } else {
-        // Preserve existing non-UA behaviour conservatively: page 1..10 per segment.
+        // Other OLX portals use the same dynamic page-chain protocol.
         for (const segment of segments) {
-          for (let page = 1; page <= 10; page++) {
-            const task = {
-              type: 'flat.olx.page',
-              country: country.code,
-              city: null,
-              citySlug: null,
-              segment,
-              page,
-            };
-            tasks.push({ ...task, priority: taskPriority(task) });
-          }
+          const task = {
+            type: 'flat.olx.page',
+            country: country.code,
+            city: null,
+            citySlug: null,
+            segment,
+            page: 1,
+          };
+          tasks.push({ ...task, priority: taskPriority(task) });
         }
       }
     }
