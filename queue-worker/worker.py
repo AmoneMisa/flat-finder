@@ -2,6 +2,7 @@ import json
 import os
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import pika
 
@@ -12,11 +13,11 @@ MODE = os.environ.get("QUEUE_MODE", "worker").strip().lower()
 REFRESH_SECONDS = max(60, int(os.environ.get("QUEUE_REFRESH_SECONDS", "1800")))
 PREFETCH = max(1, int(os.environ.get("QUEUE_PREFETCH", "1")))
 MAX_ATTEMPTS = max(1, int(os.environ.get("QUEUE_MAX_ATTEMPTS", "5")))
-# A queue task may legitimately wait on the HTTP task API for up to 180 seconds.
-# pika.BlockingConnection cannot service heartbeat frames while the callback is
-# blocked in urllib, so the previous 30s heartbeat guaranteed disconnects for
-# slow OLX pages. Keep the heartbeat safely above the task timeout.
-HEARTBEAT = max(240, int(os.environ.get("RABBITMQ_HEARTBEAT", "300")))
+QUEUE_PROTOCOL_VERSION = max(1, int(os.environ.get("QUEUE_PROTOCOL_VERSION", "2")))
+# The broker may negotiate a heartbeat lower than the client proposal. Do not
+# rely on a large heartbeat to survive slow HTTP work: worker_forever pumps AMQP
+# I/O while the task API call runs in a helper thread.
+HEARTBEAT = max(60, int(os.environ.get("RABBITMQ_HEARTBEAT", "300")))
 BLOCKED_CONNECTION_TIMEOUT = max(
     HEARTBEAT,
     int(os.environ.get("RABBITMQ_BLOCKED_CONNECTION_TIMEOUT", "360")),
@@ -110,7 +111,7 @@ def dispatch_once(channel):
             f"[queue:dispatcher] skipped new crawl, pending={pending}",
             flush=True,
         )
-        return
+        return False
 
     plan = api_request("/internal/queue-plan", timeout=30)
     tasks = plan.get("tasks") or []
@@ -119,80 +120,135 @@ def dispatch_once(channel):
         publish_task(channel, task)
 
     print(f"[queue:dispatcher] queued {len(tasks)} granular tasks", flush=True)
+    return True
 
 
 def dispatch_forever():
     while True:
+        queued = False
         try:
             connection = connect()
             channel = connection.channel()
             channel.confirm_delivery()
             declare(channel)
-            dispatch_once(channel)
+            queued = dispatch_once(channel)
             connection.close()
         except Exception as exc:
             print(f"[queue:dispatcher] error: {exc}", flush=True)
 
-        time.sleep(REFRESH_SECONDS)
+        # While an old/backlogged crawl is draining, re-check quickly instead of
+        # waiting a full 30-minute refresh interval before seeding a clean crawl.
+        time.sleep(REFRESH_SECONDS if queued else min(30, REFRESH_SECONDS))
 
 
 def execute_task(payload):
     return api_request("/internal/queue-task", payload=payload, timeout=180)
 
 
+def task_protocol(payload):
+    try:
+        return int(payload.get("queueProtocol") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def execute_with_heartbeats(connection, executor, payload):
+    future = executor.submit(execute_task, payload)
+    while not future.done():
+        # BlockingConnection only sends/receives heartbeat frames while its I/O
+        # loop is serviced. Keep pumping it while urllib runs in another thread.
+        connection.process_data_events(time_limit=1)
+    return future.result()
+
+
+def handle_delivery(connection, channel, executor, method, properties, body):
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except Exception:
+        payload = {"raw": body.decode("utf-8", errors="replace")}
+
+    # RabbitMQ is durable across deploys, so the previous fixed-page plan can
+    # leave thousands of now-invalid page tasks behind. Drop only messages from
+    # older queue protocols; the dispatcher will seed a fresh versioned crawl as
+    # soon as the backlog reaches zero.
+    if task_protocol(payload) != QUEUE_PROTOCOL_VERSION:
+        channel.basic_ack(method.delivery_tag)
+        print(
+            f"[queue:worker] dropped legacy task protocol={task_protocol(payload)} "
+            f"type={payload.get('type')} country={payload.get('country')} "
+            f"page={payload.get('page', '-')}",
+            flush=True,
+        )
+        return
+
+    try:
+        result = execute_with_heartbeats(connection, executor, payload)
+
+        # Publish page N+1 before acknowledging page N. If publishing fails, the
+        # current page stays unacked and RabbitMQ safely redelivers it.
+        for next_task in result.get("nextTasks") or []:
+            publish_task(channel, next_task)
+
+        channel.basic_ack(method.delivery_tag)
+        print(
+            f"[queue:worker] completed {payload.get('type')} "
+            f"country={payload.get('country')} page={payload.get('page', '-')} "
+            f"fetched={result.get('fetched', 0)} "
+            f"next={len(result.get('nextTasks') or [])}",
+            flush=True,
+        )
+    except Exception as exc:
+        attempt = int((properties.headers or {}).get("attempt", 0)) + 1
+        priority = int(properties.priority or 0)
+        target = RETRY_QUEUE if attempt < MAX_ATTEMPTS else DEAD_QUEUE
+        publish(channel, target, payload, priority=priority, attempt=attempt)
+        channel.basic_ack(method.delivery_tag)
+        print(
+            f"[queue:worker] failed attempt={attempt} target={target}: {exc}",
+            flush=True,
+        )
+
+
 def worker_forever():
     while True:
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="queue-http")
         try:
             connection = connect()
             channel = connection.channel()
             channel.confirm_delivery()
             declare(channel)
             channel.basic_qos(prefetch_count=PREFETCH)
-
-            def on_message(ch, method, properties, body):
-                try:
-                    payload = json.loads(body.decode("utf-8"))
-                    result = execute_task(payload)
-
-                    # Publish page N+1 before acknowledging page N. If publishing
-                    # fails, the current page goes through the normal retry path;
-                    # persistence is idempotent, so this cannot lose the chain.
-                    for next_task in result.get("nextTasks") or []:
-                        publish_task(ch, next_task)
-
-                    ch.basic_ack(method.delivery_tag)
-                    print(
-                        f"[queue:worker] completed {payload.get('type')} "
-                        f"country={payload.get('country')} page={payload.get('page', '-')} "
-                        f"fetched={result.get('fetched', 0)} "
-                        f"next={len(result.get('nextTasks') or [])}",
-                        flush=True,
-                    )
-                except Exception as exc:
-                    attempt = int((properties.headers or {}).get("attempt", 0)) + 1
-                    priority = int(properties.priority or 0)
-                    try:
-                        payload = json.loads(body.decode("utf-8"))
-                    except Exception:
-                        payload = {"raw": body.decode("utf-8", errors="replace")}
-
-                    target = RETRY_QUEUE if attempt < MAX_ATTEMPTS else DEAD_QUEUE
-                    publish(ch, target, payload, priority=priority, attempt=attempt)
-                    ch.basic_ack(method.delivery_tag)
-                    print(
-                        f"[queue:worker] failed attempt={attempt} target={target}: {exc}",
-                        flush=True,
-                    )
-
-            channel.basic_consume(MAIN_QUEUE, on_message_callback=on_message)
             print(
-                f"[queue:worker] consuming granular tasks heartbeat={HEARTBEAT}s",
+                f"[queue:worker] consuming granular tasks heartbeat={HEARTBEAT}s "
+                f"protocol={QUEUE_PROTOCOL_VERSION}",
                 flush=True,
             )
-            channel.start_consuming()
+
+            # basic_get keeps delivery handling outside a pika callback. That is
+            # important: process_data_events() is then safe to call while a task
+            # is running, so even a broker-negotiated 30s heartbeat stays alive.
+            while connection.is_open and channel.is_open:
+                method, properties, body = channel.basic_get(
+                    queue=MAIN_QUEUE,
+                    auto_ack=False,
+                )
+                if method is None:
+                    connection.process_data_events(time_limit=1)
+                    continue
+
+                handle_delivery(
+                    connection,
+                    channel,
+                    executor,
+                    method,
+                    properties,
+                    body,
+                )
         except Exception as exc:
             print(f"[queue:worker] connection error: {exc}", flush=True)
             time.sleep(5)
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
 
 if __name__ == "__main__":
