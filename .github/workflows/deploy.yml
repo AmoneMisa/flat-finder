@@ -139,18 +139,18 @@ jobs:
     if: ${{ !cancelled() && github.ref == 'refs/heads/master' && needs.detect-changes.result == 'success' && needs.build-images.result == 'success' && (needs.build-elasticsearch.result == 'success' || needs.build-elasticsearch.result == 'skipped') }}
 
     steps:
-      # The production compose file used to live only on the server. That meant
-      # new images could deploy with stale service env/queue-shard wiring. Keep
-      # runtime configuration versioned with the exact commit being deployed.
+      # Runtime files are copied from this run's checkout. In particular,
+      # deploy.sh must match github.sha: letting the server git-pull master here
+      # can mix a queued run's image tag with a newer deployment definition.
       - uses: actions/checkout@v4
 
-      - name: Sync compose runtime config
+      - name: Sync runtime config
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ vars.SERVER_HOST }}
           username: ${{ vars.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "docker-compose.yml,olx-router/nginx.conf,scripts/upgrade-postgres-18.sh"
+          source: "docker-compose.yml,deploy.sh,olx-router/nginx.conf,scripts/upgrade-postgres-18.sh"
           target: "~/opt/flat-finder"
           overwrite: true
 
