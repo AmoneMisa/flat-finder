@@ -1,0 +1,68 @@
+name: Verify PostgreSQL crawler queue
+
+on:
+  push:
+    branches: [ perf/postgres-search-no-redis ]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      POSTGRES_DB: flatfinder
+      POSTGRES_USER: flatfinder
+      POSTGRES_PASSWORD: flatfinder-test
+      TEST_POSTGRES_SEARCH: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+      - name: Syntax checks
+        run: |
+          node --check backend/src/pgQueue.js
+          node --check backend/src/queue-task-server.js
+          node --check backend/src/queueTasks.js
+          node --check backend/src/queueTaskDedup.js
+          node --check backend/src/scheduler.js
+          python -m py_compile queue-worker/worker.py
+      - name: Validate Compose
+        run: docker compose config >/dev/null
+      - name: Run queue and search regressions
+        run: >-
+          node --test
+          backend/test/pg-queue.integration.test.js
+          backend/test/postgres-search.integration.test.js
+          backend/test/queue-crawl-stability.test.js
+          backend/test/map-amenity-sort.test.js
+          backend/test/ua-priority-coverage.test.js
+      - name: Verify retired infrastructure is gone
+        run: |
+          ! grep -R -nE 'flat-finder-rabbitmq|RABBITMQ_URL|rabbitmq:4|import pika|\bpika==' docker-compose.yml queue-worker backend/src || false
+          ! grep -q 'flat-finder-rabbitmq' docker-compose.yml
+          ! grep -q 'RABBITMQ_' docker-compose.yml
+          ! grep -q 'flat-finder-redis' docker-compose.yml
+          ! grep -q 'REDIS_URL=' docker-compose.yml
+          ! grep -q 'import pika' queue-worker/worker.py
