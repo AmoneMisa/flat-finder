@@ -3,8 +3,10 @@
 // cache. Runs once at startup and then on a fixed interval (hourly by default).
 //
 // Env:
-//   REFRESH_MINUTES   interval in minutes (default 60)
-//   DISABLE_SCHEDULER  set to "1" to turn the background job off entirely
+//   REFRESH_MINUTES            interval in minutes (default 60)
+//   DISABLE_SCHEDULER          set to "1" to disable all background work
+//   DISABLE_LISTING_SCHEDULER  set to "1" when RabbitMQ owns listing crawling;
+//                              places refresh still runs in this mode
 
 import { COUNTRY_CODES } from './countries.js';
 import { warmCountry } from './scrapers/index.js';
@@ -105,11 +107,18 @@ export function startScheduler() {
     console.log('[scheduler] disabled via DISABLE_SCHEDULER=1');
     return;
   }
+
+  // Places are independent from listing crawling and remain useful when the
+  // durable RabbitMQ pipeline owns listings.
+  refreshPlaces().catch((e) => console.warn('[places] startup sync error', e));
+
+  if (process.env.DISABLE_LISTING_SCHEDULER === '1') {
+    console.log('[scheduler] listing refresh disabled; RabbitMQ queue owns crawl');
+    return;
+  }
+
   // Warm on boot (don't block server startup), then on the interval.
   refreshAll('startup').catch((e) => console.warn('[scheduler] startup refresh error', e));
-  // Places first-fill happens alongside, so a fresh deployment enriches from the
-  // first refresh instead of waiting a month.
-  refreshPlaces().catch((e) => console.warn('[places] startup sync error', e));
   timer = setInterval(
     () => refreshAll('hourly').catch((e) => console.warn('[scheduler] refresh error', e)),
     REFRESH_MS,
