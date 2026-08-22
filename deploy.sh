@@ -34,7 +34,6 @@ docker compose pull "${APP_SERVICES[@]}"
 # deploy. Elasticsearch is handled separately below so a normal application
 # commit cannot restart the stateful search node and trigger a long recovery.
 docker compose up -d \
-  flat-finder-redis \
   flat-finder-postgres \
   flat-finder-olx-fetcher \
   flat-finder-olx-fetcher-ua \
@@ -58,10 +57,10 @@ else
 fi
 
 # --no-deps below bypasses every depends_on condition, not just the
-# Elasticsearch one, so on a cold start the API can outrace Postgres and Redis.
-# Wait for the hard dependencies explicitly, in the same degrade-rather-than-fail
-# style used for Elasticsearch: warn on timeout and carry on, since both
-# services restart automatically once their dependency appears.
+# Elasticsearch one, so on a cold start the API can outrace Postgres.
+# Wait for hard dependencies explicitly, in the same degrade-rather-than-fail
+# style used for Elasticsearch: warn on timeout and carry on, since services
+# restart automatically once their dependency appears.
 wait_for_healthy() {
   local service="$1" deadline=$((SECONDS + ${2:-120})) cid status
   while [[ $SECONDS -lt $deadline ]]; do
@@ -78,7 +77,6 @@ wait_for_healthy() {
 }
 
 wait_for_healthy flat-finder-postgres 120
-wait_for_healthy flat-finder-redis 60
 wait_for_healthy flat-finder-social-fetcher 90
 
 # Both Node services already degrade gracefully when Elasticsearch is
@@ -92,6 +90,20 @@ docker compose up -d --no-deps \
   flat-finder-queue-worker-1 \
   flat-finder-queue-worker-2 \
   flat-finder-queue-worker-telegram
+
+# Remove containers for services that no longer exist in Compose, including
+# previously retired RabbitMQ/dispatcher/Redis containers.
+docker compose up -d --remove-orphans --no-deps \
+  flat-finder-backend \
+  flat-finder-queue-task-api \
+  flat-finder-queue-worker-1 \
+  flat-finder-queue-worker-2 \
+  flat-finder-queue-worker-telegram \
+  flat-finder-olx-fetcher \
+  flat-finder-olx-fetcher-ua \
+  flat-finder-social-fetcher \
+  flat-finder-olx-router \
+  flat-finder-postgres
 
 # Plain `image prune -f` drops only dangling layers, and every build keeps its
 # :<sha> tag, so it never collected anything while superseded images piled up.
