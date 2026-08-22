@@ -1,0 +1,34 @@
+name: Social scrapers branch CI
+
+on:
+  push:
+    branches: [ feature/social-scrapers ]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+      - name: Check social route syntax
+        run: |
+          node --check backend/src/social-routes.js
+          node --check backend/src/bootstrap.js
+      - name: Run backend tests
+        run: npm test --prefix backend
+
+  verify-social-fetcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build social fetcher image and run parser tests
+        run: docker build -t flat-finder-social-fetcher:test ./social-fetcher

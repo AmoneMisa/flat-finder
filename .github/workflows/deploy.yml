@@ -72,6 +72,8 @@ jobs:
             context: ./queue-worker
           - image: flat-finder-olx-fetcher
             context: ./olx-fetcher
+          - image: flat-finder-social-fetcher
+            context: ./social-fetcher
 
     steps:
       - uses: actions/checkout@v4
