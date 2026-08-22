@@ -11,7 +11,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && playwright install --with-deps chromium
 
-COPY app.py ./
+COPY app.py test_app.py ./
+RUN python -m unittest -v test_app.py
 
 EXPOSE 4040
 
