@@ -6,6 +6,8 @@ import { throttle } from './ratelimit.js';
 import { upsertListings } from './db.js';
 import { indexListings } from './elasticsearch.js';
 import { executeQueueTaskOnce } from './queueTaskDedup.js';
+import { geocodeListings } from './geocode.js';
+import { rejectOutOfAreaCoordinates } from './coordinate-validation.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
 const OLX_FETCHER_URLS = [
@@ -261,6 +263,19 @@ async function processQueueTaskInner(task) {
       city: task.city ? String(task.city) : null,
       crawlerShard: task.crawlerShard,
     });
+
+    // Source map coordinates are useful when sane, but OLX occasionally emits
+    // a point far outside the crawled locality. Only those outliers are cleared
+    // and re-geocoded from address/district text, keeping the normal path cheap.
+    const rejected = await rejectOutOfAreaCoordinates(
+      pageResult.listings,
+      COUNTRIES[country],
+      { areaHint: task.citySlug ? String(task.citySlug) : null },
+    );
+    if (rejected.length) {
+      await geocodeListings(rejected, COUNTRIES[country]);
+    }
+
     const nextTask = nextOlxTask(task, pageResult, page);
 
     return {
@@ -280,6 +295,7 @@ async function processQueueTaskInner(task) {
       oldestKnownAt: pageResult.oldestKnownAt,
       newestKnownAt: pageResult.newestKnownAt,
       unknownDateCount: pageResult.unknownDateCount,
+      repairedCoordinates: rejected.length,
       nextTasks: nextTask ? [nextTask] : [],
       ...(await persist(pageResult.listings, task)),
     };
