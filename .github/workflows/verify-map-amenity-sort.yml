@@ -1,0 +1,43 @@
+name: Verify flat finder feature branch
+
+on:
+  push:
+    branches: [ feat/map-amenity-filters-sorting ]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/map-amenity-filters-sorting
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+      - name: Syntax check changed backend modules
+        run: |
+          node --check backend/src/server.js
+          node --check backend/src/normalize.js
+          node --check backend/src/coordinate-validation.js
+          node --check backend/src/queueTasks.js
+          node --check backend/src/listing-sort.js
+          node --check backend/src/amenity-parse.js
+      - name: Run backend tests
+        run: npm test --prefix backend
+      - name: Remove one-shot verification workflow
+        run: |
+          rm .github/workflows/verify-map-amenity-sort.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: remove one-shot verification workflow"
+          git push origin HEAD:feat/map-amenity-filters-sorting
