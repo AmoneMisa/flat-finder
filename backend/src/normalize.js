@@ -22,6 +22,33 @@ function stripHtml(s) {
     .replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#3[49];/g, "'").replace(/\u00a0/g, ' ')
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
+
+const PARKING_OBJECT_RE = /(?:парко?мест[а-яёіїґ]*|парковочн[а-яёіїґ]*\s+мест[а-яёіїґ]*|машино[-\s]?мест[а-яёіїґ]*|мест[а-яёіїґ]*\s+(?:в|на)\s+(?:паркинг[а-яёіїґ]*|парковк[а-яёіїґ]*)|parking\s+(?:space|spot)s?)/iu;
+const HOUSING_OBJECT_RE = /(?:квартир[а-яёіїґ]*|апартамент[а-яёіїґ]*|студи[яії][а-яёіїґ]*|будин[а-яіїґ]*|(?:^|[^\p{L}\p{N}_])дом(?:а|ом|у|ов)?(?=$|[^\p{L}\p{N}_])|жиль[а-яё]*|житл[а-яіїґ]*|flat\b|apartment\b|studio\b|house\b|xonadon\b|kvartira\b)/iu;
+
+export function looksParkingOnly(text) {
+  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!value || !PARKING_OBJECT_RE.test(value)) return false;
+  return !HOUSING_OBJECT_RE.test(value);
+}
+
+function normalizeListingTitle(value, {propertyType, rooms, residenceComplex, address, city}) {
+  const cleaned = stripHtml(value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .trim();
+  const letters = (cleaned.match(/\p{L}/gu) || []).length;
+  const meaningful = cleaned && letters >= 3 && cleaned.length <= 90;
+  if (meaningful) return cleaned;
+
+  const noun = propertyType === 'house' ? 'Дом' : 'Квартира';
+  const base = rooms != null && Number.isFinite(Number(rooms)) && Number(rooms) >= 1 && Number(rooms) <= 10
+    ? `${Number(rooms)}-комнатная ${noun.toLowerCase()}`
+    : noun;
+  const place = residenceComplex || address || city;
+  return place ? `${base} · ${place}` : base;
+}
+
 function parseAddress(text) {
   if (!text) return null;
   const labeled = text.match(/(?:адрес|адреса|manzil|address)\s*[:\-–]\s*([^\n]{3,80})/i);
@@ -55,13 +82,21 @@ function sourceCoordinates(partial, city) {
 }
 
 export function makeListing(partial) {
-  const title = partial.title ?? 'Untitled';
+  const sourceTitle = partial.title ?? '';
   const description = stripHtml(partial.description ?? '');
-  const combined = `${title} ${description}`;
+  const combined = `${sourceTitle} ${description}`;
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
   const byAgency = Boolean(partial.byAgency);
   const rooms = partial.rooms != null ? Number(partial.rooms) : parseRoomsFromText(combined);
-  let dealType = partial.dealType ?? classifyDealType(combined);
+  const parsedDealType = classifyDealType(combined);
+  // Explicit short-term language ("сутки", "посуточно", "daily", etc.) is
+  // stronger than a scraper's generic `longRent` default. Keep an explicit sale
+  // authoritative because sale copy may advertise potential daily-rental income.
+  let dealType = partial.dealType === 'sale'
+    ? 'sale'
+    : parsedDealType === 'shortRent'
+      ? 'shortRent'
+      : (partial.dealType ?? parsedDealType);
   const SALE_FLOOR = {USD:10000,EUR:10000,GBP:10000,UYE:10000,UZS:100_000_000,KZT:5_000_000,UAH:500_000,RON:50_000,KGS:800_000,TJS:90_000,RUB:700_000};
   if (partial.dealType == null && dealType !== 'sale' && dealType !== 'shortRent' && partial.price != null) {
     const floor = SALE_FLOOR[String(partial.currency ?? '').toUpperCase()];
@@ -87,7 +122,9 @@ export function makeListing(partial) {
   // Explicit source value > labelled free-text parser > curated dictionary.
   const residenceComplex = partial.residenceComplex ?? parseResidentialComplex(combined) ?? loc.residentialComplex;
   const address = partial.address ?? parseAddress(combined);
-  const commercial = partial.commercial ?? looksCommercial(combined);
+  // Parking-space adverts are inventory, not housing. A normal apartment that
+  // merely mentions its parking amenity is protected by looksParkingOnly().
+  const commercial = partial.commercial === true || looksCommercial(combined) || looksParkingOnly(combined);
   const petsAllowed = partial.petsAllowed ?? classifyPets(combined);
   const childrenAllowed = partial.childrenAllowed ?? classifyChildren(combined);
   const roomOnly = partial.roomOnly ?? looksRoomOnly(combined);
@@ -109,6 +146,7 @@ export function makeListing(partial) {
   const parking = partial.parking ?? parseParking(combined); const elevator = partial.elevator ?? parseElevator(combined); const heating = partial.heating ?? parseHeating(combined);
   const hotWater = partial.hotWater ?? parseHotWater(combined); const internet = partial.internet ?? parseInternet(combined); const smokingAllowed = partial.smokingAllowed ?? parseSmoking(combined);
   const negotiable = partial.negotiable ?? parseNegotiable(combined); const furnished = partial.furnished ?? parseFurnished(combined);
+  const title = normalizeListingTitle(sourceTitle, {propertyType, rooms, residenceComplex, address, city});
   return {
     id:String(partial.id), source:partial.source, country:partial.country, title, propertyType, byAgency,
     price:partial.price != null ? Number(partial.price):null, currency:partial.currency ?? '', rooms,
@@ -136,6 +174,9 @@ export function applyFilters(listings, filters, rates=null){
   return listings.filter((l)=>{
     if(listingId&&String(l.id)!==String(listingId))return false; if(sources?.length&&!sources.includes(String(l.source).toLowerCase()))return false;
     if(String(l.source).toLowerCase()==='telegram'){const listingText=[l.title,l.description].filter(Boolean).join('\n');if(looksHousingWanted(listingText))return false;}
+    // Flat Finder intentionally contains residential sale/long-term inventory.
+    // Short-stay apartments and parking-space inventory are noise here.
+    if(l.dealType==='shortRent')return false;
     if(l.commercial)return false; if(l.createdAt){const t=Date.parse(l.createdAt);if(!Number.isNaN(t)&&now-t>ageCapMs)return false;}
     if(propertyType&&propertyType!=='any'&&l.propertyType!==propertyType)return false; if(dealType&&dealType!=='any'&&l.dealType!==dealType)return false;
     if(agency==='agency'&&!l.byAgency)return false;if(agency==='owner'&&l.byAgency)return false;const effMax=priceMax!=null?priceMax+(priceTolerance??0):null;
