@@ -50,7 +50,7 @@ cleanup() {
 trap cleanup EXIT
 
 reset_old_read_only() {
-  if docker ps --format '{{.ID}}' | grep -qx "$old_container"; then
+  if [[ "$(docker inspect "$old_container" --format '{{.State.Running}}' 2>/dev/null || true)" == "true" ]]; then
     docker exec -i "$old_container" sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -v target_db="$POSTGRES_DB"' <<'SQL' >/dev/null || true
 SELECT format('ALTER DATABASE %I RESET default_transaction_read_only', :'target_db') \gexec
 SQL
@@ -104,7 +104,14 @@ fi
 echo "[postgres-upgrade] restoring into PostgreSQL 18"
 cat "$backup_file" | docker exec -i "$temp_container" sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --exit-on-error'
 
-docker exec "$temp_container" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -Atqc "SELECT current_setting('"'"'server_version_num'"'"'), to_regclass('"'"'public.listings'"'"') IS NOT NULL"' | grep -q '^18[0-9][0-9][0-9][0-9][0-9]|t$'
+validation="$(docker exec "$temp_container" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -Atqc "SELECT current_setting('"'"'server_version_num'"'"'), to_regclass('"'"'public.listings'"'"') IS NOT NULL"')"
+IFS='|' read -r restored_version listings_present <<< "$validation"
+if (( restored_version / 10000 != 18 )) || [[ "$listings_present" != "t" ]]; then
+  echo "[postgres-upgrade] restored database validation failed: $validation" >&2
+  exit 1
+fi
+
+docker exec "$temp_container" sh -c 'vacuumdb -U "$POSTGRES_USER" -d "$POSTGRES_DB" --analyze-in-stages' >/dev/null
 
 echo "[postgres-upgrade] switching Compose service to PostgreSQL 18"
 docker stop "$old_container" >/dev/null
