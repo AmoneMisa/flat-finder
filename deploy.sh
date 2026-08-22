@@ -25,9 +25,9 @@ echo "Deploying flat-finder application images with tag: ${IMAGE_TAG}"
 APP_SERVICES=(
   flat-finder-backend
   flat-finder-queue-task-api
-  flat-finder-queue-dispatcher
   flat-finder-queue-worker-1
   flat-finder-queue-worker-2
+  flat-finder-queue-worker-telegram
   flat-finder-olx-fetcher
   flat-finder-olx-fetcher-ua
   flat-finder-social-fetcher
@@ -41,7 +41,6 @@ docker compose pull "${APP_SERVICES[@]}"
 docker compose up -d \
   flat-finder-redis \
   flat-finder-postgres \
-  flat-finder-rabbitmq \
   flat-finder-olx-fetcher \
   flat-finder-olx-fetcher-ua \
   flat-finder-social-fetcher \
@@ -95,9 +94,9 @@ docker compose up -d --no-deps \
   flat-finder-queue-task-api
 
 docker compose up -d --no-deps \
-  flat-finder-queue-dispatcher \
   flat-finder-queue-worker-1 \
-  flat-finder-queue-worker-2
+  flat-finder-queue-worker-2 \
+  flat-finder-queue-worker-telegram
 
 # Plain `image prune -f` drops only dangling layers, and every build keeps its
 # :<sha> tag, so it never collected anything while superseded images piled up.
