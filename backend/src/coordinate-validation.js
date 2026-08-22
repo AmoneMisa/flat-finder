@@ -46,6 +46,14 @@ export async function rejectOutOfAreaCoordinates(
   const rejected = [];
 
   for (const listing of listings) {
+    // makeListing has a cheap synchronous Odesa guard for the legacy cache path.
+    // Keep those rows in this return set even though their bad coordinates have
+    // already been cleared, so the durable queue immediately repairs them too.
+    if (listing?.sourceCoordinateRejected === true && (listing.lat == null || listing.lng == null)) {
+      rejected.push(listing);
+      continue;
+    }
+
     if (!Number.isFinite(Number(listing?.lat)) || !Number.isFinite(Number(listing?.lng))) {
       continue;
     }
