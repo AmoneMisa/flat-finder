@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-
-const mem = new Map();
+import { pool } from './db.js';
 
 const RUNNING_TTL_MS = Math.max(
   30_000,
@@ -11,10 +10,10 @@ const DONE_TTL_MS = Math.max(
   Number(process.env.QUEUE_TASK_DONE_TTL_MS) || 24 * 60 * 60_000,
 );
 const RENEW_INTERVAL_MS = Math.max(10_000, Math.floor(RUNNING_TTL_MS / 3));
+const CLEANUP_INTERVAL_MS = 30 * 60_000;
 
-let client = null;
-let ready = false;
-let initPromise = null;
+let schemaPromise = null;
+let lastCleanupAt = 0;
 
 function taskIdentity(task) {
   return [
@@ -28,200 +27,178 @@ function taskIdentity(task) {
   ].join(':');
 }
 
-function redisKey(task) {
-  return `ff:queue-task:${taskIdentity(task)}`;
-}
-
-async function ensureClient() {
-  if (initPromise) return initPromise;
-
-  initPromise = (async () => {
-    const url = process.env.REDIS_URL;
-    if (!url) return;
-
-    try {
-      const { createClient } = await import('redis');
-      const instance = createClient({ url });
-      instance.on('error', (error) => {
-        if (ready) {
-          console.warn('[queue-dedup] redis error:', error.message);
-        }
-        ready = false;
-      });
-      await instance.connect();
-      client = instance;
-      ready = true;
-      console.log('[queue-dedup] connected to Redis');
-    } catch (error) {
-      console.warn('[queue-dedup] Redis unavailable, using memory:', error.message);
-      client = null;
-      ready = false;
-    }
+async function ensureSchema() {
+  if (schemaPromise) return schemaPromise;
+  schemaPromise = (async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crawl_task_runs (
+        task_key TEXT PRIMARY KEY,
+        crawl_generation TEXT NOT NULL,
+        status VARCHAR(16) NOT NULL,
+        lock_token UUID,
+        locked_until TIMESTAMPTZ,
+        result JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        finished_at TIMESTAMPTZ
+      )
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS crawl_task_runs_expiry_idx
+      ON crawl_task_runs(updated_at)
+    `);
+    console.log('[queue-dedup] using PostgreSQL');
   })();
-
-  return initPromise;
+  return schemaPromise;
 }
 
-ensureClient();
-
-function memGet(key) {
-  const value = mem.get(key);
-  if (!value) return null;
-  if (Date.now() >= value.expiresAt) {
-    mem.delete(key);
-    return null;
-  }
-  return value;
-}
-
-function memSet(key, state, value, ttlMs) {
-  mem.set(key, {
-    state,
-    value,
-    expiresAt: Date.now() + ttlMs,
-  });
-}
-
-const REFRESH_LOCK_SCRIPT = `
-local current = redis.call('GET', KEYS[1])
-if current == ARGV[1] then
-  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
-end
-return 0
-`;
-
-const FINISH_LOCK_SCRIPT = `
-local current = redis.call('GET', KEYS[1])
-if current == ARGV[1] then
-  redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
-  return 1
-end
-return 0
-`;
-
-const RELEASE_LOCK_SCRIPT = `
-local current = redis.call('GET', KEYS[1])
-if current == ARGV[1] then
-  return redis.call('DEL', KEYS[1])
-end
-return 0
-`;
-
-async function refreshRedisLock(key, runningValue) {
-  if (!client || !ready) return;
-  await client.eval(
-    REFRESH_LOCK_SCRIPT,
-    {
-      keys: [key],
-      arguments: [runningValue, String(RUNNING_TTL_MS)],
-    },
+async function maybeCleanup() {
+  const now = Date.now();
+  if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) return;
+  lastCleanupAt = now;
+  const retentionMs = Math.max(DONE_TTL_MS * 2, 48 * 60 * 60_000);
+  await pool.query(
+    `DELETE FROM crawl_task_runs WHERE updated_at < NOW() - ($1::double precision * INTERVAL '1 millisecond')`,
+    [retentionMs],
   );
 }
 
-async function finishRedisLock(key, runningValue, result) {
-  const doneValue = JSON.stringify({ state: 'done', result });
-  return client.eval(
-    FINISH_LOCK_SCRIPT,
-    {
-      keys: [key],
-      arguments: [runningValue, doneValue, String(DONE_TTL_MS)],
-    },
+async function acquireTask(task, token) {
+  const key = taskIdentity(task);
+  const generation = String(task.crawlGeneration || 'legacy');
+  const result = await pool.query(
+    `
+      INSERT INTO crawl_task_runs (
+        task_key,
+        crawl_generation,
+        status,
+        lock_token,
+        locked_until,
+        result,
+        updated_at,
+        finished_at
+      )
+      VALUES (
+        $1,
+        $2,
+        'running',
+        $3::uuid,
+        NOW() + ($4::double precision * INTERVAL '1 millisecond'),
+        NULL,
+        NOW(),
+        NULL
+      )
+      ON CONFLICT (task_key)
+      DO UPDATE SET
+        crawl_generation = EXCLUDED.crawl_generation,
+        status = 'running',
+        lock_token = EXCLUDED.lock_token,
+        locked_until = EXCLUDED.locked_until,
+        result = NULL,
+        updated_at = NOW(),
+        finished_at = NULL
+      WHERE
+        crawl_task_runs.status <> 'done'
+        AND (
+          crawl_task_runs.locked_until IS NULL
+          OR crawl_task_runs.locked_until <= NOW()
+        )
+      RETURNING task_key
+    `,
+    [key, generation, token, RUNNING_TTL_MS],
+  );
+  return result.rowCount > 0;
+}
+
+async function readExisting(task) {
+  const result = await pool.query(
+    `SELECT status, result, locked_until FROM crawl_task_runs WHERE task_key = $1`,
+    [taskIdentity(task)],
+  );
+  return result.rows[0] || null;
+}
+
+async function renewTask(task, token) {
+  await pool.query(
+    `
+      UPDATE crawl_task_runs
+      SET
+        locked_until = NOW() + ($3::double precision * INTERVAL '1 millisecond'),
+        updated_at = NOW()
+      WHERE task_key = $1 AND status = 'running' AND lock_token = $2::uuid
+    `,
+    [taskIdentity(task), token, RUNNING_TTL_MS],
   );
 }
 
-async function releaseRedisLock(key, runningValue) {
-  if (!client) return;
-  await client.eval(
-    RELEASE_LOCK_SCRIPT,
-    {
-      keys: [key],
-      arguments: [runningValue],
-    },
+async function finishTask(task, token, result) {
+  const updated = await pool.query(
+    `
+      UPDATE crawl_task_runs
+      SET
+        status = 'done',
+        result = $3::jsonb,
+        lock_token = NULL,
+        locked_until = NULL,
+        updated_at = NOW(),
+        finished_at = NOW()
+      WHERE task_key = $1 AND status = 'running' AND lock_token = $2::uuid
+      RETURNING task_key
+    `,
+    [taskIdentity(task), token, JSON.stringify(result)],
+  );
+  return updated.rowCount > 0;
+}
+
+async function releaseTask(task, token) {
+  await pool.query(
+    `DELETE FROM crawl_task_runs WHERE task_key = $1 AND status = 'running' AND lock_token = $2::uuid`,
+    [taskIdentity(task), token],
   );
 }
 
 export async function executeQueueTaskOnce(task, execute) {
-  await ensureClient();
-  const key = redisKey(task);
+  await ensureSchema();
+  maybeCleanup().catch((error) => {
+    console.warn('[queue-dedup] cleanup failed:', error.message);
+  });
 
-  if (client && ready) {
-    const token = randomUUID();
-    const runningValue = JSON.stringify({ state: 'running', token });
-    const lock = await client.set(
-      key,
-      runningValue,
-      { NX: true, PX: RUNNING_TTL_MS },
-    );
-
-    if (lock !== 'OK') {
-      const raw = await client.get(key);
-      if (raw) {
-        try {
-          const existing = JSON.parse(raw);
-          if (existing.state === 'done' && existing.result) {
-            return {
-              ...existing.result,
-              deduplicated: true,
-            };
-          }
-        } catch {}
-      }
-
-      throw new Error(`queue task already running: ${taskIdentity(task)}`);
+  const token = randomUUID();
+  const acquired = await acquireTask(task, token);
+  if (!acquired) {
+    const existing = await readExisting(task);
+    if (existing?.status === 'done' && existing.result) {
+      return {
+        ...existing.result,
+        deduplicated: true,
+      };
     }
-
-    const renewTimer = setInterval(() => {
-      refreshRedisLock(key, runningValue).catch((error) => {
-        console.warn('[queue-dedup] lock refresh failed:', error.message);
-      });
-    }, RENEW_INTERVAL_MS);
-    renewTimer.unref?.();
-
-    try {
-      const result = await execute();
-      const finished = await finishRedisLock(key, runningValue, result);
-      if (!finished) {
-        throw new Error(`queue task lost dedup lock: ${taskIdentity(task)}`);
-      }
-      return result;
-    } catch (error) {
-      try {
-        await releaseRedisLock(key, runningValue);
-      } catch {}
-      throw error;
-    } finally {
-      clearInterval(renewTimer);
-    }
-  }
-
-  const existing = memGet(key);
-  if (existing?.state === 'done') {
-    return {
-      ...existing.value,
-      deduplicated: true,
-    };
-  }
-  if (existing?.state === 'running') {
     throw new Error(`queue task already running: ${taskIdentity(task)}`);
   }
 
-  memSet(key, 'running', null, RUNNING_TTL_MS);
+  const renewTimer = setInterval(() => {
+    renewTask(task, token).catch((error) => {
+      console.warn('[queue-dedup] lock refresh failed:', error.message);
+    });
+  }, RENEW_INTERVAL_MS);
+  renewTimer.unref?.();
+
   try {
     const result = await execute();
-    memSet(key, 'done', result, DONE_TTL_MS);
+    const finished = await finishTask(task, token, result);
+    if (!finished) {
+      throw new Error(`queue task lost dedup lock: ${taskIdentity(task)}`);
+    }
     return result;
   } catch (error) {
-    mem.delete(key);
+    try {
+      await releaseTask(task, token);
+    } catch {}
     throw error;
+  } finally {
+    clearInterval(renewTimer);
   }
 }
 
-export async function closeQueueTaskDedup() {
-  if (client) {
-    try {
-      await client.quit();
-    } catch {}
-  }
-  client = null;
-  ready = false;
-}
+// Uses the shared db pool; queue-task-server closes it through closeDb().
+export async function closeQueueTaskDedup() {}
