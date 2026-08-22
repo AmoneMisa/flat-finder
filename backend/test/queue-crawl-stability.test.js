@@ -28,17 +28,36 @@ test('queue protocol v3 partitions stable crawl chains', () => {
   assert.match(queueTasks, /crawlGeneration: task\.crawlGeneration/);
 });
 
-test('workers consume independent shard queues and purge the v2 backlog', () => {
+test('OLX workers consume independent shard queues and purge the v2 backlog', () => {
   assert.match(worker, /MAIN_QUEUE_PREFIX = "crawl\.flats\.tasks\.v3"/);
   assert.match(worker, /QUEUE_SHARD/);
   assert.match(worker, /main_queue\(QUEUE_SHARD\)/);
-  assert.match(worker, /retry_queue\(QUEUE_SHARD\)/);
+  assert.match(worker, /retry_queue\(task_shard\(task\)\)/);
   assert.match(worker, /purge_legacy_queues/);
+  assert.match(compose, /QUEUE_WORKER_ROLE: olx/);
   assert.match(compose, /QUEUE_SHARD: 0/);
   assert.match(compose, /QUEUE_SHARD: 1/);
 });
 
-test('each shard is pinned to a different OLX fetcher', () => {
+test('Telegram tasks are isolated onto a dedicated worker queue', () => {
+  assert.match(worker, /TELEGRAM_QUEUE = "crawl\.flats\.telegram\.v3"/);
+  assert.match(worker, /TELEGRAM_RETRY_QUEUE = "crawl\.flats\.telegram\.v3\.retry"/);
+  assert.match(worker, /if task\.get\("type"\) == "flat\.telegram\.channel":\n\s+return TELEGRAM_QUEUE/);
+  assert.match(worker, /WORKER_ROLE == "telegram"/);
+  assert.match(worker, /return task_type == "flat\.telegram\.channel"/);
+  assert.match(compose, /flat-finder-queue-worker-telegram:/);
+  assert.match(compose, /QUEUE_WORKER_ROLE: telegram/);
+  assert.match(compose, /TELEGRAM_WORKER_MEMORY_LIMIT:-256m/);
+});
+
+test('dispatcher waits for both OLX and Telegram queues before starting a new generation', () => {
+  assert.match(worker, /telegram_pending/);
+  assert.match(worker, /queue_depth\(channel, TELEGRAM_QUEUE\)/);
+  assert.match(worker, /queue_depth\(channel, TELEGRAM_RETRY_QUEUE\)/);
+  assert.match(worker, /return olx_pending \+ telegram_pending/);
+});
+
+test('each OLX shard is pinned to a different fetcher', () => {
   assert.match(queueTasks, /OLX_FETCHER_URL_0/);
   assert.match(queueTasks, /OLX_FETCHER_URL_1/);
   assert.match(queueTasks, /function olxFetcherUrl/);
@@ -46,7 +65,7 @@ test('each shard is pinned to a different OLX fetcher', () => {
   assert.match(compose, /OLX_FETCHER_URL_1=http:\/\/flat-finder-olx-fetcher-ua:4020/);
 });
 
-test('crawl page execution is deduplicated per generation', () => {
+test('crawl task execution is deduplicated per generation', () => {
   assert.match(queueTasks, /executeQueueTaskOnce/);
   assert.match(queueDedup, /task\.crawlGeneration/);
   assert.match(queueDedup, /NX: true/);
@@ -63,6 +82,10 @@ test('worker services AMQP heartbeats while the HTTP task is running', () => {
   assert.doesNotMatch(worker, /start_consuming\(\)/);
   assert.match(worker, /for next_task in result\.get\("nextTasks"\)/);
   assert.match(worker, /publish_task\(channel, next_task\)/);
+});
+
+test('worker logs include segment or Telegram channel for diagnostics', () => {
+  assert.match(worker, /segment=\{payload\.get\('segment'\) or payload\.get\('channel'\) or '-'\}/);
 });
 
 test('dispatcher rechecks quickly while a crawl backlog is draining', () => {
