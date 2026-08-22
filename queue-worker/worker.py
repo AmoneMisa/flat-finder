@@ -1,174 +1,31 @@
 import json
 import os
+import socket
 import time
+import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 
-import pika
-
-RABBITMQ_URL = os.environ.get("RABBITMQ_URL", "amqp://crawler:crawler@flat-finder-rabbitmq:5672/%2F")
-TASK_API_URL = os.environ.get("QUEUE_TASK_API_URL", "http://flat-finder-queue-task-api:4010").rstrip("/")
+TASK_API_URL = os.environ.get(
+    "QUEUE_TASK_API_URL",
+    "http://flat-finder-queue-task-api:4010",
+).rstrip("/")
 QUEUE_INTERNAL_KEY = os.environ.get("QUEUE_INTERNAL_KEY", "")
-MODE = os.environ.get("QUEUE_MODE", "worker").strip().lower()
 WORKER_ROLE = os.environ.get("QUEUE_WORKER_ROLE", "olx").strip().lower()
 if WORKER_ROLE not in {"olx", "telegram"}:
     raise RuntimeError("QUEUE_WORKER_ROLE must be 'olx' or 'telegram'")
-REFRESH_SECONDS = max(60, int(os.environ.get("QUEUE_REFRESH_SECONDS", "1800")))
-PREFETCH = max(1, int(os.environ.get("QUEUE_PREFETCH", "1")))
-MAX_ATTEMPTS = max(1, int(os.environ.get("QUEUE_MAX_ATTEMPTS", "5")))
+
 QUEUE_PROTOCOL_VERSION = max(3, int(os.environ.get("QUEUE_PROTOCOL_VERSION", "3")))
 QUEUE_SHARDS = max(1, int(os.environ.get("QUEUE_SHARDS", "2")))
 QUEUE_SHARD = max(0, int(os.environ.get("QUEUE_SHARD", "0"))) % QUEUE_SHARDS
-HEARTBEAT = max(60, int(os.environ.get("RABBITMQ_HEARTBEAT", "300")))
-BLOCKED_CONNECTION_TIMEOUT = max(
-    HEARTBEAT,
-    int(os.environ.get("RABBITMQ_BLOCKED_CONNECTION_TIMEOUT", "360")),
+POLL_SECONDS = max(0.2, float(os.environ.get("QUEUE_POLL_SECONDS", "1")))
+IDLE_ERROR_SECONDS = max(1.0, float(os.environ.get("QUEUE_ERROR_RETRY_SECONDS", "5")))
+EXECUTE_TIMEOUT = max(60, int(os.environ.get("QUEUE_EXECUTE_TIMEOUT_SECONDS", "180")))
+WORKER_ID = os.environ.get("QUEUE_WORKER_ID") or (
+    f"{socket.gethostname()}:{WORKER_ROLE}:{QUEUE_SHARD if WORKER_ROLE == 'olx' else 'tg'}"
 )
 
-MAIN_QUEUE_PREFIX = "crawl.flats.tasks.v3"
-RETRY_QUEUE_PREFIX = "crawl.flats.tasks.v3.retry"
-TELEGRAM_QUEUE = "crawl.flats.telegram.v3"
-TELEGRAM_RETRY_QUEUE = "crawl.flats.telegram.v3.retry"
-DEAD_QUEUE = "crawl.flats.tasks.dead"
-LEGACY_MAIN_QUEUE = "crawl.flats.tasks"
-LEGACY_RETRY_QUEUE = "crawl.flats.tasks.retry"
 
-
-def main_queue(shard):
-    return f"{MAIN_QUEUE_PREFIX}.{int(shard) % QUEUE_SHARDS}"
-
-
-def retry_queue(shard):
-    return f"{RETRY_QUEUE_PREFIX}.{int(shard) % QUEUE_SHARDS}"
-
-
-def connect():
-    params = pika.URLParameters(RABBITMQ_URL)
-    params.heartbeat = HEARTBEAT
-    params.blocked_connection_timeout = BLOCKED_CONNECTION_TIMEOUT
-    return pika.BlockingConnection(params)
-
-
-def declare(channel):
-    for shard in range(QUEUE_SHARDS):
-        channel.queue_declare(
-            main_queue(shard),
-            durable=True,
-            arguments={"x-max-priority": 10},
-        )
-        channel.queue_declare(
-            retry_queue(shard),
-            durable=True,
-            arguments={
-                "x-message-ttl": 30_000,
-                "x-dead-letter-exchange": "",
-                "x-dead-letter-routing-key": main_queue(shard),
-            },
-        )
-
-    channel.queue_declare(
-        TELEGRAM_QUEUE,
-        durable=True,
-        arguments={"x-max-priority": 10},
-    )
-    channel.queue_declare(
-        TELEGRAM_RETRY_QUEUE,
-        durable=True,
-        arguments={
-            "x-message-ttl": 30_000,
-            "x-dead-letter-exchange": "",
-            "x-dead-letter-routing-key": TELEGRAM_QUEUE,
-        },
-    )
-    channel.queue_declare(DEAD_QUEUE, durable=True)
-
-
-def purge_legacy_queues(channel):
-    channel.queue_declare(
-        LEGACY_MAIN_QUEUE,
-        durable=True,
-        arguments={"x-max-priority": 10},
-    )
-    channel.queue_declare(
-        LEGACY_RETRY_QUEUE,
-        durable=True,
-        arguments={
-            "x-message-ttl": 30_000,
-            "x-dead-letter-exchange": "",
-            "x-dead-letter-routing-key": LEGACY_MAIN_QUEUE,
-        },
-    )
-
-    purged = 0
-    for queue in (LEGACY_MAIN_QUEUE, LEGACY_RETRY_QUEUE):
-        result = channel.queue_purge(queue=queue)
-        purged += int(result.method.message_count or 0)
-
-    if purged:
-        print(f"[queue:dispatcher] purged {purged} legacy v2 tasks", flush=True)
-
-
-def queue_depth(channel, queue):
-    result = channel.queue_declare(queue=queue, passive=True)
-    return int(result.method.message_count or 0)
-
-
-def all_pending(channel):
-    olx_pending = sum(
-        queue_depth(channel, main_queue(shard))
-        + queue_depth(channel, retry_queue(shard))
-        for shard in range(QUEUE_SHARDS)
-    )
-    telegram_pending = (
-        queue_depth(channel, TELEGRAM_QUEUE)
-        + queue_depth(channel, TELEGRAM_RETRY_QUEUE)
-    )
-    return olx_pending + telegram_pending
-
-
-def publish(channel, queue, payload, *, priority=0, attempt=0):
-    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    channel.basic_publish(
-        exchange="",
-        routing_key=queue,
-        body=body,
-        properties=pika.BasicProperties(
-            delivery_mode=2,
-            content_type="application/json",
-            priority=priority,
-            headers={"attempt": attempt},
-        ),
-        mandatory=True,
-    )
-
-
-def task_shard(task):
-    try:
-        return int(task.get("crawlerShard") or 0) % QUEUE_SHARDS
-    except (TypeError, ValueError):
-        return 0
-
-
-def task_queue(task):
-    if task.get("type") == "flat.telegram.channel":
-        return TELEGRAM_QUEUE
-    return main_queue(task_shard(task))
-
-
-def task_retry_queue(task):
-    if task.get("type") == "flat.telegram.channel":
-        return TELEGRAM_RETRY_QUEUE
-    return retry_queue(task_shard(task))
-
-
-def publish_task(channel, task):
-    payload = dict(task)
-    priority = int(payload.pop("priority", 0))
-    payload.setdefault("queuedAt", int(time.time()))
-    publish(channel, task_queue(payload), payload, priority=priority)
-
-
-def api_request(path, payload=None, timeout=60):
+def api_request(path, payload=None, timeout=30):
     if len(QUEUE_INTERNAL_KEY) < 16:
         raise RuntimeError("QUEUE_INTERNAL_KEY must be at least 16 characters")
 
@@ -176,11 +33,11 @@ def api_request(path, payload=None, timeout=60):
     method = "GET"
     headers = {
         "X-Queue-Key": QUEUE_INTERNAL_KEY,
-        "User-Agent": "flat-finder-rabbit-worker/3.1",
+        "User-Agent": "flat-finder-postgres-worker/1.0",
     }
 
     if payload is not None:
-        data = json.dumps(payload).encode("utf-8")
+        data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         method = "POST"
         headers["Content-Type"] = "application/json"
 
@@ -191,78 +48,17 @@ def api_request(path, payload=None, timeout=60):
         headers=headers,
     )
 
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def dispatch_once(channel):
-    pending = all_pending(channel)
-    if pending > 0:
-        print(
-            f"[queue:dispatcher] skipped new crawl, pending={pending}",
-            flush=True,
-        )
-        return False
-
-    plan = api_request("/internal/queue-plan", timeout=30)
-    tasks = plan.get("tasks") or []
-
-    for task in tasks:
-        publish_task(channel, task)
-
-    per_shard = [0] * QUEUE_SHARDS
-    telegram_count = 0
-    for task in tasks:
-        if task.get("type") == "flat.telegram.channel":
-            telegram_count += 1
-        else:
-            per_shard[task_shard(task)] += 1
-
-    print(
-        f"[queue:dispatcher] queued {len(tasks)} tasks "
-        f"generation={plan.get('crawlGeneration')} "
-        f"olx_shards={per_shard} telegram={telegram_count}",
-        flush=True,
-    )
-    return True
-
-
-def dispatch_forever():
-    legacy_cleaned = False
-    while True:
-        queued = False
-        try:
-            connection = connect()
-            channel = connection.channel()
-            channel.confirm_delivery()
-            declare(channel)
-            if not legacy_cleaned:
-                purge_legacy_queues(channel)
-                legacy_cleaned = True
-            queued = dispatch_once(channel)
-            connection.close()
-        except Exception as exc:
-            print(f"[queue:dispatcher] error: {exc}", flush=True)
-
-        time.sleep(REFRESH_SECONDS if queued else min(30, REFRESH_SECONDS))
-
-
-def execute_task(payload):
-    return api_request("/internal/queue-task", payload=payload, timeout=180)
-
-
-def task_protocol(payload):
     try:
-        return int(payload.get("queueProtocol") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def execute_with_heartbeats(connection, executor, payload):
-    future = executor.submit(execute_task, payload)
-    while not future.done():
-        connection.process_data_events(time_limit=1)
-    return future.result()
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8")
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8")
+            detail = json.loads(body).get("error") if body else None
+        except Exception:
+            detail = None
+        raise RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}") from exc
 
 
 def worker_label():
@@ -273,105 +69,125 @@ def task_matches_worker(payload):
     task_type = payload.get("type")
     if WORKER_ROLE == "telegram":
         return task_type == "flat.telegram.channel"
-    return task_type == "flat.olx.page" and task_shard(payload) == QUEUE_SHARD
-
-
-def handle_delivery(connection, channel, executor, method, properties, body):
     try:
-        payload = json.loads(body.decode("utf-8"))
-    except Exception:
-        payload = {"raw": body.decode("utf-8", errors="replace")}
+        shard = int(payload.get("crawlerShard") or 0) % QUEUE_SHARDS
+    except (TypeError, ValueError):
+        shard = 0
+    return task_type == "flat.olx.page" and shard == QUEUE_SHARD
 
-    protocol = task_protocol(payload)
+
+def fail_claimed_task(task_id, lock_token, error):
+    return api_request(
+        "/internal/queue-fail",
+        payload={
+            "id": task_id,
+            "lockToken": lock_token,
+            "error": str(error),
+        },
+        timeout=30,
+    )
+
+
+def process_claim(task):
+    task_id = str(task.get("id") or "")
+    lock_token = str(task.get("lockToken") or "")
+    payload = task.get("payload") or {}
     label = worker_label()
 
+    if not task_id or not lock_token:
+        raise RuntimeError("claimed queue row is missing id or lock token")
+
+    protocol = int(payload.get("queueProtocol") or 0)
     if protocol != QUEUE_PROTOCOL_VERSION or not task_matches_worker(payload):
-        channel.basic_ack(method.delivery_tag)
+        outcome = fail_claimed_task(
+            task_id,
+            lock_token,
+            f"mismatched task protocol={protocol} type={payload.get('type')} shard={payload.get('crawlerShard')}",
+        )
         print(
-            f"[queue:worker:{label}] dropped mismatched task "
-            f"protocol={protocol} shard={task_shard(payload)} "
-            f"type={payload.get('type')} country={payload.get('country')} "
-            f"page={payload.get('page', '-')}",
+            f"[queue:worker:{label}] rejected mismatched task id={task_id} "
+            f"protocol={protocol} type={payload.get('type')} "
+            f"dead={1 if outcome.get('dead') else 0}",
             flush=True,
         )
         return
 
     try:
-        result = execute_with_heartbeats(connection, executor, payload)
+        result = api_request(
+            "/internal/queue-task",
+            payload=payload,
+            timeout=EXECUTE_TIMEOUT,
+        )
+        completion = api_request(
+            "/internal/queue-complete",
+            payload={
+                "id": task_id,
+                "lockToken": lock_token,
+                "result": result,
+            },
+            timeout=30,
+        )
+        if not completion.get("completed"):
+            raise RuntimeError(f"task completion lost lease: {completion}")
 
-        for next_task in result.get("nextTasks") or []:
-            publish_task(channel, next_task)
-
-        channel.basic_ack(method.delivery_tag)
         print(
             f"[queue:worker:{label}] completed {payload.get('type')} "
             f"country={payload.get('country')} city={payload.get('citySlug') or 'all'} "
             f"segment={payload.get('segment') or payload.get('channel') or '-'} "
             f"page={payload.get('page', '-')} fetched={result.get('fetched', 0)} "
             f"dedup={1 if result.get('deduplicated') else 0} "
-            f"next={len(result.get('nextTasks') or [])}",
+            f"next={completion.get('queuedNext', 0)}",
             flush=True,
         )
     except Exception as exc:
-        attempt = int((properties.headers or {}).get("attempt", 0)) + 1
-        priority = int(properties.priority or 0)
-        target = task_retry_queue(payload) if attempt < MAX_ATTEMPTS else DEAD_QUEUE
-        publish(channel, target, payload, priority=priority, attempt=attempt)
-        channel.basic_ack(method.delivery_tag)
+        try:
+            outcome = fail_claimed_task(task_id, lock_token, exc)
+            target = "dead" if outcome.get("dead") else "retry"
+            retry_ms = outcome.get("retryMs")
+            retry_text = f" retryMs={retry_ms}" if retry_ms is not None else ""
+        except Exception as fail_exc:
+            target = "lease-expiry"
+            retry_text = f" failTransition={fail_exc}"
+
         print(
             f"[queue:worker:{label}] failed type={payload.get('type')} "
             f"country={payload.get('country')} city={payload.get('citySlug') or 'all'} "
             f"segment={payload.get('segment') or payload.get('channel') or '-'} "
-            f"page={payload.get('page', '-')} attempt={attempt} "
-            f"target={target}: {exc}",
+            f"page={payload.get('page', '-')} attempt={task.get('attempts', '?')} "
+            f"target={target}{retry_text}: {exc}",
             flush=True,
         )
 
 
 def worker_forever():
     label = worker_label()
-    own_queue = TELEGRAM_QUEUE if WORKER_ROLE == "telegram" else main_queue(QUEUE_SHARD)
+    print(
+        f"[queue:worker:{label}] polling PostgreSQL queue via API "
+        f"protocol={QUEUE_PROTOCOL_VERSION} worker={WORKER_ID}",
+        flush=True,
+    )
 
     while True:
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"queue-http-{label}")
         try:
-            connection = connect()
-            channel = connection.channel()
-            channel.confirm_delivery()
-            declare(channel)
-            channel.basic_qos(prefetch_count=PREFETCH)
-            print(
-                f"[queue:worker:{label}] consuming {own_queue} "
-                f"heartbeat={HEARTBEAT}s protocol={QUEUE_PROTOCOL_VERSION}",
-                flush=True,
+            response = api_request(
+                "/internal/queue-claim",
+                payload={
+                    "role": WORKER_ROLE,
+                    "shard": QUEUE_SHARD,
+                    "workerId": WORKER_ID,
+                },
+                timeout=30,
             )
+            task = response.get("task")
+            if not task:
+                time.sleep(POLL_SECONDS)
+                continue
 
-            while connection.is_open and channel.is_open:
-                method, properties, body = channel.basic_get(
-                    queue=own_queue,
-                    auto_ack=False,
-                )
-                if method is None:
-                    connection.process_data_events(time_limit=1)
-                    continue
-
-                handle_delivery(
-                    connection,
-                    channel,
-                    executor,
-                    method,
-                    properties,
-                    body,
-                )
+            process_claim(task)
         except Exception as exc:
-            print(f"[queue:worker:{label}] connection error: {exc}", flush=True)
-            time.sleep(5)
-        finally:
-            executor.shutdown(wait=True, cancel_futures=True)
+            print(f"[queue:worker:{label}] poll error: {exc}", flush=True)
+            time.sleep(IDLE_ERROR_SECONDS)
 
 
 if __name__ == "__main__":
-    if MODE == "dispatcher":
-        dispatch_forever()
-    else:
-        worker_forever()
+    worker_forever()

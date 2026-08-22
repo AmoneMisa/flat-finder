@@ -5,7 +5,6 @@ services:
     env_file:
       - ./.env
     environment:
-      - REDIS_URL=redis://flat-finder-redis:6379
       - PGHOST=flat-finder-postgres
       - PGPORT=5432
       - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
@@ -21,8 +20,6 @@ services:
     volumes:
       - flat-finder-photo-cache:/var/cache/flat-photos
     depends_on:
-      flat-finder-redis:
-        condition: service_healthy
       flat-finder-postgres:
         condition: service_healthy
       flat-finder-elasticsearch:
@@ -48,7 +45,6 @@ services:
     env_file:
       - ./.env
     environment:
-      - REDIS_URL=redis://flat-finder-redis:6379
       - PGHOST=flat-finder-postgres
       - PGPORT=5432
       - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
@@ -64,14 +60,17 @@ services:
       - QUEUE_INTERNAL_KEY=${QUEUE_INTERNAL_KEY}
       - QUEUE_PROTOCOL_VERSION=${QUEUE_PROTOCOL_VERSION:-3}
       - QUEUE_SHARDS=${QUEUE_SHARDS:-2}
+      - QUEUE_REFRESH_SECONDS=${QUEUE_REFRESH_SECONDS:-1800}
+      - QUEUE_MAX_ATTEMPTS=${QUEUE_MAX_ATTEMPTS:-5}
+      - QUEUE_TASK_LEASE_SECONDS=${QUEUE_TASK_LEASE_SECONDS:-300}
+      - QUEUE_RETRY_BASE_MS=${QUEUE_RETRY_BASE_MS:-30000}
+      - QUEUE_RETRY_MAX_MS=${QUEUE_RETRY_MAX_MS:-300000}
     expose:
       - "4010"
     networks:
       - default
       - ai-net
     depends_on:
-      flat-finder-redis:
-        condition: service_healthy
       flat-finder-postgres:
         condition: service_healthy
       flat-finder-elasticsearch:
@@ -89,67 +88,19 @@ services:
       retries: 10
       start_period: 15s
 
-  flat-finder-rabbitmq:
-    image: rabbitmq:4.1-management-alpine
-    restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-crawler}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-crawler}
-    volumes:
-      - flat-finder-rabbitmq-data:/var/lib/rabbitmq
-    expose:
-      - "5672"
-      - "15672"
-    networks:
-      - default
-      - ai-net
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    mem_limit: ${RABBITMQ_MEMORY_LIMIT:-1g}
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 60s
-      timeout: 30s
-      retries: 5
-      start_period: 120s
-      start_interval: 5s
-
-  flat-finder-queue-dispatcher:
-    image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
-    restart: unless-stopped
-    environment:
-      QUEUE_MODE: dispatcher
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
-      QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
-      QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
-      QUEUE_REFRESH_SECONDS: ${QUEUE_REFRESH_SECONDS:-1800}
-      QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
-      QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
-    depends_on:
-      flat-finder-rabbitmq:
-        condition: service_healthy
-      flat-finder-queue-task-api:
-        condition: service_healthy
-
   flat-finder-queue-worker-1:
     image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
-      QUEUE_MODE: worker
       QUEUE_WORKER_ROLE: olx
       QUEUE_SHARD: 0
       QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
       QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
       QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
       QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
-      QUEUE_PREFETCH: ${QUEUE_PREFETCH:-1}
-      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
+      QUEUE_POLL_SECONDS: ${QUEUE_POLL_SECONDS:-1}
+      QUEUE_EXECUTE_TIMEOUT_SECONDS: ${QUEUE_EXECUTE_TIMEOUT_SECONDS:-180}
     depends_on:
-      flat-finder-rabbitmq:
-        condition: service_healthy
       flat-finder-queue-task-api:
         condition: service_healthy
 
@@ -157,19 +108,15 @@ services:
     image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
-      QUEUE_MODE: worker
       QUEUE_WORKER_ROLE: olx
       QUEUE_SHARD: 1
       QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
       QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
       QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
       QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
-      QUEUE_PREFETCH: ${QUEUE_PREFETCH:-1}
-      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
+      QUEUE_POLL_SECONDS: ${QUEUE_POLL_SECONDS:-1}
+      QUEUE_EXECUTE_TIMEOUT_SECONDS: ${QUEUE_EXECUTE_TIMEOUT_SECONDS:-180}
     depends_on:
-      flat-finder-rabbitmq:
-        condition: service_healthy
       flat-finder-queue-task-api:
         condition: service_healthy
 
@@ -178,18 +125,14 @@ services:
     restart: unless-stopped
     mem_limit: ${TELEGRAM_WORKER_MEMORY_LIMIT:-256m}
     environment:
-      QUEUE_MODE: worker
       QUEUE_WORKER_ROLE: telegram
       QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
       QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
       QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
       QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
-      QUEUE_PREFETCH: 1
-      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
+      QUEUE_POLL_SECONDS: ${QUEUE_POLL_SECONDS:-1}
+      QUEUE_EXECUTE_TIMEOUT_SECONDS: ${QUEUE_EXECUTE_TIMEOUT_SECONDS:-180}
     depends_on:
-      flat-finder-rabbitmq:
-        condition: service_healthy
       flat-finder-queue-task-api:
         condition: service_healthy
 
@@ -244,17 +187,6 @@ services:
       retries: 10
       start_period: 10s
 
-  flat-finder-redis:
-    image: redis:8-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
-
   flat-finder-postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -300,7 +232,6 @@ services:
 
 volumes:
   flat-finder-postgres-data:
-  flat-finder-rabbitmq-data:
   flat-finder-photo-cache:
 
 networks:

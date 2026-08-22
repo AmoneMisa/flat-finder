@@ -7,15 +7,30 @@ import {
   closeElasticsearch,
 } from './elasticsearch.js';
 import { processQueueTask } from './queueTasks.js';
-import { closeQueueTaskDedup } from './queueTaskDedup.js';
+import {
+  claimTask,
+  completeTask,
+  dispatchGenerationIfIdle,
+  failTask,
+  initCrawlQueueSchema,
+  pruneQueueHistory,
+  queueStats,
+} from './pgQueue.js';
 
 const app = express();
 const port = Number(process.env.QUEUE_TASK_PORT) || 4010;
 const internalKey = String(process.env.QUEUE_INTERNAL_KEY || '');
 const queueProtocol = Math.max(3, Number(process.env.QUEUE_PROTOCOL_VERSION) || 3);
 const crawlerShards = Math.max(1, Number(process.env.QUEUE_SHARDS) || 2);
+const refreshSeconds = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
+const maxAttempts = Math.max(1, Number(process.env.QUEUE_MAX_ATTEMPTS) || 5);
+const leaseMs = Math.max(
+  60_000,
+  Number(process.env.QUEUE_TASK_LEASE_SECONDS || 300) * 1000,
+);
+const dispatchPollMs = Math.min(30_000, Math.max(5_000, refreshSeconds * 1000));
 
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '512kb' }));
 
 function authorized(req) {
   return internalKey.length >= 16
@@ -169,8 +184,16 @@ function buildPlan() {
   return { tasks, crawlGeneration };
 }
 
-app.get('/health', (_req, res) => {
-  res.json({ ok: true });
+app.get('/health', async (_req, res) => {
+  try {
+    const stats = await queueStats();
+    res.json({ ok: true, queue: stats });
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      error: error?.message ?? String(error),
+    });
+  }
 });
 
 app.get('/internal/queue-plan', (req, res) => {
@@ -187,6 +210,44 @@ app.get('/internal/queue-plan', (req, res) => {
     crawlGeneration,
     tasks,
   });
+});
+
+app.get('/internal/queue-stats', async (req, res) => {
+  if (!authorized(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  return res.json({ ok: true, ...(await queueStats()) });
+});
+
+app.post('/internal/queue-claim', async (req, res) => {
+  if (!authorized(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const role = String(req.body?.role || 'olx').toLowerCase();
+  if (!['olx', 'telegram'].includes(role)) {
+    return res.status(400).json({ error: 'Invalid worker role' });
+  }
+
+  const shard = Math.max(0, Math.trunc(Number(req.body?.shard) || 0));
+  if (role === 'olx' && shard >= crawlerShards) {
+    return res.status(400).json({ error: 'Invalid crawler shard' });
+  }
+
+  try {
+    const task = await claimTask({
+      role,
+      shard,
+      workerId: req.body?.workerId,
+      leaseMs,
+      maxAttempts,
+    });
+    return res.json({ ok: true, task });
+  } catch (error) {
+    console.error('[pg-queue] claim failed:', error?.message ?? error);
+    return res.status(500).json({ ok: false, error: error?.message ?? String(error) });
+  }
 });
 
 app.post('/internal/queue-task', async (req, res) => {
@@ -206,21 +267,112 @@ app.post('/internal/queue-task', async (req, res) => {
   }
 });
 
+app.post('/internal/queue-complete', async (req, res) => {
+  if (!authorized(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const id = String(req.body?.id || '');
+  const lockToken = String(req.body?.lockToken || '');
+  if (!id || !lockToken) {
+    return res.status(400).json({ error: 'Missing task id or lock token' });
+  }
+
+  try {
+    const outcome = await completeTask({
+      id,
+      lockToken,
+      result: req.body?.result || {},
+    });
+    return res.status(outcome.completed ? 200 : 409).json({ ok: outcome.completed, ...outcome });
+  } catch (error) {
+    console.error('[pg-queue] complete failed:', error?.message ?? error);
+    return res.status(500).json({ ok: false, error: error?.message ?? String(error) });
+  }
+});
+
+app.post('/internal/queue-fail', async (req, res) => {
+  if (!authorized(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const id = String(req.body?.id || '');
+  const lockToken = String(req.body?.lockToken || '');
+  if (!id || !lockToken) {
+    return res.status(400).json({ error: 'Missing task id or lock token' });
+  }
+
+  try {
+    const outcome = await failTask({
+      id,
+      lockToken,
+      error: req.body?.error,
+      maxAttempts,
+    });
+    return res.status(outcome.failed ? 200 : 409).json({ ok: outcome.failed, ...outcome });
+  } catch (error) {
+    console.error('[pg-queue] fail transition failed:', error?.message ?? error);
+    return res.status(500).json({ ok: false, error: error?.message ?? String(error) });
+  }
+});
+
+let dispatching = false;
+async function dispatchTick() {
+  if (dispatching) return;
+  dispatching = true;
+  try {
+    const { tasks, crawlGeneration } = buildPlan();
+    const outcome = await dispatchGenerationIfIdle(tasks, refreshSeconds);
+    if (outcome.queued > 0) {
+      const perShard = Array.from({ length: crawlerShards }, () => 0);
+      let telegram = 0;
+      for (const task of tasks) {
+        if (task.type === 'flat.telegram.channel') telegram += 1;
+        else perShard[task.crawlerShard] += 1;
+      }
+      console.log(
+        `[pg-queue] queued ${outcome.queued} tasks generation=${crawlGeneration} ` +
+        `olx_shards=${JSON.stringify(perShard)} telegram=${telegram}`,
+      );
+    }
+  } catch (error) {
+    console.error('[pg-queue] dispatcher failed:', error?.message ?? error);
+  } finally {
+    dispatching = false;
+  }
+}
+
 await initDb();
 await initElasticsearch();
+await initCrawlQueueSchema();
+await pruneQueueHistory().catch((error) => {
+  console.warn('[pg-queue] initial history prune failed:', error?.message ?? error);
+});
 
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(
-    `[queue-task] listening on :${port} protocol=${queueProtocol} shards=${crawlerShards}`,
+    `[queue-task] listening on :${port} protocol=${queueProtocol} shards=${crawlerShards} backend=postgres`,
   );
+  void dispatchTick();
 });
 
+const dispatchTimer = setInterval(() => void dispatchTick(), dispatchPollMs);
+dispatchTimer.unref?.();
+const pruneTimer = setInterval(
+  () => void pruneQueueHistory().catch((error) => {
+    console.warn('[pg-queue] history prune failed:', error?.message ?? error);
+  }),
+  24 * 60 * 60_000,
+);
+pruneTimer.unref?.();
+
 async function shutdown() {
+  clearInterval(dispatchTimer);
+  clearInterval(pruneTimer);
   server.close(async () => {
     await Promise.allSettled([
       closeDb(),
       closeElasticsearch(),
-      closeQueueTaskDedup(),
     ]);
     process.exit(0);
   });
