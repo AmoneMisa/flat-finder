@@ -64,19 +64,30 @@ def declare(channel):
 
 
 def purge_legacy_queues(channel):
+    # Re-declare the v2 queues with their original arguments so this is safe
+    # whether the broker still has them or a fresh RabbitMQ volume is used.
+    channel.queue_declare(
+        LEGACY_MAIN_QUEUE,
+        durable=True,
+        arguments={"x-max-priority": 10},
+    )
+    channel.queue_declare(
+        LEGACY_RETRY_QUEUE,
+        durable=True,
+        arguments={
+            "x-message-ttl": 30_000,
+            "x-dead-letter-exchange": "",
+            "x-dead-letter-routing-key": LEGACY_MAIN_QUEUE,
+        },
+    )
+
     purged = 0
     for queue in (LEGACY_MAIN_QUEUE, LEGACY_RETRY_QUEUE):
-        try:
-            channel.queue_declare(queue=queue, passive=True)
-            result = channel.queue_purge(queue=queue)
-            purged += int(result.method.message_count or 0)
-        except pika.exceptions.ChannelClosedByBroker:
-            channel = channel.connection.channel()
-        except Exception:
-            pass
+        result = channel.queue_purge(queue=queue)
+        purged += int(result.method.message_count or 0)
+
     if purged:
         print(f"[queue:dispatcher] purged {purged} legacy v2 tasks", flush=True)
-    return channel
 
 
 def queue_depth(channel, queue):
@@ -187,7 +198,7 @@ def dispatch_forever():
             channel.confirm_delivery()
             declare(channel)
             if not legacy_cleaned:
-                channel = purge_legacy_queues(channel)
+                purge_legacy_queues(channel)
                 legacy_cleaned = True
             queued = dispatch_once(channel)
             connection.close()
