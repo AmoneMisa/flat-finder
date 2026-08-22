@@ -124,15 +124,15 @@ export async function recordListingAvailability({ source, country, id, status, r
     UPDATE listings
     SET
       availability_checked_at = NOW(),
-      availability_status = $4,
+      availability_status = $4::varchar(16),
       availability_reason = $5,
       active = CASE
-        WHEN $4 = 'inactive' THEN FALSE
-        WHEN $4 = 'active' THEN TRUE
+        WHEN $4::varchar(16) = 'inactive' THEN FALSE
+        WHEN $4::varchar(16) = 'active' THEN TRUE
         ELSE active
       END,
-      missed_runs = CASE WHEN $4 = 'active' THEN 0 ELSE missed_runs END,
-      updated_at = CASE WHEN $4 IN ('active', 'inactive') THEN NOW() ELSE updated_at END
+      missed_runs = CASE WHEN $4::varchar(16) = 'active' THEN 0 ELSE missed_runs END,
+      updated_at = CASE WHEN $4::varchar(16) IN ('active', 'inactive') THEN NOW() ELSE updated_at END
     WHERE source = $1 AND country = $2 AND source_id = $3
     RETURNING active, availability_checked_at
   `, [source, country, id, status, reason]);
