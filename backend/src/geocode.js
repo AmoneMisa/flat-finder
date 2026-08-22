@@ -9,6 +9,7 @@
 // request path.
 
 import { cacheGet, cacheSet } from './cache.js'
+import { canonicalCityName } from './countries.js'
 import { assignNearestMetro } from './metro-nearest.js'
 import { loadCityPlaces } from './places-db.js'
 import { annotateListings } from './nearby-places.js'
@@ -175,7 +176,10 @@ export function poiDistanceM(listing, name) {
 }
 
 function contextParts(listing, country) {
-  const city = listing.city || country?.cities?.[0] || ''
+  const city = canonicalCityName(
+    country?.code,
+    listing.city || country?.cities?.[0] || '',
+  )
   const countryName = country?.name || ''
   return { city, countryName }
 }
@@ -368,6 +372,9 @@ export async function geocodeListings(listings, country) {
   }
 
   for (const listing of listings) {
+    const canonicalCity = canonicalCityName(country?.code, listing.city || '')
+    if (canonicalCity) listing.city = canonicalCity
+
     if (listing.lat != null && listing.lng != null) {
       listing.locationSource ??= 'coordinates'
       listing.locationAccuracyM ??= 25
@@ -433,7 +440,7 @@ export async function geocodeListings(listings, country) {
       break
     }
 
-    const listingCity = listing.city || defaultCity
+    const listingCity = canonicalCityName(country?.code, listing.city || defaultCity)
     if (!placed && center && (!listing.city || listingCity === defaultCity)) {
       const [dLat, dLng] = jitter(String(listing.id || ''), 0.02)
       listing.lat = center.lat + dLat
