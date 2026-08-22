@@ -10,11 +10,13 @@
 # The Node backend owns all normalization/filtering; this only does the fetch +
 # extract. Callers are expected to rate-limit (the Node side throttles per host).
 
+import html as html_lib
 import os
 import re
 import json
 import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from flask import Flask, request, jsonify
 from curl_cffi import requests as cffi
@@ -68,6 +70,9 @@ IMPERSONATE = os.environ.get("OLX_IMPERSONATE", "chrome124")
 # retry to the same city completed normally. Keep enough headroom for those tail
 # latencies; compose can still override this per fetcher pool.
 TIMEOUT = int(os.environ.get("OLX_TIMEOUT", "45"))
+# Availability checks run after a result page is already rendered. They should
+# fail closed-to-unknown quickly rather than occupy the crawler pool for 45s.
+STATUS_TIMEOUT = max(3, min(30, int(os.environ.get("OLX_AVAILABILITY_TIMEOUT", "12"))))
 # RabbitMQ retries failed page tasks after 30 seconds. Retrying again inside
 # this HTTP service used to make one request last ~91.5s (45s x 2 + backoff),
 # while the nginx router necessarily stopped waiting at 55s and returned 504.
@@ -84,6 +89,13 @@ _STATE_RE = re.compile(
     r'window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")\s*;',
     re.S,
 )
+
+_INACTIVE_PATTERNS = [
+    re.compile(r"объявлен(?:ие|ия).{0,100}(?:не\s*актив|недоступ|удал[её]н|закрыт)", re.I),
+    re.compile(r"(?:это\s+)?объявление.{0,100}(?:больше\s+не\s+доступно|снято)", re.I),
+    re.compile(r"оголошенн(?:я|і).{0,100}(?:не\s*актив|недоступ|видален|видалено|закрит)", re.I),
+    re.compile(r"anun(?:ț|t)(?:ul)?.{0,100}(?:nu\s+mai\s+este\s+disponibil|inactiv|șters|sters)", re.I),
+]
 
 
 def extract_ads(html):
@@ -157,9 +169,98 @@ def apply_lookback_page_stop(ads):
     )
 
 
+def _visible_text(document):
+    """Strip scripts/styles before matching status copy to avoid bundle strings."""
+    text = re.sub(r"<script\b[^>]*>.*?</script>", " ", document or "", flags=re.I | re.S)
+    text = re.sub(r"<style\b[^>]*>.*?</style>", " ", text, flags=re.I | re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", html_lib.unescape(text)).strip()
+
+
+def classify_offer_response(status_code, document, requested_id, final_url):
+    """Conservative availability classifier; network/WAF ambiguity stays unknown."""
+    if status_code in (404, 410):
+        return "inactive", f"http_{status_code}"
+    if status_code in (401, 403, 408, 425, 429) or status_code >= 500:
+        return "unknown", f"http_{status_code}"
+    if status_code != 200:
+        return "unknown", f"http_{status_code}"
+
+    visible = _visible_text(document)
+    for pattern in _INACTIVE_PATTERNS:
+        if pattern.search(visible):
+            return "inactive", "inactive_page"
+
+    offer_id = str(requested_id or "").strip()
+    final = str(final_url or "")
+    # Active OLX canonical URLs retain the numeric offer id. If a request was
+    # redirected to a generic category/home page, do not call that active.
+    if offer_id and offer_id in final:
+        return "active", "offer_page"
+
+    return "unknown", "unrecognized_page"
+
+
+def _valid_offer_url(portal, value):
+    try:
+        parsed = urlparse(str(value or "").strip())
+        expected = urlparse(portal["host"]).hostname or ""
+        host = (parsed.hostname or "").lower()
+        allowed = {expected.lower(), expected.lower().removeprefix("www.")}
+        return parsed.scheme == "https" and host in allowed
+    except ValueError:
+        return False
+
+
 @app.get("/health")
 def health():
     return jsonify(ok=True)
+
+
+@app.post("/olx/check")
+def olx_check():
+    code = (request.args.get("country") or "").upper()
+    portal = PORTALS.get(code)
+    if not portal:
+        return jsonify(error=f"unknown country {code!r}"), 400
+
+    payload = request.get_json(silent=True) or {}
+    offer_id = str(payload.get("id") or "").strip()
+    url = str(payload.get("url") or "").strip()
+    if not offer_id or not _valid_offer_url(portal, url):
+        return jsonify(error="invalid offer id or URL"), 400
+
+    try:
+        resp = cffi.get(
+            url,
+            impersonate=IMPERSONATE,
+            timeout=STATUS_TIMEOUT,
+            headers={"Accept-Language": portal["lang"]},
+            allow_redirects=True,
+        )
+    except Exception as exc:
+        return jsonify(
+            country=code,
+            id=offer_id,
+            status="unknown",
+            reason="fetch_error",
+            error=str(exc)[:240],
+        )
+
+    status, reason = classify_offer_response(
+        resp.status_code,
+        resp.text if resp.status_code == 200 else "",
+        offer_id,
+        str(resp.url or ""),
+    )
+    return jsonify(
+        country=code,
+        id=offer_id,
+        status=status,
+        reason=reason,
+        httpStatus=resp.status_code,
+        finalUrl=str(resp.url or ""),
+    )
 
 
 @app.get("/olx/listings")
@@ -264,7 +365,7 @@ def olx_listings():
             else:
                 last_err = f"{where} HTTP {resp.status_code}"
         # Optional local retries remain available for standalone deployments,
-        # but the compose stack deliberately leaves them to RabbitMQ.
+        # but the compose stack deliberately leaves them to the durable queue.
         if attempt + 1 < ATTEMPTS:
             time.sleep(RETRY_BACKOFF)
     return jsonify(error=last_err or f"{where}: failed"), 502
