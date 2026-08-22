@@ -68,7 +68,47 @@ export function classifyAudience(text) {
   return baseClassifyAudience(text);
 }
 
+const PEARL_NUMERIC_RE = /(?:^|[^\p{L}\p{N}_])([1-9]\d?)\s*(?:[-–—]?\s*(?:я|ая|а|й|st|nd|rd|th))?\s*(?:жемчужин[а-яё]*|перлин[а-яіїґ]*)(?=$|[^\p{L}\p{N}_])/iu;
+const PEARL_TENS = new Map([
+  ['двадцять', 20], ['тридцять', 30], ['сорок', 40],
+  ['двадцать', 20], ['тридцать', 30],
+]);
+const PEARL_ONES = new Map([
+  ['перша', 1], ['друга', 2], ['третя', 3], ['четверта', 4], ["п'ята", 5], ['шоста', 6], ['сьома', 7], ['восьма', 8], ["дев'ята", 9],
+  ['первая', 1], ['вторая', 2], ['третья', 3], ['четвертая', 4], ['пятая', 5], ['шестая', 6], ['седьмая', 7], ['восьмая', 8], ['девятая', 9],
+]);
+
+function normalizePearlToken(value) {
+  return String(value || '').toLowerCase().replace(/[’`ʼ]/g, "'").replace(/ё/g, 'е');
+}
+
+function parsePearlComplex(text) {
+  if (!text) return null;
+  const numeric = String(text).match(PEARL_NUMERIC_RE);
+  if (numeric) return `${Number(numeric[1])} Жемчужина`;
+
+  const words = String(text).match(/(?:^|[^\p{L}\p{N}_])(?:жк\s*)?(двадцять|тридцять|сорок|двадцать|тридцать)\s+([\p{L}'’`ʼ-]+)\s+(?:перлин[а-яіїґ]*|жемчужин[а-яё]*)(?=$|[^\p{L}\p{N}_])/iu);
+  if (words) {
+    const tens = PEARL_TENS.get(normalizePearlToken(words[1]));
+    const ones = PEARL_ONES.get(normalizePearlToken(words[2]));
+    if (tens && ones) return `${tens + ones} Жемчужина`;
+  }
+
+  const single = String(text).match(/(?:^|[^\p{L}\p{N}_])(?:жк\s*)?([\p{L}'’`ʼ-]+)\s+(?:перлин[а-яіїґ]*|жемчужин[а-яё]*)(?=$|[^\p{L}\p{N}_])/iu);
+  if (single) {
+    const value = PEARL_ONES.get(normalizePearlToken(single[1]));
+    if (value) return `${value} Жемчужина`;
+  }
+  return null;
+}
+
 export function parseResidentialComplex(text) {
+  // Odessa's KADORR buildings are routinely advertised without the `ЖК`
+  // marker: `35 Жемчужина`, `6я жемчужина`, or Ukrainian
+  // `Тридцять п'ята перлина`. Normalize all of them to one searchable label.
+  const pearl = parsePearlComplex(text);
+  if (pearl) return pearl;
+
   const raw = baseParseResidentialComplex(text);
   if (!raw) return null;
   const cleaned = raw
