@@ -7,6 +7,8 @@
 //   DISABLE_SCHEDULER          set to "1" to disable all background work
 //   DISABLE_LISTING_SCHEDULER  set to "1" when RabbitMQ owns listing crawling;
 //                              places refresh still runs in this mode
+//   ENABLE_LEGACY_LISTING_SCHEDULER=1 can explicitly keep the old crawler even
+//                              when QUEUE_INTERNAL_KEY shows the queue stack is on
 
 import { COUNTRY_CODES } from './countries.js';
 import { warmCountry } from './scrapers/index.js';
@@ -112,7 +114,12 @@ export function startScheduler() {
   // durable RabbitMQ pipeline owns listings.
   refreshPlaces().catch((e) => console.warn('[places] startup sync error', e));
 
-  if (process.env.DISABLE_LISTING_SCHEDULER === '1') {
+  const queueConfigured = String(process.env.QUEUE_INTERNAL_KEY || '').length >= 16;
+  const queueOwnsListings =
+    process.env.DISABLE_LISTING_SCHEDULER === '1' ||
+    (queueConfigured && process.env.ENABLE_LEGACY_LISTING_SCHEDULER !== '1');
+
+  if (queueOwnsListings) {
     console.log('[scheduler] listing refresh disabled; RabbitMQ queue owns crawl');
     return;
   }
