@@ -15,11 +15,6 @@ if [[ "$UPDATE_ELASTICSEARCH" != "true" ]]; then
   UPDATE_ELASTICSEARCH="false"
 fi
 
-# Pull the compose/deploy definition matching the pushed revision.
-if [ -d .git ]; then
-  git pull --ff-only
-fi
-
 echo "Deploying flat-finder application images with tag: ${IMAGE_TAG}"
 
 APP_SERVICES=(
