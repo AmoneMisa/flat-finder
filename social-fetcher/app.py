@@ -3,7 +3,7 @@ import os
 import re
 import threading
 from datetime import datetime, timezone
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi
@@ -17,6 +17,7 @@ MAX_ITEMS = max(1, min(250, int(os.environ.get("SOCIAL_MAX_ITEMS", "100"))))
 HTTP_TIMEOUT = max(5, int(os.environ.get("SOCIAL_HTTP_TIMEOUT", "30")))
 BROWSER_TIMEOUT_MS = max(5_000, int(os.environ.get("SOCIAL_BROWSER_TIMEOUT_MS", "45000")))
 THREADS_SCROLLS = max(1, min(20, int(os.environ.get("THREADS_SCROLLS", "8"))))
+THREADS_BASE_URL = os.environ.get("THREADS_BASE_URL", "https://www.threads.com").rstrip("/")
 LINKEDIN_MAX_DETAIL_FETCHES = max(
     0,
     min(50, int(os.environ.get("LINKEDIN_MAX_DETAIL_FETCHES", "15"))),
@@ -250,7 +251,7 @@ def _threads_dom_items(page):
 def fetch_threads(payload):
     username = _threads_username(payload.get("username") or payload.get("target"))
     limit = _limit(payload.get("limit"), 50)
-    url = f"https://www.threads.net/@{username}"
+    url = f"{THREADS_BASE_URL}/@{username}"
 
     with _BROWSER_GATE:
         with sync_playwright() as playwright:
@@ -318,6 +319,12 @@ def _linkedin_job_id(card):
     match = re.search(r"jobPosting:(\d+)", urn)
     if match:
         return match.group(1)
+
+    urn_node = card.select_one("[data-entity-urn*='jobPosting:']")
+    if urn_node:
+        match = re.search(r"jobPosting:(\d+)", urn_node.get("data-entity-urn") or "")
+        if match:
+            return match.group(1)
 
     link = card.select_one("a.base-card__full-link, a[href*='/jobs/view/']")
     href = link.get("href", "") if link else ""
