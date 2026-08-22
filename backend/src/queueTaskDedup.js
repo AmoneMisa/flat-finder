@@ -1,13 +1,16 @@
+import { randomUUID } from 'node:crypto';
+
 const mem = new Map();
 
 const RUNNING_TTL_MS = Math.max(
-  60_000,
-  Number(process.env.QUEUE_TASK_RUNNING_TTL_MS) || 5 * 60_000,
+  30_000,
+  Number(process.env.QUEUE_TASK_RUNNING_TTL_MS) || 90_000,
 );
 const DONE_TTL_MS = Math.max(
   RUNNING_TTL_MS,
   Number(process.env.QUEUE_TASK_DONE_TTL_MS) || 24 * 60 * 60_000,
 );
+const RENEW_INTERVAL_MS = Math.max(10_000, Math.floor(RUNNING_TTL_MS / 3));
 
 let client = null;
 let ready = false;
@@ -79,14 +82,74 @@ function memSet(key, state, value, ttlMs) {
   });
 }
 
+const REFRESH_LOCK_SCRIPT = `
+local current = redis.call('GET', KEYS[1])
+if current == ARGV[1] then
+  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
+end
+return 0
+`;
+
+const FINISH_LOCK_SCRIPT = `
+local current = redis.call('GET', KEYS[1])
+if current == ARGV[1] then
+  redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+  return 1
+end
+return 0
+`;
+
+const RELEASE_LOCK_SCRIPT = `
+local current = redis.call('GET', KEYS[1])
+if current == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+
+async function refreshRedisLock(key, runningValue) {
+  if (!client || !ready) return;
+  await client.eval(
+    REFRESH_LOCK_SCRIPT,
+    {
+      keys: [key],
+      arguments: [runningValue, String(RUNNING_TTL_MS)],
+    },
+  );
+}
+
+async function finishRedisLock(key, runningValue, result) {
+  const doneValue = JSON.stringify({ state: 'done', result });
+  return client.eval(
+    FINISH_LOCK_SCRIPT,
+    {
+      keys: [key],
+      arguments: [runningValue, doneValue, String(DONE_TTL_MS)],
+    },
+  );
+}
+
+async function releaseRedisLock(key, runningValue) {
+  if (!client) return;
+  await client.eval(
+    RELEASE_LOCK_SCRIPT,
+    {
+      keys: [key],
+      arguments: [runningValue],
+    },
+  );
+}
+
 export async function executeQueueTaskOnce(task, execute) {
   await ensureClient();
   const key = redisKey(task);
 
   if (client && ready) {
+    const token = randomUUID();
+    const runningValue = JSON.stringify({ state: 'running', token });
     const lock = await client.set(
       key,
-      JSON.stringify({ state: 'running' }),
+      runningValue,
       { NX: true, PX: RUNNING_TTL_MS },
     );
 
@@ -107,19 +170,27 @@ export async function executeQueueTaskOnce(task, execute) {
       throw new Error(`queue task already running: ${taskIdentity(task)}`);
     }
 
+    const renewTimer = setInterval(() => {
+      refreshRedisLock(key, runningValue).catch((error) => {
+        console.warn('[queue-dedup] lock refresh failed:', error.message);
+      });
+    }, RENEW_INTERVAL_MS);
+    renewTimer.unref?.();
+
     try {
       const result = await execute();
-      await client.set(
-        key,
-        JSON.stringify({ state: 'done', result }),
-        { PX: DONE_TTL_MS },
-      );
+      const finished = await finishRedisLock(key, runningValue, result);
+      if (!finished) {
+        throw new Error(`queue task lost dedup lock: ${taskIdentity(task)}`);
+      }
       return result;
     } catch (error) {
       try {
-        await client.del(key);
+        await releaseRedisLock(key, runningValue);
       } catch {}
       throw error;
+    } finally {
+      clearInterval(renewTimer);
     }
   }
 
