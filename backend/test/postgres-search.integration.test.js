@@ -10,6 +10,7 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   await initDb();
   await initPostgresSearchSchema();
   await pool.query(`DELETE FROM listings WHERE source = 'pg-search-test'`);
+  await pool.query(`DELETE FROM listings WHERE source = 'olx' AND country = 'ZZ'`);
 
   const now = Date.now();
   const listing = (id, price, currency, city, airConditioner, minutesAgo) => ({
@@ -88,6 +89,86 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   assert.equal(noEsMatches.count, 0);
   assert.equal(noEsMatches.listings.length, 0);
 
+  const duplicateDescription = [
+    'Сдается квартира рядом с метро Новза.',
+    'Одинаковое описание используется в повторно опубликованном объявлении,',
+    'поэтому разные OLX id не должны превращаться в отдельные карточки.',
+  ].join(' ');
+
+  const olxListing = (id, minutesAgo, photos, title = 'Квартира метро Новза') => ({
+    id,
+    source: 'olx',
+    country: 'ZZ',
+    title,
+    description: duplicateDescription,
+    propertyType: 'flat',
+    dealType: 'longRent',
+    byAgency: false,
+    price: 450,
+    currency: 'USD',
+    rooms: 2,
+    areaSqm: 55,
+    city: 'Tashkent',
+    district: 'Chilanzar',
+    metro: 'Novza',
+    createdAt: new Date(now - minutesAgo * 60_000).toISOString(),
+    commercial: false,
+    photos,
+  });
+
+  const samePhotoA = 'https://apollo.olxcdn.example/v1/files/shared-a/image;s=800x600';
+  const samePhotoB = 'https://apollo.olxcdn.example/v1/files/shared-b/image;s=800x600';
+
+  await upsertListings([
+    olxListing('dup-new', 1, [
+      { link: `${samePhotoA}?token=new` },
+      { link: `${samePhotoB}?token=new` },
+    ]),
+    olxListing('dup-old', 30, [
+      { link: samePhotoA.replace('800x600', '1200x900') },
+      { link: samePhotoB.replace('800x600', '1200x900') },
+    ]),
+    olxListing('distinct', 2, [
+      { link: 'https://apollo.olxcdn.example/v1/files/other-a/image;s=800x600' },
+      { link: 'https://apollo.olxcdn.example/v1/files/other-b/image;s=800x600' },
+    ], 'Другая квартира метро Новза'),
+  ]);
+
+  const olxFilters = {
+    propertyType: 'any',
+    dealType: 'longRent',
+    agency: 'any',
+    audience: 'any',
+    city: 'Tashkent',
+    cityAliases: ['Tashkent'],
+    sources: ['olx'],
+    sort: 'newest',
+    limit: 20,
+    offset: 0,
+  };
+
+  const deduped = await searchPostgresListings({
+    filters: olxFilters,
+    countries: ['ZZ'],
+    rates: { USD: 1 },
+  });
+
+  assert.equal(deduped.count, 2);
+  assert.deepEqual(
+    deduped.listings.map((item) => item.id).sort(),
+    ['distinct', 'dup-new'],
+  );
+
+  const exactOldShareLink = await searchPostgresListings({
+    filters: { ...olxFilters, listingId: 'dup-old' },
+    countries: ['ZZ'],
+    rates: { USD: 1 },
+  });
+
+  assert.equal(exactOldShareLink.count, 1);
+  assert.equal(exactOldShareLink.listings[0]?.id, 'dup-old');
+
   await pool.query(`DELETE FROM listings WHERE source = 'pg-search-test'`);
+  await pool.query(`DELETE FROM listings WHERE source = 'olx' AND country = 'ZZ'`);
   await closeDb();
 });

@@ -255,6 +255,50 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   };
 }
 
+function olxPhotoSql(alias, index) {
+  const photo = `${alias}.data->'photos'->${index}`;
+  const raw = `CASE
+    WHEN jsonb_typeof(${photo}) = 'string' THEN ${alias}.data->'photos'->>${index}
+    WHEN jsonb_typeof(${photo}) = 'object' THEN COALESCE(${photo}->>'link', ${photo}->>'url', ${photo}->>'src', '')
+    ELSE ''
+  END`;
+
+  // OLX CDN URLs encode only the rendition after `;s=` (or in the query
+  // string). The underlying file path is stable when the same photos are used
+  // in a repost, so strip the rendition before comparing two ads.
+  return `LOWER(REGEXP_REPLACE(SPLIT_PART(COALESCE(${raw}, ''), '?', 1), ';s=.*$', ''))`;
+}
+
+function listingDedupeSql(alias = 'l') {
+  const photo0 = olxPhotoSql(alias, 0);
+  const photo1 = olxPhotoSql(alias, 1);
+  const title = `LOWER(REGEXP_REPLACE(BTRIM(COALESCE(${alias}.title, '')), '\\s+', ' ', 'g'))`;
+  const description = `LOWER(REGEXP_REPLACE(BTRIM(COALESCE(${alias}.description, '')), '\\s+', ' ', 'g'))`;
+
+  return `CASE
+    WHEN LOWER(${alias}.source) = 'olx'
+      AND LENGTH(${photo0}) >= 24
+      AND LENGTH(${photo1}) >= 24
+      AND ${photo0} <> ${photo1}
+      THEN 'olx:photos:' || MD5(CONCAT_WS('|', UPPER(${alias}.country), ${photo0}, ${photo1}))
+    WHEN LOWER(${alias}.source) = 'olx'
+      AND LENGTH(${description}) >= 120
+      THEN 'olx:content:' || MD5(CONCAT_WS('|',
+        UPPER(${alias}.country),
+        LOWER(COALESCE(${alias}.city, '')),
+        COALESCE(${alias}.deal_type, ''),
+        COALESCE(${alias}.property_type, ''),
+        COALESCE(${alias}.price::text, ''),
+        UPPER(COALESCE(${alias}.currency, '')),
+        COALESCE(${alias}.rooms::text, ''),
+        COALESCE(ROUND(${alias}.area_sqm::numeric, 1)::text, ''),
+        ${title},
+        ${description}
+      ))
+    ELSE CONCAT_WS(':', LOWER(${alias}.source), UPPER(${alias}.country), ${alias}.source_id)
+  END`;
+}
+
 export async function initPostgresSearchSchema() {
   const statements = [
     `CREATE INDEX IF NOT EXISTS listings_feed_newest_idx ON listings(country, city, deal_type, created_at DESC, id DESC) WHERE active = TRUE`,
@@ -274,8 +318,49 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const context = buildSearchContext({ filters, countries, rates, searchMatches });
   const baseWhere = context.where.join('\n  AND ');
   const baseParams = [...context.params];
+  const dedupeKey = listingDedupeSql('l');
 
-  const countSql = `SELECT COUNT(*)::int AS count\n${context.from}\nWHERE ${baseWhere}`;
+  // Dedupe only affects normal feeds. An exact share-link lookup already narrows
+  // to one source_id and must keep resolving that exact OLX URL even if a newer
+  // repost of the same apartment is the feed representative.
+  const dedupeEnabled = !filters.listingId;
+
+  const filteredSql = `
+    SELECT
+      l.id,
+      l.source,
+      l.country,
+      l.source_id,
+      l.created_at,
+      l.price,
+      l.currency,
+      l.title,
+      l.data,
+      ${context.rankSelect},
+      ${dedupeEnabled ? dedupeKey : `CONCAT_WS(':', LOWER(l.source), UPPER(l.country), l.source_id)`} AS dedupe_key
+    ${context.from}
+    WHERE ${baseWhere}
+  `;
+
+  const rankedSql = `
+    SELECT
+      filtered.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY filtered.dedupe_key
+        ORDER BY filtered.created_at DESC NULLS LAST, filtered.id DESC
+      ) AS dedupe_rank
+    FROM (
+      ${filteredSql}
+    ) filtered
+  `;
+
+  const countSql = `
+    SELECT COUNT(*)::int AS count
+    FROM (
+      ${rankedSql}
+    ) l
+    WHERE l.dedupe_rank = 1
+  `;
 
   const pageParams = [...baseParams];
   const addPage = (value) => {
@@ -284,7 +369,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   };
 
   const cursor = decodeCursor(filters.cursor);
-  const pageWhere = [...context.where];
+  const pageWhere = ['l.dedupe_rank = 1'];
   let useCursor = false;
   if (cursor && cursor.sort === context.sort && ['newest', 'oldest'].includes(context.sort) && cursor.id != null) {
     const idParam = addPage(String(cursor.id));
@@ -307,6 +392,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const limitParam = addPage(limit);
   const offset = useCursor ? 0 : Math.max(0, Number(filters.offset) || 0);
   const offsetParam = addPage(offset);
+  const orderBy = context.orderBy.replaceAll('m.rank', 'l.search_rank');
 
   const pageSql = `
     SELECT
@@ -316,10 +402,12 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       l.currency,
       l.title,
       l.data,
-      ${context.rankSelect}
-    ${context.from}
+      l.search_rank
+    FROM (
+      ${rankedSql}
+    ) l
     WHERE ${pageWhere.join('\n      AND ')}
-    ORDER BY ${context.orderBy}
+    ORDER BY ${orderBy}
     LIMIT ${limitParam}
     OFFSET ${offsetParam}
   `;
