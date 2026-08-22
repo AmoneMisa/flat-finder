@@ -12,19 +12,10 @@ services:
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
-      # Every configured Ukrainian oblast centre is crawled every refresh. The
-      # fetcher now emits an empty page only after the sorted feed is completely
-      # older than the supported freshness window, so max-pages is a safety cap
-      # rather than the definition of how much data we keep.
       - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
       - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1000}
       - OLX_UA_CITY_BUDGET_MS=${OLX_UA_CITY_BUDGET_MS:-600000}
-      # A complete all-city freshness walk can legitimately run for minutes.
-      # It happens in the background once a cache exists; do not cut the OLX
-      # source at the old 60s deadline before Odesa/large cities are reached.
       - SOURCE_DEADLINE_MS=${SOURCE_DEADLINE_MS:-7200000}
-      # Telegram photo bytes are cached on disk (a container /tmp would be lost
-      # on every recreate, forcing a slow MTProto refetch for every image).
       - PHOTO_CACHE_DIR=/var/cache/flat-photos
       - PHOTO_CACHE_MAX_MB=${PHOTO_CACHE_MAX_MB:-512}
     volumes:
@@ -57,26 +48,37 @@ services:
     env_file:
       - ./.env
     environment:
+      - REDIS_URL=redis://flat-finder-redis:6379
       - PGHOST=flat-finder-postgres
       - PGPORT=5432
       - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
       - ELASTICSEARCH_INDEX=flat-listings-v1
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
+      - OLX_FETCHER_URL_0=http://flat-finder-olx-fetcher:4020
+      - OLX_FETCHER_URL_1=http://flat-finder-olx-fetcher-ua:4020
       - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
       - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1000}
       - OLX_UA_CITY_BUDGET_MS=${OLX_UA_CITY_BUDGET_MS:-600000}
       - SOURCE_DEADLINE_MS=${SOURCE_DEADLINE_MS:-7200000}
       - QUEUE_TASK_PORT=4010
       - QUEUE_INTERNAL_KEY=${QUEUE_INTERNAL_KEY}
+      - QUEUE_PROTOCOL_VERSION=${QUEUE_PROTOCOL_VERSION:-3}
+      - QUEUE_SHARDS=${QUEUE_SHARDS:-2}
     expose:
       - "4010"
     networks:
       - default
       - ai-net
     depends_on:
+      flat-finder-redis:
+        condition: service_healthy
       flat-finder-postgres:
         condition: service_healthy
       flat-finder-elasticsearch:
+        condition: service_healthy
+      flat-finder-olx-fetcher:
+        condition: service_healthy
+      flat-finder-olx-fetcher-ua:
         condition: service_healthy
       flat-finder-olx-router:
         condition: service_healthy
@@ -101,20 +103,12 @@ services:
     networks:
       - default
       - ai-net
-    # RabbitMQ logs "Available file handles: 1024" and refuses to raise it
-    # itself; each connection and queue index costs descriptors, so the default
-    # is the documented cause of stalls once the crawler fans out.
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
     mem_limit: ${RABBITMQ_MEMORY_LIMIT:-1g}
     healthcheck:
-      # `rabbitmq-diagnostics ping` starts a full Erlang CLI node on every run,
-      # which on a loaded 4-vCPU host regularly overran the old timeout and
-      # marked a healthy broker unhealthy. Give it real headroom and probe less
-      # often; start_interval keeps startup detection fast without a tight
-      # steady-state interval (ignored by Docker < 25).
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 60s
       timeout: 30s
@@ -131,6 +125,8 @@ services:
       QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
       QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
       QUEUE_REFRESH_SECONDS: ${QUEUE_REFRESH_SECONDS:-1800}
+      QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
+      QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
     depends_on:
       flat-finder-rabbitmq:
         condition: service_healthy
@@ -142,6 +138,9 @@ services:
     restart: unless-stopped
     environment:
       QUEUE_MODE: worker
+      QUEUE_SHARD: 0
+      QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
+      QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
       QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
       QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
@@ -158,6 +157,9 @@ services:
     restart: unless-stopped
     environment:
       QUEUE_MODE: worker
+      QUEUE_SHARD: 1
+      QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
+      QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
       QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
       QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
@@ -174,8 +176,6 @@ services:
     restart: unless-stopped
     environment:
       - OLX_TIMEOUT=45
-      # One 45s attempt fits below nginx's 55s deadline. RabbitMQ performs the
-      # durable retry; two attempts here caused deterministic proxy 504s.
       - OLX_ATTEMPTS=${OLX_ATTEMPTS:-1}
       - OLX_LOOKBACK_DAYS=${OLX_LOOKBACK_DAYS:-21}
     expose:
@@ -242,10 +242,6 @@ services:
       - flat-finder-postgres-data:/var/lib/postgresql/data
     expose:
       - "5432"
-    # Also on the shared network: the personal-site candidate board keeps its
-    # durable storage here, in its own `hiring` schema. Without this the site
-    # cannot resolve the host at all and silently falls back to Redis-only,
-    # which loses every candidate and every crawl cursor on a restart.
     networks:
       - default
       - ai-net
@@ -273,12 +269,6 @@ services:
       - default
       - ai-net
     healthcheck:
-      # Recovering the indices off the bind-mounted disk takes this node minutes,
-      # not seconds. The old 40s start_period plus 20x10s of retries expired
-      # while ES was still starting, so Docker marked a perfectly good node
-      # unhealthy and every service depending on it refused to start.
-      # start_interval keeps detection fast once it is actually up without a
-      # tight steady-state interval (ignored by Docker < 25).
       test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/' >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
