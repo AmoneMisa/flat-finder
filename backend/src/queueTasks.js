@@ -218,6 +218,7 @@ function nextOlxTask(task, pageResult, page) {
     citySlug: task.citySlug || null,
     segment: String(task.segment || ''),
     page: nextPage,
+    queueProtocol: Number(task.queueProtocol) || null,
     priority: Math.max(1, 7 - nextPage),
   };
 }
