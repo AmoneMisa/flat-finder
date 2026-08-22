@@ -29,5 +29,5 @@ jobs:
           node --check backend/src/queueTasks.js
           node --check backend/src/listing-sort.js
           node --check backend/src/amenity-parse.js
-      - name: Run backend tests
-        run: npm test --prefix backend
+      - name: Run feature and crawler regression tests
+        run: node --test backend/test/map-amenity-sort.test.js backend/test/ua-priority-coverage.test.js backend/test/queue-crawl-stability.test.js
