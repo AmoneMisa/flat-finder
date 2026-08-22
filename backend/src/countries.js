@@ -72,6 +72,9 @@ export const COUNTRIES = {
       'Chernihiv',
       'Sumy',
       'Mykolaiv',
+      'Kherson',
+      'Donetsk',
+      'Luhansk',
       'Kropyvnytskyi',
     ],
     cityAliases: {
@@ -218,6 +221,24 @@ export const COUNTRIES = {
         'nikolaev',
       ],
 
+      Kherson: [
+        'херсон',
+        'kherson',
+      ],
+
+      Donetsk: [
+        'донецьк',
+        'донецк',
+        'donetsk',
+      ],
+
+      Luhansk: [
+        'луганськ',
+        'луганск',
+        'luhansk',
+        'lugansk',
+      ],
+
       Kropyvnytskyi: [
         'кропивницький',
         'кропивницкий',
@@ -228,34 +249,39 @@ export const COUNTRIES = {
       ],
     },
     olxCities: [
-      // Сначала города, которые хуже покрываются общей лентой.
+      // Every oblast centre is deliberately listed: compose makes this whole
+      // breadth set run every refresh, one recent page per deal segment.
       { city: 'Chernivtsi', slug: 'chernovtsy' },
       { city: 'Lutsk', slug: 'lutsk' },
       { city: 'Uzhhorod', slug: 'uzhgorod' },
-      { city: 'Mukachevo', slug: 'mukachevo' },
-
       { city: 'Rivne', slug: 'rovno' },
       { city: 'Ternopil', slug: 'ternopol' },
       { city: 'Khmelnytskyi', slug: 'khmelnitskiy' },
       { city: 'Zhytomyr', slug: 'zhitomir' },
-
       { city: 'Cherkasy', slug: 'cherkassy' },
       { city: 'Poltava', slug: 'poltava' },
       { city: 'Chernihiv', slug: 'chernigov' },
       { city: 'Sumy', slug: 'sumy' },
-
       { city: 'Mykolaiv', slug: 'nikolaev' },
+      { city: 'Kherson', slug: 'kherson' },
+      { city: 'Donetsk', slug: 'donetsk' },
+      { city: 'Luhansk', slug: 'lugansk' },
       { city: 'Kropyvnytskyi', slug: 'kropivnitskiy' },
       { city: 'Vinnytsia', slug: 'vinnitsa' },
       { city: 'Ivano-Frankivsk', slug: 'ivano-frankovsk' },
-
       { city: 'Zaporizhzhia', slug: 'zaporozhe' },
       { city: 'Lviv', slug: 'lvov' },
       { city: 'Kharkiv', slug: 'kharkov' },
       { city: 'Dnipro', slug: 'dnepr' },
-
       { city: 'Odesa', slug: 'odessa' },
       { city: 'Kyiv', slug: 'kiev' },
+
+      // Useful non-oblast targets. Fontanka and Kryzhanivka have separate OLX
+      // locality pages but belong to the Odesa search area for our users, so
+      // their results are stored under Odesa while keeping their real GPS point.
+      { city: 'Odesa', slug: 'fontanka' },
+      { city: 'Odesa', slug: 'kryzhanovka' },
+      { city: 'Mukachevo', slug: 'mukachevo' },
     ],
     telegramChannels: [
       // Kyiv
