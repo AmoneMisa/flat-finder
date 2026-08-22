@@ -36,6 +36,24 @@ function parseAddress(text) {
   return bare ? bare[1].replace(/\s+/g, ' ').trim() : null;
 }
 
+// Cheap synchronous guard for the concrete production failure that prompted
+// the general asynchronous bbox validator. It also protects the legacy cached
+// scraper path before its final geocoding pass. Bounds are intentionally broad
+// enough for all of Odesa proper, including the northern residential districts.
+const SOURCE_CITY_BOUNDS = {
+  'UA:Odesa': [46.25, 30.45, 46.65, 30.88], // south, west, north, east
+};
+function sourceCoordinates(partial, city) {
+  const lat = partial.lat != null ? Number(partial.lat) : null;
+  const lng = partial.lng != null ? Number(partial.lng) : null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return {lat:null,lng:null,rejected:false};
+  const bounds = SOURCE_CITY_BOUNDS[`${String(partial.country || '').toUpperCase()}:${city}`];
+  if (!bounds) return {lat,lng,rejected:false};
+  const [south, west, north, east] = bounds;
+  const rejected = lat < south || lat > north || lng < west || lng > east;
+  return rejected ? {lat:null,lng:null,rejected:true} : {lat,lng,rejected:false};
+}
+
 export function makeListing(partial) {
   const title = partial.title ?? 'Untitled';
   const description = stripHtml(partial.description ?? '');
@@ -58,8 +76,9 @@ export function makeListing(partial) {
   const contact = partial.contact ?? parseContact(combined);
   const loc = parseLocation(combined, partial.country);
   const city = canonicalCityName(partial.country, partial.city || loc.city || '');
+  const coords = sourceCoordinates(partial, city);
   const explicitDistrict = parseExplicitDistrict(combined, partial.country);
-  const district = canonicalDistrict(partial.district ?? explicitDistrict ?? loc.district, partial.country);
+  const district = canonicalDistrict((coords.rejected ? null : partial.district) ?? explicitDistrict ?? loc.district, partial.country);
   const metro = partial.metro ?? loc.metro;
   // Dictionary landmarks (LOCATIONS) plus open-ended local ones written in the
   // post itself ("рынок Катартал", "ЗАГС Чиланзарского района").
@@ -94,8 +113,8 @@ export function makeListing(partial) {
     id:String(partial.id), source:partial.source, country:partial.country, title, propertyType, byAgency,
     price:partial.price != null ? Number(partial.price):null, currency:partial.currency ?? '', rooms,
     areaSqm:partial.areaSqm != null ? Number(partial.areaSqm):parseAreaFromText(combined), city,
-    region:partial.region ?? loc.region ?? null, microdistrict:partial.microdistrict ?? loc.microdistrict ?? null,
-    address:address || null, lat:partial.lat != null?Number(partial.lat):null, lng:partial.lng != null?Number(partial.lng):null,
+    region:partial.region ?? loc.region ?? null, microdistrict:coords.rejected ? null : (partial.microdistrict ?? loc.microdistrict ?? null),
+    address:address || null, lat:coords.lat, lng:coords.lng, sourceCoordinateRejected:coords.rejected || partial.sourceCoordinateRejected === true,
     photo:partial.photo ?? (Array.isArray(partial.photos)?partial.photos[0]:null) ?? null,
     photos:Array.isArray(partial.photos)?partial.photos:(partial.photo?[partial.photo]:[]), url:partial.url ?? '', createdAt:partial.createdAt ?? null,
     description, dealType, floor, totalFloors, buildingYear, bedrooms, audience, contact, district, area,
