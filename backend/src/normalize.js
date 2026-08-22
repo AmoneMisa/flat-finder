@@ -25,6 +25,7 @@ function stripHtml(s) {
 
 const PARKING_OBJECT_RE = /(?:парко?мест[а-яёіїґ]*|парковочн[а-яёіїґ]*\s+мест[а-яёіїґ]*|машино[-\s]?мест[а-яёіїґ]*|мест[а-яёіїґ]*\s+(?:в|на)\s+(?:паркинг[а-яёіїґ]*|парковк[а-яёіїґ]*)|parking\s+(?:space|spot)s?)/iu;
 const HOUSING_OBJECT_RE = /(?:квартир[а-яёіїґ]*|апартамент[а-яёіїґ]*|студи[яії][а-яёіїґ]*|будин[а-яіїґ]*|(?:^|[^\p{L}\p{N}_])дом(?:а|ом|у|ов)?(?=$|[^\p{L}\p{N}_])|жиль[а-яё]*|житл[а-яіїґ]*|flat\b|apartment\b|studio\b|house\b|xonadon\b|kvartira\b)/iu;
+const EXPLICIT_SHORT_STAY_RE = /(?:^|[^\p{L}\p{N}_])сут(?:ки|ок)(?=$|[^\p{L}\p{N}_])/iu;
 
 export function looksParkingOnly(text) {
   const value = String(text || '').replace(/\s+/g, ' ').trim();
@@ -89,12 +90,13 @@ export function makeListing(partial) {
   const byAgency = Boolean(partial.byAgency);
   const rooms = partial.rooms != null ? Number(partial.rooms) : parseRoomsFromText(combined);
   const parsedDealType = classifyDealType(combined);
+  const explicitShortStay = parsedDealType === 'shortRent' || EXPLICIT_SHORT_STAY_RE.test(combined);
   // Explicit short-term language ("сутки", "посуточно", "daily", etc.) is
   // stronger than a scraper's generic `longRent` default. Keep an explicit sale
   // authoritative because sale copy may advertise potential daily-rental income.
   let dealType = partial.dealType === 'sale'
     ? 'sale'
-    : parsedDealType === 'shortRent'
+    : explicitShortStay
       ? 'shortRent'
       : (partial.dealType ?? parsedDealType);
   const SALE_FLOOR = {USD:10000,EUR:10000,GBP:10000,UYE:10000,UZS:100_000_000,KZT:5_000_000,UAH:500_000,RON:50_000,KGS:800_000,TJS:90_000,RUB:700_000};
