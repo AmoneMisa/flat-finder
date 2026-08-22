@@ -14,6 +14,7 @@ import os
 import re
 import json
 import time
+from datetime import datetime, timedelta, timezone
 
 from flask import Flask, request, jsonify
 from curl_cffi import requests as cffi
@@ -73,6 +74,10 @@ TIMEOUT = int(os.environ.get("OLX_TIMEOUT", "45"))
 # Keep one bounded attempt here and let the durable queue own retries.
 ATTEMPTS = max(1, int(os.environ.get("OLX_ATTEMPTS", "1")))
 RETRY_BACKOFF = float(os.environ.get("OLX_RETRY_BACKOFF", "1.5"))
+# The backend's widest supported apartment freshness window is 21 days. Keep
+# crawling each sorted OLX city/segment until a whole page is older than this
+# cutoff; narrower UI periods are then complete subsets of the same snapshot.
+LOOKBACK_DAYS = max(1, int(os.environ.get("OLX_LOOKBACK_DAYS", "21")))
 
 # window.__PRERENDERED_STATE__ = "<json string, escaped again as a JS string>";
 _STATE_RE = re.compile(
@@ -93,6 +98,63 @@ def extract_ads(html):
         return None
     ads = (((state or {}).get("listing") or {}).get("listing") or {}).get("ads")
     return ads if isinstance(ads, list) else None
+
+
+def _ad_created_at(ad):
+    value = (ad or {}).get("createdTime") or (ad or {}).get("created_time")
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def apply_lookback_page_stop(ads):
+    """
+    OLX pages are requested with created_at:desc. We must not remove individual
+    old promoted rows from a mixed page: doing that would make Node see a short
+    page and stop before page N+1 even if newer normal ads continue there.
+
+    Instead return the whole page while it contains any known in-window ad (or
+    an undated ad we cannot safely classify). Once every dated row on a page is
+    older than the widest supported window and there are no unknown dates, emit
+    an empty page. The existing Node paginator treats that as the natural end.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
+    known_dates = []
+    unknown_dates = 0
+
+    for ad in ads:
+        created_at = _ad_created_at(ad)
+        if created_at is None:
+            unknown_dates += 1
+        else:
+            known_dates.append(created_at)
+
+    past_cutoff = (
+        bool(known_dates)
+        and unknown_dates == 0
+        and max(known_dates) < cutoff
+    )
+
+    return (
+        [] if past_cutoff else ads,
+        {
+            "pastCutoff": past_cutoff,
+            "lookbackDays": LOOKBACK_DAYS,
+            "unknownDateCount": unknown_dates,
+            "newestKnownAt": max(known_dates).isoformat() if known_dates else None,
+            "oldestKnownAt": min(known_dates).isoformat() if known_dates else None,
+            "cutoffAt": cutoff.isoformat(),
+        },
+    )
 
 
 @app.get("/health")
@@ -187,13 +249,16 @@ def olx_listings():
             if resp.status_code == 200:
                 ads = extract_ads(resp.text)
                 if ads is not None:
+                    visible_ads, cutoff_meta = apply_lookback_page_stop(ads)
                     return jsonify(
                         country=code,
                         segment=segment,
                         city=city or None,
                         page=page,
-                        count=len(ads),
-                        ads=ads,
+                        rawCount=len(ads),
+                        count=len(visible_ads),
+                        ads=visible_ads,
+                        **cutoff_meta,
                     )
                 last_err = f"{where}: no __PRERENDERED_STATE__"
             else:
