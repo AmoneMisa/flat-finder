@@ -30,6 +30,7 @@ APP_SERVICES=(
   flat-finder-queue-worker-2
   flat-finder-olx-fetcher
   flat-finder-olx-fetcher-ua
+  flat-finder-social-fetcher
 )
 
 docker compose pull "${APP_SERVICES[@]}"
@@ -43,6 +44,7 @@ docker compose up -d \
   flat-finder-rabbitmq \
   flat-finder-olx-fetcher \
   flat-finder-olx-fetcher-ua \
+  flat-finder-social-fetcher \
   flat-finder-olx-router
 
 ES_CONTAINER_ID="$(docker compose ps -q flat-finder-elasticsearch 2>/dev/null || true)"
@@ -83,6 +85,7 @@ wait_for_healthy() {
 
 wait_for_healthy flat-finder-postgres 120
 wait_for_healthy flat-finder-redis 60
+wait_for_healthy flat-finder-social-fetcher 90
 
 # Both Node services already degrade gracefully when Elasticsearch is
 # unavailable. --no-deps is deliberate: an unhealthy search node must not block
