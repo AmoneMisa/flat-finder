@@ -67,9 +67,11 @@ IMPERSONATE = os.environ.get("OLX_IMPERSONATE", "chrome124")
 # retry to the same city completed normally. Keep enough headroom for those tail
 # latencies; compose can still override this per fetcher pool.
 TIMEOUT = int(os.environ.get("OLX_TIMEOUT", "45"))
-# Retry a transient OLX failure (timeout / non-200 / missing state) once before
-# returning 502, since an immediate repeat of the same city usually succeeds.
-ATTEMPTS = max(1, int(os.environ.get("OLX_ATTEMPTS", "2")))
+# RabbitMQ retries failed page tasks after 30 seconds. Retrying again inside
+# this HTTP service used to make one request last ~91.5s (45s x 2 + backoff),
+# while the nginx router necessarily stopped waiting at 55s and returned 504.
+# Keep one bounded attempt here and let the durable queue own retries.
+ATTEMPTS = max(1, int(os.environ.get("OLX_ATTEMPTS", "1")))
 RETRY_BACKOFF = float(os.environ.get("OLX_RETRY_BACKOFF", "1.5"))
 
 # window.__PRERENDERED_STATE__ = "<json string, escaped again as a JS string>";
@@ -196,8 +198,8 @@ def olx_listings():
                 last_err = f"{where}: no __PRERENDERED_STATE__"
             else:
                 last_err = f"{where} HTTP {resp.status_code}"
-        # A repeat of the same city usually succeeds, so retry transient failures
-        # once before surfacing a 502 (see #4).
+        # Optional local retries remain available for standalone deployments,
+        # but the compose stack deliberately leaves them to RabbitMQ.
         if attempt + 1 < ATTEMPTS:
             time.sleep(RETRY_BACKOFF)
     return jsonify(error=last_err or f"{where}: failed"), 502

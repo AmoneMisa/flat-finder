@@ -159,6 +159,9 @@ services:
     restart: unless-stopped
     environment:
       - OLX_TIMEOUT=45
+      # One 45s attempt fits below nginx's 55s deadline. RabbitMQ performs the
+      # durable retry; two attempts here caused deterministic proxy 504s.
+      - OLX_ATTEMPTS=${OLX_ATTEMPTS:-1}
     expose:
       - "4020"
     healthcheck:
@@ -173,6 +176,7 @@ services:
     restart: unless-stopped
     environment:
       - OLX_TIMEOUT=45
+      - OLX_ATTEMPTS=${OLX_ATTEMPTS:-1}
     expose:
       - "4020"
     healthcheck:
