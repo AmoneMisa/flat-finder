@@ -63,8 +63,12 @@ export function installSocialRoutes(app) {
       });
     }
 
+    const threadsSearch = source === 'threads'
+      && String(req.body?.mode || '').toLowerCase() === 'search';
+    const path = threadsSearch ? '/threads/search' : '/fetch';
+
     try {
-      const { response, body } = await socialRequest('/fetch', {
+      const { response, body } = await socialRequest(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...req.body, source }),
