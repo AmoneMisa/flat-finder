@@ -5,7 +5,6 @@ services:
     env_file:
       - ./.env
     environment:
-      - REDIS_URL=redis://flat-finder-redis:6379
       - PGHOST=flat-finder-postgres
       - PGPORT=5432
       - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
@@ -21,8 +20,6 @@ services:
     volumes:
       - flat-finder-photo-cache:/var/cache/flat-photos
     depends_on:
-      flat-finder-redis:
-        condition: service_healthy
       flat-finder-postgres:
         condition: service_healthy
       flat-finder-elasticsearch:
@@ -48,7 +45,6 @@ services:
     env_file:
       - ./.env
     environment:
-      - REDIS_URL=redis://flat-finder-redis:6379
       - PGHOST=flat-finder-postgres
       - PGPORT=5432
       - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
@@ -70,8 +66,6 @@ services:
       - default
       - ai-net
     depends_on:
-      flat-finder-redis:
-        condition: service_healthy
       flat-finder-postgres:
         condition: service_healthy
       flat-finder-elasticsearch:
@@ -243,17 +237,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-
-  flat-finder-redis:
-    image: redis:8-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
 
   flat-finder-postgres:
     image: postgres:17-alpine

@@ -65,13 +65,16 @@ test('each OLX shard is pinned to a different fetcher', () => {
   assert.match(compose, /OLX_FETCHER_URL_1=http:\/\/flat-finder-olx-fetcher-ua:4020/);
 });
 
-test('crawl task execution is deduplicated per generation', () => {
+test('crawl task execution is deduplicated per generation in PostgreSQL', () => {
   assert.match(queueTasks, /executeQueueTaskOnce/);
   assert.match(queueDedup, /task\.crawlGeneration/);
-  assert.match(queueDedup, /NX: true/);
-  assert.match(queueDedup, /state: 'done'/);
+  assert.match(queueDedup, /crawl_task_runs/);
+  assert.match(queueDedup, /ON CONFLICT \(task_key\)/);
+  assert.match(queueDedup, /locked_until/);
+  assert.match(queueDedup, /status = 'done'/);
   assert.match(queueDedup, /deduplicated: true/);
-  assert.match(compose, /REDIS_URL=redis:\/\/flat-finder-redis:6379/);
+  assert.doesNotMatch(compose, /flat-finder-redis:/);
+  assert.doesNotMatch(compose, /REDIS_URL=/);
 });
 
 test('worker services AMQP heartbeats while the HTTP task is running', () => {

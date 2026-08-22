@@ -11,6 +11,7 @@ import {sortListings} from './listing-sort.js';
 import {readPhoto, writePhoto} from './photoCache.js';
 import {getLastRun, refreshAll, startScheduler} from './scheduler.js';
 import {closeDb, dbHealth, getAvailableListingLocations, getDbStats, initDb,} from './db.js';
+import {initPostgresSearchSchema, searchPostgresListings} from './postgres-search.js';
 import {closeElasticsearch, elasticsearchHealth, initElasticsearch, searchListingMatches,} from './elasticsearch.js';
 
 const app = express();
@@ -308,6 +309,7 @@ function parseFilters(q) {
     sources, // empty array = all sources
     offset: num(q.offset) ?? 0,
     limit: Math.min(num(q.limit) ?? 40, 60),
+    cursor: q.cursor ? String(q.cursor) : '',
   };
 }
 
@@ -433,6 +435,72 @@ app.get('/api/listings', async (req, res) => {
 
     filters.cityAliases =
         [...forms];
+  }
+
+  /*
+   * Normal Flat Finder requests are served straight from PostgreSQL.
+   * The crawler writes normalized rows continuously; the request path must not
+   * deserialize country-wide Redis snapshots just to discard all but 20 rows.
+   *
+   * The legacy snapshot path below remains only as a safety fallback and for
+   * user-supplied custom source URLs that are intentionally not persisted.
+   */
+  if (!filters.customSources.length) {
+    if (force) {
+      void refreshAll('manual').catch((err) => {
+        console.warn('[postgres-search] background refresh failed:', err?.message ?? err);
+      });
+    }
+
+    try {
+      let searchError = null;
+      const searchMatches = filters.query
+        ? await searchListingMatches(filters.query, {
+            countries: codes,
+            sources: filters.sources,
+          }).catch((err) => {
+            searchError = err?.message ?? String(err);
+            console.warn(`[elasticsearch] postgres search fallback: ${searchError}`);
+            return null;
+          })
+        : null;
+
+      let fxRates = null;
+      try {
+        fxRates = (await getRates()).rates;
+      } catch {}
+
+      const result = await searchPostgresListings({
+        filters,
+        countries: codes,
+        rates: fxRates,
+        searchMatches,
+      });
+
+      return res.json({
+        count: result.count,
+        degradedCountries: [],
+        sourceCounts: {},
+        sourceErrors: searchError
+          ? [{ source: 'elasticsearch', error: searchError }]
+          : [],
+        warming: false,
+        filters,
+        searchEngine: filters.query
+          ? (searchMatches ? 'elasticsearch+postgres' : 'postgres-fallback')
+          : 'postgres',
+        searchIndexedMatches: searchMatches?.total ?? null,
+        searchTruncated: searchMatches?.truncated ?? false,
+        queryMs: result.queryMs,
+        nextCursor: result.nextCursor,
+        listings: result.listings,
+      });
+    } catch (err) {
+      // Deployment-safe fallback: if the new SQL path is temporarily broken,
+      // keep the old snapshot implementation available instead of taking the
+      // public search endpoint down.
+      console.warn('[postgres-search] fast path failed, using legacy fallback:', err?.message ?? err);
+    }
   }
 
   try {
@@ -865,9 +933,8 @@ app.get('/health', async (_req, res) => {
   } catch {}
 
   /*
-   * Пока выдача ещё работает через
-   * Redis/Postgres pipeline, ES не делаем
-   * причиной падения всего backend.
+   * PostgreSQL is the primary listing/search store. Elasticsearch remains
+   * an optional text-ranking layer and is not required for backend health.
    */
   const ok =
       postgres;
@@ -917,6 +984,7 @@ app.post('/api/refresh', async (_req, res) => {
 
 async function start() {
   await initDb();
+  await initPostgresSearchSchema();
 
   /*
    * ES пока является дополнительным
