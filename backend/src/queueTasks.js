@@ -5,8 +5,13 @@ import { fetchChannel } from './scrapers/telegram.js';
 import { throttle } from './ratelimit.js';
 import { upsertListings } from './db.js';
 import { indexListings } from './elasticsearch.js';
+import { executeQueueTaskOnce } from './queueTaskDedup.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
+const OLX_FETCHER_URLS = [
+  String(process.env.OLX_FETCHER_URL_0 || '').replace(/\/$/, ''),
+  String(process.env.OLX_FETCHER_URL_1 || '').replace(/\/$/, ''),
+];
 const OLX_MIN_INTERVAL_MS = Number(process.env.OLX_MIN_INTERVAL_MS) || 900;
 const OLX_JITTER_MS = Number(process.env.OLX_JITTER_MS) || 500;
 const OLX_QUEUE_MAX_PAGES = Math.max(
@@ -107,8 +112,14 @@ function mapOlxStateItem(item, country, forcedCity = null) {
   return listing;
 }
 
-async function fetchOlxPage({ country, segment, page, citySlug, city }) {
-  if (!OLX_FETCHER_URL) {
+function olxFetcherUrl(crawlerShard) {
+  const shard = Math.max(0, Math.trunc(Number(crawlerShard) || 0));
+  return OLX_FETCHER_URLS[shard] || OLX_FETCHER_URL;
+}
+
+async function fetchOlxPage({ country, segment, page, citySlug, city, crawlerShard }) {
+  const fetcherUrl = olxFetcherUrl(crawlerShard);
+  if (!fetcherUrl) {
     throw new Error('OLX_FETCHER_URL is not configured');
   }
 
@@ -118,7 +129,7 @@ async function fetchOlxPage({ country, segment, page, citySlug, city }) {
   }
 
   await throttle(
-    `queue:olx:${config.olxHost}`,
+    `queue:olx:${config.olxHost}:shard:${crawlerShard ?? 0}`,
     OLX_MIN_INTERVAL_MS,
     OLX_JITTER_MS,
   );
@@ -134,7 +145,7 @@ async function fetchOlxPage({ country, segment, page, citySlug, city }) {
   }
 
   const response = await fetch(
-    `${OLX_FETCHER_URL}/olx/listings?${params}`,
+    `${fetcherUrl}/olx/listings?${params}`,
     { signal: AbortSignal.timeout(60_000) },
   );
 
@@ -143,7 +154,9 @@ async function fetchOlxPage({ country, segment, page, citySlug, city }) {
     try {
       detail = (await response.json())?.error || detail;
     } catch {}
-    throw new Error(`OLX ${country}/${segment}/${citySlug || 'all'}/page-${page}: ${detail}`);
+    throw new Error(
+      `OLX shard=${crawlerShard ?? 0} ${country}/${segment}/${citySlug || 'all'}/page-${page}: ${detail}`,
+    );
   }
 
   const body = await response.json();
@@ -218,12 +231,14 @@ function nextOlxTask(task, pageResult, page) {
     citySlug: task.citySlug || null,
     segment: String(task.segment || ''),
     page: nextPage,
-    queueProtocol: Number(task.queueProtocol) || null,
     priority: Math.max(1, 7 - nextPage),
+    queueProtocol: task.queueProtocol,
+    crawlGeneration: task.crawlGeneration,
+    crawlerShard: task.crawlerShard,
   };
 }
 
-export async function processQueueTask(task) {
+async function processQueueTaskInner(task) {
   const type = String(task?.type || '');
   const country = String(task?.country || '').toUpperCase();
 
@@ -244,6 +259,7 @@ export async function processQueueTask(task) {
       page,
       citySlug: task.citySlug ? String(task.citySlug) : null,
       city: task.city ? String(task.city) : null,
+      crawlerShard: task.crawlerShard,
     });
     const nextTask = nextOlxTask(task, pageResult, page);
 
@@ -254,6 +270,8 @@ export async function processQueueTask(task) {
       city: task.city || null,
       segment,
       page,
+      crawlerShard: task.crawlerShard,
+      crawlGeneration: task.crawlGeneration,
       fetched: pageResult.listings.length,
       rawCount: pageResult.rawCount,
       pastCutoff: pageResult.pastCutoff,
@@ -286,6 +304,8 @@ export async function processQueueTask(task) {
       type,
       country,
       channel: channelName,
+      crawlerShard: task.crawlerShard,
+      crawlGeneration: task.crawlGeneration,
       fetched: listings.length,
       nextTasks: [],
       ...(await persist(listings, task)),
@@ -293,4 +313,11 @@ export async function processQueueTask(task) {
   }
 
   throw new Error(`Unsupported queue task type ${type || '<empty>'}`);
+}
+
+export async function processQueueTask(task) {
+  return executeQueueTaskOnce(
+    task,
+    () => processQueueTaskInner(task),
+  );
 }
