@@ -63,9 +63,14 @@ export function installSocialRoutes(app) {
       });
     }
 
-    const threadsSearch = source === 'threads'
-      && String(req.body?.mode || '').toLowerCase() === 'search';
-    const path = threadsSearch ? '/threads/search' : '/fetch';
+    const mode = String(req.body?.mode || '').toLowerCase();
+    const threadsSearch = source === 'threads' && mode === 'search';
+    const linkedinCandidates = source === 'linkedin' && mode === 'candidates';
+    const path = threadsSearch
+      ? '/threads/search'
+      : linkedinCandidates
+        ? '/linkedin/candidates'
+        : '/fetch';
 
     try {
       const { response, body } = await socialRequest(path, {
