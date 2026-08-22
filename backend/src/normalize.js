@@ -14,6 +14,7 @@ import {
 } from './textparse-overrides.js';
 import {canonicalDistrict, parseLocation} from './locations.js';
 import {toUsd} from './fx.js';
+import {parseDishwasher, parsePrivateYard, parseTerrace} from './amenity-parse.js';
 
 function stripHtml(s) {
   return String(s ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
@@ -26,7 +27,13 @@ function parseAddress(text) {
   const labeled = text.match(/(?:адрес|адреса|manzil|address)\s*[:\-–]\s*([^\n]{3,80})/i);
   if (labeled) return labeled[1].replace(/\s+/g, ' ').trim().replace(/[.;,]+$/, '');
   const street = text.match(/((?:ул(?:иц[аы])?|просп(?:ект)?|проспект|мкр|микрорайон|проезд|переулок)\.?\s+[^\n,.;]{2,40}(?:,?\s*\d+[\w/-]*)?|[^\n,.;]{2,40}\s+(?:ko['’]?chasi|k[oó]chasi))/i);
-  return street ? street[1].replace(/\s+/g, ' ').trim() : null;
+  if (street) return street[1].replace(/\s+/g, ' ').trim();
+
+  // OLX descriptions often omit the street prefix: "..., Балтиморская 9, ...".
+  // Require a word-like street name plus a house number in a delimited segment
+  // so area/price/floor numbers are not accidentally promoted to addresses.
+  const bare = text.match(/(?:^|[,;\n]\s*)([\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,4}\s+\d+[\p{L}0-9/-]*)(?=\s*(?:[,.;\n]|$))/iu);
+  return bare ? bare[1].replace(/\s+/g, ' ').trim() : null;
 }
 
 export function makeListing(partial) {
@@ -70,7 +77,11 @@ export function makeListing(partial) {
   // ("Депозит 1000USD" on a UZS listing), so carry its own currency when stated.
   const depositCurrency = partial.depositCurrency ?? dep.currency ?? null;
   const com = parseCommission(combined); const commission = partial.commission ?? com.has; const commissionPercent = partial.commissionPercent ?? com.percent;
-  const balcony = partial.balcony ?? parseBalcony(combined); const airConditioner = partial.airConditioner ?? parseAirConditioner(combined);
+  const balcony = partial.balcony ?? parseBalcony(combined);
+  const terrace = partial.terrace ?? parseTerrace(combined);
+  const privateYard = partial.privateYard ?? parsePrivateYard(combined);
+  const dishwasher = partial.dishwasher ?? parseDishwasher(combined);
+  const airConditioner = partial.airConditioner ?? parseAirConditioner(combined);
   const gas = partial.gas ?? parseGasSupply(combined); const bathrooms = partial.bathrooms != null ? Number(partial.bathrooms) : parseBathrooms(combined);
   const newBuilding = partial.newBuilding ?? (parseNewBuilding(combined) || (buildingYear && buildingYear >= new Date().getFullYear()-5 ? true : null));
   const communalSeparated = partial.communalSeparated ?? parseCommunalSeparated(combined);
@@ -90,16 +101,17 @@ export function makeListing(partial) {
     description, dealType, floor, totalFloors, buildingYear, bedrooms, audience, contact, district, area,
     areaAmbiguous:partial.areaAmbiguous ?? loc.areaAmbiguous ?? false, locationConfidence:partial.locationConfidence ?? loc.locationConfidence ?? null,
     requireExactAddress:partial.requireExactAddress ?? loc.requireExactAddress ?? false, metro, nearby, residenceComplex,
-    commercial, petsAllowed, childrenAllowed, roomOnly, deposit, depositAmount, depositCurrency, commission, commissionPercent, balcony,
-    airConditioner, gas, bathrooms, newBuilding, communalSeparated, kvartal, nearbyShops, parking, elevator, heating,
-    hotWater, internet, smokingAllowed, negotiable, furnished, condition:partial.condition ?? null, amenities,
+    commercial, petsAllowed, childrenAllowed, roomOnly, deposit, depositAmount, depositCurrency, commission, commissionPercent,
+    balcony, terrace, privateYard, dishwasher, airConditioner, gas, bathrooms, newBuilding, communalSeparated, kvartal,
+    nearbyShops, parking, elevator, heating, hotWater, internet, smokingAllowed, negotiable, furnished,
+    condition:partial.condition ?? null, amenities,
     tags:partial.tags ?? extractTags({title,description,propertyType,byAgency,rooms,dealType,audience,district,nearby,residenceComplex,petsAllowed,childrenAllowed,roomOnly,deposit,commission,commissionPercent}),
   };
 }
 export const MAX_AGE_MS = 21*24*60*60*1000;
 function normCity(s){return String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
 export function applyFilters(listings, filters, rates=null){
-  const {propertyType,agency,priceMin,priceMax,priceTolerance,priceCurrency,query,dealType,roomsMin,roomsMax,bedroomsMin,bedroomsMax,areaMin,areaMax,pricePerSqmMin,pricePerSqmMax,floorMin,floorMax,totalFloorsMin,totalFloorsMax,yearMin,yearMax,newBuilding,audience,city,cityAliases,district,metro,metroMaxM,nearbyMaxM,nearbyKind,listingId,pets,children,roomOnly,maxAgeDays,sources}=filters;
+  const {propertyType,agency,priceMin,priceMax,priceTolerance,priceCurrency,query,dealType,roomsMin,roomsMax,bedroomsMin,bedroomsMax,areaMin,areaMax,pricePerSqmMin,pricePerSqmMax,floorMin,floorMax,totalFloorsMin,totalFloorsMax,yearMin,yearMax,newBuilding,audience,city,cityAliases,district,metro,metroMaxM,nearbyMaxM,nearbyKind,listingId,pets,children,roomOnly,dishwasher,airConditioner,parking,internet,gas,balcony,terrace,privateYard,maxAgeDays,sources}=filters;
   const convertPrices=!!(rates&&priceCurrency); const now=Date.now(); const ageCapMs=maxAgeDays!=null&&maxAgeDays>0?Math.min(maxAgeDays*24*60*60*1000,MAX_AGE_MS):MAX_AGE_MS;
   const cityForms=city?(cityAliases?.length?cityAliases:[city]).map(normCity):null;
   return listings.filter((l)=>{
@@ -115,6 +127,7 @@ export function applyFilters(listings, filters, rates=null){
     // either drop out — same rule the other numeric ranges already follow.
     if(pricePerSqmMin!=null||pricePerSqmMax!=null){const a=l.areaSqm;if(a==null||!(a>0))return false;if(convertPrices){const p=toUsd(l.price,l.currency,rates);if(p==null)return false;const per=p/a;if(pricePerSqmMin!=null){const m=toUsd(pricePerSqmMin,priceCurrency,rates);if(m!=null&&per<m)return false;}if(pricePerSqmMax!=null){const m=toUsd(pricePerSqmMax,priceCurrency,rates);if(m!=null&&per>m)return false;}}else{if(l.price==null)return false;const per=l.price/a;if(pricePerSqmMin!=null&&per<pricePerSqmMin)return false;if(pricePerSqmMax!=null&&per>pricePerSqmMax)return false;}}if(floorMin!=null&&(l.floor==null||l.floor<floorMin))return false;if(floorMax!=null&&(l.floor==null||l.floor>floorMax))return false;if(totalFloorsMin!=null&&(l.totalFloors==null||l.totalFloors<totalFloorsMin))return false;if(totalFloorsMax!=null&&(l.totalFloors==null||l.totalFloors>totalFloorsMax))return false;
     if(yearMin!=null&&(l.buildingYear==null||l.buildingYear<yearMin))return false;if(yearMax!=null&&(l.buildingYear==null||l.buildingYear>yearMax))return false;if(newBuilding===true&&l.newBuilding!==true)return false;if(audience&&audience!=='any'&&l.audience!==audience)return false;if(pets===true&&l.petsAllowed!==true)return false;if(children===true&&l.childrenAllowed===false)return false;if(roomOnly===true&&!l.roomOnly)return false;
+    if(dishwasher===true&&l.dishwasher!==true)return false;if(airConditioner===true&&l.airConditioner!==true)return false;if(parking===true&&l.parking!==true)return false;if(internet===true&&l.internet!==true)return false;if(gas===true&&l.gas!==true)return false;if(balcony===true&&l.balcony!==true)return false;if(terrace===true&&l.terrace!==true)return false;if(privateYard===true&&l.privateYard!==true)return false;
     if(cityForms){const hay=normCity(l.city);if(!cityForms.some((f)=>hay.includes(f)))return false;}if(district&&(l.district??'').toLowerCase()!==String(district).toLowerCase())return false;if(metro&&(l.metro??'').toLowerCase()!==String(metro).toLowerCase())return false;
     // Walking distance filters. A listing with no measured distance cannot
     // satisfy "within 300 m", so it drops out the way every other numeric
