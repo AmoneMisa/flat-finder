@@ -222,12 +222,12 @@ services:
       start_period: 5s
 
   flat-finder-postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     env_file:
       - ./.env
     volumes:
-      - flat-finder-postgres-data:/var/lib/postgresql/data
+      - flat-finder-postgres-data-v18:/var/lib/postgresql
     expose:
       - "5432"
     networks:
@@ -265,7 +265,7 @@ services:
       start_interval: 5s
 
 volumes:
-  flat-finder-postgres-data:
+  flat-finder-postgres-data-v18:
   flat-finder-photo-cache:
 
 networks:

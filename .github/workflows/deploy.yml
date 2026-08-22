@@ -150,7 +150,7 @@ jobs:
           host: ${{ vars.SERVER_HOST }}
           username: ${{ vars.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "docker-compose.yml,olx-router/nginx.conf"
+          source: "docker-compose.yml,olx-router/nginx.conf,scripts/upgrade-postgres-18.sh"
           target: "~/opt/flat-finder"
           overwrite: true
 
@@ -162,4 +162,5 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           command_timeout: 30m
           script: |
+            bash ~/opt/flat-finder/scripts/upgrade-postgres-18.sh
             bash ~/opt/flat-finder/deploy.sh "${{ github.sha }}" "${{ needs.detect-changes.outputs.elasticsearch }}"
