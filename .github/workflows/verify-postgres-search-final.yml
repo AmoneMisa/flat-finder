@@ -1,0 +1,72 @@
+name: Verify PostgreSQL search refactor
+
+on:
+  push:
+    branches: [ perf/postgres-search-no-redis ]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      POSTGRES_DB: flatfinder
+      POSTGRES_USER: flatfinder
+      POSTGRES_PASSWORD: flatfinder-test
+      TEST_POSTGRES_SEARCH: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Apply final search correctness patch
+        run: python .github/patches/fix-postgres-search-es-empty.py
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+      - name: Syntax check
+        run: |
+          node --check backend/src/cache.js
+          node --check backend/src/db.js
+          node --check backend/src/postgres-search.js
+          node --check backend/src/queueTaskDedup.js
+          node --check backend/src/server.js
+      - name: Run targeted regressions
+        run: node --test backend/test/postgres-search.integration.test.js backend/test/queue-crawl-stability.test.js backend/test/map-amenity-sort.test.js backend/test/ua-priority-coverage.test.js
+      - name: Verify Redis is removed from Flat Finder runtime
+        run: |
+          ! grep -q 'flat-finder-redis' docker-compose.yml
+          ! grep -q 'REDIS_URL' docker-compose.yml
+          ! grep -q '"redis"' backend/package.json
+          ! grep -q "import('redis')" backend/src/cache.js
+          ! grep -q "import('redis')" backend/src/queueTaskDedup.js
+      - name: Commit verified correctness fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/src/postgres-search.js backend/test/postgres-search.integration.test.js
+          if git diff --cached --quiet; then
+            echo 'No final code changes to commit'
+          else
+            git commit -m 'fix: preserve authoritative empty Elasticsearch results'
+            git push origin HEAD:perf/postgres-search-no-redis
+          fi
