@@ -7,6 +7,7 @@ import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateSource} from './scrapers/custom.js';
 import {applyFilters} from './normalize.js';
 import {getRates} from './fx.js';
+import {sortListings} from './listing-sort.js';
 import {readPhoto, writePhoto} from './photoCache.js';
 import {getLastRun, refreshAll, startScheduler} from './scheduler.js';
 import {closeDb, dbHealth, getAvailableListingLocations, getDbStats, initDb,} from './db.js';
@@ -202,6 +203,7 @@ app.get('/api/countries', async (_req, res) => {
 });
 
 const VALID_SOURCES = ['olx', 'telegram'];
+const VALID_SORTS = ['newest', 'oldest', 'priceAsc', 'priceDesc', 'titleAsc', 'titleDesc'];
 
 // Lightweight in-memory, per-IP flood protection for the *manual reload*
 // endpoints only (a normal cached search is never rate-limited). It just stops
@@ -281,6 +283,15 @@ function parseFilters(q) {
     yearMin: num(q.yearMin),
     yearMax: num(q.yearMax),
     newBuilding: bool(q.newBuilding),
+    dishwasher: bool(q.dishwasher),
+    airConditioner: bool(q.airConditioner),
+    parking: bool(q.parking),
+    internet: bool(q.internet),
+    gas: bool(q.gas),
+    balcony: bool(q.balcony),
+    terrace: bool(q.terrace),
+    privateYard: bool(q.privateYard),
+    sort: VALID_SORTS.includes(q.sort) ? q.sort : null,
     city: q.city ? String(q.city) : '',
     district: q.district ? String(q.district) : '',
     metro: q.metro ? String(q.metro) : '',
@@ -665,6 +676,13 @@ app.get('/api/listings', async (req, res) => {
       listings.sort(
           compareListingsByDate,
       );
+    }
+
+    // Explicit user sorting overrides the default newest/relevance order.
+    // Prices are compared through the same FX table as the range filters, so
+    // mixed UAH/USD/RON listings sort by real value rather than raw numbers.
+    if (filters.sort) {
+      sortListings(listings, filters.sort, fxRates);
     }
 
     const count =
