@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { COUNTRIES } from '../src/countries.js';
+import { geocodeCandidates } from '../src/geocode.js';
 import { makeListing } from '../src/normalize.js';
 
 function listing(city) {
@@ -18,6 +20,14 @@ test('canonicalizes Tashkent aliases before geocoding', () => {
   assert.equal(listing('Toshkent').city, 'Tashkent');
   assert.equal(listing('Ташкент').city, 'Tashkent');
   assert.equal(listing('tashkent').city, 'Tashkent');
+});
+
+test('uses the canonical city name in geocoding candidates', () => {
+  const candidates = geocodeCandidates({ id: 'alias', city: 'Toshkent' }, COUNTRIES.UZ);
+  const city = candidates.find((candidate) => candidate.source === 'city');
+
+  assert.ok(city);
+  assert.equal(city.q, 'Tashkent, Uzbekistan');
 });
 
 test('keeps an unknown source city instead of discarding it', () => {
