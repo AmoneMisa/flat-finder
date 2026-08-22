@@ -12,6 +12,15 @@ MODE = os.environ.get("QUEUE_MODE", "worker").strip().lower()
 REFRESH_SECONDS = max(60, int(os.environ.get("QUEUE_REFRESH_SECONDS", "1800")))
 PREFETCH = max(1, int(os.environ.get("QUEUE_PREFETCH", "1")))
 MAX_ATTEMPTS = max(1, int(os.environ.get("QUEUE_MAX_ATTEMPTS", "5")))
+# A queue task may legitimately wait on the HTTP task API for up to 180 seconds.
+# pika.BlockingConnection cannot service heartbeat frames while the callback is
+# blocked in urllib, so the previous 30s heartbeat guaranteed disconnects for
+# slow OLX pages. Keep the heartbeat safely above the task timeout.
+HEARTBEAT = max(240, int(os.environ.get("RABBITMQ_HEARTBEAT", "300")))
+BLOCKED_CONNECTION_TIMEOUT = max(
+    HEARTBEAT,
+    int(os.environ.get("RABBITMQ_BLOCKED_CONNECTION_TIMEOUT", "360")),
+)
 
 MAIN_QUEUE = "crawl.flats.tasks"
 RETRY_QUEUE = "crawl.flats.tasks.retry"
@@ -20,8 +29,8 @@ DEAD_QUEUE = "crawl.flats.tasks.dead"
 
 def connect():
     params = pika.URLParameters(RABBITMQ_URL)
-    params.heartbeat = 30
-    params.blocked_connection_timeout = 60
+    params.heartbeat = HEARTBEAT
+    params.blocked_connection_timeout = BLOCKED_CONNECTION_TIMEOUT
     return pika.BlockingConnection(params)
 
 
@@ -39,6 +48,11 @@ def declare(channel):
     channel.queue_declare(DEAD_QUEUE, durable=True)
 
 
+def queue_depth(channel, queue):
+    result = channel.queue_declare(queue=queue, passive=True)
+    return int(result.method.message_count or 0)
+
+
 def publish(channel, queue, payload, *, priority=0, attempt=0):
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     channel.basic_publish(
@@ -53,6 +67,13 @@ def publish(channel, queue, payload, *, priority=0, attempt=0):
         ),
         mandatory=True,
     )
+
+
+def publish_task(channel, task):
+    payload = dict(task)
+    priority = int(payload.pop("priority", 0))
+    payload.setdefault("queuedAt", int(time.time()))
+    publish(channel, MAIN_QUEUE, payload, priority=priority)
 
 
 def api_request(path, payload=None, timeout=60):
@@ -83,13 +104,19 @@ def api_request(path, payload=None, timeout=60):
 
 
 def dispatch_once(channel):
+    pending = queue_depth(channel, MAIN_QUEUE) + queue_depth(channel, RETRY_QUEUE)
+    if pending > 0:
+        print(
+            f"[queue:dispatcher] skipped new crawl, pending={pending}",
+            flush=True,
+        )
+        return
+
     plan = api_request("/internal/queue-plan", timeout=30)
     tasks = plan.get("tasks") or []
 
     for task in tasks:
-        priority = int(task.pop("priority", 0))
-        task["queuedAt"] = int(time.time())
-        publish(channel, MAIN_QUEUE, task, priority=priority)
+        publish_task(channel, task)
 
     print(f"[queue:dispatcher] queued {len(tasks)} granular tasks", flush=True)
 
@@ -118,6 +145,7 @@ def worker_forever():
         try:
             connection = connect()
             channel = connection.channel()
+            channel.confirm_delivery()
             declare(channel)
             channel.basic_qos(prefetch_count=PREFETCH)
 
@@ -125,10 +153,19 @@ def worker_forever():
                 try:
                     payload = json.loads(body.decode("utf-8"))
                     result = execute_task(payload)
+
+                    # Publish page N+1 before acknowledging page N. If publishing
+                    # fails, the current page goes through the normal retry path;
+                    # persistence is idempotent, so this cannot lose the chain.
+                    for next_task in result.get("nextTasks") or []:
+                        publish_task(ch, next_task)
+
                     ch.basic_ack(method.delivery_tag)
                     print(
                         f"[queue:worker] completed {payload.get('type')} "
-                        f"country={payload.get('country')} fetched={result.get('fetched', 0)}",
+                        f"country={payload.get('country')} page={payload.get('page', '-')} "
+                        f"fetched={result.get('fetched', 0)} "
+                        f"next={len(result.get('nextTasks') or [])}",
                         flush=True,
                     )
                 except Exception as exc:
@@ -148,7 +185,10 @@ def worker_forever():
                     )
 
             channel.basic_consume(MAIN_QUEUE, on_message_callback=on_message)
-            print("[queue:worker] consuming granular tasks", flush=True)
+            print(
+                f"[queue:worker] consuming granular tasks heartbeat={HEARTBEAT}s",
+                flush=True,
+            )
             channel.start_consuming()
         except Exception as exc:
             print(f"[queue:worker] connection error: {exc}", flush=True)
