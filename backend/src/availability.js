@@ -9,6 +9,7 @@ const CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.LISTING_AVAILABIL
 const MAX_BATCH = 20;
 
 const inFlight = new Map();
+let schemaPromise = null;
 
 function listingKey(source, country, id) {
   return `${String(source || '').toLowerCase()}:${String(country || '').toUpperCase()}:${String(id || '')}`;
@@ -41,6 +42,16 @@ export async function initAvailabilitySchema() {
       ON listings(active, availability_checked_at)
   `);
   console.log('[availability] schema ready');
+}
+
+export function ensureAvailabilitySchema() {
+  if (!schemaPromise) {
+    schemaPromise = initAvailabilitySchema().catch((error) => {
+      schemaPromise = null;
+      throw error;
+    });
+  }
+  return schemaPromise;
 }
 
 async function loadRows(items) {
@@ -103,6 +114,8 @@ function cachedResult(row) {
 }
 
 export async function recordListingAvailability({ source, country, id, status, reason = null }) {
+  await ensureAvailabilitySchema();
+
   if (!['active', 'inactive', 'unknown'].includes(status)) {
     throw new Error(`Unsupported availability status: ${status}`);
   }
@@ -237,6 +250,8 @@ async function mapConcurrent(items, fn) {
 }
 
 export async function verifyListingAvailability(items) {
+  await ensureAvailabilitySchema();
+
   const requested = normalizeRequests(items);
   if (!requested.length) return [];
 
