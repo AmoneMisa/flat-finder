@@ -2,7 +2,7 @@ name: Verify PostgreSQL crawler queue
 
 on:
   push:
-    branches: [ perf/postgres-search-no-redis ]
+    branches: [ perf/postgres-search-no-redis, chore/postgres-18 ]
   pull_request:
     branches: [ master ]
 
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_DB: flatfinder
           POSTGRES_USER: flatfinder
@@ -50,10 +50,13 @@ jobs:
           node --check backend/src/queueTaskDedup.js
           node --check backend/src/scheduler.js
           python -m py_compile queue-worker/worker.py
+          bash -n scripts/upgrade-postgres-18.sh
       - name: Validate Compose
         run: |
           touch .env
           docker compose config >/dev/null
+          grep -q 'image: postgres:18-alpine' docker-compose.yml
+          grep -q 'flat-finder-postgres-data-v18:/var/lib/postgresql' docker-compose.yml
       - name: Run queue and search regressions
         run: >-
           node --test
