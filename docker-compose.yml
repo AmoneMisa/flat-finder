@@ -138,6 +138,7 @@ services:
     restart: unless-stopped
     environment:
       QUEUE_MODE: worker
+      QUEUE_WORKER_ROLE: olx
       QUEUE_SHARD: 0
       QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
       QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
@@ -157,6 +158,7 @@ services:
     restart: unless-stopped
     environment:
       QUEUE_MODE: worker
+      QUEUE_WORKER_ROLE: olx
       QUEUE_SHARD: 1
       QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
       QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
@@ -164,6 +166,26 @@ services:
       QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
       QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
       QUEUE_PREFETCH: ${QUEUE_PREFETCH:-1}
+      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
+    depends_on:
+      flat-finder-rabbitmq:
+        condition: service_healthy
+      flat-finder-queue-task-api:
+        condition: service_healthy
+
+  flat-finder-queue-worker-telegram:
+    image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    mem_limit: ${TELEGRAM_WORKER_MEMORY_LIMIT:-256m}
+    environment:
+      QUEUE_MODE: worker
+      QUEUE_WORKER_ROLE: telegram
+      QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
+      QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-crawler}:${RABBITMQ_PASSWORD:-crawler}@flat-finder-rabbitmq:5672/%2F
+      QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
+      QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
+      QUEUE_PREFETCH: 1
       QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-5}
     depends_on:
       flat-finder-rabbitmq:
