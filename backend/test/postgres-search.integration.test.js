@@ -79,6 +79,15 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   assert.equal(second.listings.length, 1);
   assert.equal(second.listings[0].id, 'uah-10000');
 
+  const noEsMatches = await searchPostgresListings({
+    filters: { ...filters, query: 'Test', cursor: '', offset: 0 },
+    countries: ['UA'],
+    rates: { USD: 1, UAH: 40 },
+    searchMatches: { rank: new Map(), scores: new Map(), total: 0, truncated: false },
+  });
+  assert.equal(noEsMatches.count, 0);
+  assert.equal(noEsMatches.listings.length, 0);
+
   await pool.query(`DELETE FROM listings WHERE source = 'pg-search-test'`);
   await closeDb();
 });

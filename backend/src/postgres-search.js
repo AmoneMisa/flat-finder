@@ -56,6 +56,7 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   };
 
   const matchRows = normalizeMatchRows(searchMatches);
+  const elasticsearchAuthoritative = searchMatches != null;
   let from = 'FROM listings l';
   let rankSelect = 'NULL::integer AS search_rank';
   if (matchRows.length) {
@@ -65,6 +66,7 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   }
 
   const where = ['l.active = TRUE'];
+  if (elasticsearchAuthoritative && matchRows.length === 0) where.push('FALSE');
 
   const countryValues = [...new Set((countries || []).map((v) => String(v).toUpperCase()).filter(Boolean))];
   if (countryValues.length) {
@@ -205,7 +207,7 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   // Elasticsearch supplies the authoritative match set. This SQL branch is a
   // degraded fallback only, so it deliberately favors correctness over an
   // additional heavyweight text index in PostgreSQL.
-  if (filters.query && !matchRows.length) {
+  if (filters.query && !elasticsearchAuthoritative) {
     const q = `%${String(filters.query).toLowerCase()}%`;
     const p = add(q);
     where.push(`LOWER(CONCAT_WS(' ', l.title, l.description, l.city, l.district, l.metro, l.data->>'region', l.data->>'microdistrict', l.data->>'residenceComplex', l.data->>'tags')) LIKE ${p}`);
@@ -345,6 +347,6 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     listings,
     nextCursor,
     queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
-    searchPath: searchMatches?.rank?.size ? 'postgres+elasticsearch' : 'postgres',
+    searchPath: searchMatches ? 'postgres+elasticsearch' : 'postgres',
   };
 }
