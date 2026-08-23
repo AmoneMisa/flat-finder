@@ -45,18 +45,23 @@ jobs:
       - name: Syntax checks
         run: |
           node --check backend/src/pgQueue.js
-          node --check backend/src/queue-task-server.js
+          node --check backend/src/queuePlan.js
           node --check backend/src/queueTasks.js
           node --check backend/src/queueTaskDedup.js
+          node --check backend/src/worker.js
           node --check backend/src/scheduler.js
-          python -m py_compile queue-worker/worker.py
           bash -n scripts/upgrade-postgres-18.sh
+          bash -n deploy.sh
       - name: Validate Compose
         run: |
           touch .env
           docker compose config >/dev/null
           grep -q 'image: postgres:18-alpine' docker-compose.yml
           grep -q 'flat-finder-postgres-data-v18:/var/lib/postgresql' docker-compose.yml
+          grep -q 'flat-finder-worker:' docker-compose.yml
+          ! grep -q 'flat-finder-queue-task-api:' docker-compose.yml
+          ! grep -q 'flat-finder-queue-worker-' docker-compose.yml
+          ! grep -q 'QUEUE_TASK_API_URL' docker-compose.yml
       - name: Run queue and search regressions
         run: >-
           node --test
@@ -71,4 +76,5 @@ jobs:
           ! grep -q 'RABBITMQ_' docker-compose.yml
           ! grep -q 'flat-finder-redis' docker-compose.yml
           ! grep -q 'REDIS_URL=' docker-compose.yml
-          ! grep -q 'import pika' queue-worker/worker.py
+          ! test -e queue-worker/worker.py
+          ! test -e backend/src/queue-task-server.js
