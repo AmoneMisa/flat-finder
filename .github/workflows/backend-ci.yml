@@ -10,7 +10,7 @@ on:
       - '.github/workflows/backend-ci.yml'
   push:
     branches:
-      - refactor/architecture-cleanup
+      - master
     paths:
       - 'backend/**'
       - 'deploy.sh'

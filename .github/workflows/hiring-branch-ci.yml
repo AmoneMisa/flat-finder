@@ -1,8 +1,22 @@
-name: Hiring storage branch CI
+name: Hiring CI
 
 on:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'backend/src/hiring-*.js'
+      - 'backend/test/hiring-*.test.js'
+      - '.github/workflows/hiring-branch-ci.yml'
   push:
-    branches: [ hiring/candidate-storage ]
+    branches: [ master ]
+    paths:
+      - 'backend/src/hiring-*.js'
+      - 'backend/test/hiring-*.test.js'
+      - '.github/workflows/hiring-branch-ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -19,7 +33,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - name: Install backend dependencies
         run: npm ci --prefix backend
-      - name: Check hiring storage syntax
+      - name: Check hiring syntax
         run: |
           node --check backend/src/hiring-db.js
           node --check backend/src/hiring-routes.js

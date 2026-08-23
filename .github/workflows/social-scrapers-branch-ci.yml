@@ -2,7 +2,7 @@ name: Social scrapers CI
 
 on:
   push:
-    branches: [ feature/social-scrapers ]
+    branches: [ master ]
   pull_request:
     branches: [ master ]
     paths:

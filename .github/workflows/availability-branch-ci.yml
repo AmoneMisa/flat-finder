@@ -2,7 +2,7 @@ name: Verify listing availability checks
 
 on:
   push:
-    branches: [ feat/listing-availability-checks ]
+    branches: [ master ]
   pull_request:
     branches: [ master ]
     paths:

@@ -2,7 +2,7 @@ name: Verify PostgreSQL crawler queue
 
 on:
   push:
-    branches: [ perf/postgres-search-no-redis, chore/postgres-18 ]
+    branches: [ master ]
   pull_request:
     branches: [ master ]
 

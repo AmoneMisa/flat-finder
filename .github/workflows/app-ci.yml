@@ -7,7 +7,7 @@ on:
       - '.github/workflows/app-ci.yml'
   push:
     branches:
-      - refactor/architecture-cleanup
+      - master
     paths:
       - 'app/**'
       - '.github/workflows/app-ci.yml'
