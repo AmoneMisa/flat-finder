@@ -22,7 +22,7 @@ jobs:
       - name: Check social route syntax
         run: |
           node --check backend/src/social-routes.js
-          node --check backend/src/bootstrap.js
+          node --check backend/src/server.js
       - name: Run backend tests
         run: npm test --prefix backend
 

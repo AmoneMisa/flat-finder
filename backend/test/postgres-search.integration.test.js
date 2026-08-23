@@ -1,14 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { closeDb, initDb, pool, upsertListings } from '../src/db.js';
-import { initPostgresSearchSchema, searchPostgresListings } from '../src/postgres-search.js';
+import {closeDb, initDb, pool, upsertListings} from '../src/db.js';
+import {searchPostgresListings} from '../src/postgres-search.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 
-test('PostgreSQL fast path filters mixed-currency listings and paginates with a cursor', { skip: !enabled }, async () => {
+test('PostgreSQL fast path filters mixed-currency listings and paginates with a cursor', {skip: !enabled}, async () => {
   await initDb();
-  await initPostgresSearchSchema();
   await pool.query(`DELETE FROM listings WHERE source = 'pg-search-test'`);
   await pool.query(`DELETE FROM listings WHERE source = 'olx' AND country = 'ZZ'`);
 
@@ -62,7 +61,7 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   const first = await searchPostgresListings({
     filters,
     countries: ['UA'],
-    rates: { USD: 1, UAH: 40 },
+    rates: {USD: 1, UAH: 40},
   });
 
   assert.equal(first.count, 2);
@@ -71,9 +70,9 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   assert.ok(first.nextCursor);
 
   const second = await searchPostgresListings({
-    filters: { ...filters, cursor: first.nextCursor, offset: 999 },
+    filters: {...filters, cursor: first.nextCursor, offset: 999},
     countries: ['UA'],
-    rates: { USD: 1, UAH: 40 },
+    rates: {USD: 1, UAH: 40},
   });
 
   assert.equal(second.count, 2);
@@ -81,10 +80,10 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   assert.equal(second.listings[0].id, 'uah-10000');
 
   const noEsMatches = await searchPostgresListings({
-    filters: { ...filters, query: 'Test', cursor: '', offset: 0 },
+    filters: {...filters, query: 'Test', cursor: '', offset: 0},
     countries: ['UA'],
-    rates: { USD: 1, UAH: 40 },
-    searchMatches: { rank: new Map(), scores: new Map(), total: 0, truncated: false },
+    rates: {USD: 1, UAH: 40},
+    searchMatches: {rank: new Map(), scores: new Map(), total: 0, truncated: false},
   });
   assert.equal(noEsMatches.count, 0);
   assert.equal(noEsMatches.listings.length, 0);
@@ -121,16 +120,16 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
 
   await upsertListings([
     olxListing('dup-new', 1, [
-      { link: `${samePhotoA}?token=new` },
-      { link: `${samePhotoB}?token=new` },
+      {link: `${samePhotoA}?token=new`},
+      {link: `${samePhotoB}?token=new`},
     ]),
     olxListing('dup-old', 30, [
-      { link: samePhotoA.replace('800x600', '1200x900') },
-      { link: samePhotoB.replace('800x600', '1200x900') },
+      {link: samePhotoA.replace('800x600', '1200x900')},
+      {link: samePhotoB.replace('800x600', '1200x900')},
     ]),
     olxListing('distinct', 2, [
-      { link: 'https://apollo.olxcdn.example/v1/files/other-a/image;s=800x600' },
-      { link: 'https://apollo.olxcdn.example/v1/files/other-b/image;s=800x600' },
+      {link: 'https://apollo.olxcdn.example/v1/files/other-a/image;s=800x600'},
+      {link: 'https://apollo.olxcdn.example/v1/files/other-b/image;s=800x600'},
     ], 'Другая квартира метро Новза'),
   ]);
 
@@ -150,7 +149,7 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   const deduped = await searchPostgresListings({
     filters: olxFilters,
     countries: ['ZZ'],
-    rates: { USD: 1 },
+    rates: {USD: 1},
   });
 
   assert.equal(deduped.count, 2);
@@ -160,9 +159,9 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   );
 
   const exactOldShareLink = await searchPostgresListings({
-    filters: { ...olxFilters, listingId: 'dup-old' },
+    filters: {...olxFilters, listingId: 'dup-old'},
     countries: ['ZZ'],
-    rates: { USD: 1 },
+    rates: {USD: 1},
   });
 
   assert.equal(exactOldShareLink.count, 1);

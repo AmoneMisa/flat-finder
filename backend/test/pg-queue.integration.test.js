@@ -1,21 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 
-import { closeDb, initDb, pool } from '../src/db.js';
+import {closeDb, initDb, pool} from '../src/db.js';
 import {
   claimTask,
   completeTask,
   enqueueTasks,
   failTask,
-  initCrawlQueueSchema,
 } from '../src/pgQueue.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 
-test('PostgreSQL crawler queue claims by shard, retries and chains pages', { skip: !enabled }, async () => {
+test('PostgreSQL crawler queue claims by shard, retries and chains pages', {skip: !enabled}, async () => {
   await initDb();
-  await initCrawlQueueSchema();
 
   const generation = `test-${randomUUID()}`;
   const pageOne = {
@@ -127,11 +125,14 @@ test('PostgreSQL crawler queue claims by shard, retries and chains pages', { ski
     const chainedDone = await completeTask({
       id: chained.id,
       lockToken: chained.lockToken,
-      result: { ok: true, fetched: 0, nextTasks: [] },
+      result: {ok: true, fetched: 0, nextTasks: []},
     });
     assert.equal(chainedDone.completed, true);
   } finally {
-    await pool.query(`DELETE FROM crawl_tasks WHERE crawl_generation = $1`, [generation]);
+    await pool.query(
+      `DELETE FROM crawl_tasks WHERE crawl_generation = $1`,
+      [generation],
+    );
     await closeDb();
   }
 });

@@ -8,7 +8,10 @@ on:
     paths:
       - 'backend/src/availability.js'
       - 'backend/src/availability-routes.js'
-      - 'backend/src/bootstrap.js'
+      - 'backend/src/availability-sweep.js'
+      - 'backend/src/app.js'
+      - 'backend/migrations/**'
+      - 'backend/src/migrate.js'
       - 'backend/test/availability.integration.test.js'
       - 'olx-fetcher/app.py'
       - 'olx-fetcher/test_app.py'
@@ -59,8 +62,11 @@ jobs:
         run: |
           node --check backend/src/availability.js
           node --check backend/src/availability-routes.js
-          node --check backend/src/bootstrap.js
+          node --check backend/src/availability-sweep.js
+          node --check backend/src/app.js
           python -m py_compile olx-fetcher/app.py
+      - name: Apply database migrations
+        run: npm run migrate --prefix backend
       - name: Test OLX status classifier
         run: cd olx-fetcher && python -m unittest -v test_app.py
       - name: Test PostgreSQL availability cache

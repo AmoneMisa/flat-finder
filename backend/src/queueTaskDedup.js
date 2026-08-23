@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { pool } from './db.js';
+import {randomUUID} from 'node:crypto';
+import {pool} from './db.js';
 
 const RUNNING_TTL_MS = Math.max(
   30_000,
@@ -12,7 +12,6 @@ const DONE_TTL_MS = Math.max(
 const RENEW_INTERVAL_MS = Math.max(10_000, Math.floor(RUNNING_TTL_MS / 3));
 const CLEANUP_INTERVAL_MS = 30 * 60_000;
 
-let schemaPromise = null;
 let lastCleanupAt = 0;
 
 function taskIdentity(task) {
@@ -25,31 +24,6 @@ function taskIdentity(task) {
     task.segment || task.channel || 'all',
     task.page || 0,
   ].join(':');
-}
-
-async function ensureSchema() {
-  if (schemaPromise) return schemaPromise;
-  schemaPromise = (async () => {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS crawl_task_runs (
-        task_key TEXT PRIMARY KEY,
-        crawl_generation TEXT NOT NULL,
-        status VARCHAR(16) NOT NULL,
-        lock_token UUID,
-        locked_until TIMESTAMPTZ,
-        result JSONB,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        finished_at TIMESTAMPTZ
-      )
-    `);
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS crawl_task_runs_expiry_idx
-      ON crawl_task_runs(updated_at)
-    `);
-    console.log('[queue-dedup] using PostgreSQL');
-  })();
-  return schemaPromise;
 }
 
 async function maybeCleanup() {
@@ -158,7 +132,7 @@ async function releaseTask(task, token) {
 }
 
 export async function executeQueueTaskOnce(task, execute) {
-  await ensureSchema();
+  // crawl_task_runs is owned by migration 004. Runtime code only mutates data.
   maybeCleanup().catch((error) => {
     console.warn('[queue-dedup] cleanup failed:', error.message);
   });
@@ -200,5 +174,5 @@ export async function executeQueueTaskOnce(task, execute) {
   }
 }
 
-// Uses the shared db pool; queue-task-server closes it through closeDb().
+// Uses the shared database pool; lifecycle is owned by closeDb().
 export async function closeQueueTaskDedup() {}

@@ -1,4 +1,21 @@
 services:
+  flat-finder-migrate:
+    # One-shot schema owner. Any normal `docker compose up` applies versioned
+    # migrations before API/worker processes are allowed to start.
+    image: ghcr.io/amonemisa/flat-finder-backend:${IMAGE_TAG:-latest}
+    command: ["node", "src/migrate.js"]
+    restart: "no"
+    env_file:
+      - ./.env
+    environment:
+      - PGHOST=flat-finder-postgres
+      - PGPORT=5432
+    depends_on:
+      flat-finder-postgres:
+        condition: service_healthy
+    networks:
+      - default
+
   flat-finder-backend:
     image: ghcr.io/amonemisa/flat-finder-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -20,6 +37,8 @@ services:
     depends_on:
       flat-finder-postgres:
         condition: service_healthy
+      flat-finder-migrate:
+        condition: service_completed_successfully
       flat-finder-elasticsearch:
         condition: service_healthy
       flat-finder-olx-router:
@@ -70,6 +89,8 @@ services:
     depends_on:
       flat-finder-postgres:
         condition: service_healthy
+      flat-finder-migrate:
+        condition: service_completed_successfully
       flat-finder-elasticsearch:
         condition: service_healthy
       flat-finder-olx-fetcher:

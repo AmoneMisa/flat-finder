@@ -1,6 +1,6 @@
-// Deterministic-ish demo data generator. Used as a fallback whenever a live
-// source is unreachable or blocks the request, so the app always has something
-// to show. Coordinates are jittered around each country's center.
+// Deterministic demo data for local development and tests only.
+// Production must report degraded/unavailable sources instead of presenting
+// realistic synthetic listings as if they came from a live marketplace.
 
 import { COUNTRIES } from './countries.js';
 import { makeListing } from './normalize.js';
@@ -47,6 +47,8 @@ function rng(seed) {
 }
 
 export function generateMock(countryCode, count = 30) {
+  if (process.env.NODE_ENV === 'production') return [];
+
   const c = COUNTRIES[countryCode];
   if (!c) return [];
   const rand = rng(countryCode.split('').reduce((a, ch) => a + ch.charCodeAt(0), 7));

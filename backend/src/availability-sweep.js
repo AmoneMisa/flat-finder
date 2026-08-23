@@ -1,27 +1,40 @@
-import { pool } from './db.js';
-import { ensureAvailabilitySchema, verifyListingAvailability } from './availability.js';
+import {pool} from './db.js';
+import {verifyListingAvailability} from './availability.js';
 
-const ACTIVE_TTL_MS = Math.max(60_000, Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 30 * 60_000);
-const UNKNOWN_TTL_MS = Math.max(30_000, Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 10 * 60_000);
-const MAX_BATCH = Math.max(1, Math.min(100, Number(process.env.LISTING_AVAILABILITY_SWEEP_BATCH) || 100));
+const ACTIVE_TTL_MS = Math.max(
+  60_000,
+  Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 30 * 60_000,
+);
+const UNKNOWN_TTL_MS = Math.max(
+  30_000,
+  Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 10 * 60_000,
+);
+const MAX_BATCH = Math.max(
+  1,
+  Math.min(100, Number(process.env.LISTING_AVAILABILITY_SWEEP_BATCH) || 100),
+);
 
 function normalizeRequests(items, limit = 100) {
   const unique = new Map();
+
   for (const item of Array.isArray(items) ? items : []) {
     const source = String(item?.source || '').trim().toLowerCase();
     const country = String(item?.country || '').trim().toUpperCase();
     const id = String(item?.id ?? '').trim();
+
     if (source !== 'olx' || !/^[A-Z]{2}$/.test(country) || !id) continue;
-    unique.set(`${source}:${country}:${id}`, { source, country, id });
+
+    unique.set(`${source}:${country}:${id}`, {source, country, id});
     if (unique.size >= limit) break;
   }
+
   return [...unique.values()];
 }
 
 export async function readListingAvailability(items) {
-  await ensureAvailabilitySchema();
   const requested = normalizeRequests(items);
   if (!requested.length) return [];
+
   const result = await pool.query(`
     SELECT l.source, l.country, l.source_id, l.active,
       l.availability_checked_at, l.availability_status, l.availability_reason
@@ -31,20 +44,28 @@ export async function readListingAvailability(items) {
       ON requested.source = l.source
       AND requested.country = l.country
       AND requested.source_id = l.source_id
-  `, [JSON.stringify(requested.map((item) => ({ source: item.source, country: item.country, source_id: item.id })))]);
+  `, [JSON.stringify(requested.map((item) => ({
+    source: item.source,
+    country: item.country,
+    source_id: item.id,
+  })))]);
+
   return result.rows.map((row) => ({
     source: row.source,
     country: row.country,
     id: String(row.source_id),
-    status: row.active === false ? 'inactive' : row.availability_status || 'unchecked',
+    status: row.active === false
+      ? 'inactive'
+      : row.availability_status || 'unchecked',
     reason: row.availability_reason || null,
-    checkedAt: row.availability_checked_at ? new Date(row.availability_checked_at).toISOString() : null,
+    checkedAt: row.availability_checked_at
+      ? new Date(row.availability_checked_at).toISOString()
+      : null,
     cached: true,
   }));
 }
 
 export async function verifyDueListingAvailability(limit = MAX_BATCH) {
-  await ensureAvailabilitySchema();
   const batch = Math.max(1, Math.min(100, Number(limit) || MAX_BATCH));
   const result = await pool.query(`
     SELECT source, country, source_id
@@ -65,7 +86,13 @@ export async function verifyDueListingAvailability(limit = MAX_BATCH) {
       updated_at DESC
     LIMIT $3
   `, [UNKNOWN_TTL_MS, ACTIVE_TTL_MS, batch]);
-  const items = result.rows.map((row) => ({ source: row.source, country: row.country, id: String(row.source_id) }));
+
+  const items = result.rows.map((row) => ({
+    source: row.source,
+    country: row.country,
+    id: String(row.source_id),
+  }));
+
   if (!items.length) return [];
   return verifyListingAvailability(items);
 }

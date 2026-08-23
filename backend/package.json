@@ -4,10 +4,14 @@
   "description": "Scraper API serving normalized flat/house listings for RO, UA, KZ, UZ, KG",
   "type": "module",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
-    "start": "node src/bootstrap.js",
-    "dev": "node --watch src/bootstrap.js",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
     "test": "node --test",
+    "migrate": "node src/migrate.js",
     "reindex": "node src/reindex.js"
   },
   "dependencies": {

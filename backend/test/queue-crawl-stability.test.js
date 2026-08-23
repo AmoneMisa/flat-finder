@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {readFileSync} from 'node:fs';
 
 const queuePlan = readFileSync(new URL('../src/queuePlan.js', import.meta.url), 'utf8');
 const queueTasks = readFileSync(new URL('../src/queueTasks.js', import.meta.url), 'utf8');
 const queueDedup = readFileSync(new URL('../src/queueTaskDedup.js', import.meta.url), 'utf8');
 const pgQueue = readFileSync(new URL('../src/pgQueue.js', import.meta.url), 'utf8');
+const queueMigration = readFileSync(new URL('../migrations/002_crawl_tasks.sql', import.meta.url), 'utf8');
 const scheduler = readFileSync(new URL('../src/scheduler.js', import.meta.url), 'utf8');
 const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
-const bootstrap = readFileSync(new URL('../src/bootstrap.js', import.meta.url), 'utf8');
+const server = readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
 const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
 
 test('queue plan seeds one OLX page and lets successful tasks extend the chain', () => {
@@ -31,9 +32,9 @@ test('queue protocol v3 partitions stable crawl chains', () => {
 });
 
 test('PostgreSQL owns durable queue state, priority, leases and retries', () => {
-  assert.match(pgQueue, /CREATE TABLE IF NOT EXISTS crawl_tasks/);
-  assert.match(pgQueue, /status IN \('pending', 'running', 'done', 'dead'\)/);
-  assert.match(pgQueue, /priority DESC/);
+  assert.match(queueMigration, /CREATE TABLE IF NOT EXISTS crawl_tasks/);
+  assert.match(queueMigration, /status IN \('pending', 'running', 'done', 'dead'\)/);
+  assert.match(queueMigration, /priority DESC/);
   assert.match(pgQueue, /FOR UPDATE SKIP LOCKED/);
   assert.match(pgQueue, /locked_until/);
   assert.match(pgQueue, /run_after/);
@@ -49,15 +50,24 @@ test('one Node worker owns dispatch, queue transitions and task execution direct
   assert.match(worker, /processQueueTask/);
   assert.match(worker, /completeTask/);
   assert.match(worker, /failTask/);
-  assert.match(worker, /initCrawlQueueSchema/);
+  assert.doesNotMatch(worker, /initCrawlQueueSchema/);
+  assert.doesNotMatch(worker, /ensureListingSemantics/);
   assert.match(worker, /workerLoop\('telegram', 0\)/);
   assert.doesNotMatch(worker, /\/internal\/queue-/);
   assert.doesNotMatch(compose, /flat-finder-queue-task-api:/);
   assert.doesNotMatch(compose, /flat-finder-queue-worker-/);
 });
 
+test('compose gates API and worker on successful migrations', () => {
+  assert.match(compose, /^\s{2}flat-finder-migrate:\s*$/m);
+  assert.match(compose, /command:\s*\["node",\s*"src\/migrate\.js"\]/);
+  assert.ok(
+    (compose.match(/condition:\s*service_completed_successfully/g) || []).length >= 2,
+  );
+});
+
 test('OLX shards remain concurrent inside the isolated worker process', () => {
-  assert.match(worker, /Array\.from\(\{ length: QUEUE_SHARDS \}/);
+  assert.match(worker, /Array\.from\(\{length: QUEUE_SHARDS\}/);
   assert.match(worker, /workerLoop\('olx', shard\)/);
   assert.match(pgQueue, /type = 'flat\.olx\.page' AND crawler_shard = \$1/);
   assert.match(compose, /QUEUE_SHARDS=\$\{QUEUE_SHARDS:-2\}/);
@@ -86,12 +96,17 @@ test('task execution deduplication remains PostgreSQL-backed', () => {
   assert.match(queueDedup, /deduplicated: true/);
 });
 
-test('API runtime does not start recurring crawler schedulers', () => {
-  assert.doesNotMatch(bootstrap, /startSocialHousingScheduler/);
-  assert.match(compose, /DISABLE_SCHEDULER=1/);
+test('API refresh commands enqueue work and never execute crawlers directly', () => {
+  assert.doesNotMatch(server, /startSocialHousingScheduler/);
+  assert.doesNotMatch(server, /startScheduler/);
+  assert.doesNotMatch(server, /warmCountry/);
+  assert.match(scheduler, /dispatchGenerationIfIdle/);
+  assert.match(scheduler, /buildCrawlPlan/);
+  assert.doesNotMatch(scheduler, /startScheduler/);
+  assert.doesNotMatch(scheduler, /warmCountry/);
+  assert.doesNotMatch(scheduler, /scheduleCountryVision/);
   assert.match(worker, /startSocialHousingScheduler/);
   assert.match(worker, /refreshPlaces/);
-  assert.match(scheduler, /DISABLE_SCHEDULER/);
 });
 
 test('RabbitMQ, Redis and HTTP queue proxy workers are absent', () => {

@@ -51,6 +51,7 @@ jobs:
           node --check backend/src/availability-sweep.js
           node --check backend/src/worker.js
           node --check backend/src/scheduler.js
+          node --check backend/src/migrate.js
           bash -n scripts/upgrade-postgres-18.sh
           bash -n deploy.sh
       - name: Validate Compose
@@ -59,10 +60,15 @@ jobs:
           docker compose config >/dev/null
           grep -q 'image: postgres:18-alpine' docker-compose.yml
           grep -q 'flat-finder-postgres-data-v18:/var/lib/postgresql' docker-compose.yml
+          grep -q 'flat-finder-migrate:' docker-compose.yml
+          grep -q 'command: \["node", "src/migrate.js"\]' docker-compose.yml
+          test "$(grep -c 'condition: service_completed_successfully' docker-compose.yml)" -ge 2
           grep -q 'flat-finder-worker:' docker-compose.yml
           ! grep -q 'flat-finder-queue-task-api:' docker-compose.yml
           ! grep -q 'flat-finder-queue-worker-' docker-compose.yml
           ! grep -q 'QUEUE_TASK_API_URL' docker-compose.yml
+      - name: Apply migrations on fresh PostgreSQL
+        run: npm run migrate --prefix backend
       - name: Build social fetcher and run contract tests
         run: docker build -t flat-finder-social-fetcher:test ./social-fetcher
       - name: Run queue, search and social regressions

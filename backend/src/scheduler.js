@@ -1,96 +1,88 @@
-// Background refresher. Periodically re-scrapes every country's default browse
-// view so live data stays fresh and the common request is served instantly from
-// cache. Runs once at startup and then on a fixed interval (hourly by default).
-//
-// Env:
-//   REFRESH_MINUTES            interval in minutes (default 60)
-//   DISABLE_SCHEDULER          set to "1" to disable all background work
-//   DISABLE_LISTING_SCHEDULER  set to "1" when the durable PostgreSQL queue owns listing crawling;
-//                              places refresh still runs in this mode
-//   ENABLE_LEGACY_LISTING_SCHEDULER=1 can explicitly keep the old crawler even
-//                              when QUEUE_INTERNAL_KEY shows the queue stack is on
+// Refresh commands and shared maintenance helpers. Recurring crawling is owned
+// exclusively by src/worker.js. API-triggered refreshes enqueue a crawl generation
+// in PostgreSQL; they never execute marketplace scrapers inside the HTTP process.
 
-import { COUNTRY_CODES } from './countries.js';
-import { warmCountry } from './scrapers/index.js';
-import { scheduleCountryVision } from './vision-enrichment.js';
-import { geocodeBbox, geocodeQuery } from './geocode.js';
-import { placesFreshness } from './places-db.js';
-import { syncAllPlaces } from './places-sync.js';
+import {geocodeBbox, geocodeQuery} from './geocode.js';
+import {placesFreshness} from './places-db.js';
+import {syncAllPlaces} from './places-sync.js';
+import {dispatchGenerationIfIdle} from './pgQueue.js';
+import {buildCrawlPlan, QUEUE_SHARDS} from './queuePlan.js';
 
-const REFRESH_MINUTES = Math.max(1, Number(process.env.REFRESH_MINUTES) || 60);
-const REFRESH_MS = REFRESH_MINUTES * 60 * 1000;
+const PLACES_MAX_AGE_MS = Math.max(
+  1,
+  Number(process.env.PLACES_REFRESH_DAYS) || 30,
+) * 24 * 60 * 60 * 1000;
+const MANUAL_REFRESH_COOLDOWN_SECONDS = Math.max(
+  60,
+  Number(process.env.MANUAL_REFRESH_COOLDOWN_SECONDS) || 60,
+);
 
-// Shops and stations change on the scale of months, so the places table is
-// refilled far less often than listings — and only when it is actually stale.
-const PLACES_MAX_AGE_MS = Math.max(1, Number(process.env.PLACES_REFRESH_DAYS) || 30) * 24 * 60 * 60 * 1000;
-
-let timer = null;
-let running = false;
+let dispatching = false;
 let placesRunning = false;
-let lastRun = null; // { at, ok, total, sourceCounts, degraded }
+let lastRun = null;
 
-// Refresh all countries in parallel. Never throws — individual failures are
-// swallowed so one bad source can't stop the schedule. Photo analysis is queued
-// only after the fresh snapshot exists and therefore never delays scraping.
-export async function refreshAll(reason = 'scheduled') {
-  if (running) {
-    console.log('[scheduler] refresh already in progress, skipping');
-    return lastRun;
-  }
-  running = true;
-  const started = Date.now();
-  const sourceCounts = {};
-  const degraded = [];
+// Preserve the existing refresh command used by clients, but keep execution in
+// worker.js. The queue transaction globally prevents duplicate generations and
+// refuses to open a new generation while another one is pending/running.
+export async function refreshAll(reason = 'manual') {
+  if (dispatching) return lastRun;
+  dispatching = true;
+
   try {
-    const results = await Promise.allSettled(COUNTRY_CODES.map((c) => warmCountry(c)));
-    let ok = 0;
-    results.forEach((r, i) => {
-      if (r.status !== 'fulfilled') {
-        console.warn(`[scheduler] ${COUNTRY_CODES[i]} failed: ${r.reason?.message ?? r.reason}`);
-        return;
-      }
-      ok += 1;
-      if (r.value.degraded) degraded.push(COUNTRY_CODES[i]);
-      for (const [name, n] of Object.entries(r.value.sourceCounts ?? {})) {
-        sourceCounts[name] = (sourceCounts[name] ?? 0) + n;
-      }
-
-      // Free-tier vision enrichment is deliberately background-only. The
-      // provider/result cache prevents repeated external calls for unchanged photos.
-      try {
-        scheduleCountryVision(COUNTRY_CODES[i], r.value);
-      } catch (error) {
-        console.warn(`[scheduler] ${COUNTRY_CODES[i]} vision scheduling failed: ${error.message}`);
-      }
-    });
-    lastRun = { at: new Date().toISOString(), ok, total: COUNTRY_CODES.length, sourceCounts, degraded };
-    console.log(
-      `[scheduler] ${reason} refresh: ${ok}/${COUNTRY_CODES.length} countries, ` +
-        `live=${JSON.stringify(sourceCounts)}, demo=[${degraded.join(',')}] in ${Date.now() - started}ms`,
+    const {tasks, crawlGeneration} = buildCrawlPlan({shardCount: QUEUE_SHARDS});
+    const outcome = await dispatchGenerationIfIdle(
+      tasks,
+      MANUAL_REFRESH_COOLDOWN_SECONDS,
     );
+
+    lastRun = {
+      at: new Date().toISOString(),
+      reason,
+      crawlGeneration,
+      taskCount: tasks.length,
+      queued: outcome.queued,
+      queueReason: outcome.reason,
+      retryAfterMs: outcome.retryAfterMs ?? null,
+    };
+
+    console.log(
+      `[scheduler] ${reason} refresh request: queued=${outcome.queued}/${tasks.length} ` +
+        `reason=${outcome.reason} generation=${crawlGeneration}`,
+    );
+
+    return lastRun;
   } finally {
-    running = false;
+    dispatching = false;
   }
-  return lastRun;
 }
 
 /**
- * Refills the places table when it is empty or older than the max age. Failures
- * are logged and swallowed: listings refresh regardless of what OSM is doing.
+ * Refills the places table when it is empty or older than the max age. The
+ * worker calls this on startup and periodically; failures are deliberately
+ * non-fatal because listing ingestion must not depend on OSM availability.
  */
 export async function refreshPlaces(force = false) {
   if (placesRunning) return null;
   placesRunning = true;
+
   try {
     const freshness = await placesFreshness();
     const newest = freshness.reduce(
-      (latest, row) => Math.max(latest, new Date(row.updated_at || 0).getTime() || 0),
+      (latest, row) => Math.max(
+        latest,
+        new Date(row.updated_at || 0).getTime() || 0,
+      ),
       0,
     );
+
     if (!force && newest && Date.now() - newest < PLACES_MAX_AGE_MS) {
-      console.log(`[places] skipping sync, table filled ${Math.round((Date.now() - newest) / 86_400_000)}d ago`);
+      console.log(
+        `[places] skipping sync, table filled ` +
+          `${Math.round((Date.now() - newest) / 86_400_000)}d ago`,
+      );
       return null;
     }
+
     return await syncAllPlaces(geocodeQuery, geocodeBbox);
   } catch (error) {
     console.warn('[places] sync failed:', error?.message || error);
@@ -102,39 +94,4 @@ export async function refreshPlaces(force = false) {
 
 export function getLastRun() {
   return lastRun;
-}
-
-export function startScheduler() {
-  if (process.env.DISABLE_SCHEDULER === '1') {
-    console.log('[scheduler] disabled via DISABLE_SCHEDULER=1');
-    return;
-  }
-
-  // Places are independent from listing crawling and remain useful when the
-  // durable PostgreSQL queue owns listings.
-  refreshPlaces().catch((e) => console.warn('[places] startup sync error', e));
-
-  const queueConfigured = String(process.env.QUEUE_INTERNAL_KEY || '').length >= 16;
-  const queueOwnsListings =
-    process.env.DISABLE_LISTING_SCHEDULER === '1' ||
-    (queueConfigured && process.env.ENABLE_LEGACY_LISTING_SCHEDULER !== '1');
-
-  if (queueOwnsListings) {
-    console.log('[scheduler] listing refresh disabled; PostgreSQL queue owns crawl');
-    return;
-  }
-
-  // Warm on boot (don't block server startup), then on the interval.
-  refreshAll('startup').catch((e) => console.warn('[scheduler] startup refresh error', e));
-  timer = setInterval(
-    () => refreshAll('hourly').catch((e) => console.warn('[scheduler] refresh error', e)),
-    REFRESH_MS,
-  );
-  if (timer.unref) timer.unref(); // don't keep the process alive just for this
-  console.log(`[scheduler] auto-refresh every ${REFRESH_MINUTES} min`);
-}
-
-export function stopScheduler() {
-  if (timer) clearInterval(timer);
-  timer = null;
 }

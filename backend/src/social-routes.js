@@ -1,20 +1,12 @@
+import { requireInternal } from './internal-auth.js';
+
 const SOCIAL_FETCHER_URL = String(process.env.SOCIAL_FETCHER_URL || '').replace(/\/$/, '');
 
-function internalKey() {
-  return String(process.env.SOCIAL_INTERNAL_KEY || process.env.QUEUE_INTERNAL_KEY || '');
-}
-
-function requireInternal(req, res) {
-  const expected = internalKey();
-  if (expected.length < 16) {
-    res.status(503).json({ error: 'SOCIAL_INTERNAL_KEY/QUEUE_INTERNAL_KEY is not configured' });
-    return false;
-  }
-  if (String(req.get('x-queue-key') || '') !== expected) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return false;
-  }
-  return true;
+function requireSocialInternal(req, res) {
+  return requireInternal(req, res, {
+    envNames: ['SOCIAL_INTERNAL_KEY'],
+    missingMessage: 'SOCIAL_INTERNAL_KEY/QUEUE_INTERNAL_KEY is not configured',
+  });
 }
 
 async function socialRequest(path, options = {}) {
@@ -42,7 +34,7 @@ export function installSocialRoutes(app) {
   app.locals.socialRoutesInstalled = true;
 
   app.get('/internal/social/health', async (req, res) => {
-    if (!requireInternal(req, res)) return;
+    if (!requireSocialInternal(req, res)) return;
 
     try {
       const { response, body } = await socialRequest('/health');
@@ -53,7 +45,7 @@ export function installSocialRoutes(app) {
   });
 
   app.post('/internal/social/fetch', async (req, res) => {
-    if (!requireInternal(req, res)) return;
+    if (!requireSocialInternal(req, res)) return;
 
     const source = String(req.body?.source || '').toLowerCase();
     if (!['facebook', 'threads', 'linkedin'].includes(source)) {

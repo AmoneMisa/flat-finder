@@ -23,6 +23,6 @@ jobs:
         run: |
           node --check backend/src/hiring-db.js
           node --check backend/src/hiring-routes.js
-          node --check backend/src/bootstrap.js
+          node --check backend/src/server.js
       - name: Run backend tests
         run: npm test --prefix backend

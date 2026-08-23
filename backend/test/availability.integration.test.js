@@ -1,21 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { closeDb, initDb, pool, upsertListings } from '../src/db.js';
+import {closeDb, initDb, pool, upsertListings} from '../src/db.js';
 import {
-  initAvailabilitySchema,
   recordListingAvailability,
   verifyListingAvailability,
 } from '../src/availability.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 
-test('listing availability state deactivates stale OLX rows and reuses fresh checks', { skip: !enabled }, async () => {
+test('listing availability state deactivates stale OLX rows and reuses fresh checks', {skip: !enabled}, async () => {
   await initDb();
-  await initAvailabilitySchema();
 
   const id = 'availability-test-1';
-  await pool.query(`DELETE FROM listings WHERE source = 'olx' AND country = 'UZ' AND source_id = $1`, [id]);
+  await pool.query(
+    `DELETE FROM listings WHERE source = 'olx' AND country = 'UZ' AND source_id = $1`,
+    [id],
+  );
 
   await upsertListings([{
     id,
@@ -81,6 +82,9 @@ test('listing availability state deactivates stale OLX rows and reuses fresh che
   assert.equal(state.rows[0]?.active, true);
   assert.equal(state.rows[0]?.missed_runs, 0);
 
-  await pool.query(`DELETE FROM listings WHERE source = 'olx' AND country = 'UZ' AND source_id = $1`, [id]);
+  await pool.query(
+    `DELETE FROM listings WHERE source = 'olx' AND country = 'UZ' AND source_id = $1`,
+    [id],
+  );
   await closeDb();
 });

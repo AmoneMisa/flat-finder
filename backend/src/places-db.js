@@ -8,7 +8,7 @@
 
 import pg from 'pg';
 
-const { Pool } = pg;
+const {Pool} = pg;
 
 const pool = new Pool({
   host: process.env.PGHOST || 'flat-finder-postgres',
@@ -20,40 +20,9 @@ const pool = new Pool({
   idleTimeoutMillis: 30_000,
 });
 
-pool.on('error', (error) => console.error('[places:postgres] idle client error:', error.message));
-
-let initPromise;
-
-export function initPlacesDb() {
-  if (initPromise) return initPromise;
-  initPromise = (async () => {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS places (
-        id BIGSERIAL PRIMARY KEY,
-        country VARCHAR(8) NOT NULL,
-        city TEXT NOT NULL DEFAULT '',
-        kind VARCHAR(32) NOT NULL,
-        name TEXT NOT NULL,
-        name_ru TEXT,
-        lat DOUBLE PRECISION NOT NULL,
-        lng DOUBLE PRECISION NOT NULL,
-        source VARCHAR(16) NOT NULL,
-        external_id TEXT NOT NULL,
-        tags JSONB NOT NULL DEFAULT '{}'::jsonb,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        CONSTRAINT places_identity_unique UNIQUE (country, kind, source, external_id)
-      );
-    `);
-    await pool.query('CREATE INDEX IF NOT EXISTS places_city_kind_idx ON places(country, city, kind);');
-    // No PostGIS here, so proximity is a bounding-box prefilter plus haversine.
-    await pool.query('CREATE INDEX IF NOT EXISTS places_lat_lng_idx ON places(lat, lng);');
-    console.log('[places:postgres] schema ready');
-  })().catch((error) => {
-    initPromise = undefined;
-    throw error;
-  });
-  return initPromise;
-}
+pool.on('error', (error) => {
+  console.error('[places:postgres] idle client error:', error.message);
+});
 
 const UPSERT_SQL = `
   INSERT INTO places (country, city, kind, name, name_ru, lat, lng, source, external_id, tags, updated_at)
@@ -76,7 +45,7 @@ const UPSERT_SQL = `
 
 export async function upsertPlaces(rows) {
   if (!Array.isArray(rows) || !rows.length) return 0;
-  await initPlacesDb();
+
   let saved = 0;
   for (let offset = 0; offset < rows.length; offset += 500) {
     const batch = rows.slice(offset, offset + 500);
@@ -88,13 +57,13 @@ export async function upsertPlaces(rows) {
 
 /** Every place in a city, for one in-memory pass over a batch of listings. */
 export async function loadCityPlaces(country, city) {
-  await initPlacesDb();
   const result = await pool.query(
     `SELECT kind, name, name_ru, lat, lng
      FROM places
      WHERE country = $1 AND ($2 = '' OR city = $2);`,
     [String(country || '').toUpperCase(), String(city || '')],
   );
+
   return result.rows.map((row) => ({
     kind: row.kind,
     name: row.name,
@@ -106,7 +75,6 @@ export async function loadCityPlaces(country, city) {
 
 /** When each city was last filled, so a sync can decide whether to run. */
 export async function placesFreshness() {
-  await initPlacesDb();
   const result = await pool.query(
     `SELECT country, city, kind, COUNT(*)::int AS count, MAX(updated_at) AS updated_at
      FROM places GROUP BY country, city, kind ORDER BY country, city, kind;`,

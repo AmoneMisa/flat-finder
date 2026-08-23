@@ -1,20 +1,18 @@
-import { hostname } from 'node:os';
-import { closeDb, initDb } from './db.js';
-import { closeElasticsearch, initElasticsearch } from './elasticsearch.js';
-import { processQueueTask } from './queueTasks.js';
+import {hostname} from 'node:os';
+import {closeDb, initDb} from './db.js';
+import {closeElasticsearch, initElasticsearch} from './elasticsearch.js';
+import {processQueueTask} from './queueTasks.js';
 import {
   claimTask,
   completeTask,
   dispatchGenerationIfIdle,
   failTask,
-  initCrawlQueueSchema,
   pruneQueueHistory,
 } from './pgQueue.js';
-import { buildCrawlPlan, QUEUE_SHARDS } from './queuePlan.js';
-import { refreshPlaces } from './scheduler.js';
-import { startSocialHousingScheduler } from './social-housing-scheduler.js';
-import { verifyDueListingAvailability } from './availability-sweep.js';
-import { ensureListingSemantics } from './listing-semantics.js';
+import {buildCrawlPlan, QUEUE_SHARDS} from './queuePlan.js';
+import {refreshPlaces} from './scheduler.js';
+import {startSocialHousingScheduler} from './social-housing-scheduler.js';
+import {verifyDueListingAvailability} from './availability-sweep.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -42,7 +40,7 @@ async function dispatchTick() {
   if (dispatching || stopping) return;
   dispatching = true;
   try {
-    const { tasks, crawlGeneration } = buildCrawlPlan({ shardCount: QUEUE_SHARDS });
+    const {tasks, crawlGeneration} = buildCrawlPlan({shardCount: QUEUE_SHARDS});
     const outcome = await dispatchGenerationIfIdle(tasks, REFRESH_SECONDS);
     if (outcome.queued > 0) {
       console.log(
@@ -119,7 +117,7 @@ async function workerLoop(role, shard = 0) {
 
   while (!stopping) {
     try {
-      const task = await claimTask({ role, shard, workerId: id });
+      const task = await claimTask({role, shard, workerId: id});
       if (!task) {
         await sleep(POLL_MS);
         continue;
@@ -133,14 +131,16 @@ async function workerLoop(role, shard = 0) {
 }
 
 async function main() {
+  // Versioned migrations are guaranteed by the Compose/deploy migration gate.
+  // Worker startup therefore performs runtime initialization only, never schema DDL.
   await initDb();
-  await ensureListingSemantics();
+
   try {
     await initElasticsearch();
   } catch (error) {
     console.warn('[flat:worker] Elasticsearch startup degraded:', error?.message ?? error);
   }
-  await initCrawlQueueSchema();
+
   await pruneQueueHistory().catch((error) => {
     console.warn('[flat:worker] initial queue prune failed:', error?.message ?? error);
   });
@@ -174,7 +174,7 @@ async function main() {
 
   try {
     await Promise.all([
-      ...Array.from({ length: QUEUE_SHARDS }, (_, shard) => workerLoop('olx', shard)),
+      ...Array.from({length: QUEUE_SHARDS}, (_, shard) => workerLoop('olx', shard)),
       workerLoop('telegram', 0),
     ]);
   } finally {

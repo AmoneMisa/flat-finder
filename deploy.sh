@@ -71,6 +71,11 @@ wait_for_healthy flat-finder-olx-fetcher 90
 wait_for_healthy flat-finder-olx-fetcher-ua 90
 wait_for_healthy flat-finder-social-fetcher 90
 
+# Apply versioned PostgreSQL migrations before either application process starts.
+# The runner takes a PostgreSQL advisory lock, so retries or overlapping deploys
+# cannot apply the same migration concurrently.
+docker compose run --rm --no-deps flat-finder-backend node src/migrate.js
+
 # The API and direct worker both tolerate Elasticsearch being temporarily
 # unavailable. --no-deps prevents an unhealthy search node from blocking an
 # otherwise healthy application deployment.

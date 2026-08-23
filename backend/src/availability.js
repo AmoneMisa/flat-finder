@@ -1,15 +1,26 @@
-import { pool } from './db.js';
-import { COUNTRIES } from './countries.js';
+import {pool} from './db.js';
+import {COUNTRIES} from './countries.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
-const ACTIVE_TTL_MS = Math.max(60_000, Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 30 * 60_000);
-const UNKNOWN_TTL_MS = Math.max(30_000, Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 10 * 60_000);
-const REQUEST_TIMEOUT_MS = Math.max(3_000, Number(process.env.LISTING_AVAILABILITY_REQUEST_TIMEOUT_MS) || 18_000);
-const CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.LISTING_AVAILABILITY_CONCURRENCY) || 4));
+const ACTIVE_TTL_MS = Math.max(
+  60_000,
+  Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 30 * 60_000,
+);
+const UNKNOWN_TTL_MS = Math.max(
+  30_000,
+  Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 10 * 60_000,
+);
+const REQUEST_TIMEOUT_MS = Math.max(
+  3_000,
+  Number(process.env.LISTING_AVAILABILITY_REQUEST_TIMEOUT_MS) || 18_000,
+);
+const CONCURRENCY = Math.max(
+  1,
+  Math.min(6, Number(process.env.LISTING_AVAILABILITY_CONCURRENCY) || 4),
+);
 const MAX_BATCH = 100;
 
 const inFlight = new Map();
-let schemaPromise = null;
 
 function listingKey(source, country, id) {
   return `${String(source || '').toLowerCase()}:${String(country || '').toUpperCase()}:${String(id || '')}`;
@@ -17,16 +28,20 @@ function listingKey(source, country, id) {
 
 function normalizeRequests(items) {
   const unique = new Map();
+
   for (const item of Array.isArray(items) ? items : []) {
     const source = String(item?.source || '').trim().toLowerCase();
     const country = String(item?.country || '').trim().toUpperCase();
     const id = String(item?.id ?? '').trim();
+
     if (!source || !country || !id) continue;
     if (source !== 'olx') continue;
     if (!COUNTRIES[country]) continue;
-    unique.set(listingKey(source, country, id), { source, country, id });
+
+    unique.set(listingKey(source, country, id), {source, country, id});
     if (unique.size >= MAX_BATCH) break;
   }
+
   return [...unique.values()];
 }
 
@@ -37,32 +52,9 @@ function olxPublicId(url) {
   return match?.[1] || null;
 }
 
-export async function initAvailabilitySchema() {
-  await pool.query(`
-    ALTER TABLE listings
-      ADD COLUMN IF NOT EXISTS availability_checked_at TIMESTAMPTZ,
-      ADD COLUMN IF NOT EXISTS availability_status VARCHAR(16),
-      ADD COLUMN IF NOT EXISTS availability_reason TEXT
-  `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS listings_availability_due_idx
-      ON listings(active, availability_checked_at)
-  `);
-  console.log('[availability] schema ready');
-}
-
-export function ensureAvailabilitySchema() {
-  if (!schemaPromise) {
-    schemaPromise = initAvailabilitySchema().catch((error) => {
-      schemaPromise = null;
-      throw error;
-    });
-  }
-  return schemaPromise;
-}
-
 async function loadRows(items) {
   if (!items.length) return [];
+
   const result = await pool.query(`
     SELECT
       l.source,
@@ -84,6 +76,7 @@ async function loadRows(items) {
     country: item.country,
     source_id: item.id,
   })))]);
+
   return result.rows;
 }
 
@@ -105,8 +98,12 @@ function cachedResult(row) {
   }
 
   if (!checkedAt || !row.availability_status) return null;
+
   const age = Date.now() - Date.parse(checkedAt);
-  const ttl = row.availability_status === 'unknown' ? UNKNOWN_TTL_MS : ACTIVE_TTL_MS;
+  const ttl = row.availability_status === 'unknown'
+    ? UNKNOWN_TTL_MS
+    : ACTIVE_TTL_MS;
+
   if (!Number.isFinite(age) || age < 0 || age >= ttl) return null;
 
   return {
@@ -122,8 +119,8 @@ function cachedResult(row) {
 
 async function removeFromSearchIndex(source, country, id) {
   try {
-    const { deleteListingDocuments } = await import('./elasticsearch.js');
-    await deleteListingDocuments([{ source, country, id }]);
+    const {deleteListingDocuments} = await import('./elasticsearch.js');
+    await deleteListingDocuments([{source, country, id}]);
   } catch (error) {
     console.warn(
       `[availability] failed to remove ${source}:${country}:${id} from Elasticsearch: ` +
@@ -132,9 +129,7 @@ async function removeFromSearchIndex(source, country, id) {
   }
 }
 
-export async function recordListingAvailability({ source, country, id, status, reason = null }) {
-  await ensureAvailabilitySchema();
-
+export async function recordListingAvailability({source, country, id, status, reason = null}) {
   if (!['active', 'inactive', 'unknown'].includes(status)) {
     throw new Error(`Unsupported availability status: ${status}`);
   }
@@ -171,45 +166,49 @@ export async function recordListingAvailability({ source, country, id, status, r
 
 async function fetchOlxAvailability(row) {
   if (!OLX_FETCHER_URL) {
-    return { status: 'unknown', reason: 'olx_fetcher_disabled' };
+    return {status: 'unknown', reason: 'olx_fetcher_disabled'};
   }
 
   const url = String(row.data?.url || '').trim();
   if (!/^https:\/\//i.test(url)) {
-    return { status: 'unknown', reason: 'missing_source_url' };
+    return {status: 'unknown', reason: 'missing_source_url'};
   }
 
   const endpoint = `${OLX_FETCHER_URL}/olx/check?country=${encodeURIComponent(row.country)}`;
   const probeId = olxPublicId(url) || String(row.source_id);
+
   let response;
   try {
     response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: probeId, url }),
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({id: probeId, url}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
     return {
       status: 'unknown',
-      reason: error?.name === 'TimeoutError' ? 'sidecar_timeout' : 'sidecar_fetch_error',
+      reason: error?.name === 'TimeoutError'
+        ? 'sidecar_timeout'
+        : 'sidecar_fetch_error',
     };
   }
 
   if (!response.ok) {
-    return { status: 'unknown', reason: `sidecar_http_${response.status}` };
+    return {status: 'unknown', reason: `sidecar_http_${response.status}`};
   }
 
   let body;
   try {
     body = await response.json();
   } catch {
-    return { status: 'unknown', reason: 'sidecar_invalid_json' };
+    return {status: 'unknown', reason: 'sidecar_invalid_json'};
   }
 
   const status = ['active', 'inactive', 'unknown'].includes(body?.status)
     ? body.status
     : 'unknown';
+
   return {
     status,
     reason: body?.reason ? String(body.reason) : null,
@@ -229,6 +228,7 @@ export function confirmRepeatedOlxGenericError(row, result) {
       reason: 'repeated_generic_error_page',
     };
   }
+
   return result;
 }
 
@@ -243,9 +243,12 @@ async function verifyRow(row) {
   const promise = (async () => {
     let result;
     if (row.source === 'olx') {
-      result = confirmRepeatedOlxGenericError(row, await fetchOlxAvailability(row));
+      result = confirmRepeatedOlxGenericError(
+        row,
+        await fetchOlxAvailability(row),
+      );
     } else {
-      result = { status: 'unknown', reason: 'unsupported_source' };
+      result = {status: 'unknown', reason: 'unsupported_source'};
     }
 
     const recorded = await recordListingAvailability({
@@ -284,14 +287,16 @@ async function mapConcurrent(items, fn) {
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, items.length) }, () => worker()),
+    Array.from(
+      {length: Math.min(CONCURRENCY, items.length)},
+      () => worker(),
+    ),
   );
+
   return results;
 }
 
 export async function verifyListingAvailability(items) {
-  await ensureAvailabilitySchema();
-
   const requested = normalizeRequests(items);
   if (!requested.length) return [];
 
