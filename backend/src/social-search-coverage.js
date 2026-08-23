@@ -1,28 +1,28 @@
 export const UKRAINE_OBLASTS = [
-  { region: 'Vinnytsia Oblast', ua: 'Вінницька область', city: 'Vinnytsia' },
-  { region: 'Volyn Oblast', ua: 'Волинська область', city: 'Lutsk' },
-  { region: 'Dnipropetrovsk Oblast', ua: 'Дніпропетровська область', city: 'Dnipro' },
-  { region: 'Donetsk Oblast', ua: 'Донецька область', city: 'Kramatorsk' },
-  { region: 'Zhytomyr Oblast', ua: 'Житомирська область', city: 'Zhytomyr' },
-  { region: 'Zakarpattia Oblast', ua: 'Закарпатська область', city: 'Uzhhorod' },
-  { region: 'Zaporizhzhia Oblast', ua: 'Запорізька область', city: 'Zaporizhzhia' },
-  { region: 'Ivano-Frankivsk Oblast', ua: 'Івано-Франківська область', city: 'Ivano-Frankivsk' },
-  { region: 'Kyiv Oblast', ua: 'Київська область', city: 'Kyiv' },
-  { region: 'Kirovohrad Oblast', ua: 'Кіровоградська область', city: 'Kropyvnytskyi' },
-  { region: 'Luhansk Oblast', ua: 'Луганська область', city: 'Sievierodonetsk' },
-  { region: 'Lviv Oblast', ua: 'Львівська область', city: 'Lviv' },
-  { region: 'Mykolaiv Oblast', ua: 'Миколаївська область', city: 'Mykolaiv' },
-  { region: 'Odesa Oblast', ua: 'Одеська область', city: 'Odesa' },
-  { region: 'Poltava Oblast', ua: 'Полтавська область', city: 'Poltava' },
-  { region: 'Rivne Oblast', ua: 'Рівненська область', city: 'Rivne' },
-  { region: 'Sumy Oblast', ua: 'Сумська область', city: 'Sumy' },
-  { region: 'Ternopil Oblast', ua: 'Тернопільська область', city: 'Ternopil' },
-  { region: 'Kharkiv Oblast', ua: 'Харківська область', city: 'Kharkiv' },
-  { region: 'Kherson Oblast', ua: 'Херсонська область', city: 'Kherson' },
-  { region: 'Khmelnytskyi Oblast', ua: 'Хмельницька область', city: 'Khmelnytskyi' },
-  { region: 'Cherkasy Oblast', ua: 'Черкаська область', city: 'Cherkasy' },
-  { region: 'Chernivtsi Oblast', ua: 'Чернівецька область', city: 'Chernivtsi' },
-  { region: 'Chernihiv Oblast', ua: 'Чернігівська область', city: 'Chernihiv' },
+  { region: 'Vinnytsia Oblast', ua: 'Вінницька область' },
+  { region: 'Volyn Oblast', ua: 'Волинська область' },
+  { region: 'Dnipropetrovsk Oblast', ua: 'Дніпропетровська область' },
+  { region: 'Donetsk Oblast', ua: 'Донецька область' },
+  { region: 'Zhytomyr Oblast', ua: 'Житомирська область' },
+  { region: 'Zakarpattia Oblast', ua: 'Закарпатська область' },
+  { region: 'Zaporizhzhia Oblast', ua: 'Запорізька область' },
+  { region: 'Ivano-Frankivsk Oblast', ua: 'Івано-Франківська область' },
+  { region: 'Kyiv Oblast', ua: 'Київська область' },
+  { region: 'Kirovohrad Oblast', ua: 'Кіровоградська область' },
+  { region: 'Luhansk Oblast', ua: 'Луганська область' },
+  { region: 'Lviv Oblast', ua: 'Львівська область' },
+  { region: 'Mykolaiv Oblast', ua: 'Миколаївська область' },
+  { region: 'Odesa Oblast', ua: 'Одеська область' },
+  { region: 'Poltava Oblast', ua: 'Полтавська область' },
+  { region: 'Rivne Oblast', ua: 'Рівненська область' },
+  { region: 'Sumy Oblast', ua: 'Сумська область' },
+  { region: 'Ternopil Oblast', ua: 'Тернопільська область' },
+  { region: 'Kharkiv Oblast', ua: 'Харківська область' },
+  { region: 'Kherson Oblast', ua: 'Херсонська область' },
+  { region: 'Khmelnytskyi Oblast', ua: 'Хмельницька область' },
+  { region: 'Cherkasy Oblast', ua: 'Черкаська область' },
+  { region: 'Chernivtsi Oblast', ua: 'Чернівецька область' },
+  { region: 'Chernihiv Oblast', ua: 'Чернігівська область' },
 ];
 
 export const SOCIAL_HOUSING_COUNTRIES = {
@@ -81,15 +81,17 @@ export function buildThreadsHousingCoverage() {
   add(targets, 'UA', 'Житло Україна');
   add(targets, 'UA', 'Нерухомість Україна');
   for (const oblast of UKRAINE_OBLASTS) {
-    add(targets, 'UA', `Оренда ${oblast.ua}`, oblast.city, oblast.region);
-    add(targets, 'UA', `Квартира ${oblast.ua}`, oblast.city, oblast.region);
-    add(targets, 'UA', `Житло ${oblast.ua}`, oblast.city, oblast.region);
-    add(targets, 'UA', `Нерухомість ${oblast.ua}`, oblast.city, oblast.region);
+    // Oblast-wide searches must not be stamped with the regional centre as the
+    // listing city; the post itself/normalizer can resolve a real city later.
+    add(targets, 'UA', `Оренда ${oblast.ua}`, null, oblast.region);
+    add(targets, 'UA', `Квартира ${oblast.ua}`, null, oblast.region);
+    add(targets, 'UA', `Житло ${oblast.ua}`, null, oblast.region);
+    add(targets, 'UA', `Нерухомість ${oblast.ua}`, null, oblast.region);
   }
 
   const seen = new Set();
   return targets.filter((target) => {
-    const key = `${target.country}|${target.city || ''}|${target.target}`.toLowerCase();
+    const key = `${target.country}|${target.city || ''}|${target.region || ''}|${target.target}`.toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
