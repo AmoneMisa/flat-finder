@@ -14,6 +14,61 @@ const MAX_BATCH = Math.max(
   Math.min(100, Number(process.env.LISTING_AVAILABILITY_SWEEP_BATCH) || 20),
 );
 
+function normalizeRequests(items, limit = 100) {
+  const unique = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    const source = String(item?.source || '').trim().toLowerCase();
+    const country = String(item?.country || '').trim().toUpperCase();
+    const id = String(item?.id ?? '').trim();
+    if (source !== 'olx' || !/^[A-Z]{2}$/.test(country) || !id) continue;
+    unique.set(`${source}:${country}:${id}`, { source, country, id });
+    if (unique.size >= limit) break;
+  }
+  return [...unique.values()];
+}
+
+/** Read persisted availability only. Never calls an upstream source. */
+export async function readListingAvailability(items) {
+  await ensureAvailabilitySchema();
+  const requested = normalizeRequests(items);
+  if (!requested.length) return [];
+
+  const result = await pool.query(`
+    SELECT
+      l.source,
+      l.country,
+      l.source_id,
+      l.active,
+      l.availability_checked_at,
+      l.availability_status,
+      l.availability_reason
+    FROM listings l
+    JOIN jsonb_to_recordset($1::jsonb)
+      AS requested(source text, country text, source_id text)
+      ON requested.source = l.source
+      AND requested.country = l.country
+      AND requested.source_id = l.source_id
+  `, [JSON.stringify(requested.map((item) => ({
+    source: item.source,
+    country: item.country,
+    source_id: item.id,
+  })))]);
+
+  return result.rows.map((row) => ({
+    source: row.source,
+    country: row.country,
+    id: String(row.source_id),
+    status: row.active === false
+      ? 'inactive'
+      : row.availability_status || 'unchecked',
+    reason: row.availability_reason || null,
+    checkedAt: row.availability_checked_at
+      ? new Date(row.availability_checked_at).toISOString()
+      : null,
+    cached: true,
+  }));
+}
+
 /**
  * Verify stale OLX availability from the isolated worker rather than from a
  * user's /flats-feed request. The API only reads the resulting active/status
