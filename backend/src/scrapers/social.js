@@ -95,6 +95,7 @@ async function scrapeTargets(country, source, values) {
   const configs = (values || []).map(socialTarget).filter((value) => value?.target);
   const listings = [];
   const errors = [];
+  let rawItems = 0;
 
   for (const config of configs) {
     try {
@@ -102,6 +103,7 @@ async function scrapeTargets(country, source, values) {
         ? await fetchSocial('/threads/search', { query: config.target, limit: SOCIAL_LIMIT })
         : await fetchSocial('/fetch', { source: 'facebook', target: config.target, limit: SOCIAL_LIMIT });
 
+      rawItems += items.length;
       for (const item of items) {
         const listing = itemToListing(item, source, config, country);
         if (listing) listings.push(listing);
@@ -113,13 +115,17 @@ async function scrapeTargets(country, source, values) {
     }
   }
 
+  // A partial crawl, or an all-empty fetch from configured targets, must never
+  // age-out previously healthy rows. An HTTP-200/empty response is a common
+  // failure mode when a social page changes markup or starts blocking requests.
+  const complete = errors.length === 0 && (configs.length === 0 || rawItems > 0);
+
   return {
     listings,
-    // A partial social crawl must never age-out rows from targets that failed in
-    // this pass. Deactivation is safe only after every configured target replied.
-    complete: errors.length === 0,
-    partialExpected: errors.length > 0,
+    complete,
+    partialExpected: !complete,
     errors,
+    rawItems,
     processedTargets: configs.map((config) => config.target),
   };
 }
