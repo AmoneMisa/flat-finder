@@ -48,6 +48,7 @@ jobs:
           node --check backend/src/queuePlan.js
           node --check backend/src/queueTasks.js
           node --check backend/src/queueTaskDedup.js
+          node --check backend/src/availability-sweep.js
           node --check backend/src/worker.js
           node --check backend/src/scheduler.js
           bash -n scripts/upgrade-postgres-18.sh
