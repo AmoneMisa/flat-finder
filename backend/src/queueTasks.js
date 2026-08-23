@@ -8,6 +8,7 @@ import { indexListings } from './elasticsearch.js';
 import { executeQueueTaskOnce } from './queueTaskDedup.js';
 import { geocodeListings } from './geocode.js';
 import { rejectOutOfAreaCoordinates } from './coordinate-validation.js';
+import { reconcileAuthoritativeOlxSegment } from './crawl-reconciliation.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
 const OLX_FETCHER_URLS = [
@@ -277,6 +278,20 @@ async function processQueueTaskInner(task) {
     }
 
     const nextTask = nextOlxTask(task, pageResult, page);
+    const persisted = await persist(pageResult.listings, task);
+
+    // The all-country segment is authoritative. Once its sequential page chain
+    // reaches a normal terminal page, everything in this generation has either
+    // been seen and upserted or is no longer part of the current OLX snapshot.
+    // City-specific chains overlap, so they intentionally never reconcile.
+    let reconciliation = null;
+    if (!nextTask && !task.citySlug && task.crawlGeneration) {
+      reconciliation = await reconcileAuthoritativeOlxSegment({
+        country,
+        segment,
+        crawlGeneration: task.crawlGeneration,
+      });
+    }
 
     return {
       ok: true,
@@ -297,7 +312,16 @@ async function processQueueTaskInner(task) {
       unknownDateCount: pageResult.unknownDateCount,
       repairedCoordinates: rejected.length,
       nextTasks: nextTask ? [nextTask] : [],
-      ...(await persist(pageResult.listings, task)),
+      reconciliation: reconciliation
+        ? {
+            reconciled: reconciliation.reconciled,
+            dealType: reconciliation.dealType || null,
+            startedAt: reconciliation.startedAt || null,
+            deactivated: reconciliation.deactivated?.length || 0,
+            reason: reconciliation.reason || null,
+          }
+        : null,
+      ...persisted,
     };
   }
 

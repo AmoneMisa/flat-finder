@@ -2,11 +2,15 @@ import { pool } from './db.js';
 import { COUNTRIES } from './countries.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
-const ACTIVE_TTL_MS = Math.max(60_000, Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 6 * 60 * 60_000);
-const UNKNOWN_TTL_MS = Math.max(30_000, Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 15 * 60_000);
+// OLX rental inventory churns quickly. Six hours was long enough for a large
+// fraction of a filtered result page to disappear before we revisited it.
+// Keep the cache short enough for user-facing results while still avoiding a
+// source request on every page load (all checks stay in the worker).
+const ACTIVE_TTL_MS = Math.max(60_000, Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 30 * 60_000);
+const UNKNOWN_TTL_MS = Math.max(30_000, Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 10 * 60_000);
 const REQUEST_TIMEOUT_MS = Math.max(3_000, Number(process.env.LISTING_AVAILABILITY_REQUEST_TIMEOUT_MS) || 18_000);
-const CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.LISTING_AVAILABILITY_CONCURRENCY) || 3));
-const MAX_BATCH = 20;
+const CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.LISTING_AVAILABILITY_CONCURRENCY) || 4));
+const MAX_BATCH = 100;
 
 const inFlight = new Map();
 let schemaPromise = null;

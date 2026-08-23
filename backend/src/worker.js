@@ -23,7 +23,7 @@ const PRUNE_MS = Math.max(60_000, Number(process.env.QUEUE_HISTORY_PRUNE_SECONDS
 const PLACES_CHECK_MS = Math.max(60 * 60_000, Number(process.env.PLACES_CHECK_HOURS || 24) * 60 * 60_000);
 const AVAILABILITY_SWEEP_MS = Math.max(
   30_000,
-  Number(process.env.LISTING_AVAILABILITY_SWEEP_SECONDS || 60) * 1000,
+  Number(process.env.LISTING_AVAILABILITY_SWEEP_SECONDS || 30) * 1000,
 );
 
 let stopping = false;
@@ -136,8 +136,6 @@ async function main() {
   try {
     await initElasticsearch();
   } catch (error) {
-    // Postgres is the source of truth. Crawling must continue while the derived
-    // search index is recovering; queueTasks already treats indexing as optional.
     console.warn('[flat:worker] Elasticsearch startup degraded:', error?.message ?? error);
   }
   await initCrawlQueueSchema();
@@ -145,7 +143,6 @@ async function main() {
     console.warn('[flat:worker] initial queue prune failed:', error?.message ?? error);
   });
 
-  // All recurring ingestion/maintenance belongs to this process, never the API.
   startSocialHousingScheduler();
   void refreshPlaces().catch((error) => {
     console.warn('[flat:worker] places startup check failed:', error?.message ?? error);
