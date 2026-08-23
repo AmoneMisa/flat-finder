@@ -15,10 +15,6 @@ permissions:
   contents: read
   packages: write
 
-# One deploy at a time. Two pushes in quick succession would otherwise SSH
-# into the same server and reconcile the same compose project concurrently.
-# Queue the runs rather than cancelling: killing a half-applied deploy is
-# worse than waiting for one to finish.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -66,10 +62,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The same Node image runs either the public API (default command) or
+          # the isolated direct worker (`node src/worker.js`) via Compose.
           - image: flat-finder-backend
             context: ./backend
-          - image: flat-finder-queue-worker
-            context: ./queue-worker
           - image: flat-finder-olx-fetcher
             context: ./olx-fetcher
           - image: flat-finder-social-fetcher
@@ -133,15 +129,9 @@ jobs:
     environment: Production
     runs-on: ubuntu-latest
     needs: [detect-changes, build-images, build-elasticsearch]
-    # !cancelled() rather than always(): always() keeps this job running even
-    # after the run is cancelled, so a deploy could not be aborted. The ref
-    # check stops a workflow_dispatch from a feature branch shipping to prod.
     if: ${{ !cancelled() && github.ref == 'refs/heads/master' && needs.detect-changes.result == 'success' && needs.build-images.result == 'success' && (needs.build-elasticsearch.result == 'success' || needs.build-elasticsearch.result == 'skipped') }}
 
     steps:
-      # Runtime files are copied from this run's checkout. In particular,
-      # deploy.sh must match github.sha: letting the server git-pull master here
-      # can mix a queued run's image tag with a newer deployment definition.
       - uses: actions/checkout@v4
 
       - name: Sync runtime config
