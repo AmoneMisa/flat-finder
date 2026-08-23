@@ -9,22 +9,17 @@ import {
 } from '../textparse.js';
 
 const SOCIAL_FETCHER_URL = String(process.env.SOCIAL_FETCHER_URL || '').replace(/\/$/, '');
-// The social sidecar deliberately allows only one Chromium session at a time.
-// A request can therefore spend time queued behind another Threads search before
-// its own 45s browser navigation starts. Keep the caller budget below Gunicorn's
-// 180s hard timeout, but comfortably above one browser navigation + scroll pass.
 const SOCIAL_TIMEOUT_MS = Math.max(30_000, Math.min(170_000, Number(process.env.SOCIAL_HOUSING_TIMEOUT_MS) || 150_000));
 const SOCIAL_LIMIT = Math.max(5, Math.min(100, Number(process.env.SOCIAL_HOUSING_LIMIT) || 40));
 
-const HOUSING_RE = /(apartament|apartment|flat|casa|квартир|kvartira|\bkv\b|дом|\buy\b|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|оренд|жал[гғ]а|rent|inchiri|сдам|сдаю|сдается|сдається|beriladi|sotiladi|прода[её]т|продаж|sale|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
-const SALE_RE = /(прода[её]т|продаж|продам|sale|for sale|sotiladi|sotuv|de vanzare)/i;
-const SHORT_RE = /(посуточн|суточн|подобов|daily rent|short[- ]?term|regim hotelier|kunlik|sutkaga)/i;
-const OFFER_RE = /(сдам|сдаю|сдается|сдається|аренд|оренд|ijara|ijaraga|beriladi|rent|for rent|inchiri|жал[гғ]а|прода[её]т|продам|продаж|sale|sotiladi|sotuv)/i;
+const HOUSING_RE = /(apartament|apartment|flat|casa|locuin|imobil|camer[ăa]|квартир|kvartira|\bkv\b|дом|\buy\b|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|оренд|жал[гғ]а|rent|închiri|inchiri|сдам|здам|сдаю|здаю|сдается|сдається|beriladi|sotiladi|прода[её]т|продаю|продаж|sale|vând|vand|vânzare|vanzare|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/iu;
+const SALE_RE = /(прода[её]т|продаю|продам|продаж|sale|for sale|sotiladi|sotuv|vând|vand|vânzare|vanzare|de\s+v[âa]nzare)/iu;
+const SHORT_RE = /(посуточн|суточн|подобов|daily rent|short[- ]?term|regim hotelier|kunlik|sutkaga)/iu;
+const OFFER_RE = /(сдам|сдаю|сдается|сдається|здам|здаю|здається|аренд|оренд|ijara(?:ga)?|beriladi|rent|for rent|închiriez|inchiriez|de\s+închiriat|de\s+inchiriat|жал[гғ]а(?:\s+беріледі)?|прода[её]т|продаю|продам|продаж|sale|sotiladi|sotuv|vând|vand|vânzare|vanzare|de\s+v[âa]nzare)/iu;
+const WANTED_RE = /(?:ищу|сниму|хочу\s+снять|куплю|нужн[ао]\s+(?:квартир|комнат|дом)|шукаю|зніму|хочу\s+орендувати|потрібн[ао]\s+(?:квартир|кімнат|будин)|caut\s+(?:s[ăa]\s+închiriez|sa\s+inchiriez|apartament|cas[ăa]|camer[ăa]|locuin)|vreau\s+s[ăa]\s+(?:închiriez|cumpăr)|пәтер\s+іздеймін|үй\s+іздеймін|kvartira\s+(?:kerak|qidir)|uy\s+(?:kerak|qidir))/iu;
 
 function socialTarget(value) {
-  if (typeof value === 'string') {
-    return { target: value, city: null, dealType: null };
-  }
+  if (typeof value === 'string') return { target: value, city: null, dealType: null };
   if (value && typeof value === 'object') {
     return {
       target: String(value.target || value.url || value.query || '').trim(),
@@ -35,18 +30,21 @@ function socialTarget(value) {
   return null;
 }
 
-function detectDealType(text, forced = null) {
+export function classifyHousingOffer(text, forced = null) {
+  const value = String(text || '').replace(/[ \t]+/g, ' ').trim();
+  if (value.length < 12 || !HOUSING_RE.test(value)) return null;
+  if (WANTED_RE.test(value) || looksHousingWanted(value)) return null;
+  if (!OFFER_RE.test(value)) return null;
   if (forced) return forced;
-  if (SHORT_RE.test(text)) return 'shortRent';
-  if (SALE_RE.test(text)) return 'sale';
+  if (SHORT_RE.test(value)) return 'shortRent';
+  if (SALE_RE.test(value)) return 'sale';
   return 'longRent';
 }
 
 function itemToListing(item, source, targetConfig, country) {
   const text = String(item?.text || '').replace(/[ \t]+/g, ' ').trim();
-  if (text.length < 12) return null;
-  if (!HOUSING_RE.test(text) || !OFFER_RE.test(text)) return null;
-  if (looksHousingWanted(text)) return null;
+  const dealType = classifyHousingOffer(text, targetConfig.dealType);
+  if (!dealType) return null;
 
   const createdAt = item?.createdAt || null;
   if (createdAt) {
@@ -74,7 +72,7 @@ function itemToListing(item, source, targetConfig, country) {
     lat: null,
     lng: null,
     photos: Array.isArray(item?.images) ? item.images.filter(Boolean) : [],
-    dealType: detectDealType(text, targetConfig.dealType),
+    dealType,
     url: item?.url || targetConfig.target,
     createdAt,
   });
@@ -100,6 +98,8 @@ async function scrapeTargets(country, source, values) {
   const listings = [];
   const errors = [];
   let rawItems = 0;
+  let recentItems = 0;
+  let rejectedDemand = 0;
 
   for (const config of configs) {
     try {
@@ -109,6 +109,10 @@ async function scrapeTargets(country, source, values) {
 
       rawItems += items.length;
       for (const item of items) {
+        const text = String(item?.text || '');
+        if (WANTED_RE.test(text) || looksHousingWanted(text)) rejectedDemand += 1;
+        const ts = item?.createdAt ? Date.parse(item.createdAt) : NaN;
+        if (!Number.isFinite(ts) || Date.now() - ts <= MAX_AGE_MS) recentItems += 1;
         const listing = itemToListing(item, source, config, country);
         if (listing) listings.push(listing);
       }
@@ -119,9 +123,6 @@ async function scrapeTargets(country, source, values) {
     }
   }
 
-  // A partial crawl, or an all-empty fetch from configured targets, must never
-  // age-out previously healthy rows. An HTTP-200/empty response is a common
-  // failure mode when a social page changes markup or starts blocking requests.
   const complete = errors.length === 0 && (configs.length === 0 || rawItems > 0);
 
   return {
@@ -130,6 +131,12 @@ async function scrapeTargets(country, source, values) {
     partialExpected: !complete,
     errors,
     rawItems,
+    diagnostics: {
+      fetched: rawItems,
+      recent: recentItems,
+      classified: listings.length,
+      rejectedDemand,
+    },
     processedTargets: configs.map((config) => config.target),
   };
 }
