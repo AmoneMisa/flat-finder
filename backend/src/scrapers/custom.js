@@ -10,9 +10,8 @@
 // protected platforms (Facebook, Instagram, Airbnb, Booking, Agoda, …): those
 // return nothing useful server-side, so we surface a clear error instead.
 //
-// SSRF-safe: only http/https, and the resolved host must be a public IP (no
-// loopback / private / link-local ranges), so a submitted URL can't be used to
-// reach internal services.
+// SSRF-safe: only http/https, and every requested/redirected host must resolve
+// exclusively to public IPs (no loopback / private / link-local ranges).
 
 import dns from 'node:dns/promises';
 import net from 'node:net';
@@ -20,6 +19,7 @@ import { makeListing } from '../normalize.js';
 import { fetchChannel } from './telegram.js';
 
 const FETCH_TIMEOUT_MS = 12_000;
+const MAX_REDIRECTS = 5;
 const MAX_BYTES = 4 * 1024 * 1024; // cap the response we'll parse (4 MB)
 const MAX_ITEMS = 40;
 
@@ -86,21 +86,46 @@ async function assertSafeUrl(raw) {
 }
 
 async function fetchText(u) {
-  let res;
-  try {
-    res = await fetch(u.href, {
-      headers: {
-        'User-Agent': BROWSER_UA,
-        Accept: 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en,ru;q=0.8',
-      },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-  } catch (e) {
-    if (e.name === 'TimeoutError') throw new SourceError('Source timed out');
-    throw new SourceError('Could not reach source');
+  const startedAt = Date.now();
+  let current = u;
+  let res = null;
+
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+    const remainingMs = FETCH_TIMEOUT_MS - (Date.now() - startedAt);
+    if (remainingMs <= 0) throw new SourceError('Source timed out');
+
+    try {
+      res = await fetch(current.href, {
+        headers: {
+          'User-Agent': BROWSER_UA,
+          Accept: 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en,ru;q=0.8',
+        },
+        // Never let fetch follow a redirect before we validate its destination.
+        redirect: 'manual',
+        signal: AbortSignal.timeout(remainingMs),
+      });
+    } catch (e) {
+      if (e.name === 'TimeoutError') throw new SourceError('Source timed out');
+      throw new SourceError('Could not reach source');
+    }
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get('location');
+      try {
+        await res.body?.cancel?.();
+      } catch {}
+      if (!location) throw new SourceError('Source returned an invalid redirect');
+      if (redirectCount >= MAX_REDIRECTS) {
+        throw new SourceError('Source redirected too many times');
+      }
+      current = await assertSafeUrl(new URL(location, current).href);
+      continue;
+    }
+    break;
   }
+
+  if (!res) throw new SourceError('Could not reach source');
   if (res.status === 401 || res.status === 403) {
     throw new SourceError('Source blocked automated access');
   }
@@ -205,7 +230,7 @@ function mapLdNode(node, country, sourceUrl, idx) {
     sourceUrl;
 
   return makeListing({
-    id: `custom-${hash(url + '|' + idx)}`,
+    id: `custom-${hash(sourceUrl + '|' + url + '|' + idx)}`,
     source: 'custom',
     country: country.code,
     title: node.name ?? node.headline ?? 'Listing',
@@ -267,7 +292,7 @@ function extractFeed(xml, country, sourceUrl) {
     const date = tag(block, 'pubDate') || tag(block, 'updated') || null;
     items.push(
       makeListing({
-        id: `custom-${hash(link + '|' + items.length)}`,
+        id: `custom-${hash(sourceUrl + '|' + link + '|' + items.length)}`,
         source: 'custom',
         country: country.code,
         title: decodeXml(title),
@@ -370,8 +395,9 @@ export async function scrapeCustomUrl(url, country) {
   return listings.slice(0, MAX_ITEMS);
 }
 
-// Validate a URL without committing it to a search. Returns a plain result the
-// app can show directly: { ok, count, error }.
+// Compatibility helpers retained for non-HTTP consumers. Public API routes now
+// submit custom-source work to the PostgreSQL queue and never call these
+// functions directly.
 export async function validateSource(url, country) {
   try {
     const listings = await scrapeCustomUrl(url, country);
@@ -381,9 +407,6 @@ export async function validateSource(url, country) {
   }
 }
 
-// Registry entry point: fetch every user-provided custom URL for this country.
-// `filters.customSources` is an array of URL strings. Per-URL failures are
-// collected (not thrown) so one bad source doesn't sink the others.
 export async function scrapeCustom(country, filters) {
   const urls = Array.isArray(filters.customSources) ? filters.customSources : [];
   if (!urls.length) return { listings: [], errors: [] };

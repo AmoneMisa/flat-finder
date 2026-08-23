@@ -77,12 +77,21 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
     where.push(`l.source = ANY(${add(filters.sources.map((v) => String(v).toLowerCase()))}::text[])`);
   }
 
+  const customSources = [...new Set((filters.customSources || []).map(String).filter(Boolean))];
+  if (customSources.length) {
+    where.push(`(l.source <> 'custom' OR l.data->>'customSourceUrl' = ANY(${add(customSources)}::text[]))`);
+  } else {
+    // Persisted custom URLs are private to the request that supplied them and
+    // must never bleed into the ordinary all-sources feed.
+    where.push(`l.source <> 'custom'`);
+  }
+
   if (filters.listingId) {
     where.push(`l.source_id = ${add(String(filters.listingId))}`);
   }
 
-  // Same semantics as normalize.applyFilters(): commercial listings never
-  // enter the housing feed, while a missing flag is treated as non-commercial.
+  // Commercial listings never enter the housing feed, while a missing flag is
+  // treated as non-commercial on both the PostgreSQL and in-memory paths.
   where.push(`NOT (l.data @> '{"commercial":true}'::jsonb)`);
 
   const ageDays = filters.maxAgeDays != null && filters.maxAgeDays > 0
@@ -297,20 +306,6 @@ function listingDedupeSql(alias = 'l') {
       ))
     ELSE CONCAT_WS(':', LOWER(${alias}.source), UPPER(${alias}.country), ${alias}.source_id)
   END`;
-}
-
-export async function initPostgresSearchSchema() {
-  const statements = [
-    `CREATE INDEX IF NOT EXISTS listings_feed_newest_idx ON listings(country, city, deal_type, created_at DESC, id DESC) WHERE active = TRUE`,
-    `CREATE INDEX IF NOT EXISTS listings_feed_price_idx ON listings(country, city, deal_type, currency, price, id) WHERE active = TRUE`,
-    `CREATE INDEX IF NOT EXISTS listings_feed_district_idx ON listings(country, city, district, deal_type, created_at DESC, id DESC) WHERE active = TRUE`,
-    `CREATE INDEX IF NOT EXISTS listings_feed_rooms_idx ON listings(country, city, deal_type, rooms, created_at DESC, id DESC) WHERE active = TRUE`,
-    `CREATE INDEX IF NOT EXISTS listings_feed_area_idx ON listings(country, city, deal_type, area_sqm, created_at DESC, id DESC) WHERE active = TRUE`,
-    `CREATE INDEX IF NOT EXISTS listings_feed_title_idx ON listings(country, city, deal_type, LOWER(title), id) WHERE active = TRUE`,
-    `CREATE INDEX IF NOT EXISTS listings_active_data_gin_idx ON listings USING GIN(data jsonb_path_ops) WHERE active = TRUE`,
-  ];
-  for (const sql of statements) await pool.query(sql);
-  console.log('[postgres-search] indexes ready');
 }
 
 export async function searchPostgresListings({ filters, countries, rates = null, searchMatches = null }) {

@@ -6,6 +6,9 @@ const queuePlan = readFileSync(new URL('../src/queuePlan.js', import.meta.url), 
 const queueTasks = readFileSync(new URL('../src/queueTasks.js', import.meta.url), 'utf8');
 const queueDedup = readFileSync(new URL('../src/queueTaskDedup.js', import.meta.url), 'utf8');
 const pgQueue = readFileSync(new URL('../src/pgQueue.js', import.meta.url), 'utf8');
+const customQueue = readFileSync(new URL('../src/custom-source-queue.js', import.meta.url), 'utf8');
+const listingRoutes = readFileSync(new URL('../src/listing-routes.js', import.meta.url), 'utf8');
+const listingItemRoutes = readFileSync(new URL('../src/listing-item-routes.js', import.meta.url), 'utf8');
 const queueMigration = readFileSync(new URL('../migrations/002_crawl_tasks.sql', import.meta.url), 'utf8');
 const scheduler = readFileSync(new URL('../src/scheduler.js', import.meta.url), 'utf8');
 const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
@@ -50,15 +53,36 @@ test('PostgreSQL owns durable queue state, priority, leases and retries', () => 
 test('one Node worker owns dispatch, queue transitions and task execution directly', () => {
   assert.match(worker, /dispatchGenerationIfIdle/);
   assert.match(worker, /claimTask/);
+  assert.match(worker, /claimCustomSourceTask/);
   assert.match(worker, /processQueueTask/);
   assert.match(worker, /completeTask/);
   assert.match(worker, /failTask/);
   assert.doesNotMatch(worker, /initCrawlQueueSchema/);
   assert.doesNotMatch(worker, /ensureListingSemantics/);
   assert.match(worker, /workerLoop\('telegram', 0\)/);
+  assert.match(worker, /workerLoop\('custom', shard\)/);
   assert.doesNotMatch(worker, /\/internal\/queue-/);
   assert.doesNotMatch(compose, /flat-finder-queue-task-api:/);
   assert.doesNotMatch(compose, /flat-finder-queue-worker-/);
+});
+
+test('custom sources use the durable worker queue and never scrape in listing HTTP routes', () => {
+  assert.match(customQueue, /type: 'flat\.custom\.url'/);
+  assert.match(customQueue, /enqueueTasks\(tasks\)/);
+  assert.match(customQueue, /FOR UPDATE SKIP LOCKED/);
+  assert.match(queueTasks, /type === 'flat\.custom\.url'/);
+  assert.match(queueTasks, /scrapeCustomUrl/);
+  assert.doesNotMatch(listingRoutes, /getListings\(/);
+  assert.doesNotMatch(listingRoutes, /scrapers\/custom/);
+  assert.doesNotMatch(listingItemRoutes, /scrapers\/custom/);
+  assert.match(listingItemRoutes, /validateCustomSource/);
+});
+
+test('on-demand custom tasks never delay the recurring crawl generation', () => {
+  assert.ok(
+    (pgQueue.match(/type <> 'flat\.custom\.url'/g) || []).length >= 2,
+    'both recurring backlog and cadence queries must exclude custom jobs',
+  );
 });
 
 test('compose gates API and worker on successful migrations', () => {

@@ -1,8 +1,22 @@
-name: Social scrapers branch CI
+name: Social scrapers CI
 
 on:
   push:
     branches: [ feature/social-scrapers ]
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'social-fetcher/**'
+      - 'backend/src/social-routes.js'
+      - 'backend/src/social-housing-scheduler.js'
+      - 'backend/src/queueTasks.js'
+      - 'backend/test/social-housing-lifecycle.test.js'
+      - 'backend/test/social-fetch-contracts.test.js'
+      - '.github/workflows/social-scrapers-branch-ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -22,9 +36,13 @@ jobs:
       - name: Check social route syntax
         run: |
           node --check backend/src/social-routes.js
-          node --check backend/src/server.js
-      - name: Run backend tests
-        run: npm test --prefix backend
+          node --check backend/src/social-housing-scheduler.js
+          node --check backend/src/queueTasks.js
+      - name: Run social backend regressions
+        run: >-
+          node --test
+          backend/test/social-housing-lifecycle.test.js
+          backend/test/social-fetch-contracts.test.js
 
   verify-social-fetcher:
     runs-on: ubuntu-latest

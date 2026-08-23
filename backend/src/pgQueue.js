@@ -90,13 +90,16 @@ export async function dispatchGenerationIfIdle(tasks, refreshSeconds) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // Prevent two queue-task-api instances from opening the same generation.
+    // Prevent two worker instances from opening the same recurring generation.
     await client.query('SELECT pg_advisory_xact_lock($1)', [742_001]);
 
+    // On-demand custom URL jobs use the same durable queue but must never block
+    // or reset the cadence of the authoritative OLX/Telegram crawl generation.
     const pending = await client.query(`
       SELECT COUNT(*)::integer AS count
       FROM crawl_tasks
       WHERE status IN ('pending', 'running')
+        AND type <> 'flat.custom.url'
     `);
     if (Number(pending.rows[0]?.count || 0) > 0) {
       await client.query('COMMIT');
@@ -106,6 +109,7 @@ export async function dispatchGenerationIfIdle(tasks, refreshSeconds) {
     const latest = await client.query(`
       SELECT MAX(created_at) AS created_at
       FROM crawl_tasks
+      WHERE type <> 'flat.custom.url'
     `);
     const latestAt = latest.rows[0]?.created_at
       ? new Date(latest.rows[0].created_at).getTime()

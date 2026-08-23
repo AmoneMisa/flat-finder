@@ -18,6 +18,10 @@ on:
       - 'sample.env'
       - '.github/workflows/backend-ci.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -41,12 +45,17 @@ jobs:
         run: |
           node --test \
             backend/test/app-composition.test.js \
+            backend/test/cache.test.js \
+            backend/test/config-cleanup.test.js \
+            backend/test/custom-source-guards.test.js \
+            backend/test/custom-source-security.test.js \
             backend/test/internal-auth.test.js \
+            backend/test/legacy-boundaries.test.js \
             backend/test/migrations.test.js \
             backend/test/mock-production.test.js \
+            backend/test/request-rate-limit.test.js \
             backend/test/system-routes.test.js \
             backend/test/listing-routes.test.js \
             backend/test/queue-crawl-stability.test.js
-      - name: Report full backend suite
-        continue-on-error: true
+      - name: Run full backend suite
         run: npm test --prefix backend

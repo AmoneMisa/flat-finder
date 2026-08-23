@@ -16,6 +16,10 @@ const listingRoutesSource = readFileSync(
   new URL('../src/listing-routes.js', import.meta.url),
   'utf8',
 );
+const postgresSearchSource = readFileSync(
+  new URL('../src/postgres-search.js', import.meta.url),
+  'utf8',
+);
 
 test('application composes listing routes while server owns no search orchestration', () => {
   assert.match(appSource, /installListingRoutes\(app\)/);
@@ -25,9 +29,28 @@ test('application composes listing routes while server owns no search orchestrat
 
   assert.match(listingRoutesSource, /app\.get\('\/api\/listings'/);
   assert.match(listingRoutesSource, /tryPostgresSearch/);
-  assert.match(listingRoutesSource, /legacySnapshotSearch/);
-  assert.match(listingRoutesSource, /applyListingFilters/);
+  assert.match(listingRoutesSource, /prepareCustomSources/);
+  assert.doesNotMatch(listingRoutesSource, /legacySnapshotSearch/);
+  assert.doesNotMatch(listingRoutesSource, /getListings\(/);
+  assert.doesNotMatch(listingRoutesSource, /applyListingFilters/);
+  assert.doesNotMatch(listingRoutesSource, /scrapers\/index/);
+  assert.doesNotMatch(listingRoutesSource, /scrapers\/custom/);
   assert.doesNotMatch(listingRoutesSource, /from '\.\/normalize\.js'/);
+});
+
+test('all listing searches use PostgreSQL and expose explicit degraded failures', () => {
+  assert.match(listingRoutesSource, /prepareCustomSources/);
+  assert.match(listingRoutesSource, /tryPostgresSearch\(\{filters, codes, force\}\)/);
+  assert.match(listingRoutesSource, /res\.status\(503\)\.json/);
+  assert.match(listingRoutesSource, /Listing search temporarily unavailable/);
+  assert.match(listingRoutesSource, /source: 'postgres'/);
+  assert.doesNotMatch(listingRoutesSource, /legacy fallback/i);
+});
+
+test('persisted custom listings are scoped to explicitly requested source URLs', () => {
+  assert.match(postgresSearchSource, /l\.data->>'customSourceUrl'/);
+  assert.match(postgresSearchSource, /l\.source <> 'custom'/);
+  assert.match(postgresSearchSource, /customSources\.length/);
 });
 
 test('listing filters preserve the existing public query contract', () => {
@@ -70,7 +93,29 @@ test('listing filters preserve the existing public query contract', () => {
   assert.equal(filters.cursor, 'abc');
 });
 
-test('legacy fallback honors the public shortRent deal type', () => {
+test('listing filters sanitize invalid numeric values and pagination bounds', () => {
+  const filters = parseListingFilters({
+    priceMin: 'not-a-number',
+    priceMax: 'Infinity',
+    roomsMin: '-Infinity',
+    areaMin: '52.5',
+    offset: '-25.9',
+    limit: '-7',
+  });
+
+  assert.equal(filters.priceMin, null);
+  assert.equal(filters.priceMax, null);
+  assert.equal(filters.roomsMin, null);
+  assert.equal(filters.areaMin, 52.5);
+  assert.equal(filters.offset, 0);
+  assert.equal(filters.limit, 1);
+
+  const fractional = parseListingFilters({offset: '2.9', limit: '10.8'});
+  assert.equal(fractional.offset, 2);
+  assert.equal(fractional.limit, 10);
+});
+
+test('in-memory filter preserves the public shortRent semantics for non-HTTP consumers', () => {
   const listings = [
     {
       id: 'short',

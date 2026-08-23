@@ -1,13 +1,5 @@
 import {pool} from './db.js';
-
-const REQUIRED_MIGRATIONS = [
-  '001_baseline_listings.sql',
-  '002_crawl_tasks.sql',
-  '003_search_indexes.sql',
-  '004_crawl_task_runs.sql',
-  '005_places.sql',
-  '006_listing_semantics.sql',
-];
+import {listMigrationFiles} from './migration-files.js';
 
 export async function assertDatabaseReady() {
   const relationResult = await pool.query(`
@@ -31,12 +23,13 @@ export async function assertDatabaseReady() {
     );
   }
 
+  const required = await listMigrationFiles();
   const appliedResult = await pool.query(
     'SELECT version FROM schema_migrations WHERE version = ANY($1::text[])',
-    [REQUIRED_MIGRATIONS],
+    [required],
   );
   const applied = new Set(appliedResult.rows.map((row) => row.version));
-  const missingMigrations = REQUIRED_MIGRATIONS.filter((version) => !applied.has(version));
+  const missingMigrations = required.filter((version) => !applied.has(version));
 
   if (missingMigrations.length) {
     throw new Error(

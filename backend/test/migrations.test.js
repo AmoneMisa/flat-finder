@@ -42,11 +42,14 @@ test('baseline migration creates listings before altering it', async () => {
 test('search indexes are versioned instead of created by API startup', async () => {
   const sql = await migration('003_search_indexes.sql');
   const server = await readFile(new URL('../src/server.js', import.meta.url), 'utf8');
+  const search = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
 
   assert.match(sql, /listings_feed_newest_idx/);
   assert.match(sql, /listings_feed_price_idx/);
   assert.match(sql, /listings_active_data_gin_idx/);
   assert.doesNotMatch(server, /initPostgresSearchSchema/);
+  assert.doesNotMatch(search, /initPostgresSearchSchema/);
+  assert.doesNotMatch(search, /CREATE\s+INDEX/i);
 });
 
 test('queue dedup, places and listing semantics are versioned', async () => {
@@ -67,13 +70,15 @@ test('queue dedup, places and listing semantics are versioned', async () => {
   assert.match(semantics, /UPDATE listings/);
 });
 
-test('runtime entrypoints validate migrations instead of creating schema', async () => {
+test('runtime entrypoints validate every migration file instead of creating schema', async () => {
   const entrypoints = [
     '../src/server.js',
     '../src/worker.js',
     '../src/reindex.js',
   ];
   const ready = await readFile(new URL('../src/db-ready.js', import.meta.url), 'utf8');
+  const policy = await readFile(new URL('../src/migration-files.js', import.meta.url), 'utf8');
+  const runner = await readFile(new URL('../src/migrate.js', import.meta.url), 'utf8');
 
   for (const file of entrypoints) {
     const source = await readFile(new URL(file, import.meta.url), 'utf8');
@@ -82,8 +87,12 @@ test('runtime entrypoints validate migrations instead of creating schema', async
   }
 
   assert.match(ready, /schema_migrations/);
-  assert.match(ready, /001_baseline_listings\.sql/);
-  assert.match(ready, /006_listing_semantics\.sql/);
+  assert.match(ready, /listMigrationFiles/);
+  assert.match(runner, /listMigrationFiles/);
+  assert.match(policy, /MIGRATION_FILE_PATTERN/);
+  assert.match(policy, /readdir\(migrationsDir\)/);
+  assert.match(ready, /missingMigrations/);
+  assert.doesNotMatch(ready, /REQUIRED_MIGRATIONS/);
   assert.doesNotMatch(ready, /CREATE\s+TABLE/i);
   assert.doesNotMatch(ready, /ALTER\s+TABLE/i);
   assert.doesNotMatch(ready, /CREATE\s+INDEX/i);
@@ -91,6 +100,8 @@ test('runtime entrypoints validate migrations instead of creating schema', async
 
 test('migrated runtime modules never mutate database schema', async () => {
   const files = [
+    '../src/db.js',
+    '../src/postgres-search.js',
     '../src/availability.js',
     '../src/availability-sweep.js',
     '../src/availability-routes.js',
@@ -111,5 +122,7 @@ test('migrated runtime modules never mutate database schema', async () => {
     assert.doesNotMatch(source, /initAvailabilitySchema/);
     assert.doesNotMatch(source, /initCrawlQueueSchema/);
     assert.doesNotMatch(source, /ensureListingSemantics/);
+    assert.doesNotMatch(source, /\binitDb\b/);
+    assert.doesNotMatch(source, /initPostgresSearchSchema/);
   }
 });

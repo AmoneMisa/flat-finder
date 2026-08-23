@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 import { installSystemRoutes } from '../src/system-routes.js';
+
+const systemRoutesSource = readFileSync(
+  new URL('../src/system-routes.js', import.meta.url),
+  'utf8',
+);
 
 function fakeApp() {
   const routes = new Map();
@@ -79,4 +85,11 @@ test('operational routes reject unauthenticated requests before touching depende
     await handler({ get: () => 'wrong-key' }, res);
     assert.equal(res.statusCode, 401);
   });
+});
+
+test('operational dependency failures stay JSON instead of falling through Express defaults', () => {
+  assert.match(systemRoutesSource, /app\.post\('\/internal\/refresh'/);
+  assert.match(systemRoutesSource, /res\.status\(500\)\.json\(\{/);
+  assert.match(systemRoutesSource, /ok: false/);
+  assert.match(systemRoutesSource, /error: err\?\.message \?\? String\(err\)/);
 });

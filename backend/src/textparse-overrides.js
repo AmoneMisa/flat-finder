@@ -5,8 +5,6 @@ import {
   parseRoomsFromText as baseParseRoomsFromText,
 } from './textparse.js';
 
-// Explicit no-fee/no-intermediary phrases. These outrank every positive broker
-// word so `БЕЗ МАКЛЕР`, `maklersiz`, `owner direct`, etc. cannot become a fee.
 const NO_COMMISSION_RE = /(?:без\s+(?:комисси[а-яёіїґ]*|комісі[а-яіїґ]*|комиссионн[а-яё]*|макл(?:ер[а-яё]*)?|ри[еэ]?лтор[а-яё]*|посредник[а-яё]*|агент[а-яё]*)|от\s+(?:хозяин[а-яё]*|собственник[а-яё]*)|власник[а-яіїґ]*\s+без\s+комісі[а-яіїґ]*|no\s+(?:commission|agency\s+fee|broker\s+fee|realtor\s+fee|agent\s+fee|agency|broker|realtor|agent)|owner\s+direct|direct\s+from\s+(?:owner|landlord)|f(?:ă|a)r(?:ă|a)\s+(?:comision|agen(?:ț|t)ie|intermediar\w*)|direct\s+(?:de\s+la\s+)?proprietar|komissiya\s*[- ]?siz|komissiyasiz|makler\s*[- ]?siz|maklersiz|vositachi\s*[- ]?siz|vositachisiz|egasidan|uy\s+egasidan|комиссиясыз|комиссия\s*жоқ|делдалсыз|делдал\s*жоқ|иесінен|үй\s+иесінен)/iu;
 
 const COMMISSION_PERCENT_RE = [
@@ -18,7 +16,7 @@ const COMMISSION_PERCENT_RE = [
 const EXPLICIT_FEE_RE = /(?:агентск[а-яё]*\s+(?:комисси[а-яё]*|вознаграждени[а-яё]*)|комисси[а-яё]*\s+(?:есть|оплачива[а-яё]*|взима[а-яё]*|бер[её]тся|требу[а-яё]*)|комісі[а-яіїґ]*\s+(?:є|сплачу[а-яіїґ]*|оплачу[а-яіїґ]*)|agency\s+fee|broker\s+fee|realtor\s+fee|agent\s+fee|comision\s+(?:agen(?:ț|t)ie|intermediar)|komissiya\s+(?:bor|olinadi|to['’`]?lanadi)|makler\s+(?:haqi|xaqi|haq)|rieltor\s+(?:haqi|xaqi|haq)|vositachi\s+(?:haqi|xaqi|haq)|комиссия\s+(?:бар|алынады|төленеді)|делдал\s+(?:ақысы|ақы))/iu;
 
 const BROKER_MENTION_RE = /(?:макл(?:ер[а-яё]*)?|makler|ри[еэ]?лтор[а-яё]*|rieltor|realtor|broker|agent|агентств[а-яё]*|vositachi|делдал|agen(?:ț|t)ie|intermediar)/iu;
-const RC_TRAILING_NO_BROKER_RE = /\s+(?:без\s+(?:макл(?:ер[а-яё]*)?|ри[еэ]?лтор[а-яё]*|посредник[а-яё]*|агент[а-яё]*)|no\s+(?:broker|realtor|agent|agency)|f(?:ă|a)r(?:ă|a)\s+(?:agen(?:ț|t)ie|intermediar\w*)|maklersiz|vositachisiz|egasidan|делдалсыз|иесінен)\b[\s\S]*$/iu;
+const RC_TRAILING_NO_BROKER_RE = /\s+(?:без\s+(?:макл(?:ер[а-яё]*)?|ри[еэ]?лтор[а-яё]*|посредник[а-яё]*|агент[а-яё]*)|no\s+(?:broker|realtor|agent|agency)|f(?:ă|a)r(?:ă|a)\s+(?:agen(?:ț|t)ie|intermediar\w*)|maklersiz|vositachisiz|egasidan|делдалсыз|иесінен)(?=$|[^\p{L}\p{N}_])[\s\S]*$/iu;
 
 export function parseCommission(text) {
   if (!text) return { has: null, percent: null };
@@ -34,20 +32,33 @@ export function parseCommission(text) {
   return { has: null, percent: null };
 }
 
-// Central-Asian compact layout forms can contain a conversion marker:
-//   2в3/4/5 = original 2 rooms, converted to 3 rooms, floor 4 of 5.
-// A labelled Xonalari line is stronger than unrelated occupancy notation such
-// as `(6/7tagacha)` elsewhere in the advertisement.
+function validLayout(rooms, floor, totalFloors) {
+  if (rooms < 1 || rooms > 10 || floor < 0 || floor > 40 || totalFloors < 1 || totalFloors > 40 || floor > totalFloors) return null;
+  return {rooms, floor, totalFloors};
+}
+
 function structuredLayout(text) {
   if (!text) return null;
+
   const labelled = text.match(/(?:xonalari|xonalar(?:i)?|комнат(?:ы|а)?|rooms?)\s*[:\-]?\s*([1-9])\s*(?:[вv>]\s*([1-9]))?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})/iu);
-  const raw = labelled || text.match(/(?:^|[^\d])([1-9])\s*[вv>]\s*([1-9])\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?!\d)/iu);
-  if (!raw) return null;
-  const rooms = Number(raw[2] || raw[1]);
-  const floor = Number(raw[3]);
-  const totalFloors = Number(raw[4]);
-  if (rooms < 1 || rooms > 10 || floor < 0 || floor > 40 || totalFloors < 1 || totalFloors > 40 || floor > totalFloors) return null;
-  return { rooms, floor, totalFloors };
+  if (labelled) {
+    return validLayout(Number(labelled[2] || labelled[1]), Number(labelled[3]), Number(labelled[4]));
+  }
+
+  const converted = text.match(/(?:^|[^\d])([1-9])\s*[вv>]\s*([1-9])\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?!\d)/iu);
+  if (converted) {
+    return validLayout(Number(converted[2]), Number(converted[3]), Number(converted[4]));
+  }
+
+  // Unlabelled compact forms are accepted only when followed by an area. This
+  // covers titles such as `... Глинка 3/10/10 90 кв` without interpreting
+  // arbitrary slash-separated numbers, dates or identifiers as room layouts.
+  const withArea = text.match(/(?:^|[^\d])([1-9])\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?=\s+\d{1,4}\s*(?:кв(?:\.?\s*м)?|м²|m²|m2|sqm)(?=$|[^\p{L}\p{N}_]))/iu);
+  if (withArea) {
+    return validLayout(Number(withArea[1]), Number(withArea[2]), Number(withArea[3]));
+  }
+
+  return null;
 }
 
 export function parseRoomsFromText(text) {
@@ -59,8 +70,6 @@ export function parseFloor(text) {
   return structured ? { floor: structured.floor, totalFloors: structured.totalFloors } : baseParseFloor(text);
 }
 
-// If both genders are explicitly accepted (`QIZLAR yoki YIGITLAR`,
-// `women or men`, etc.), there is no gender restriction.
 export function classifyAudience(text) {
   if (!text) return null;
   const both = /(?:qiz(?:lar)?[^\r\n]{0,30}(?:yoki|va|\/|or)[^\r\n]{0,30}yigit(?:lar)?|yigit(?:lar)?[^\r\n]{0,30}(?:yoki|va|\/|or)[^\r\n]{0,30}qiz(?:lar)?|women?[^\r\n]{0,30}(?:or|and|\/)[^\r\n]{0,30}men|men[^\r\n]{0,30}(?:or|and|\/)[^\r\n]{0,30}women?|девушк[а-яё]*[^\r\n]{0,30}(?:или|и|\/)[^\r\n]{0,30}(?:парн|мужчин)|(?:парн|мужчин)[а-яё]*[^\r\n]{0,30}(?:или|и|\/)[^\r\n]{0,30}девушк)/iu;
@@ -103,9 +112,6 @@ function parsePearlComplex(text) {
 }
 
 export function parseResidentialComplex(text) {
-  // Odessa's KADORR buildings are routinely advertised without the `ЖК`
-  // marker: `35 Жемчужина`, `6я жемчужина`, or Ukrainian
-  // `Тридцять п'ята перлина`. Normalize all of them to one searchable label.
   const pearl = parsePearlComplex(text);
   if (pearl) return pearl;
 
@@ -113,17 +119,13 @@ export function parseResidentialComplex(text) {
   if (!raw) return null;
   const cleaned = raw
     .replace(RC_TRAILING_NO_BROKER_RE, '')
-    // Stop before a compact rooms/floor/storeys block and everything after it.
     .replace(/\s+[1-9]\s*(?:[вv>]\s*[1-9])?\s*\/\s*[0-9]{1,2}\s*\/\s*[0-9]{1,2}\b[\s\S]*$/iu, '')
-    // A known area/orientation may sit between the ЖК name and compact block.
     .replace(/\s+(?:глинка|glinka)\s*$/iu, '')
     .replace(/\s*[!|]+\s*$/g, '')
     .trim();
   return /[a-zA-Zа-яёіїґ]{2,}/i.test(cleaned) ? cleaned : null;
 }
 
-// Administrative district phrases are stronger than inferred massifs/areas.
-// This prevents `Куйлюк` or a metro name from overriding `Бектемирский район`.
 const UZ_EXPLICIT_DISTRICTS = [
   ['Bektemir', /бектемирск[а-яё]*\s+район|bektemir\s+(?:tumani|district)/iu],
   ['Chilanzar', /чиланзарск[а-яё]*\s+район|чиланзар\s+туман[а-яё]*|chilonzor\s+(?:tumani|district)|chilanzar\s+district/iu],

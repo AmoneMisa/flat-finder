@@ -12,10 +12,15 @@ on:
       - 'backend/src/app.js'
       - 'backend/migrations/**'
       - 'backend/src/migrate.js'
+      - 'backend/src/migration-files.js'
       - 'backend/test/availability.integration.test.js'
       - 'olx-fetcher/app.py'
       - 'olx-fetcher/test_app.py'
       - '.github/workflows/availability-branch-ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

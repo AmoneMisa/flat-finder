@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 
 import {closeDb, pool} from '../src/db.js';
 import {assertDatabaseReady} from '../src/db-ready.js';
+import {claimCustomSourceTask} from '../src/custom-source-queue.js';
 import {
   claimTask,
   completeTask,
@@ -13,7 +14,7 @@ import {
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 
-test('PostgreSQL crawler queue claims by shard, retries and chains pages', {skip: !enabled}, async () => {
+test('PostgreSQL crawler queue claims by shard, retries and isolates custom workers', {skip: !enabled}, async () => {
   await assertDatabaseReady();
 
   const generation = `test-${randomUUID()}`;
@@ -129,6 +130,49 @@ test('PostgreSQL crawler queue claims by shard, retries and chains pages', {skip
       result: {ok: true, fetched: 0, nextTasks: []},
     });
     assert.equal(chainedDone.completed, true);
+
+    const customTask = {
+      type: 'flat.custom.url',
+      country: 'RO',
+      url: 'https://example.com/feed.xml',
+      segment: 'custom-test',
+      priority: 20,
+      queueProtocol: 4,
+      crawlGeneration: generation,
+      crawlerShard: 0,
+    };
+    assert.equal(await enqueueTasks([customTask, customTask]), 1);
+
+    const regularWorkerMustIgnoreCustom = await claimTask({
+      role: 'olx',
+      shard: 0,
+      workerId: 'test-worker-0',
+      leaseMs: 60_000,
+      maxAttempts: 5,
+    });
+    assert.equal(regularWorkerMustIgnoreCustom, null);
+
+    const customClaim = await claimCustomSourceTask({
+      workerId: 'test-custom-worker',
+      leaseMs: 60_000,
+    });
+    assert.ok(customClaim);
+    assert.equal(customClaim.payload.type, 'flat.custom.url');
+    assert.equal(customClaim.payload.url, customTask.url);
+
+    const customDone = await completeTask({
+      id: customClaim.id,
+      lockToken: customClaim.lockToken,
+      result: {ok: true, fetched: 3, saved: 3, indexed: 3, nextTasks: []},
+    });
+    assert.equal(customDone.completed, true);
+
+    const customRow = await pool.query(
+      `SELECT status, result FROM crawl_tasks WHERE id = $1`,
+      [customClaim.id],
+    );
+    assert.equal(customRow.rows[0].status, 'done');
+    assert.equal(Number(customRow.rows[0].result.fetched), 3);
   } finally {
     await pool.query(
       `DELETE FROM crawl_tasks WHERE crawl_generation = $1`,

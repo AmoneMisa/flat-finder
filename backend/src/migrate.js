@@ -1,9 +1,8 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import pg from 'pg';
+import {listMigrationFiles} from './migration-files.js';
 
 const { Pool } = pg;
-const migrationsDir = fileURLToPath(new URL('../migrations/', import.meta.url));
 
 const pool = new Pool({
   host: process.env.PGHOST || 'flat-finder-postgres',
@@ -28,9 +27,7 @@ async function runMigrations() {
 
     const appliedResult = await client.query('SELECT version FROM schema_migrations');
     const applied = new Set(appliedResult.rows.map((row) => row.version));
-    const files = (await readdir(migrationsDir))
-      .filter((name) => /^\d+.*\.sql$/.test(name))
-      .sort();
+    const files = await listMigrationFiles();
 
     for (const file of files) {
       if (applied.has(file)) continue;

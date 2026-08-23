@@ -1,6 +1,6 @@
 import {COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {fetchOlxOffer} from './scrapers/olx.js';
-import {validateSource} from './scrapers/custom.js';
+import {validateCustomSource} from './custom-source-queue.js';
 import {checkRate} from './request-rate-limit.js';
 
 export function installListingItemRoutes(app) {
@@ -31,12 +31,14 @@ export function installListingItemRoutes(app) {
   });
 
   app.post('/api/sources/validate', async (req, res) => {
+    if (!checkRate(req, res, 'customSourceValidate', 3000)) return;
+
     const url = String(req.body?.url || '').trim();
     if (!url) return res.status(400).json({ok: false, error: 'Missing url'});
 
     const code = String(req.body?.country || 'RO').toUpperCase();
     const country = COUNTRIES[code] ?? COUNTRIES[COUNTRY_CODES[0]];
-    const result = await validateSource(url, country);
+    const result = await validateCustomSource(url, country.code);
     return res.json(result);
   });
 }

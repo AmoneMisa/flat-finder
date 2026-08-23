@@ -2,6 +2,7 @@ import { COUNTRIES } from './countries.js';
 import { makeListing } from './normalize.js';
 import { guessPropertyType } from './textparse.js';
 import { fetchChannel } from './scrapers/telegram.js';
+import { scrapeCustomUrl } from './scrapers/custom.js';
 import { throttle } from './ratelimit.js';
 import { upsertListings } from './db.js';
 import { indexListings } from './elasticsearch.js';
@@ -9,6 +10,7 @@ import { executeQueueTaskOnce } from './queueTaskDedup.js';
 import { geocodeListings } from './geocode.js';
 import { rejectOutOfAreaCoordinates } from './coordinate-validation.js';
 import { reconcileAuthoritativeOlxSegment } from './crawl-reconciliation.js';
+import { deactivateMissingCustomSourceListings } from './custom-source-repository.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
 const OLX_FETCHER_URLS = [
@@ -349,6 +351,39 @@ async function processQueueTaskInner(task) {
       fetched: listings.length,
       nextTasks: [],
       ...(await persist(listings, task)),
+    };
+  }
+
+  if (type === 'flat.custom.url') {
+    const sourceUrl = String(task.url || '').trim();
+    if (!sourceUrl) {
+      throw new Error('Missing custom source URL');
+    }
+
+    const crawlStartedAt = new Date().toISOString();
+    const listings = (await scrapeCustomUrl(sourceUrl, COUNTRIES[country])).map((listing) => ({
+      ...listing,
+      source: 'custom',
+      country,
+      customSourceUrl: sourceUrl,
+    }));
+    const persisted = await persist(listings, task);
+    const deactivated = await deactivateMissingCustomSourceListings({
+      country,
+      sourceUrl,
+      crawlStartedAt,
+    });
+
+    return {
+      ok: true,
+      type,
+      country,
+      url: sourceUrl,
+      crawlGeneration: task.crawlGeneration,
+      fetched: listings.length,
+      deactivated,
+      nextTasks: [],
+      ...persisted,
     };
   }
 

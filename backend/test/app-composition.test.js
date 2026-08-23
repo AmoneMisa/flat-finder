@@ -12,6 +12,7 @@ test('createApp composes public and internal routes without opening a port', () 
   const app = createApp();
   assert.equal(typeof app, 'function');
   assert.equal(typeof app.listen, 'function');
+  assert.equal(app.get('trust proxy'), 1);
 
   const paths = (app.router?.stack ?? [])
     .map((layer) => layer.route?.path)

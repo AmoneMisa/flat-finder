@@ -1,65 +1,92 @@
 # Flat Finder
 
-Cross-platform (Android + desktop) flat & house search for **Romania, Ukraine,
-Kazakhstan, Uzbekistan**, with an OpenStreetMap map and filters (apartment/house,
-owner/agency, price range, keyword, country). Each listing card shows **auto-derived
-tags** (furnished, renovated, parking, owner/agency, rooms, …) parsed from the
-listing description.
+Cross-platform flat & house search for **Romania, Ukraine, Kazakhstan and
+Uzbekistan**, with a Flutter client, PostgreSQL-backed search, OpenStreetMap
+places and normalized listings from multiple external sources.
 
 > Kyrgyzstan is intentionally omitted for now.
 
+## Architecture
+
+```text
+source
+  -> fetch / parse
+  -> normalize / enrich
+  -> PostgreSQL
+  -> optional Elasticsearch ranking
+  -> public API
+  -> Flutter / Personal Site
 ```
+
+The backend is a modular Node.js application with a separate worker process:
+
+```text
 flat-finder/
-├── backend/      Node.js scraper API (runs today, Node 24)
-├── olx-fetcher/  Python + curl_cffi sidecar that fetches OLX past its WAF
-└── app/          Flutter client (Android + Windows/macOS/Linux desktop)
+├── backend/          Node 24 API, worker, migrations and domain modules
+├── olx-fetcher/      Python + curl_cffi OLX sidecar
+├── social-fetcher/   Facebook / Threads / LinkedIn public-source sidecar
+├── olx-router/       OLX fetcher routing
+├── elasticsearch/    Elasticsearch image + vendored ICU analysis plugin
+└── app/              Flutter client
 ```
 
-## How data works
+### Runtime ownership
 
-Each country aggregates **multiple sources in parallel**, all normalized to one
-schema and merged/de-duplicated:
+- **API** serves searches and public/client endpoints. Normal listing search reads
+  PostgreSQL; it does not execute marketplace crawlers.
+- **Worker** owns recurring crawl dispatch, PostgreSQL queue execution,
+  availability sweeps, social-housing scheduling and places refresh.
+- **PostgreSQL** is the primary listing/search store and durable crawl queue.
+- **Elasticsearch** is optional and is used for text ranking; PostgreSQL search
+  remains available when Elasticsearch is unavailable.
+- **Migrations** own database schema. API and worker refuse to start when the
+  migration set is incomplete.
+
+RabbitMQ and Redis are not part of the current architecture.
+
+## Listing sources
 
 | Source | Method | Notes |
-|--------|--------|-------|
-| **OLX** (olx.ro/.ua/.kz/.uz) | HTML `__PRERENDERED_STATE__` via the `olx-fetcher` sidecar | OLX's WAF 403s plain HTTP clients from a server by TLS fingerprint; the sidecar (curl_cffi Chrome impersonation) gets through. Set `OLX_FETCHER_URL`; unset ⇒ OLX disabled. Ads carry real coordinates. |
-| **Telegram** | Separate GramJS/MTProto worker | Public channels; set `TG_WORKER_URL` to the deployed worker |
+| --- | --- | --- |
+| **OLX** | Python `curl_cffi` sidecars behind `olx-router` | Fetches OLX pages with browser impersonation and feeds normalized work through the worker pipeline. |
+| **Telegram** | Separate GramJS / MTProto worker | Public channels configured per country. |
+| **Public social sources** | `social-fetcher` | Facebook / Threads / LinkedIn discovery where publicly readable. |
+| **Custom URL** | Legacy isolated adapter | User-supplied HTTP(S) source; kept separate from normal PostgreSQL search and guarded as an external-fetch path. |
 
-Telegram posts have no structured price/rooms, so those are parsed from the
-post text; they have no coordinates so they appear in
-the **list** but not on the map.
+Telegram and other unstructured posts are normalized from free text before
+storage. Source configuration lives primarily in `backend/src/countries.js` and
+`backend/src/scrapers/*`.
 
-If **all** sources for a country come back empty (blocked/rate-limited), that
-country falls back to generated **demo data** and the app shows an amber banner
-naming it. So the app is always usable.
+Synthetic/demo listings are **never returned in production**. Mock generation is
+kept only for development/test compatibility.
 
-> ⚠️ Scraping note: these sites' HTML/APIs can change and their Terms of Service
-> may restrict scraping. Sources, category IDs and Telegram channels
-> are centralized in `backend/src/countries.js` and `backend/src/scrapers/*`.
-> Use responsibly and check each site's ToS before running at scale.
+> External sites can change markup, APIs, anti-bot rules and Terms of Service.
+> Check source requirements before operating scrapers at scale.
 
-### Enabling / configuring sources
+## Run the stack
 
-- **OLX**: runs the `olx-fetcher` sidecar (see `docker-compose.yml`). The backend
-  reaches it via `OLX_FETCHER_URL` (set to `http://flat-finder-olx-router:4021`
-  in compose). Override the impersonation target with `OLX_IMPERSONATE` on the
-  sidecar if a curl_cffi upgrade renames it. If the sidecar is unset/down, OLX
-  simply yields nothing and the other sources still work.
-- **Telegram**: deploy the separate Telegram worker, set its URL as
-  `TG_WORKER_URL`, and keep the public channel usernames in `telegramChannels`
-  per country in `backend/src/countries.js`.
+Production and CI use **Node 24 LTS** for the backend.
 
----
+The recommended local/deployment path is Docker Compose because it guarantees
+migrations run before API and worker startup:
 
-## 1. Run the backend
+```bash
+docker compose up -d
+```
 
-Requires Node.js 18+ (tested on Node 24).
+`flat-finder-migrate` is a one-shot service. Both `flat-finder-backend` and
+`flat-finder-worker` depend on its successful completion.
+
+For backend-only development with an already configured PostgreSQL instance:
 
 ```bash
 cd backend
-npm install
-npm start          # http://localhost:4000
+npm ci
+npm run migrate
+npm start
 ```
+
+The API listens on port `4000` by default.
 
 Quick check:
 
@@ -67,89 +94,118 @@ Quick check:
 curl "http://localhost:4000/api/listings?countries=RO,UA,KZ,UZ&propertyType=flat&limit=5"
 ```
 
-Endpoints:
-- `GET /api/countries` — list of supported countries + map centers
-- `GET /api/listings?countries=RO,UA&propertyType=flat|house|any&agency=owner|agency|any&priceMin=&priceMax=&query=`
+### Main public endpoints
 
----
+- `GET /health`
+- `GET /api/countries`
+- `GET /api/rates`
+- `GET /api/listings`
+- `GET /api/listing/:source/:id`
+- `POST /api/sources/validate`
 
-## 2. Run the Flutter app
+Operational stats/manual refresh are not public client APIs. They live under
+protected `/internal/*` routes and require a server-side internal key.
 
-Flutter is **not installed yet** on this machine. Install it first:
-https://docs.flutter.dev/get-started/install
+`GET /api/listings?refresh=1` keeps the existing client contract, but for normal
+PostgreSQL search it only requests a new durable crawl generation; the worker
+executes the crawl asynchronously.
 
-Then generate the native platform folders (android/, windows/, etc.) into the
-existing `app/` directory — this keeps the `lib/` and `pubspec.yaml` already
-written here:
+If PostgreSQL search is unavailable, normal listing search returns an explicit
+`503` degraded response instead of silently running crawlers in the HTTP
+process.
+
+## Database migrations
+
+SQL migrations live in `backend/migrations/` and use ordered names such as:
+
+```text
+001_baseline_listings.sql
+002_crawl_tasks.sql
+003_search_indexes.sql
+...
+```
+
+Run them manually with:
 
 ```bash
-cd app
-flutter create .                # generates android/, windows/, ... in place
+npm run migrate --prefix backend
+```
+
+The migration runner and startup readiness check share the same filename policy,
+so a newly added valid migration automatically becomes required before runtime
+startup.
+
+## Flutter app
+
+Install Flutter, then from `app/`:
+
+```bash
 flutter pub get
+flutter analyze --no-fatal-infos
+flutter test
 ```
 
-### Android (emulator)
+### Android emulator
 
-The app auto-detects the Android emulator and talks to the host at
-`http://10.0.2.2:4000`. Android blocks plain HTTP by default, so enable
-cleartext for local dev — in `app/android/app/src/main/AndroidManifest.xml`
-add to the `<application>` tag:
-
-```xml
-<application
-    android:usesCleartextTraffic="true"
-    ... >
-```
-
-Also make sure INTERNET permission is present (in the same manifest):
-
-```xml
-<uses-permission android:name="android.permission.INTERNET"/>
-```
-
-Then:
-
-```bash
-flutter run                     # with an emulator/device connected
-# or build an APK:
-flutter build apk --release
-```
-
-For a **physical Android phone**, point the app at your PC's LAN IP:
+The app can use `http://10.0.2.2:4000` for a backend running on the development
+host. For a physical device, pass a reachable API address:
 
 ```bash
 flutter run --dart-define=API_BASE=http://192.168.x.x:4000
 ```
 
-### Desktop (Windows)
+### Windows desktop
 
 ```bash
 flutter config --enable-windows-desktop
 flutter run -d windows
 ```
 
-(Uses `http://localhost:4000` automatically.)
+## Filters
 
----
+The public listing contract includes, among others:
 
-## Filters implemented
+- country multi-select
+- apartment / house
+- sale / long-term rent / short-term rent
+- owner / agency
+- price and currency-aware ranges
+- rooms, bedrooms, floor and area ranges
+- city / district / metro
+- amenities
+- pets / children
+- keyword search
+- sort and pagination/cursor fields
 
-- **Country** multi-select (RO / UA / KZ / UZ)
-- **Property type**: Any / Apartment (full flat) / House
-- **Seller**: Any / Private owner / Real-estate agency
-- **Price**: min & max
-- **Keyword** search
-- **Map view** (OpenStreetMap) with price pins — orange = agency, green = owner
-- **List view** with photos, price, rooms, area, city
+Legacy in-memory filtering is retained only for the isolated custom-source path.
+CI compares key filter semantics against PostgreSQL search to prevent the two
+implementations from drifting.
 
-## Tuning the scrapers
+## Configuration
 
-- `backend/src/countries.js` — per-country sources list, OLX hosts + real-estate
-  root category IDs, Telegram channels, map centers, search terms.
-- `backend/src/scrapers/olx.js` — maps OLX `__PRERENDERED_STATE__` ads (fetched
-  via the sidecar) to the listing schema; per-host rate limiting.
-- `olx-fetcher/app.py` — Python curl_cffi service that fetches OLX HTML past the WAF.
-- `backend/src/scrapers/telegram.js` — MTProto worker response parsing.
-- `backend/src/tags.js` — keyword → card-tag rules (EN/RO/RU/UA).
-- `backend/src/textparse.js` — price/rooms/area extraction from free text.
-- `backend/src/mock.js` — demo data generator used as fallback.
+Copy `sample.env` and set the values needed by your deployment. Important groups
+include:
+
+- PostgreSQL credentials
+- `QUEUE_INTERNAL_KEY` and optional dedicated internal keys
+- OLX / Telegram worker URLs
+- AI worker configuration
+- social-fetcher tuning
+- bounded legacy custom-source cache size
+
+The normal listing pipeline does not require Redis or RabbitMQ.
+
+## Useful implementation paths
+
+- `backend/src/app.js` — Express composition root
+- `backend/src/server.js` — API process lifecycle
+- `backend/src/worker.js` — recurring work and queue execution
+- `backend/src/listing-routes.js` — public listing search orchestration
+- `backend/src/postgres-search.js` — PostgreSQL listing search
+- `backend/src/legacy-listing-filter.js` — isolated legacy filter implementation
+- `backend/src/pgQueue.js` — durable PostgreSQL crawl queue operations
+- `backend/src/migrate.js` — versioned migration runner
+- `backend/src/scrapers/` — source adapters
+- `backend/src/textparse.js` — free-text listing extraction
+- `olx-fetcher/app.py` — OLX sidecar
+- `app/lib/` — Flutter application

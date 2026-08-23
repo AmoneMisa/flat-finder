@@ -10,6 +10,7 @@ import {
   failTask,
   pruneQueueHistory,
 } from './pgQueue.js';
+import {claimCustomSourceTask} from './custom-source-queue.js';
 import {buildCrawlPlan, QUEUE_SHARDS} from './queuePlan.js';
 import {refreshPlaces} from './scheduler.js';
 import {startSocialHousingScheduler} from './social-housing-scheduler.js';
@@ -21,6 +22,10 @@ const ERROR_RETRY_MS = Math.max(1_000, Number(process.env.QUEUE_ERROR_RETRY_SECO
 const DISPATCH_MS = Math.min(30_000, Math.max(5_000, Number(process.env.QUEUE_DISPATCH_TICK_SECONDS || 10) * 1000));
 const PRUNE_MS = Math.max(60_000, Number(process.env.QUEUE_HISTORY_PRUNE_SECONDS || 86_400) * 1000);
 const PLACES_CHECK_MS = Math.max(60 * 60_000, Number(process.env.PLACES_CHECK_HOURS || 24) * 60 * 60_000);
+const CUSTOM_SOURCE_WORKERS = Math.max(
+  1,
+  Math.min(8, Math.trunc(Number(process.env.CUSTOM_SOURCE_WORKERS) || 4)),
+);
 const AVAILABILITY_SWEEP_MS = Math.max(
   30_000,
   Number(process.env.LISTING_AVAILABILITY_SWEEP_SECONDS || 30) * 1000,
@@ -33,7 +38,11 @@ let availabilityRunning = false;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function workerId(role, shard) {
-  const suffix = role === 'telegram' ? 'telegram' : `olx:${shard}`;
+  const suffix = role === 'telegram'
+    ? 'telegram'
+    : role === 'custom'
+      ? `custom:${shard}`
+      : `olx:${shard}`;
   return String(`${hostname()}:${suffix}`).slice(0, 200);
 }
 
@@ -112,13 +121,19 @@ async function executeClaim(task, label) {
 }
 
 async function workerLoop(role, shard = 0) {
-  const label = role === 'telegram' ? 'telegram' : `olx:${shard}`;
+  const label = role === 'telegram'
+    ? 'telegram'
+    : role === 'custom'
+      ? `custom:${shard}`
+      : `olx:${shard}`;
   const id = workerId(role, shard);
   console.log(`[flat:worker:${label}] direct PostgreSQL worker started id=${id}`);
 
   while (!stopping) {
     try {
-      const task = await claimTask({role, shard, workerId: id});
+      const task = role === 'custom'
+        ? await claimCustomSourceTask({workerId: id})
+        : await claimTask({role, shard, workerId: id});
       if (!task) {
         await sleep(POLL_MS);
         continue;
@@ -178,6 +193,7 @@ async function main() {
     await Promise.all([
       ...Array.from({length: QUEUE_SHARDS}, (_, shard) => workerLoop('olx', shard)),
       workerLoop('telegram', 0),
+      ...Array.from({length: CUSTOM_SOURCE_WORKERS}, (_, shard) => workerLoop('custom', shard)),
     ]);
   } finally {
     clearInterval(dispatchTimer);

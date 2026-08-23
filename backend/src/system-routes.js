@@ -63,7 +63,15 @@ export function installSystemRoutes(app) {
 
   app.post('/internal/refresh', async (req, res) => {
     if (!requireOps(req, res)) return;
-    const result = await refreshAll('manual');
-    res.json({ ok: true, result });
+
+    try {
+      const result = await refreshAll('manual');
+      res.json({ ok: true, result });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err?.message ?? String(err),
+      });
+    }
   });
 }

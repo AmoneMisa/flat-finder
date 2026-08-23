@@ -1,8 +1,8 @@
 // Per-country configuration.
 //
-// Each country aggregates several sources. Every source is optional and fails
-// independently; if ALL sources for a country come back empty, the country
-// falls back to generated demo data (see scrapers/index.js).
+// Each country aggregates independently crawled sources. Runtime ingestion is
+// owned by the PostgreSQL worker queue; failed/empty sources stay explicit and
+// production never substitutes generated demo listings.
 //
 // Sources:
 //   olx      - OLX internal JSON API (RO/UA/KZ/UZ)

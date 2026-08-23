@@ -1,12 +1,10 @@
 import {COUNTRIES, COUNTRY_CODES} from './countries.js';
-import {getListings} from './scrapers/index.js';
-import {applyListingFilters} from './legacy-listing-filter.js';
 import {getRates} from './fx.js';
-import {sortListings} from './listing-sort.js';
 import {refreshAll} from './scheduler.js';
 import {searchPostgresListings} from './postgres-search.js';
 import {searchListingMatches} from './elasticsearch.js';
 import {checkRate} from './request-rate-limit.js';
+import {prepareCustomSources} from './custom-source-queue.js';
 
 const VALID_SOURCES = ['olx', 'telegram'];
 const VALID_SORTS = [
@@ -19,7 +17,11 @@ const VALID_SORTS = [
 ];
 
 export function parseListingFilters(q) {
-  const num = (v) => (v == null || v === '' ? null : Number(v));
+  const num = (v) => {
+    if (v == null || v === '') return null;
+    const value = Number(v);
+    return Number.isFinite(value) ? value : null;
+  };
   const bool = (v) => (v === 'true' || v === '1' ? true : null);
   const sources = String(q.sources || '')
     .split(',')
@@ -33,6 +35,8 @@ export function parseListingFilters(q) {
         .filter((s) => /^https?:\/\//i.test(s)),
     ),
   ].slice(0, 10);
+  const offset = Math.max(0, Math.trunc(num(q.offset) ?? 0));
+  const limit = Math.max(1, Math.min(Math.trunc(num(q.limit) ?? 40), 60));
 
   return {
     customSources,
@@ -81,26 +85,10 @@ export function parseListingFilters(q) {
     roomOnly: bool(q.roomOnly),
     maxAgeDays: num(q.maxAgeDays),
     sources,
-    offset: num(q.offset) ?? 0,
-    limit: Math.min(num(q.limit) ?? 40, 60),
+    offset,
+    limit,
     cursor: q.cursor ? String(q.cursor) : '',
   };
-}
-
-function listingSearchKey(listing) {
-  return [
-    String(listing.source || '').toLowerCase(),
-    String(listing.country || '').toUpperCase(),
-    String(listing.id),
-  ].join(':');
-}
-
-function compareListingsByDate(a, b) {
-  const ta = a.createdAt ? Date.parse(a.createdAt) : NaN;
-  const tb = b.createdAt ? Date.parse(b.createdAt) : NaN;
-  const va = Number.isNaN(ta) ? -Infinity : ta;
-  const vb = Number.isNaN(tb) ? -Infinity : tb;
-  return vb - va;
 }
 
 function resolveCountries(query) {
@@ -175,97 +163,6 @@ async function tryPostgresSearch({filters, codes, force}) {
   };
 }
 
-async function legacySnapshotSearch({filters, codes, force}) {
-  let searchError = null;
-  const searchPromise = filters.query
-    ? searchListingMatches(filters.query, {
-        countries: codes,
-        sources: filters.sources,
-      }).catch((err) => {
-        searchError = err?.message ?? String(err);
-        console.warn(`[elasticsearch] search fallback: ${searchError}`);
-        return null;
-      })
-    : Promise.resolve(null);
-
-  const [results, searchMatches] = await Promise.all([
-    Promise.all(
-      codes.map((code) => getListings(code, filters, {force})),
-    ),
-    searchPromise,
-  ]);
-
-  const degraded = [];
-  const sourceCounts = {};
-  const sourceErrors = [];
-  let warming = false;
-  let listings = [];
-
-  results.forEach((result, index) => {
-    if (result.degraded) degraded.push(codes[index]);
-    if (result.warming) warming = true;
-
-    for (const [name, count] of Object.entries(result.sourceCounts ?? {})) {
-      sourceCounts[name] = (sourceCounts[name] ?? 0) + count;
-    }
-
-    if (Array.isArray(result.sourceErrors)) {
-      sourceErrors.push(...result.sourceErrors);
-    }
-
-    listings = listings.concat(result.listings);
-  });
-
-  let fxRates = null;
-  try {
-    fxRates = (await getRates()).rates;
-  } catch {}
-
-  const memoryFilters = searchMatches
-    ? {...filters, query: ''}
-    : filters;
-
-  listings = applyListingFilters(listings, memoryFilters, fxRates);
-
-  if (searchMatches) {
-    listings = listings.filter((listing) =>
-      searchMatches.rank.has(listingSearchKey(listing)),
-    );
-
-    listings.sort((a, b) => {
-      const rankA = searchMatches.rank.get(listingSearchKey(a));
-      const rankB = searchMatches.rank.get(listingSearchKey(b));
-      if (rankA !== rankB) return rankA - rankB;
-      return compareListingsByDate(a, b);
-    });
-  } else {
-    listings.sort(compareListingsByDate);
-  }
-
-  if (filters.sort) {
-    sortListings(listings, filters.sort, fxRates);
-  }
-
-  const count = listings.length;
-  const offset = Math.max(0, filters.offset || 0);
-  const page = listings.slice(offset, offset + filters.limit);
-
-  return {
-    count,
-    degradedCountries: degraded,
-    sourceCounts,
-    sourceErrors,
-    warming,
-    filters,
-    searchEngine: filters.query
-      ? (searchMatches ? 'elasticsearch' : 'fallback')
-      : null,
-    searchIndexedMatches: searchMatches?.total ?? null,
-    searchTruncated: searchMatches?.truncated ?? false,
-    listings: page,
-  };
-}
-
 export function installListingRoutes(app) {
   app.get('/api/listings', async (req, res) => {
     const force = req.query.refresh === '1' || req.query.refresh === 'true';
@@ -278,24 +175,49 @@ export function installListingRoutes(app) {
     const codes = resolveCountries(req.query);
     addCityAliases(filters, codes);
 
-    if (!filters.customSources.length) {
+    let custom = {warming: false, sourceErrors: []};
+    if (filters.customSources.length) {
       try {
-        const response = await tryPostgresSearch({filters, codes, force});
-        return res.json(response);
+        custom = await prepareCustomSources({
+          urls: filters.customSources,
+          countries: codes,
+        });
+        filters.customSources = custom.urls;
+        if (filters.sources.length && !filters.sources.includes('custom')) {
+          filters.sources.push('custom');
+        }
       } catch (err) {
-        console.warn(
-          '[postgres-search] fast path failed, using legacy fallback:',
-          err?.message ?? err,
-        );
+        const error = err?.message ?? String(err);
+        console.warn('[custom-source] queue preparation failed:', error);
+        custom = {
+          warming: false,
+          sourceErrors: [{source: 'custom', error}],
+        };
       }
     }
 
     try {
-      const response = await legacySnapshotSearch({filters, codes, force});
+      const response = await tryPostgresSearch({filters, codes, force});
+      response.warming = Boolean(response.warming || custom.warming);
+      response.sourceErrors = [
+        ...(response.sourceErrors || []),
+        ...(custom.sourceErrors || []),
+      ];
       return res.json(response);
     } catch (err) {
-      return res.status(500).json({
-        error: err?.message ?? String(err),
+      const error = err?.message ?? String(err);
+      console.error('[postgres-search] public search unavailable:', error);
+      return res.status(503).json({
+        error: 'Listing search temporarily unavailable',
+        degraded: true,
+        sourceErrors: [
+          {source: 'postgres', error},
+          ...(custom.sourceErrors || []),
+        ],
+        searchEngine: 'postgres',
+        filters,
+        count: 0,
+        listings: [],
       });
     }
   });
