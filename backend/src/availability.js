@@ -30,6 +30,13 @@ function normalizeRequests(items) {
   return [...unique.values()];
 }
 
+function olxPublicId(url) {
+  const value = String(url || '').trim();
+  if (!value) return null;
+  const match = value.match(/-ID([a-z0-9]+)\.html(?:[?#].*)?$/i);
+  return match?.[1] || null;
+}
+
 export async function initAvailabilitySchema() {
   await pool.query(`
     ALTER TABLE listings
@@ -157,12 +164,13 @@ async function fetchOlxAvailability(row) {
   }
 
   const endpoint = `${OLX_FETCHER_URL}/olx/check?country=${encodeURIComponent(row.country)}`;
+  const probeId = olxPublicId(url) || String(row.source_id);
   let response;
   try {
     response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: String(row.source_id), url }),
+      body: JSON.stringify({ id: probeId, url }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
