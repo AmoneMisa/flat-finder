@@ -37,7 +37,8 @@ export async function readListingAvailability(items) {
 
   const result = await pool.query(`
     SELECT l.source, l.country, l.source_id, l.active,
-      l.availability_checked_at, l.availability_status, l.availability_reason
+      l.availability_checked_at, l.availability_status, l.availability_reason,
+      l.inactive_at
     FROM listings l
     JOIN jsonb_to_recordset($1::jsonb)
       AS requested(source text, country text, source_id text)
@@ -61,6 +62,9 @@ export async function readListingAvailability(items) {
     checkedAt: row.availability_checked_at
       ? new Date(row.availability_checked_at).toISOString()
       : null,
+    inactiveAt: row.inactive_at
+      ? new Date(row.inactive_at).toISOString()
+      : null,
     cached: true,
   }));
 }
@@ -80,8 +84,7 @@ export async function verifyDueListingAvailability(limit = MAX_BATCH) {
         )
       )
     ORDER BY
-      (availability_checked_at IS NULL) DESC,
-      availability_checked_at ASC NULLS LAST,
+      COALESCE(availability_checked_at, first_seen_at) ASC,
       last_seen_at DESC,
       updated_at DESC
     LIMIT $3
