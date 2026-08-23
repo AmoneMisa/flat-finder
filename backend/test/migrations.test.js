@@ -67,14 +67,18 @@ test('queue dedup, places and listing semantics are versioned', async () => {
   assert.match(semantics, /UPDATE listings/);
 });
 
-test('runtime startup validates migrations instead of creating schema', async () => {
-  const server = await readFile(new URL('../src/server.js', import.meta.url), 'utf8');
-  const worker = await readFile(new URL('../src/worker.js', import.meta.url), 'utf8');
+test('runtime entrypoints validate migrations instead of creating schema', async () => {
+  const entrypoints = [
+    '../src/server.js',
+    '../src/worker.js',
+    '../src/reindex.js',
+  ];
   const ready = await readFile(new URL('../src/db-ready.js', import.meta.url), 'utf8');
 
-  for (const source of [server, worker]) {
-    assert.match(source, /assertDatabaseReady/);
-    assert.doesNotMatch(source, /\binitDb\b/);
+  for (const file of entrypoints) {
+    const source = await readFile(new URL(file, import.meta.url), 'utf8');
+    assert.match(source, /assertDatabaseReady/, `${file} must validate migrations`);
+    assert.doesNotMatch(source, /\binitDb\b/, `${file} must not bootstrap schema`);
   }
 
   assert.match(ready, /schema_migrations/);

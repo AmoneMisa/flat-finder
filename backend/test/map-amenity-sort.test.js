@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeListing, applyFilters } from '../src/normalize.js';
+import { makeListing } from '../src/normalize.js';
+import { applyListingFilters } from '../src/legacy-listing-filter.js';
 import { coordinateInsideBbox } from '../src/coordinate-validation.js';
 import { sortListings } from '../src/listing-sort.js';
 
@@ -55,7 +56,7 @@ test('amenity filters require explicit positive signals', () => {
     description: 'Обычная квартира',
   });
 
-  const result = applyFilters([plain, withAll], {
+  const result = applyListingFilters([plain, withAll], {
     propertyType: 'any',
     agency: 'any',
     dealType: 'any',

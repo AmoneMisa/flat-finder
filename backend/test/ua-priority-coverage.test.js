@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { COUNTRIES } from '../src/countries.js';
-import { applyFilters, looksParkingOnly, makeListing } from '../src/normalize.js';
+import { looksParkingOnly, makeListing } from '../src/normalize.js';
+import { applyListingFilters } from '../src/legacy-listing-filter.js';
 import { parseResidentialComplex } from '../src/textparse-overrides.js';
 
 const OBLAST_CENTRES = [
@@ -48,7 +49,7 @@ test('OLX fetcher ends pagination by age instead of by a one-page city limit', (
   assert.match(fetcher, /created_at%3Adesc/);
 });
 
-test('daily Odesa rentals override generic long-rent source metadata and stay out of Flat Finder', () => {
+test('daily Odesa rentals override generic long-rent source metadata and remain selectable as shortRent', () => {
   const listing = makeListing({
     id: 'daily-pearl',
     source: 'telegram',
@@ -63,7 +64,8 @@ test('daily Odesa rentals override generic long-rent source metadata and stay ou
   });
 
   assert.equal(listing.dealType, 'shortRent');
-  assert.equal(applyFilters([listing], {}).length, 0);
+  assert.equal(applyListingFilters([listing], {dealType: 'shortRent'}).length, 1);
+  assert.equal(applyListingFilters([listing], {dealType: 'longRent'}).length, 0);
   assert.ok(listing.title.length < 90);
   assert.doesNotMatch(listing.title, /Свободна сегодня/iu);
 });
@@ -83,7 +85,7 @@ test('parking-space inventory is noise while apartment parking stays an amenity'
     city: 'Odesa',
   });
   assert.equal(parking.commercial, true);
-  assert.equal(applyFilters([parking], {}).length, 0);
+  assert.equal(applyListingFilters([parking], {}).length, 0);
 
   assert.equal(
     looksParkingOnly('Сдам 2-комнатную квартиру в ЖК Аркадия, есть собственное парковочное место'),
@@ -145,5 +147,5 @@ test('sale listings remain sales when copy mentions short-stay investment potent
   });
 
   assert.equal(listing.dealType, 'sale');
-  assert.equal(applyFilters([listing], {}).length, 1);
+  assert.equal(applyListingFilters([listing], {}).length, 1);
 });

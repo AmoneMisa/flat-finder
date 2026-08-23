@@ -44,6 +44,8 @@ jobs:
         run: npm ci --prefix backend
       - name: Syntax checks
         run: |
+          node --check backend/src/db-ready.js
+          node --check backend/src/legacy-listing-filter.js
           node --check backend/src/pgQueue.js
           node --check backend/src/queuePlan.js
           node --check backend/src/queueTasks.js
@@ -76,6 +78,7 @@ jobs:
           node --test
           backend/test/pg-queue.integration.test.js
           backend/test/postgres-search.integration.test.js
+          backend/test/filter-parity.integration.test.js
           backend/test/queue-crawl-stability.test.js
           backend/test/map-amenity-sort.test.js
           backend/test/ua-priority-coverage.test.js
