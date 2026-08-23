@@ -1,5 +1,6 @@
 import {hostname} from 'node:os';
-import {closeDb, initDb} from './db.js';
+import {closeDb} from './db.js';
+import {assertDatabaseReady} from './db-ready.js';
 import {closeElasticsearch, initElasticsearch} from './elasticsearch.js';
 import {processQueueTask} from './queueTasks.js';
 import {
@@ -132,8 +133,9 @@ async function workerLoop(role, shard = 0) {
 
 async function main() {
   // Versioned migrations are guaranteed by the Compose/deploy migration gate.
-  // Worker startup therefore performs runtime initialization only, never schema DDL.
-  await initDb();
+  // Direct process starts fail early with a migration-specific error instead of
+  // mutating schema from runtime code.
+  await assertDatabaseReady();
 
   try {
     await initElasticsearch();

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 
-import {closeDb, initDb, pool} from '../src/db.js';
+import {closeDb, pool} from '../src/db.js';
+import {assertDatabaseReady} from '../src/db-ready.js';
 import {
   claimTask,
   completeTask,
@@ -13,7 +14,7 @@ import {
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 
 test('PostgreSQL crawler queue claims by shard, retries and chains pages', {skip: !enabled}, async () => {
-  await initDb();
+  await assertDatabaseReady();
 
   const generation = `test-${randomUUID()}`;
   const pageOne = {

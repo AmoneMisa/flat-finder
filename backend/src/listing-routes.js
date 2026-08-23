@@ -1,6 +1,6 @@
 import {COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {getListings} from './scrapers/index.js';
-import {applyFilters} from './normalize.js';
+import {applyListingFilters} from './legacy-listing-filter.js';
 import {getRates} from './fx.js';
 import {sortListings} from './listing-sort.js';
 import {refreshAll} from './scheduler.js';
@@ -225,7 +225,7 @@ async function legacySnapshotSearch({filters, codes, force}) {
     ? {...filters, query: ''}
     : filters;
 
-  listings = applyFilters(listings, memoryFilters, fxRates);
+  listings = applyListingFilters(listings, memoryFilters, fxRates);
 
   if (searchMatches) {
     listings = listings.filter((listing) =>

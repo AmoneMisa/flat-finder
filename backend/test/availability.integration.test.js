@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {closeDb, initDb, pool, upsertListings} from '../src/db.js';
+import {closeDb, pool, upsertListings} from '../src/db.js';
+import {assertDatabaseReady} from '../src/db-ready.js';
 import {
   recordListingAvailability,
   verifyListingAvailability,
@@ -10,7 +11,7 @@ import {
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 
 test('listing availability state deactivates stale OLX rows and reuses fresh checks', {skip: !enabled}, async () => {
-  await initDb();
+  await assertDatabaseReady();
 
   const id = 'availability-test-1';
   await pool.query(

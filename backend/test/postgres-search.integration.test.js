@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {closeDb, initDb, pool, upsertListings} from '../src/db.js';
+import {closeDb, pool, upsertListings} from '../src/db.js';
+import {assertDatabaseReady} from '../src/db-ready.js';
 import {searchPostgresListings} from '../src/postgres-search.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 
 test('PostgreSQL fast path filters mixed-currency listings and paginates with a cursor', {skip: !enabled}, async () => {
-  await initDb();
+  await assertDatabaseReady();
   await pool.query(`DELETE FROM listings WHERE source = 'pg-search-test'`);
   await pool.query(`DELETE FROM listings WHERE source = 'olx' AND country = 'ZZ'`);
 

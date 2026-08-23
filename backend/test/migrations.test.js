@@ -67,32 +67,45 @@ test('queue dedup, places and listing semantics are versioned', async () => {
   assert.match(semantics, /UPDATE listings/);
 });
 
+test('runtime startup validates migrations instead of creating schema', async () => {
+  const server = await readFile(new URL('../src/server.js', import.meta.url), 'utf8');
+  const worker = await readFile(new URL('../src/worker.js', import.meta.url), 'utf8');
+  const ready = await readFile(new URL('../src/db-ready.js', import.meta.url), 'utf8');
+
+  for (const source of [server, worker]) {
+    assert.match(source, /assertDatabaseReady/);
+    assert.doesNotMatch(source, /\binitDb\b/);
+  }
+
+  assert.match(ready, /schema_migrations/);
+  assert.match(ready, /001_baseline_listings\.sql/);
+  assert.match(ready, /006_listing_semantics\.sql/);
+  assert.doesNotMatch(ready, /CREATE\s+TABLE/i);
+  assert.doesNotMatch(ready, /ALTER\s+TABLE/i);
+  assert.doesNotMatch(ready, /CREATE\s+INDEX/i);
+});
+
 test('migrated runtime modules never mutate database schema', async () => {
   const files = [
     '../src/availability.js',
     '../src/availability-sweep.js',
     '../src/availability-routes.js',
+    '../src/pgQueue.js',
     '../src/queueTaskDedup.js',
     '../src/places-db.js',
+    '../src/listing-semantics.js',
   ];
 
   for (const file of files) {
     const source = await readFile(new URL(file, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /ALTER\s+TABLE/i, `${file} must not ALTER TABLE`);
-    assert.doesNotMatch(source, /CREATE\s+(TABLE|INDEX)/i, `${file} must not CREATE schema objects`);
-  }
-});
-
-test('availability schema helper stubs stay removed', async () => {
-  const files = [
-    '../src/availability.js',
-    '../src/availability-sweep.js',
-    '../src/availability-routes.js',
-  ];
-
-  for (const file of files) {
-    const source = await readFile(new URL(file, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /CREATE\s+TABLE/i, `${file} must not CREATE TABLE`);
+    assert.doesNotMatch(source, /CREATE\s+INDEX/i, `${file} must not CREATE INDEX`);
+    assert.doesNotMatch(source, /CREATE\s+TRIGGER/i, `${file} must not CREATE TRIGGER`);
+    assert.doesNotMatch(source, /CREATE\s+OR\s+REPLACE\s+FUNCTION/i, `${file} must not CREATE FUNCTION`);
     assert.doesNotMatch(source, /ensureAvailabilitySchema/);
     assert.doesNotMatch(source, /initAvailabilitySchema/);
+    assert.doesNotMatch(source, /initCrawlQueueSchema/);
+    assert.doesNotMatch(source, /ensureListingSemantics/);
   }
 });

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parseListingFilters} from '../src/listing-routes.js';
+import {applyListingFilters} from '../src/legacy-listing-filter.js';
 
 const appSource = readFileSync(
   new URL('../src/app.js', import.meta.url),
@@ -25,6 +26,8 @@ test('application composes listing routes while server owns no search orchestrat
   assert.match(listingRoutesSource, /app\.get\('\/api\/listings'/);
   assert.match(listingRoutesSource, /tryPostgresSearch/);
   assert.match(listingRoutesSource, /legacySnapshotSearch/);
+  assert.match(listingRoutesSource, /applyListingFilters/);
+  assert.doesNotMatch(listingRoutesSource, /from '\.\/normalize\.js'/);
 });
 
 test('listing filters preserve the existing public query contract', () => {
@@ -65,4 +68,43 @@ test('listing filters preserve the existing public query contract', () => {
   assert.equal(filters.limit, 60);
   assert.equal(filters.offset, 20);
   assert.equal(filters.cursor, 'abc');
+});
+
+test('legacy fallback honors the public shortRent deal type', () => {
+  const listings = [
+    {
+      id: 'short',
+      source: 'olx',
+      dealType: 'shortRent',
+      propertyType: 'flat',
+      commercial: false,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'long',
+      source: 'olx',
+      dealType: 'longRent',
+      propertyType: 'flat',
+      commercial: false,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  const shortOnly = applyListingFilters(listings, {
+    dealType: 'shortRent',
+    propertyType: 'any',
+    agency: 'any',
+    audience: 'any',
+    sources: [],
+  });
+  assert.deepEqual(shortOnly.map((listing) => listing.id), ['short']);
+
+  const allDeals = applyListingFilters(listings, {
+    dealType: 'any',
+    propertyType: 'any',
+    agency: 'any',
+    audience: 'any',
+    sources: [],
+  });
+  assert.deepEqual(allDeals.map((listing) => listing.id), ['short', 'long']);
 });

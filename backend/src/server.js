@@ -1,12 +1,13 @@
 import {COUNTRY_CODES} from './countries.js';
-import {closeDb, initDb} from './db.js';
+import {closeDb} from './db.js';
+import {assertDatabaseReady} from './db-ready.js';
 import {closeElasticsearch, initElasticsearch} from './elasticsearch.js';
 import {createApp} from './app.js';
 
 const PORT = process.env.PORT || 4000;
 
 async function start() {
-  await initDb();
+  await assertDatabaseReady();
 
   // Elasticsearch is an optional search layer. PostgreSQL remains available if
   // it cannot initialize.

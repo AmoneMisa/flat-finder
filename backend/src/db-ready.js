@@ -1,0 +1,47 @@
+import {pool} from './db.js';
+
+const REQUIRED_MIGRATIONS = [
+  '001_baseline_listings.sql',
+  '002_crawl_tasks.sql',
+  '003_search_indexes.sql',
+  '004_crawl_task_runs.sql',
+  '005_places.sql',
+  '006_listing_semantics.sql',
+];
+
+export async function assertDatabaseReady() {
+  const relationResult = await pool.query(`
+    SELECT
+      to_regclass('public.schema_migrations')::text AS schema_migrations,
+      to_regclass('public.listings')::text AS listings,
+      to_regclass('public.crawl_tasks')::text AS crawl_tasks,
+      to_regclass('public.crawl_task_runs')::text AS crawl_task_runs,
+      to_regclass('public.places')::text AS places
+  `);
+
+  const relations = relationResult.rows[0] || {};
+  const missingRelations = Object.entries(relations)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+
+  if (missingRelations.length) {
+    throw new Error(
+      `database schema is not migrated; missing ${missingRelations.join(', ')}. ` +
+      'Run `npm run migrate --prefix backend` before starting the API or worker.',
+    );
+  }
+
+  const appliedResult = await pool.query(
+    'SELECT version FROM schema_migrations WHERE version = ANY($1::text[])',
+    [REQUIRED_MIGRATIONS],
+  );
+  const applied = new Set(appliedResult.rows.map((row) => row.version));
+  const missingMigrations = REQUIRED_MIGRATIONS.filter((version) => !applied.has(version));
+
+  if (missingMigrations.length) {
+    throw new Error(
+      `database migrations are incomplete; missing ${missingMigrations.join(', ')}. ` +
+      'Run `npm run migrate --prefix backend` before starting the API or worker.',
+    );
+  }
+}

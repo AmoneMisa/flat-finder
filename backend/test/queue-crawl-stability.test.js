@@ -35,6 +35,9 @@ test('PostgreSQL owns durable queue state, priority, leases and retries', () => 
   assert.match(queueMigration, /CREATE TABLE IF NOT EXISTS crawl_tasks/);
   assert.match(queueMigration, /status IN \('pending', 'running', 'done', 'dead'\)/);
   assert.match(queueMigration, /priority DESC/);
+  assert.doesNotMatch(pgQueue, /CREATE TABLE IF NOT EXISTS crawl_tasks/);
+  assert.doesNotMatch(pgQueue, /CREATE INDEX IF NOT EXISTS crawl_tasks_/);
+  assert.doesNotMatch(pgQueue, /initCrawlQueueSchema/);
   assert.match(pgQueue, /FOR UPDATE SKIP LOCKED/);
   assert.match(pgQueue, /locked_until/);
   assert.match(pgQueue, /run_after/);
