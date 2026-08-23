@@ -63,6 +63,8 @@ jobs:
           ! grep -q 'flat-finder-queue-task-api:' docker-compose.yml
           ! grep -q 'flat-finder-queue-worker-' docker-compose.yml
           ! grep -q 'QUEUE_TASK_API_URL' docker-compose.yml
+      - name: Build social fetcher and run contract tests
+        run: docker build -t flat-finder-social-fetcher:test ./social-fetcher
       - name: Run queue and search regressions
         run: >-
           node --test
