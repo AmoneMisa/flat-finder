@@ -13,6 +13,7 @@ import {
 import { buildCrawlPlan, QUEUE_SHARDS } from './queuePlan.js';
 import { refreshPlaces } from './scheduler.js';
 import { startSocialHousingScheduler } from './social-housing-scheduler.js';
+import { verifyDueListingAvailability } from './availability-sweep.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -20,9 +21,14 @@ const ERROR_RETRY_MS = Math.max(1_000, Number(process.env.QUEUE_ERROR_RETRY_SECO
 const DISPATCH_MS = Math.min(30_000, Math.max(5_000, Number(process.env.QUEUE_DISPATCH_TICK_SECONDS || 10) * 1000));
 const PRUNE_MS = Math.max(60_000, Number(process.env.QUEUE_HISTORY_PRUNE_SECONDS || 86_400) * 1000);
 const PLACES_CHECK_MS = Math.max(60 * 60_000, Number(process.env.PLACES_CHECK_HOURS || 24) * 60 * 60_000);
+const AVAILABILITY_SWEEP_MS = Math.max(
+  30_000,
+  Number(process.env.LISTING_AVAILABILITY_SWEEP_SECONDS || 60) * 1000,
+);
 
 let stopping = false;
 let dispatching = false;
+let availabilityRunning = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -46,6 +52,22 @@ async function dispatchTick() {
     console.error('[flat:worker] dispatcher failed:', error?.message ?? error);
   } finally {
     dispatching = false;
+  }
+}
+
+async function availabilityTick() {
+  if (availabilityRunning || stopping) return;
+  availabilityRunning = true;
+  try {
+    const results = await verifyDueListingAvailability();
+    if (results.length) {
+      const inactive = results.filter((item) => item.status === 'inactive').length;
+      console.log(`[flat:worker] availability checked=${results.length} inactive=${inactive}`);
+    }
+  } catch (error) {
+    console.warn('[flat:worker] availability sweep failed:', error?.message ?? error);
+  } finally {
+    availabilityRunning = false;
   }
 }
 
@@ -111,7 +133,13 @@ async function workerLoop(role, shard = 0) {
 
 async function main() {
   await initDb();
-  await initElasticsearch();
+  try {
+    await initElasticsearch();
+  } catch (error) {
+    // Postgres is the source of truth. Crawling must continue while the derived
+    // search index is recovering; queueTasks already treats indexing as optional.
+    console.warn('[flat:worker] Elasticsearch startup degraded:', error?.message ?? error);
+  }
   await initCrawlQueueSchema();
   await pruneQueueHistory().catch((error) => {
     console.warn('[flat:worker] initial queue prune failed:', error?.message ?? error);
@@ -122,6 +150,7 @@ async function main() {
   void refreshPlaces().catch((error) => {
     console.warn('[flat:worker] places startup check failed:', error?.message ?? error);
   });
+  void availabilityTick();
 
   await dispatchTick();
 
@@ -138,9 +167,11 @@ async function main() {
     }),
     PLACES_CHECK_MS,
   );
+  const availabilityTimer = setInterval(() => void availabilityTick(), AVAILABILITY_SWEEP_MS);
   dispatchTimer.unref?.();
   pruneTimer.unref?.();
   placesTimer.unref?.();
+  availabilityTimer.unref?.();
 
   try {
     await Promise.all([
@@ -151,6 +182,7 @@ async function main() {
     clearInterval(dispatchTimer);
     clearInterval(pruneTimer);
     clearInterval(placesTimer);
+    clearInterval(availabilityTimer);
     await Promise.allSettled([closeElasticsearch(), closeDb()]);
   }
 }
