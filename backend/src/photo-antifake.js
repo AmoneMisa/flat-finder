@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -17,7 +19,10 @@ const pool = new Pool({
 const MAX_IMAGE_BYTES = Math.max(256_000, Number(process.env.ANTIFAKE_MAX_IMAGE_BYTES) || 8 * 1024 * 1024);
 const FETCH_TIMEOUT_MS = Math.max(2000, Number(process.env.ANTIFAKE_IMAGE_TIMEOUT_MS) || 8000);
 const PRICE_CONFLICT_PCT = Math.max(5, Number(process.env.ANTIFAKE_PRICE_CONFLICT_PCT) || 15);
-const CHRONOLOGY_GAP_MS = Math.max(60_000, Number(process.env.ANTIFAKE_CHRONOLOGY_GAP_MINUTES) || 15) * 60_000;
+const CHRONOLOGY_GAP_MS = Math.max(60_000, (Number(process.env.ANTIFAKE_CHRONOLOGY_GAP_MINUTES) || 15) * 60_000);
+const PERCEPTUAL_MAX_DISTANCE = Math.max(0, Math.min(16, Number(process.env.ANTIFAKE_PERCEPTUAL_MAX_DISTANCE) || 7));
+const PERCEPTUAL_CANDIDATE_LIMIT = Math.max(50, Math.min(5000, Number(process.env.ANTIFAKE_PERCEPTUAL_CANDIDATE_LIMIT) || 800));
+const PERCEPTUAL_HASH_SCRIPT = fileURLToPath(new URL('./perceptual-hash.py', import.meta.url));
 let schemaPromise = null;
 
 function ensureSchema() {
@@ -35,23 +40,63 @@ function ensureSchema() {
         PRIMARY KEY (hash, source, country, source_id, photo_url)
       );
       ALTER TABLE listing_photo_hashes
+        ADD COLUMN IF NOT EXISTS perceptual_hash CHAR(16),
         ADD COLUMN IF NOT EXISTS title TEXT,
         ADD COLUMN IF NOT EXISTS price NUMERIC,
         ADD COLUMN IF NOT EXISTS currency VARCHAR(16),
         ADD COLUMN IF NOT EXISTS by_agency BOOLEAN,
         ADD COLUMN IF NOT EXISTS rooms NUMERIC,
         ADD COLUMN IF NOT EXISTS area_sqm NUMERIC,
+        ADD COLUMN IF NOT EXISTS district TEXT,
+        ADD COLUMN IF NOT EXISTS metro TEXT,
+        ADD COLUMN IF NOT EXISTS residence_complex TEXT,
         ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
       CREATE INDEX IF NOT EXISTS listing_photo_hashes_hash_idx
         ON listing_photo_hashes(hash);
       CREATE INDEX IF NOT EXISTS listing_photo_hashes_listing_idx
         ON listing_photo_hashes(source, country, source_id);
+      CREATE INDEX IF NOT EXISTS listing_photo_hashes_perceptual_country_idx
+        ON listing_photo_hashes(country, perceptual_hash)
+        WHERE perceptual_hash IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS listing_property_clusters (
+        source VARCHAR(32) NOT NULL,
+        country VARCHAR(8) NOT NULL,
+        source_id TEXT NOT NULL,
+        cluster_id TEXT NOT NULL,
+        first_joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (source, country, source_id)
+      );
+      CREATE INDEX IF NOT EXISTS listing_property_clusters_cluster_idx
+        ON listing_property_clusters(cluster_id);
     `).catch((error) => {
       schemaPromise = null;
       throw error;
     });
   }
   return schemaPromise;
+}
+
+function runPerceptualHash(bytes) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.env.ANTIFAKE_PYTHON || 'python3', [PERCEPTUAL_HASH_SCRIPT], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      const hash = stdout.trim().toLowerCase();
+      if (code === 0 && /^[0-9a-f]{16}$/.test(hash)) resolve(hash);
+      else reject(new Error(stderr.trim() || `perceptual hash exited ${code}`));
+    });
+    child.stdin.end(bytes);
+  });
 }
 
 async function hashRemoteImage(url) {
@@ -68,7 +113,14 @@ async function hashRemoteImage(url) {
 
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error('invalid image size');
-  return createHash('sha256').update(bytes).digest('hex');
+  const exactHash = createHash('sha256').update(bytes).digest('hex');
+  let perceptualHash = null;
+  try {
+    perceptualHash = await runPerceptualHash(bytes);
+  } catch (error) {
+    console.warn(`[flats:antifake] perceptual hash unavailable: ${error.message}`);
+  }
+  return { exactHash, perceptualHash };
 }
 
 function listingIdentity(listing) {
@@ -91,6 +143,16 @@ function parsedTime(value) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+function normalizeLocationValue(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function textTokens(value) {
   return new Set(
     String(value || '')
@@ -111,15 +173,66 @@ function titleSimilarity(a, b) {
   return union ? overlap / union : null;
 }
 
+export function hammingDistanceHex(a, b) {
+  const left = String(a || '').toLowerCase();
+  const right = String(b || '').toLowerCase();
+  if (!/^[0-9a-f]{16}$/.test(left) || !/^[0-9a-f]{16}$/.test(right)) return null;
+  let bits = BigInt(`0x${left}`) ^ BigInt(`0x${right}`);
+  let distance = 0;
+  while (bits) {
+    distance += Number(bits & 1n);
+    bits >>= 1n;
+  }
+  return distance;
+}
+
+export function compareListingLocations(current, matched) {
+  const currentCountry = String(current?.country || '').toUpperCase();
+  const matchedCountry = String(matched?.country || matched?.matchedCountry || '').toUpperCase();
+  const countryConflict = Boolean(currentCountry && matchedCountry && currentCountry !== matchedCountry);
+
+  const fields = [
+    ['city', current?.city, matched?.city ?? matched?.matchedCity],
+    ['district', current?.district, matched?.district ?? matched?.matchedDistrict],
+    ['metro', current?.metro, matched?.metro ?? matched?.matchedMetro],
+    ['residence_complex', current?.residenceComplex, matched?.residence_complex ?? matched?.residenceComplex],
+  ];
+  const conflicts = [];
+  const agreements = [];
+  for (const [field, leftRaw, rightRaw] of fields) {
+    const left = normalizeLocationValue(leftRaw);
+    const right = normalizeLocationValue(rightRaw);
+    if (!left || !right) continue;
+    if (left === right) agreements.push(field);
+    else conflicts.push(field);
+  }
+
+  let level = 'none';
+  if (countryConflict || conflicts.includes('city')) level = 'very_high';
+  else if (conflicts.includes('district') && conflicts.includes('metro')) level = 'high';
+  else if (conflicts.includes('district') || conflicts.includes('metro')) level = 'medium';
+  else if (conflicts.includes('residence_complex')) level = 'low';
+
+  return {
+    level,
+    countryConflict,
+    conflicts,
+    agreements,
+    reasonCodes: [
+      ...(countryConflict ? ['location_country_conflict'] : []),
+      ...conflicts.map((field) => `location_${field}_conflict`),
+    ],
+  };
+}
+
 /**
- * Score the relationship between two listings that already share an exact photo.
- * Important: this does NOT equate "cheaper" with "fraud". A later agency repost
- * can steal an owner's advert and mark the price up, while a scam clone can copy
- * a legitimate advert and undercut it. Chronology + seller type + price direction
- * are kept as evidence so the caller can flag the copy candidate, not simply the
- * lower-priced listing.
+ * Score the relationship between two listings that share an exact or perceptual
+ * photo match. Cheaper is not synonymous with fraud: a broker can copy an owner
+ * and mark the price up, while a scammer can undercut it. Chronology, seller
+ * type, price direction, property facts and location contradictions stay as
+ * independent evidence.
  */
-export function scoreCloneRelationship(current, matched) {
+export function scoreCloneRelationship(current, matched, evidence = {}) {
   const currentCreated = parsedTime(current?.createdAt);
   const matchedCreated = parsedTime(matched?.created_at ?? matched?.createdAt);
   const chronology = currentCreated != null && matchedCreated != null
@@ -167,20 +280,47 @@ export function scoreCloneRelationship(current, matched) {
   const titleScore = titleSimilarity(current?.title, matched?.title);
   const factsAgree = [roomsAgree, areaAgree, titleScore == null ? null : titleScore >= 0.55]
     .filter((value) => value != null);
-  const propertyFactsConsistent = factsAgree.length ? factsAgree.filter(Boolean).length >= Math.ceil(factsAgree.length / 2) : false;
+  const propertyFactsConsistent = factsAgree.length
+    ? factsAgree.filter(Boolean).length >= Math.ceil(factsAgree.length / 2)
+    : false;
 
-  let score = 35; // exact same photo is already meaningful evidence
+  const location = compareListingLocations(current, {
+    country: matched?.country ?? matched?.matchedCountry,
+    city: matched?.city ?? matched?.matchedCity,
+    district: matched?.district ?? matched?.matchedDistrict,
+    metro: matched?.metro ?? matched?.matchedMetro,
+    residence_complex: matched?.residence_complex ?? matched?.residenceComplex,
+  });
+  const matchType = evidence.matchType === 'perceptual' ? 'perceptual' : 'exact';
+  const perceptualDistance = finiteNumber(evidence.perceptualDistance);
+
+  let score = matchType === 'exact' ? 35 : 30;
+  if (matchType === 'perceptual' && perceptualDistance != null && perceptualDistance <= 3) score += 5;
   if (propertyFactsConsistent) score += 10;
   if (sellerRelation !== 'same' && sellerRelation !== 'unknown') score += 10;
   if (priceDeltaPct != null && Math.abs(priceDeltaPct) >= PRICE_CONFLICT_PCT) score += 20;
   if (chronology === 'later_copy_candidate') score += 15;
+  if (location.level === 'medium') score += 10;
+  if (location.level === 'high') score += 20;
+  if (location.level === 'very_high') score += 30;
   score = Math.min(100, score);
 
   const currentCopyCandidate = chronology === 'later_copy_candidate' && score >= 60;
   const matchedCopyCandidate = chronology === 'earlier_source_candidate' && score >= 60;
+  const reasonCodes = [
+    matchType === 'exact' ? 'photo_exact_match' : 'photo_perceptual_match',
+    ...location.reasonCodes,
+    ...(propertyFactsConsistent ? ['property_facts_consistent'] : []),
+    ...(sellerRelation !== 'same' && sellerRelation !== 'unknown' ? ['seller_type_conflict'] : []),
+    ...(priceDeltaPct != null && Math.abs(priceDeltaPct) >= PRICE_CONFLICT_PCT ? ['price_conflict'] : []),
+    ...(chronology === 'later_copy_candidate' ? ['current_listing_later'] : []),
+    ...(chronology === 'earlier_source_candidate' ? ['matched_listing_later'] : []),
+  ];
 
   let reason = 'duplicate_listing';
-  if (currentCopyCandidate && sellerRelation === 'owner_to_agency' && priceDirection === 'higher') {
+  if (currentCopyCandidate && location.level === 'very_high') {
+    reason = 'possible_location_spoofed_copy';
+  } else if (currentCopyCandidate && sellerRelation === 'owner_to_agency' && priceDirection === 'higher') {
     reason = 'possible_broker_markup_copy';
   } else if (currentCopyCandidate && priceDirection === 'lower' && priceDeltaPct != null && Math.abs(priceDeltaPct) >= PRICE_CONFLICT_PCT) {
     reason = 'possible_low_price_copy';
@@ -188,6 +328,8 @@ export function scoreCloneRelationship(current, matched) {
     reason = 'possible_republished_copy';
   } else if (matchedCopyCandidate) {
     reason = 'matched_listing_may_be_copy';
+  } else if (location.level === 'very_high' || location.level === 'high') {
+    reason = 'conflicting_duplicate_location';
   } else if (priceDeltaPct != null && Math.abs(priceDeltaPct) >= PRICE_CONFLICT_PCT) {
     reason = 'conflicting_duplicate_price';
   }
@@ -195,14 +337,244 @@ export function scoreCloneRelationship(current, matched) {
   return {
     score,
     reason,
+    reasonCodes: [...new Set(reasonCodes)],
     chronology,
     sellerRelation,
     priceDirection,
     priceDeltaPct: priceDeltaPct == null ? null : Math.round(priceDeltaPct * 10) / 10,
     propertyFactsConsistent,
     titleSimilarity: titleScore == null ? null : Math.round(titleScore * 100) / 100,
+    locationConflict: location,
+    matchType,
+    perceptualDistance,
     currentCopyCandidate,
     matchedCopyCandidate,
+  };
+}
+
+export function isPropertyClusterMatch(match) {
+  if (!match?.relation) return false;
+  const exactCount = Number(match.exactPhotoCount || 0);
+  const perceptualCount = Number(match.perceptualPhotoCount || 0);
+  const total = Number(match.matchedPhotoCount || exactCount + perceptualCount || 0);
+  if (exactCount >= 2 || perceptualCount >= 2) return true;
+  if (exactCount >= 1 && match.relation.propertyFactsConsistent) return true;
+  if (perceptualCount >= 1 && match.relation.propertyFactsConsistent && match.relation.score >= 55) return true;
+  return total >= 1 && ['high', 'very_high'].includes(match.relation.locationConflict?.level) && match.relation.score >= 65;
+}
+
+function photoRowKey(row) {
+  return `${row.source}:${row.country}:${row.source_id}:${row.photo_url}`;
+}
+
+async function exactMatches(exactHash, identity) {
+  const result = await pool.query(
+    `SELECT source, country, source_id, city, district, metro, residence_complex, photo_url,
+            hash, perceptual_hash, title, price, currency, by_agency, rooms, area_sqm,
+            created_at, first_seen_at, last_seen_at
+       FROM listing_photo_hashes
+      WHERE hash = $1
+        AND NOT (source = $2 AND country = $3 AND source_id = $4)
+      ORDER BY last_seen_at DESC
+      LIMIT 50`,
+    [exactHash, identity.source, identity.country, identity.sourceId],
+  );
+  return result.rows.map((row) => ({ row, matchType: 'exact', perceptualDistance: 0 }));
+}
+
+async function perceptualMatches(perceptualHash, identity) {
+  if (!perceptualHash) return [];
+  const result = await pool.query(
+    `SELECT source, country, source_id, city, district, metro, residence_complex, photo_url,
+            hash, perceptual_hash, title, price, currency, by_agency, rooms, area_sqm,
+            created_at, first_seen_at, last_seen_at
+       FROM listing_photo_hashes
+      WHERE country = $1
+        AND perceptual_hash IS NOT NULL
+        AND NOT (source = $2 AND country = $1 AND source_id = $3)
+      ORDER BY last_seen_at DESC
+      LIMIT $4`,
+    [identity.country, identity.source, identity.sourceId, PERCEPTUAL_CANDIDATE_LIMIT],
+  );
+  const matches = [];
+  for (const row of result.rows) {
+    const distance = hammingDistanceHex(perceptualHash, row.perceptual_hash);
+    if (distance != null && distance <= PERCEPTUAL_MAX_DISTANCE) {
+      matches.push({ row, matchType: 'perceptual', perceptualDistance: distance });
+    }
+  }
+  return matches;
+}
+
+function makeMatch(listing, image, hashes, candidate) {
+  const row = candidate.row;
+  const location = compareListingLocations(listing, row);
+  return {
+    hash: hashes.exactHash,
+    perceptualHash: hashes.perceptualHash,
+    matchType: candidate.matchType,
+    perceptualDistance: candidate.perceptualDistance,
+    photoId: image?.id || null,
+    photoUrl: image.url,
+    matchedSource: row.source,
+    matchedCountry: row.country,
+    matchedListingId: String(row.source_id),
+    matchedCity: row.city || null,
+    matchedDistrict: row.district || null,
+    matchedMetro: row.metro || null,
+    matchedResidenceComplex: row.residence_complex || null,
+    matchedPhotoUrl: row.photo_url,
+    crossCountry: location.countryConflict,
+    crossCity: location.conflicts.includes('city'),
+    relation: scoreCloneRelationship(listing, row, candidate),
+  };
+}
+
+async function storePhotoHash(listing, identity, url, hashes) {
+  await pool.query(
+    `INSERT INTO listing_photo_hashes
+      (hash, perceptual_hash, source, country, source_id, city, district, metro,
+       residence_complex, photo_url, title, price, currency, by_agency, rooms,
+       area_sqm, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+     ON CONFLICT (hash, source, country, source_id, photo_url)
+     DO UPDATE SET
+       perceptual_hash = COALESCE(EXCLUDED.perceptual_hash, listing_photo_hashes.perceptual_hash),
+       city = EXCLUDED.city,
+       district = EXCLUDED.district,
+       metro = EXCLUDED.metro,
+       residence_complex = EXCLUDED.residence_complex,
+       title = EXCLUDED.title,
+       price = EXCLUDED.price,
+       currency = EXCLUDED.currency,
+       by_agency = EXCLUDED.by_agency,
+       rooms = EXCLUDED.rooms,
+       area_sqm = EXCLUDED.area_sqm,
+       created_at = COALESCE(EXCLUDED.created_at, listing_photo_hashes.created_at),
+       last_seen_at = NOW()`,
+    [
+      hashes.exactHash,
+      hashes.perceptualHash,
+      identity.source,
+      identity.country,
+      identity.sourceId,
+      identity.city || null,
+      listing.district || null,
+      listing.metro || null,
+      listing.residenceComplex || null,
+      url,
+      listing.title || null,
+      finiteNumber(listing.price),
+      String(listing.currency || '').toUpperCase() || null,
+      listing.byAgency == null ? null : Boolean(listing.byAgency),
+      finiteNumber(listing.rooms),
+      finiteNumber(listing.areaSqm),
+      listing.createdAt || null,
+    ],
+  );
+}
+
+function groupMatches(uniqueMatches) {
+  const grouped = new Map();
+  for (const match of uniqueMatches) {
+    const key = `${match.matchedSource}:${match.matchedCountry}:${match.matchedListingId}`;
+    const current = grouped.get(key) || {
+      matchedSource: match.matchedSource,
+      matchedCountry: match.matchedCountry,
+      matchedListingId: match.matchedListingId,
+      matchedCity: match.matchedCity,
+      matchedDistrict: match.matchedDistrict,
+      matchedMetro: match.matchedMetro,
+      matchedResidenceComplex: match.matchedResidenceComplex,
+      matchedPhotoCount: 0,
+      exactPhotoCount: 0,
+      perceptualPhotoCount: 0,
+      minimumPerceptualDistance: null,
+      crossCountry: false,
+      crossCity: false,
+      relation: match.relation,
+    };
+    current.matchedPhotoCount += 1;
+    if (match.matchType === 'exact') current.exactPhotoCount += 1;
+    else current.perceptualPhotoCount += 1;
+    if (match.perceptualDistance != null) {
+      current.minimumPerceptualDistance = current.minimumPerceptualDistance == null
+        ? match.perceptualDistance
+        : Math.min(current.minimumPerceptualDistance, match.perceptualDistance);
+    }
+    current.crossCountry ||= match.crossCountry;
+    current.crossCity ||= match.crossCity;
+    current.relation = {
+      ...current.relation,
+      score: Math.min(100, current.relation.score + Math.min(24, (current.matchedPhotoCount - 1) * 8)),
+    };
+    grouped.set(key, current);
+  }
+  return [...grouped.values()];
+}
+
+function memberKey(member) {
+  return `${member.source}:${member.country}:${member.sourceId}`;
+}
+
+async function assignPropertyCluster(identity, cloneMatches) {
+  const plausible = cloneMatches.filter(isPropertyClusterMatch);
+  if (!plausible.length) return null;
+  const members = [
+    { source: identity.source, country: identity.country, sourceId: identity.sourceId },
+    ...plausible.map((match) => ({
+      source: match.matchedSource,
+      country: match.matchedCountry,
+      sourceId: match.matchedListingId,
+    })),
+  ];
+  const unique = [...new Map(members.map((member) => [memberKey(member), member])).values()];
+  const keys = unique.map(memberKey);
+  const existing = await pool.query(
+    `SELECT source, country, source_id, cluster_id
+       FROM listing_property_clusters
+      WHERE (source || ':' || country || ':' || source_id) = ANY($1::text[])`,
+    [keys],
+  );
+  const existingIds = [...new Set(existing.rows.map((row) => row.cluster_id).filter(Boolean))].sort();
+  const clusterId = existingIds[0]
+    || `property:${createHash('sha256').update([...keys].sort().join('|')).digest('hex').slice(0, 20)}`;
+
+  if (existingIds.length > 1) {
+    await pool.query(
+      `UPDATE listing_property_clusters
+          SET cluster_id = $1, last_seen_at = NOW()
+        WHERE cluster_id = ANY($2::text[])`,
+      [clusterId, existingIds.slice(1)],
+    );
+  }
+
+  for (const member of unique) {
+    await pool.query(
+      `INSERT INTO listing_property_clusters (source, country, source_id, cluster_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (source, country, source_id)
+       DO UPDATE SET cluster_id = EXCLUDED.cluster_id, last_seen_at = NOW()`,
+      [member.source, member.country, member.sourceId, clusterId],
+    );
+  }
+
+  const cluster = await pool.query(
+    `SELECT source, country, source_id
+       FROM listing_property_clusters
+      WHERE cluster_id = $1
+      ORDER BY first_joined_at ASC
+      LIMIT 50`,
+    [clusterId],
+  );
+  return {
+    id: clusterId,
+    size: cluster.rows.length,
+    members: cluster.rows.map((row) => ({
+      source: row.source,
+      country: row.country,
+      id: String(row.source_id),
+    })),
   };
 }
 
@@ -215,133 +587,78 @@ export async function detectExactDuplicatePhotos(listing, images) {
   for (const image of images || []) {
     const url = String(image?.url || image || '');
     if (!/^https?:\/\//i.test(url)) continue;
+    const normalizedImage = { id: image?.id || null, url };
 
     try {
-      const hash = await hashRemoteImage(url);
-      hashes.push({ id: image?.id || null, url, hash });
+      const imageHashes = await hashRemoteImage(url);
+      hashes.push({
+        id: normalizedImage.id,
+        url,
+        hash: imageHashes.exactHash,
+        perceptualHash: imageHashes.perceptualHash,
+      });
 
-      const existing = await pool.query(
-        `SELECT source, country, source_id, city, photo_url,
-                title, price, currency, by_agency, rooms, area_sqm, created_at,
-                first_seen_at, last_seen_at
-           FROM listing_photo_hashes
-          WHERE hash = $1
-            AND NOT (source = $2 AND country = $3 AND source_id = $4)
-          ORDER BY last_seen_at DESC
-          LIMIT 20`,
-        [hash, identity.source, identity.country, identity.sourceId],
-      );
-
-      for (const row of existing.rows) {
-        const crossCountry = row.country !== identity.country;
-        const crossCity = Boolean(identity.city && row.city && row.city.toLowerCase() !== identity.city.toLowerCase());
-        matches.push({
-          hash,
-          photoId: image?.id || null,
-          photoUrl: url,
-          matchedSource: row.source,
-          matchedCountry: row.country,
-          matchedListingId: String(row.source_id),
-          matchedCity: row.city || null,
-          matchedPhotoUrl: row.photo_url,
-          crossCountry,
-          crossCity,
-          relation: scoreCloneRelationship(listing, row),
-        });
+      const candidates = new Map();
+      for (const candidate of await exactMatches(imageHashes.exactHash, identity)) {
+        candidates.set(photoRowKey(candidate.row), candidate);
+      }
+      for (const candidate of await perceptualMatches(imageHashes.perceptualHash, identity)) {
+        const key = photoRowKey(candidate.row);
+        if (!candidates.has(key)) candidates.set(key, candidate);
+      }
+      for (const candidate of candidates.values()) {
+        matches.push(makeMatch(listing, normalizedImage, imageHashes, candidate));
       }
 
-      await pool.query(
-        `INSERT INTO listing_photo_hashes
-          (hash, source, country, source_id, city, photo_url,
-           title, price, currency, by_agency, rooms, area_sqm, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-         ON CONFLICT (hash, source, country, source_id, photo_url)
-         DO UPDATE SET
-           city = EXCLUDED.city,
-           title = EXCLUDED.title,
-           price = EXCLUDED.price,
-           currency = EXCLUDED.currency,
-           by_agency = EXCLUDED.by_agency,
-           rooms = EXCLUDED.rooms,
-           area_sqm = EXCLUDED.area_sqm,
-           created_at = COALESCE(EXCLUDED.created_at, listing_photo_hashes.created_at),
-           last_seen_at = NOW()`,
-        [
-          hash,
-          identity.source,
-          identity.country,
-          identity.sourceId,
-          identity.city || null,
-          url,
-          listing.title || null,
-          finiteNumber(listing.price),
-          String(listing.currency || '').toUpperCase() || null,
-          listing.byAgency == null ? null : Boolean(listing.byAgency),
-          finiteNumber(listing.rooms),
-          finiteNumber(listing.areaSqm),
-          listing.createdAt || null,
-        ],
-      );
+      await storePhotoHash(listing, identity, url, imageHashes);
     } catch (error) {
       console.warn(`[flats:antifake] ${identity.source}:${identity.sourceId} image skipped: ${error.message}`);
     }
   }
 
   const uniqueMatches = [...new Map(matches.map((match) => [
-    `${match.hash}:${match.matchedSource}:${match.matchedCountry}:${match.matchedListingId}`,
+    `${match.matchType}:${match.matchedSource}:${match.matchedCountry}:${match.matchedListingId}:${match.matchedPhotoUrl}:${match.photoUrl}`,
     match,
   ])).values()];
-
-  const grouped = new Map();
-  for (const match of uniqueMatches) {
-    const key = `${match.matchedSource}:${match.matchedCountry}:${match.matchedListingId}`;
-    const current = grouped.get(key) || {
-      matchedSource: match.matchedSource,
-      matchedCountry: match.matchedCountry,
-      matchedListingId: match.matchedListingId,
-      matchedCity: match.matchedCity,
-      matchedPhotoCount: 0,
-      crossCountry: false,
-      crossCity: false,
-      relation: match.relation,
-    };
-    current.matchedPhotoCount += 1;
-    current.crossCountry ||= match.crossCountry;
-    current.crossCity ||= match.crossCity;
-    // More matching photos strengthen the same relationship without changing
-    // its direction. Cap so a 20-photo advert cannot swamp every other signal.
-    current.relation = {
-      ...current.relation,
-      score: Math.min(100, current.relation.score + Math.min(20, (current.matchedPhotoCount - 1) * 8)),
-    };
-    grouped.set(key, current);
-  }
-  const cloneMatches = [...grouped.values()];
+  const cloneMatches = groupMatches(uniqueMatches);
+  const propertyCluster = await assignPropertyCluster(identity, cloneMatches);
 
   const crossCountry = uniqueMatches.some((match) => match.crossCountry);
   const crossCity = uniqueMatches.some((match) => match.crossCity);
+  const strongLocationConflict = cloneMatches.some((match) =>
+    isPropertyClusterMatch(match) && ['high', 'very_high'].includes(match.relation.locationConflict?.level),
+  );
   const currentCopyCandidate = cloneMatches.some((match) => match.relation.currentCopyCandidate && match.relation.score >= 70);
   const matchedCopyCandidate = cloneMatches.some((match) => match.relation.matchedCopyCandidate && match.relation.score >= 70);
   const conflictingClone = cloneMatches.some((match) =>
-    match.relation.score >= 65 &&
-    (match.relation.priceDirection === 'higher' || match.relation.priceDirection === 'lower' || match.relation.sellerRelation !== 'same'),
+    match.relation.score >= 65 && (
+      match.relation.priceDirection === 'higher'
+      || match.relation.priceDirection === 'lower'
+      || match.relation.sellerRelation !== 'same'
+      || ['high', 'very_high'].includes(match.relation.locationConflict?.level)
+    ),
   );
 
-  const risk = crossCountry
+  const reasonCodes = [...new Set(cloneMatches.flatMap((match) => match.relation.reasonCodes || []))];
+  const risk = crossCountry || strongLocationConflict
     ? 'very_high'
-    : crossCity || currentCopyCandidate
+    : crossCity || currentCopyCandidate || conflictingClone
       ? 'high'
       : uniqueMatches.length
         ? 'medium'
         : 'none';
 
   return {
-    exactDuplicatePhoto: uniqueMatches.length > 0,
+    exactDuplicatePhoto: uniqueMatches.some((match) => match.matchType === 'exact'),
+    perceptualDuplicatePhoto: uniqueMatches.some((match) => match.matchType === 'perceptual'),
     suspectedClone: currentCopyCandidate,
     matchedListingMayBeClone: matchedCopyCandidate,
     conflictingClone,
+    propertyIdentityConflict: strongLocationConflict ? 'high' : crossCity ? 'medium' : 'none',
+    propertyCluster,
+    reasonCodes,
     risk,
-    hashes: hashes.map(({ id, hash }) => ({ id, hash })),
+    hashes: hashes.map(({ id, hash, perceptualHash }) => ({ id, hash, perceptualHash })),
     matches: uniqueMatches,
     cloneMatches,
     checkedAt: new Date().toISOString(),

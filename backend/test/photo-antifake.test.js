@@ -1,10 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { scoreCloneRelationship } from '../src/photo-antifake.js';
+import {
+  compareListingLocations,
+  hammingDistanceHex,
+  isPropertyClusterMatch,
+  scoreCloneRelationship,
+} from '../src/photo-antifake.js';
 
 function listing(overrides = {}) {
   return {
+    source: 'olx',
+    country: 'UZ',
+    city: 'Tashkent',
+    district: 'Yashnobod',
+    metro: 'Dustlik',
+    residenceComplex: 'Assalom Sohil',
     title: 'Assalom Sohil 3/4/10',
     price: 600,
     currency: 'USD',
@@ -18,6 +29,12 @@ function listing(overrides = {}) {
 
 function stored(overrides = {}) {
   return {
+    source: 'domza',
+    country: 'UZ',
+    city: 'Tashkent',
+    district: 'Yashnobod',
+    metro: 'Dustlik',
+    residence_complex: 'Assalom Sohil',
     title: 'Assalom Sohil 3/4/10',
     price: 600,
     currency: 'USD',
@@ -28,6 +45,12 @@ function stored(overrides = {}) {
     ...overrides,
   };
 }
+
+test('perceptual hashes tolerate a small Hamming distance', () => {
+  assert.equal(hammingDistanceHex('d06905494d434904', 'd06905494d434904'), 0);
+  assert.equal(hammingDistanceHex('d06905494d434904', 'd06905494d434905'), 1);
+  assert.equal(hammingDistanceHex('d06905494d434904', '0000000000000000') > 7, true);
+});
 
 test('later materially cheaper copy is suspicious without assuming cheaper always means fraud', () => {
   const result = scoreCloneRelationship(
@@ -65,14 +88,57 @@ test('older owner listing is not blamed when a newer agency copy exists', () => 
   assert.equal(result.reason, 'matched_listing_may_be_copy');
 });
 
-test('same-price duplicate remains evidence but not an automatic clone accusation', () => {
-  const result = scoreCloneRelationship(
-    listing({ createdAt: '2026-08-23T08:05:00Z' }),
-    stored({ created_at: '2026-08-23T08:00:00Z' }),
-  );
+test('same visual property advertised in incompatible districts is a strong identity conflict', () => {
+  const current = listing({ district: 'Sergeli', metro: 'Sergeli' });
+  const matched = stored({ source: 'birbir', district: 'Yashnobod', metro: 'Dustlik' });
+  const location = compareListingLocations(current, matched);
+  assert.equal(location.level, 'high');
+  assert.deepEqual(location.conflicts.sort(), ['district', 'metro']);
 
-  assert.equal(result.currentCopyCandidate, false);
-  assert.equal(result.priceDirection, 'similar');
-  assert.equal(result.reason, 'duplicate_listing');
-  assert.ok(result.score < 70);
+  const relation = scoreCloneRelationship(current, matched, {
+    matchType: 'perceptual',
+    perceptualDistance: 2,
+  });
+  assert.equal(relation.reason, 'conflicting_duplicate_location');
+  assert.ok(relation.reasonCodes.includes('photo_perceptual_match'));
+  assert.ok(relation.reasonCodes.includes('location_district_conflict'));
+  assert.ok(relation.reasonCodes.includes('location_metro_conflict'));
+  assert.ok(relation.score >= 65);
+});
+
+test('same visual property advertised in different cities is very high conflict', () => {
+  const location = compareListingLocations(
+    listing({ city: 'Tashkent', district: 'Yashnobod' }),
+    stored({ city: 'Samarkand', district: 'Registan' }),
+  );
+  assert.equal(location.level, 'very_high');
+  assert.ok(location.reasonCodes.includes('location_city_conflict'));
+});
+
+test('multiple cross-source perceptual photo matches form a property cluster candidate', () => {
+  const relation = scoreCloneRelationship(
+    listing(),
+    stored({ source: 'realting' }),
+    { matchType: 'perceptual', perceptualDistance: 3 },
+  );
+  assert.equal(isPropertyClusterMatch({
+    matchedPhotoCount: 2,
+    exactPhotoCount: 0,
+    perceptualPhotoCount: 2,
+    relation,
+  }), true);
+});
+
+test('one weak perceptual photo without consistent property facts does not force clustering', () => {
+  const relation = scoreCloneRelationship(
+    listing({ rooms: 2, areaSqm: 55, title: 'Sergeli cheap flat' }),
+    stored({ rooms: 4, area_sqm: 110, title: 'Yunusobod apartment' }),
+    { matchType: 'perceptual', perceptualDistance: 7 },
+  );
+  assert.equal(isPropertyClusterMatch({
+    matchedPhotoCount: 1,
+    exactPhotoCount: 0,
+    perceptualPhotoCount: 1,
+    relation,
+  }), false);
 });
