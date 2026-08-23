@@ -67,6 +67,7 @@ test('compose gates API and worker on successful migrations', () => {
   assert.ok(
     (compose.match(/condition:\s*service_completed_successfully/g) || []).length >= 2,
   );
+  assert.doesNotMatch(compose, /DISABLE_SCHEDULER/);
 });
 
 test('OLX shards remain concurrent inside the isolated worker process', () => {

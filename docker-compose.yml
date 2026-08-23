@@ -29,7 +29,6 @@ services:
       - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
       - SOCIAL_FETCHER_URL=http://flat-finder-social-fetcher:4040
-      - DISABLE_SCHEDULER=1
       - PHOTO_CACHE_DIR=/var/cache/flat-photos
       - PHOTO_CACHE_MAX_MB=${PHOTO_CACHE_MAX_MB:-512}
     volumes:
