@@ -64,6 +64,7 @@ async function loadRows(items) {
       l.availability_checked_at,
       l.availability_status,
       l.availability_reason,
+      l.inactive_at,
       l.data
     FROM listings l
     JOIN jsonb_to_recordset($1::jsonb)
@@ -84,6 +85,9 @@ function cachedResult(row) {
   const checkedAt = row.availability_checked_at
     ? new Date(row.availability_checked_at).toISOString()
     : null;
+  const inactiveAt = row.inactive_at
+    ? new Date(row.inactive_at).toISOString()
+    : null;
 
   if (row.active === false) {
     return {
@@ -93,6 +97,7 @@ function cachedResult(row) {
       status: 'inactive',
       reason: row.availability_reason || 'database_inactive',
       checkedAt,
+      inactiveAt,
       cached: true,
     };
   }
@@ -113,6 +118,7 @@ function cachedResult(row) {
     status: row.availability_status,
     reason: row.availability_reason || null,
     checkedAt,
+    inactiveAt,
     cached: true,
   };
 }
@@ -145,10 +151,15 @@ export async function recordListingAvailability({source, country, id, status, re
         WHEN $4::varchar(16) = 'active' THEN TRUE
         ELSE active
       END,
+      inactive_at = CASE
+        WHEN $4::varchar(16) = 'inactive' THEN COALESCE(inactive_at, NOW())
+        WHEN $4::varchar(16) = 'active' THEN NULL
+        ELSE inactive_at
+      END,
       missed_runs = CASE WHEN $4::varchar(16) = 'active' THEN 0 ELSE missed_runs END,
       updated_at = CASE WHEN $4::varchar(16) IN ('active', 'inactive') THEN NOW() ELSE updated_at END
     WHERE source = $1 AND country = $2 AND source_id = $3
-    RETURNING active, availability_checked_at
+    RETURNING active, availability_checked_at, inactive_at
   `, [source, country, id, status, reason]);
 
   if (status === 'inactive' && result.rowCount > 0) {
@@ -161,6 +172,9 @@ export async function recordListingAvailability({source, country, id, status, re
     checkedAt: row?.availability_checked_at
       ? new Date(row.availability_checked_at).toISOString()
       : new Date().toISOString(),
+    inactiveAt: row?.inactive_at
+      ? new Date(row.inactive_at).toISOString()
+      : null,
   };
 }
 
@@ -266,6 +280,7 @@ async function verifyRow(row) {
       status: result.status,
       reason: result.reason,
       checkedAt: recorded.checkedAt,
+      inactiveAt: recorded.inactiveAt,
       cached: false,
     };
   })().finally(() => inFlight.delete(key));
