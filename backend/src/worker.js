@@ -14,6 +14,7 @@ import { buildCrawlPlan, QUEUE_SHARDS } from './queuePlan.js';
 import { refreshPlaces } from './scheduler.js';
 import { startSocialHousingScheduler } from './social-housing-scheduler.js';
 import { verifyDueListingAvailability } from './availability-sweep.js';
+import { ensureListingSemantics } from './listing-semantics.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -133,6 +134,7 @@ async function workerLoop(role, shard = 0) {
 
 async function main() {
   await initDb();
+  await ensureListingSemantics();
   try {
     await initElasticsearch();
   } catch (error) {

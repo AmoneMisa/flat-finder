@@ -23,8 +23,6 @@ from curl_cffi import requests as cffi
 
 app = Flask(__name__)
 
-# OLX real-estate landing path + Accept-Language per portal. These HTML pages
-# carry __PRERENDERED_STATE__; they are not the guarded JSON API.
 PORTALS = {
     "UZ": {
         "host": "https://www.olx.uz",
@@ -34,7 +32,6 @@ PORTALS = {
             "flat:sale": "nedvizhimost/kvartiry/prodazha",
         },
     },
-
     "KZ": {
         "host": "https://www.olx.kz",
         "lang": "ru-RU,ru;q=0.9,kk;q=0.7,en;q=0.5",
@@ -43,7 +40,6 @@ PORTALS = {
             "flat:sale": "nedvizhimost/prodazha-kvartiry",
         },
     },
-
     "UA": {
         "host": "https://www.olx.ua",
         "lang": "uk-UA,uk;q=0.9,ru;q=0.7,en;q=0.5",
@@ -52,7 +48,6 @@ PORTALS = {
             "flat:sale": "nedvizhimost/kvartiry/prodazha-kvartir",
         },
     },
-
     "RO": {
         "host": "https://www.olx.ro",
         "lang": "ro-RO,ro;q=0.9,en;q=0.7",
@@ -63,28 +58,13 @@ PORTALS = {
     },
 }
 
-# curl_cffi TLS/JA3 impersonation target. Override if a curl_cffi version needs a
-# different label (e.g. "chrome131") — no code change required.
 IMPERSONATE = os.environ.get("OLX_IMPERSONATE", "chrome124")
-# We observed occasional OLX requests exceeding the former 25s default while a
-# retry to the same city completed normally. Keep enough headroom for those tail
-# latencies; compose can still override this per fetcher pool.
 TIMEOUT = int(os.environ.get("OLX_TIMEOUT", "45"))
-# Availability checks run after a result page is already rendered. They should
-# fail closed-to-unknown quickly rather than occupy the crawler pool for 45s.
 STATUS_TIMEOUT = max(3, min(30, int(os.environ.get("OLX_AVAILABILITY_TIMEOUT", "12"))))
-# RabbitMQ retries failed page tasks after 30 seconds. Retrying again inside
-# this HTTP service used to make one request last ~91.5s (45s x 2 + backoff),
-# while the nginx router necessarily stopped waiting at 55s and returned 504.
-# Keep one bounded attempt here and let the durable queue own retries.
 ATTEMPTS = max(1, int(os.environ.get("OLX_ATTEMPTS", "1")))
 RETRY_BACKOFF = float(os.environ.get("OLX_RETRY_BACKOFF", "1.5"))
-# The backend's widest supported apartment freshness window is 21 days. Keep
-# crawling each sorted OLX city/segment until a whole page is older than this
-# cutoff; narrower UI periods are then complete subsets of the same snapshot.
 LOOKBACK_DAYS = max(1, int(os.environ.get("OLX_LOOKBACK_DAYS", "21")))
 
-# window.__PRERENDERED_STATE__ = "<json string, escaped again as a JS string>";
 _STATE_RE = re.compile(
     r'window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")\s*;',
     re.S,
@@ -97,6 +77,16 @@ _INACTIVE_PATTERNS = [
     re.compile(r"anun(?:ț|t)(?:ul)?.{0,100}(?:nu\s+mai\s+este\s+disponibil|inactiv|șters|sters)", re.I),
 ]
 
+# OLX sometimes keeps the original offer URL and returns HTTP 200 while rendering
+# only its generic error shell. The old classifier saw the offer id in finalUrl
+# and incorrectly marked that page active forever.
+_GENERIC_ERROR_PATTERNS = [
+    re.compile(r"ой[,.!\s]+что[-\s]*то\s+пошло\s+не\s+так", re.I),
+    re.compile(r"щось\s+пішло\s+не\s+так", re.I),
+    re.compile(r"ceva\s+nu\s+a\s+mers", re.I),
+    re.compile(r"something\s+went\s+wrong", re.I),
+]
+
 
 def extract_ads(html):
     """Return the list of ad objects from the page state, or None if not present."""
@@ -104,7 +94,6 @@ def extract_ads(html):
     if not m:
         return None
     try:
-        # The value is a JSON string literal whose contents are themselves JSON.
         state = json.loads(json.loads(m.group(1)))
     except (ValueError, TypeError):
         return None
@@ -129,16 +118,6 @@ def _ad_created_at(ad):
 
 
 def apply_lookback_page_stop(ads):
-    """
-    OLX pages are requested with created_at:desc. We must not remove individual
-    old promoted rows from a mixed page: doing that would make Node see a short
-    page and stop before page N+1 even if newer normal ads continue there.
-
-    Instead return the whole page while it contains any known in-window ad (or
-    an undated ad we cannot safely classify). Once every dated row on a page is
-    older than the widest supported window and there are no unknown dates, emit
-    an empty page. The existing Node paginator treats that as the natural end.
-    """
     cutoff = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
     known_dates = []
     unknown_dates = 0
@@ -191,10 +170,15 @@ def classify_offer_response(status_code, document, requested_id, final_url):
         if pattern.search(visible):
             return "inactive", "inactive_page"
 
+    for pattern in _GENERIC_ERROR_PATTERNS:
+        if pattern.search(visible):
+            # One generic shell can be a transient OLX outage. The backend keeps
+            # this unknown and only deactivates after the same result repeats on
+            # the next availability window.
+            return "unknown", "generic_error_page"
+
     offer_id = str(requested_id or "").strip()
     final = str(final_url or "")
-    # Active OLX canonical URLs retain the numeric offer id. If a request was
-    # redirected to a generic category/home page, do not call that active.
     if offer_id and offer_id in final:
         return "active", "offer_page"
 
@@ -265,66 +249,26 @@ def olx_check():
 
 @app.get("/olx/listings")
 def olx_listings():
-    code = (
-        request.args.get("country")
-        or ""
-    ).upper()
-
-    segment = (
-        request.args.get("segment")
-        or "flat:longRent"
-    )
-
-    city = (
-        request.args.get("city")
-        or ""
-    ).strip().lower()
-
+    code = (request.args.get("country") or "").upper()
+    segment = (request.args.get("segment") or "flat:longRent")
+    city = (request.args.get("city") or "").strip().lower()
     portal = PORTALS.get(code)
 
     if not portal:
-        return jsonify(
-            error=f"unknown country {code!r}"
-        ), 400
+        return jsonify(error=f"unknown country {code!r}"), 400
 
     path = portal["paths"].get(segment)
-
     if not path:
-        return jsonify(
-            error=(
-                f"unsupported OLX "
-                f"segment {segment!r}"
-            )
-        ), 400
+        return jsonify(error=f"unsupported OLX segment {segment!r}"), 400
 
     if city:
-        if not re.fullmatch(
-            r"[a-z0-9-]+",
-            city,
-        ):
-            return jsonify(
-                error=(
-                    f"invalid OLX city "
-                    f"slug {city!r}"
-                )
-            ), 400
-
+        if not re.fullmatch(r"[a-z0-9-]+", city):
+            return jsonify(error=f"invalid OLX city slug {city!r}"), 400
         path = f"{path}/{city}"
 
     try:
-        page = max(
-            1,
-            int(
-                request.args.get(
-                    "page",
-                    "1",
-                )
-            ),
-        )
-    except (
-        TypeError,
-        ValueError,
-    ):
+        page = max(1, int(request.args.get("page", "1")))
+    except (TypeError, ValueError):
         page = 1
 
     url = (
@@ -344,7 +288,7 @@ def olx_listings():
                 timeout=TIMEOUT,
                 headers={"Accept-Language": portal["lang"]},
             )
-        except Exception as e:  # network / TLS / timeout
+        except Exception as e:
             last_err = f"fetch error: {e}"
         else:
             if resp.status_code == 200:
@@ -364,12 +308,9 @@ def olx_listings():
                 last_err = f"{where}: no __PRERENDERED_STATE__"
             else:
                 last_err = f"{where} HTTP {resp.status_code}"
-        # Optional local retries remain available for standalone deployments,
-        # but the compose stack deliberately leaves them to the durable queue.
         if attempt + 1 < ATTEMPTS:
             time.sleep(RETRY_BACKOFF)
     return jsonify(error=last_err or f"{where}: failed"), 502
 
 if __name__ == "__main__":
-    # Dev only; production uses gunicorn (see Dockerfile).
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "4020")))

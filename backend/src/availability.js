@@ -2,10 +2,6 @@ import { pool } from './db.js';
 import { COUNTRIES } from './countries.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
-// OLX rental inventory churns quickly. Six hours was long enough for a large
-// fraction of a filtered result page to disappear before we revisited it.
-// Keep the cache short enough for user-facing results while still avoiding a
-// source request on every page load (all checks stay in the worker).
 const ACTIVE_TTL_MS = Math.max(60_000, Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 30 * 60_000);
 const UNKNOWN_TTL_MS = Math.max(30_000, Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 10 * 60_000);
 const REQUEST_TIMEOUT_MS = Math.max(3_000, Number(process.env.LISTING_AVAILABILITY_REQUEST_TIMEOUT_MS) || 18_000);
@@ -124,6 +120,18 @@ function cachedResult(row) {
   };
 }
 
+async function removeFromSearchIndex(source, country, id) {
+  try {
+    const { deleteListingDocuments } = await import('./elasticsearch.js');
+    await deleteListingDocuments([{ source, country, id }]);
+  } catch (error) {
+    console.warn(
+      `[availability] failed to remove ${source}:${country}:${id} from Elasticsearch: ` +
+      `${error?.message ?? error}`,
+    );
+  }
+}
+
 export async function recordListingAvailability({ source, country, id, status, reason = null }) {
   await ensureAvailabilitySchema();
 
@@ -147,6 +155,10 @@ export async function recordListingAvailability({ source, country, id, status, r
     WHERE source = $1 AND country = $2 AND source_id = $3
     RETURNING active, availability_checked_at
   `, [source, country, id, status, reason]);
+
+  if (status === 'inactive' && result.rowCount > 0) {
+    await removeFromSearchIndex(source, country, id);
+  }
 
   const row = result.rows[0];
   return {
@@ -204,6 +216,22 @@ async function fetchOlxAvailability(row) {
   };
 }
 
+export function confirmRepeatedOlxGenericError(row, result) {
+  if (
+    result?.status === 'unknown' &&
+    result?.reason === 'generic_error_page' &&
+    row?.availability_status === 'unknown' &&
+    row?.availability_reason === 'generic_error_page' &&
+    row?.availability_checked_at
+  ) {
+    return {
+      status: 'inactive',
+      reason: 'repeated_generic_error_page',
+    };
+  }
+  return result;
+}
+
 async function verifyRow(row) {
   const cached = cachedResult(row);
   if (cached) return cached;
@@ -215,7 +243,7 @@ async function verifyRow(row) {
   const promise = (async () => {
     let result;
     if (row.source === 'olx') {
-      result = await fetchOlxAvailability(row);
+      result = confirmRepeatedOlxGenericError(row, await fetchOlxAvailability(row));
     } else {
       result = { status: 'unknown', reason: 'unsupported_source' };
     }

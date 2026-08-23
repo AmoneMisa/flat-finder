@@ -1,4 +1,5 @@
 import { pool } from './db.js';
+import { deleteListingDocuments } from './elasticsearch.js';
 import { olxSegmentDealType } from './olx-segment.js';
 
 /**
@@ -73,6 +74,15 @@ export async function reconcileAuthoritativeOlxSegment({
   }));
 
   if (deactivated.length) {
+    try {
+      await deleteListingDocuments(deactivated);
+    } catch (error) {
+      console.warn(
+        `[crawl:reconcile] failed to remove ${deactivated.length} stale OLX documents ` +
+        `from Elasticsearch: ${error?.message ?? error}`,
+      );
+    }
+
     console.log(
       `[crawl:reconcile] OLX ${normalizedCountry}/${normalizedSegment}: ` +
       `${deactivated.length} stale listings deactivated`,

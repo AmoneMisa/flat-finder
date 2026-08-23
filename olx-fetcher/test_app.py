@@ -34,6 +34,15 @@ class AvailabilityClassifierTests(unittest.TestCase):
         )
         self.assertEqual((status, reason), ("active", "offer_page"))
 
+    def test_generic_error_shell_is_not_active_even_when_url_keeps_offer_id(self):
+        status, reason = classify_offer_response(
+            200,
+            "<main><h1>Ой, что-то пошло не так</h1><p>Попробуйте позже</p></main>",
+            "ID4kiib",
+            "https://www.olx.uz/d/obyavlenie/assalom-sohil-3-4-10-ID4kiib.html",
+        )
+        self.assertEqual((status, reason), ("unknown", "generic_error_page"))
+
     def test_generic_redirect_is_unknown(self):
         self.assertEqual(
             classify_offer_response(200, "<main>OLX</main>", "65813684", "https://www.olx.uz/"),
