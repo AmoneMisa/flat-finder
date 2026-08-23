@@ -46,7 +46,8 @@ test('listing availability state deactivates stale OLX rows and reuses fresh che
   });
 
   let state = await pool.query(`
-    SELECT active, availability_status, availability_reason, availability_checked_at
+    SELECT active, availability_status, availability_reason,
+      availability_checked_at, inactive_at
     FROM listings
     WHERE source = 'olx' AND country = 'UZ' AND source_id = $1
   `, [id]);
@@ -55,6 +56,7 @@ test('listing availability state deactivates stale OLX rows and reuses fresh che
   assert.equal(state.rows[0]?.availability_status, 'inactive');
   assert.equal(state.rows[0]?.availability_reason, 'http_404');
   assert.ok(state.rows[0]?.availability_checked_at);
+  assert.ok(state.rows[0]?.inactive_at);
 
   await recordListingAvailability({
     source: 'olx',
@@ -73,15 +75,17 @@ test('listing availability state deactivates stale OLX rows and reuses fresh che
   assert.equal(cached.length, 1);
   assert.equal(cached[0]?.status, 'active');
   assert.equal(cached[0]?.reason, 'offer_page');
+  assert.equal(cached[0]?.inactiveAt, null);
   assert.equal(cached[0]?.cached, true);
 
   state = await pool.query(`
-    SELECT active, missed_runs
+    SELECT active, missed_runs, inactive_at
     FROM listings
     WHERE source = 'olx' AND country = 'UZ' AND source_id = $1
   `, [id]);
   assert.equal(state.rows[0]?.active, true);
   assert.equal(state.rows[0]?.missed_runs, 0);
+  assert.equal(state.rows[0]?.inactive_at, null);
 
   await pool.query(
     `DELETE FROM listings WHERE source = 'olx' AND country = 'UZ' AND source_id = $1`,
