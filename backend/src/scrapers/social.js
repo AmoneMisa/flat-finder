@@ -9,7 +9,11 @@ import {
 } from '../textparse.js';
 
 const SOCIAL_FETCHER_URL = String(process.env.SOCIAL_FETCHER_URL || '').replace(/\/$/, '');
-const SOCIAL_TIMEOUT_MS = Math.max(5_000, Number(process.env.SOCIAL_HOUSING_TIMEOUT_MS) || 45_000);
+// The social sidecar deliberately allows only one Chromium session at a time.
+// A request can therefore spend time queued behind another Threads search before
+// its own 45s browser navigation starts. Keep the caller budget below Gunicorn's
+// 180s hard timeout, but comfortably above one browser navigation + scroll pass.
+const SOCIAL_TIMEOUT_MS = Math.max(30_000, Math.min(170_000, Number(process.env.SOCIAL_HOUSING_TIMEOUT_MS) || 150_000));
 const SOCIAL_LIMIT = Math.max(5, Math.min(100, Number(process.env.SOCIAL_HOUSING_LIMIT) || 40));
 
 const HOUSING_RE = /(apartament|apartment|flat|casa|квартир|kvartira|\bkv\b|дом|\buy\b|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|оренд|жал[гғ]а|rent|inchiri|сдам|сдаю|сдается|сдається|beriladi|sotiladi|прода[её]т|продаж|sale|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
