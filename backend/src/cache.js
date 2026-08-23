@@ -1,10 +1,9 @@
-// Process-local fallback cache used only by the legacy/custom-source path.
-// Normal Flat Finder requests are served directly from PostgreSQL and never
-// read country-wide snapshots from this module.
+// Small process-local TTL/LRU cache shared by enrichment helpers such as
+// geocoding, reverse geocoding, metro lookup and vision enrichment.
 
 export function createMemoryCache({
   now = () => Date.now(),
-  maxEntries = Number(process.env.LEGACY_CACHE_MAX_ENTRIES) || 500,
+  maxEntries = Number(process.env.RUNTIME_CACHE_MAX_ENTRIES) || 500,
 } = {}) {
   const mem = new Map(); // key -> { entry, expiresAt }
 
@@ -31,7 +30,7 @@ export function createMemoryCache({
       return null;
     }
 
-    // Refresh insertion order so frequently used snapshots are evicted last.
+    // Refresh insertion order so frequently used entries are evicted last.
     mem.delete(normalizedKey);
     mem.set(normalizedKey, hit);
     return hit.entry;

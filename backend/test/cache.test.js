@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {createMemoryCache} from '../src/cache.js';
 
-test('legacy cache expires entries by TTL', () => {
+test('runtime cache expires entries by TTL', () => {
   let timestamp = 1_000;
   const cache = createMemoryCache({now: () => timestamp, maxEntries: 10});
 
@@ -14,7 +14,7 @@ test('legacy cache expires entries by TTL', () => {
   assert.equal(cache.get('a'), null);
 });
 
-test('legacy cache stays bounded and evicts least recently used entries', () => {
+test('runtime cache stays bounded and evicts least recently used entries', () => {
   const cache = createMemoryCache({now: () => 2_000, maxEntries: 2});
 
   cache.set('a', {value: 'a'}, 60_000);
@@ -30,7 +30,7 @@ test('legacy cache stays bounded and evicts least recently used entries', () => 
   assert.deepEqual(cache.get('c'), {value: 'c'});
 });
 
-test('legacy cache removes expired entries before evicting active ones', () => {
+test('runtime cache removes expired entries before evicting active ones', () => {
   let timestamp = 3_000;
   const cache = createMemoryCache({now: () => timestamp, maxEntries: 2});
 

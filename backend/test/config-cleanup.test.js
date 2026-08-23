@@ -20,6 +20,7 @@ test('retired Redis and RabbitMQ infrastructure stays absent', () => {
   assert.doesNotMatch(sampleEnv, /^RABBITMQ_/m);
 });
 
-test('legacy-only process cache has an explicit bound', () => {
-  assert.match(sampleEnv, /^LEGACY_CACHE_MAX_ENTRIES=500$/m);
+test('shared runtime cache has an explicit bound and no legacy config name', () => {
+  assert.match(sampleEnv, /^RUNTIME_CACHE_MAX_ENTRIES=500$/m);
+  assert.doesNotMatch(sampleEnv, /LEGACY_CACHE_MAX_ENTRIES/);
 });
