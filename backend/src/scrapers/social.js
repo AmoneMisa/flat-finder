@@ -94,6 +94,7 @@ async function fetchSocial(path, body) {
 async function scrapeTargets(country, source, values) {
   const configs = (values || []).map(socialTarget).filter((value) => value?.target);
   const listings = [];
+  const errors = [];
 
   for (const config of configs) {
     try {
@@ -106,14 +107,19 @@ async function scrapeTargets(country, source, values) {
         if (listing) listings.push(listing);
       }
     } catch (error) {
-      console.warn(`[${source}:housing] ${config.target}: ${error?.message || error}`);
+      const message = error?.message || String(error);
+      errors.push({ target: config.target, error: message });
+      console.warn(`[${source}:housing] ${config.target}: ${message}`);
     }
   }
 
   return {
     listings,
-    complete: true,
-    partialExpected: false,
+    // A partial social crawl must never age-out rows from targets that failed in
+    // this pass. Deactivation is safe only after every configured target replied.
+    complete: errors.length === 0,
+    partialExpected: errors.length > 0,
+    errors,
     processedTargets: configs.map((config) => config.target),
   };
 }
