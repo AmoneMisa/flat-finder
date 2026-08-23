@@ -5,10 +5,11 @@ import { readFileSync } from 'node:fs';
 const scraper = readFileSync(new URL('../src/scrapers/social.js', import.meta.url), 'utf8');
 const scheduler = readFileSync(new URL('../src/social-housing-scheduler.js', import.meta.url), 'utf8');
 
-test('partial social target crawls do not report a complete source crawl', () => {
+test('partial or unexpectedly empty social crawls do not report complete', () => {
   assert.match(scraper, /const errors = \[\]/);
-  assert.match(scraper, /complete: errors\.length === 0/);
-  assert.match(scraper, /partialExpected: errors\.length > 0/);
+  assert.match(scraper, /let rawItems = 0/);
+  assert.match(scraper, /const complete = errors\.length === 0 && \(configs\.length === 0 \|\| rawItems > 0\)/);
+  assert.match(scraper, /partialExpected: !complete/);
 });
 
 test('complete social crawls age out missing rows and sync ES deactivation', () => {
