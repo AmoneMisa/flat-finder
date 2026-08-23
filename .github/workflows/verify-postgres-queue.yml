@@ -65,7 +65,7 @@ jobs:
           ! grep -q 'QUEUE_TASK_API_URL' docker-compose.yml
       - name: Build social fetcher and run contract tests
         run: docker build -t flat-finder-social-fetcher:test ./social-fetcher
-      - name: Run queue and search regressions
+      - name: Run queue, search and social regressions
         run: >-
           node --test
           backend/test/pg-queue.integration.test.js
@@ -73,6 +73,8 @@ jobs:
           backend/test/queue-crawl-stability.test.js
           backend/test/map-amenity-sort.test.js
           backend/test/ua-priority-coverage.test.js
+          backend/test/social-housing-lifecycle.test.js
+          backend/test/social-fetch-contracts.test.js
       - name: Verify retired infrastructure is gone
         run: |
           ! grep -q 'flat-finder-rabbitmq' docker-compose.yml
