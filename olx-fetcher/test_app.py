@@ -10,6 +10,12 @@ class AvailabilityClassifierTests(unittest.TestCase):
             ("inactive", "http_404"),
         )
 
+    def test_gone_is_inactive(self):
+        self.assertEqual(
+            classify_offer_response(410, "", "65813684", "https://www.olx.uz/"),
+            ("inactive", "http_410"),
+        )
+
     def test_waf_response_is_unknown(self):
         self.assertEqual(
             classify_offer_response(403, "", "65813684", "https://www.olx.uz/"),
@@ -22,6 +28,15 @@ class AvailabilityClassifierTests(unittest.TestCase):
             "<main>Это объявление больше не доступно</main>",
             "65813684",
             "https://www.olx.uz/d/obyavlenie/test-65813684.html",
+        )
+        self.assertEqual((status, reason), ("inactive", "inactive_page"))
+
+    def test_visible_inactive_message_without_pronoun_wins(self):
+        status, reason = classify_offer_response(
+            200,
+            "<main>Объявление больше не доступно</main>",
+            "ID4saUY",
+            "https://www.olx.uz/d/obyavlenie/test-ID4saUY.html",
         )
         self.assertEqual((status, reason), ("inactive", "inactive_page"))
 
