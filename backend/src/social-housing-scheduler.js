@@ -1,6 +1,6 @@
 import { COUNTRIES } from './countries.js';
-import { upsertListings } from './db.js';
-import { indexListings } from './elasticsearch.js';
+import { markMissingAfterCompleteCrawl, upsertListings } from './db.js';
+import { deleteListingDocuments, indexListings } from './elasticsearch.js';
 import { scrapeFacebook, scrapeThreads } from './scrapers/social.js';
 
 const SOCIAL_REFRESH_MINUTES = Math.max(10, Number(process.env.SOCIAL_HOUSING_REFRESH_MINUTES) || 30);
@@ -26,16 +26,43 @@ const UZ_CONFIG = {
   ],
 };
 
-async function persist(source, result) {
+async function persist(source, result, crawlStartedAt) {
   const listings = Array.isArray(result?.listings) ? result.listings : [];
-  if (!listings.length) return 0;
+  let saved = 0;
 
-  const saved = await upsertListings(listings);
-  try {
-    await indexListings(listings);
-  } catch (error) {
-    console.warn(`[social-housing] ${source} Elasticsearch failed: ${error?.message || error}`);
+  if (listings.length) {
+    saved = await upsertListings(listings);
+    try {
+      await indexListings(listings);
+    } catch (error) {
+      console.warn(`[social-housing] ${source} Elasticsearch failed: ${error?.message || error}`);
+    }
   }
+
+  if (result?.complete === true) {
+    try {
+      const missing = await markMissingAfterCompleteCrawl({
+        source,
+        country: UZ_CONFIG.code,
+        crawlStartedAt,
+      });
+      if (missing.deactivated?.length) {
+        await deleteListingDocuments(missing.deactivated).catch((error) => {
+          console.warn(
+            `[social-housing] ${source} deactivation index sync failed: ${error?.message || error}`,
+          );
+        });
+      }
+    } catch (error) {
+      console.warn(`[social-housing] ${source} missing-row sweep failed: ${error?.message || error}`);
+    }
+  } else {
+    console.warn(
+      `[social-housing] ${source} crawl partial; keeping unseen rows active ` +
+      `(errors=${Array.isArray(result?.errors) ? result.errors.length : 0})`,
+    );
+  }
+
   return saved;
 }
 
@@ -45,6 +72,10 @@ export async function refreshSocialHousing(reason = 'scheduled') {
   running = true;
 
   try {
+    const crawlStartedAt = {
+      facebook: new Date().toISOString(),
+      threads: new Date().toISOString(),
+    };
     const [facebook, threads] = await Promise.allSettled([
       scrapeFacebook(UZ_CONFIG),
       scrapeThreads(UZ_CONFIG),
@@ -53,13 +84,13 @@ export async function refreshSocialHousing(reason = 'scheduled') {
     const counts = { facebook: 0, threads: 0 };
 
     if (facebook.status === 'fulfilled') {
-      counts.facebook = await persist('facebook', facebook.value);
+      counts.facebook = await persist('facebook', facebook.value, crawlStartedAt.facebook);
     } else {
       console.warn(`[social-housing] Facebook failed: ${facebook.reason?.message || facebook.reason}`);
     }
 
     if (threads.status === 'fulfilled') {
-      counts.threads = await persist('threads', threads.value);
+      counts.threads = await persist('threads', threads.value, crawlStartedAt.threads);
     } else {
       console.warn(`[social-housing] Threads failed: ${threads.reason?.message || threads.reason}`);
     }

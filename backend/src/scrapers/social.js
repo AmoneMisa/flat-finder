@@ -94,6 +94,8 @@ async function fetchSocial(path, body) {
 async function scrapeTargets(country, source, values) {
   const configs = (values || []).map(socialTarget).filter((value) => value?.target);
   const listings = [];
+  const errors = [];
+  let rawItems = 0;
 
   for (const config of configs) {
     try {
@@ -101,19 +103,29 @@ async function scrapeTargets(country, source, values) {
         ? await fetchSocial('/threads/search', { query: config.target, limit: SOCIAL_LIMIT })
         : await fetchSocial('/fetch', { source: 'facebook', target: config.target, limit: SOCIAL_LIMIT });
 
+      rawItems += items.length;
       for (const item of items) {
         const listing = itemToListing(item, source, config, country);
         if (listing) listings.push(listing);
       }
     } catch (error) {
-      console.warn(`[${source}:housing] ${config.target}: ${error?.message || error}`);
+      const message = error?.message || String(error);
+      errors.push({ target: config.target, error: message });
+      console.warn(`[${source}:housing] ${config.target}: ${message}`);
     }
   }
 
+  // A partial crawl, or an all-empty fetch from configured targets, must never
+  // age-out previously healthy rows. An HTTP-200/empty response is a common
+  // failure mode when a social page changes markup or starts blocking requests.
+  const complete = errors.length === 0 && (configs.length === 0 || rawItems > 0);
+
   return {
     listings,
-    complete: true,
-    partialExpected: false,
+    complete,
+    partialExpected: !complete,
+    errors,
+    rawItems,
     processedTargets: configs.map((config) => config.target),
   };
 }

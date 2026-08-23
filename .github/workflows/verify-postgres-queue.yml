@@ -51,6 +51,8 @@ jobs:
           node --check backend/src/availability-sweep.js
           node --check backend/src/worker.js
           node --check backend/src/scheduler.js
+          node --check backend/src/scrapers/social.js
+          node --check backend/src/social-housing-scheduler.js
           bash -n scripts/upgrade-postgres-18.sh
           bash -n deploy.sh
       - name: Validate Compose
@@ -69,6 +71,7 @@ jobs:
           backend/test/pg-queue.integration.test.js
           backend/test/postgres-search.integration.test.js
           backend/test/queue-crawl-stability.test.js
+          backend/test/social-housing-lifecycle.test.js
           backend/test/map-amenity-sort.test.js
           backend/test/ua-priority-coverage.test.js
       - name: Verify retired infrastructure is gone
