@@ -56,7 +56,7 @@ wait_for_healthy() {
   while [[ $SECONDS -lt $deadline ]]; do
     cid="$(docker compose ps -q "$service" 2>/dev/null || true)"
     if [[ -n "$cid" ]]; then
-      status="$(docker inspect --format '{{if .State.Healthcheck}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || true)"
+      status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || true)"
       if [[ "$status" == "healthy" || "$status" == "none" ]]; then
         return 0
       fi
