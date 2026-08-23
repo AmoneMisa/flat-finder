@@ -1,4 +1,5 @@
-import { makeListing, MAX_AGE_MS } from '../normalize.js';
+import { makeListing } from '../normalize.js';
+import { MAX_AGE_MS } from '../listing-policy.js';
 import {
   parsePriceFromText,
   parseRoomsFromText,

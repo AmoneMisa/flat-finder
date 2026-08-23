@@ -15,8 +15,6 @@ import {
 import {canonicalDistrict, parseLocation} from './locations.js';
 import {parseDishwasher, parsePrivateYard, parseTerrace} from './amenity-parse.js';
 
-export {MAX_AGE_MS} from './listing-policy.js';
-
 function stripHtml(s) {
   return String(s ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
     .replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')

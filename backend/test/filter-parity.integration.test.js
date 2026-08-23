@@ -26,6 +26,8 @@ function listing(id, overrides = {}) {
     bedrooms: 1,
     areaSqm: 50,
     city: 'Parity City',
+    district: 'Central District',
+    metro: 'Main Station',
     createdAt: new Date().toISOString(),
     commercial: false,
     ...overrides,
@@ -63,7 +65,7 @@ function legacyIds(listings, filters, rates = {USD: 1, UAH: 40}) {
     .sort();
 }
 
-test('legacy fallback and PostgreSQL search share core filter semantics', {skip: !enabled}, async () => {
+test('in-memory and PostgreSQL search share core filter semantics', {skip: !enabled}, async () => {
   await assertDatabaseReady();
   await pool.query('DELETE FROM listings WHERE source = $1 AND country = $2', [SOURCE, COUNTRY]);
 
@@ -90,6 +92,11 @@ test('legacy fallback and PostgreSQL search share core filter semantics', {skip:
       price: 250,
       airConditioner: false,
     }),
+    listing('other-city', {
+      city: 'Parity City Center',
+      district: 'Outer District',
+      metro: 'Other Station',
+    }),
     listing('commercial', {
       price: 100,
       commercial: true,
@@ -106,6 +113,9 @@ test('legacy fallback and PostgreSQL search share core filter semantics', {skip:
       baseFilters({airConditioner: true}),
       baseFilters({pets: true, children: true}),
       baseFilters({roomsMin: 2, roomsMax: 2, areaMin: 45, areaMax: 55}),
+      baseFilters({city: 'parity city', cityAliases: ['Parity City']}),
+      baseFilters({district: 'central district'}),
+      baseFilters({metro: 'main station'}),
     ];
 
     for (const filters of cases) {
@@ -115,6 +125,14 @@ test('legacy fallback and PostgreSQL search share core filter semantics', {skip:
         `filter parity failed for ${JSON.stringify(filters)}`,
       );
     }
+
+    const exactCity = baseFilters({city: 'Parity City'});
+    const expectedCityIds = listings
+      .filter((item) => item.city === 'Parity City' && !item.commercial)
+      .map((item) => item.id)
+      .sort();
+    assert.deepEqual(legacyIds(listings, exactCity), expectedCityIds);
+    assert.deepEqual(await postgresIds(exactCity), expectedCityIds);
   } finally {
     await pool.query('DELETE FROM listings WHERE source = $1 AND country = $2', [SOURCE, COUNTRY]);
     await closeDb();

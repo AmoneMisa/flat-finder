@@ -42,3 +42,22 @@ test('HTTP route modules never import custom scraper execution helpers', () => {
     assert.doesNotMatch(source, /\bscrapeCustom\b/, `${name} must use the queue adapter`);
   }
 });
+
+test('custom scraper exposes only the worker-facing fetch operation', () => {
+  const source = readFileSync(path.join(srcRoot, 'scrapers/custom.js'), 'utf8');
+  assert.match(source, /export async function scrapeCustomUrl\(/);
+  assert.doesNotMatch(source, /export async function validateSource\(/);
+  assert.doesNotMatch(source, /export async function scrapeCustom\(/);
+});
+
+test('listing freshness policy is imported directly instead of re-exported by normalize', () => {
+  const normalize = readFileSync(path.join(srcRoot, 'normalize.js'), 'utf8');
+  const legacyFilter = readFileSync(path.join(srcRoot, 'legacy-listing-filter.js'), 'utf8');
+  const telegram = readFileSync(path.join(srcRoot, 'scrapers/telegram.js'), 'utf8');
+  const social = readFileSync(path.join(srcRoot, 'scrapers/social.js'), 'utf8');
+
+  assert.doesNotMatch(normalize, /export\s*\{\s*MAX_AGE_MS\s*\}/);
+  assert.match(legacyFilter, /from '\.\/listing-policy\.js'/);
+  assert.match(telegram, /from '\.\.\/listing-policy\.js'/);
+  assert.match(social, /from '\.\.\/listing-policy\.js'/);
+});

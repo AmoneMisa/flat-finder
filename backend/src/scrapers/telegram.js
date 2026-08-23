@@ -6,7 +6,8 @@
 // transport-only: it returns raw message text/date, and all the housing
 // parsing/filtering below stays here so there's a single source of truth.
 
-import {makeListing, MAX_AGE_MS} from '../normalize.js';
+import {makeListing} from '../normalize.js';
+import {MAX_AGE_MS} from '../listing-policy.js';
 import {
   parsePriceFromText,
   parseRoomsFromText,
@@ -531,8 +532,8 @@ export async function scrapeTelegram(
    * Просто большой список каналов
    * намеренно обходим порциями.
    *
-   * Postgres + Redis постепенно
-   * аккумулируют результаты.
+   * PostgreSQL постепенно
+   * аккумулирует результаты.
    */
   return {
     listings,

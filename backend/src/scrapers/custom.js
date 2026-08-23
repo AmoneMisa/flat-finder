@@ -394,31 +394,3 @@ export async function scrapeCustomUrl(url, country) {
   }
   return listings.slice(0, MAX_ITEMS);
 }
-
-// Compatibility helpers retained for non-HTTP consumers. Public API routes now
-// submit custom-source work to the PostgreSQL queue and never call these
-// functions directly.
-export async function validateSource(url, country) {
-  try {
-    const listings = await scrapeCustomUrl(url, country);
-    return { ok: true, count: listings.length, error: null };
-  } catch (e) {
-    return { ok: false, count: 0, error: e.message };
-  }
-}
-
-export async function scrapeCustom(country, filters) {
-  const urls = Array.isArray(filters.customSources) ? filters.customSources : [];
-  if (!urls.length) return { listings: [], errors: [] };
-
-  const results = await Promise.allSettled(
-    urls.map((u) => scrapeCustomUrl(u, country)),
-  );
-  const listings = [];
-  const errors = [];
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') listings.push(...r.value);
-    else errors.push({ url: urls[i], error: r.reason?.message ?? String(r.reason) });
-  });
-  return { listings, errors };
-}

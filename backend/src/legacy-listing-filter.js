@@ -1,7 +1,6 @@
 import {toUsd} from './fx.js';
 import {looksHousingWanted} from './textparse.js';
-
-const MAX_AGE_MS = 21 * 24 * 60 * 60 * 1000;
+import {MAX_AGE_MS} from './listing-policy.js';
 
 function normCity(value) {
   return String(value ?? '')
@@ -229,7 +228,7 @@ export function applyListingFilters(listings, filters, rates = null) {
 
     if (cityForms) {
       const listingCity = normCity(listing.city);
-      if (!cityForms.some((form) => listingCity.includes(form))) return false;
+      if (!cityForms.includes(listingCity)) return false;
     }
     if (
       district &&

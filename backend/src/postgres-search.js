@@ -193,11 +193,13 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   }
 
   if (filters.city) {
-    const forms = [...new Set((filters.cityAliases?.length ? filters.cityAliases : [filters.city]).map(String).filter(Boolean))];
-    where.push(`l.city = ANY(${add(forms)}::text[])`);
+    const forms = [...new Set((filters.cityAliases?.length ? filters.cityAliases : [filters.city])
+      .map((value) => String(value).toLowerCase())
+      .filter(Boolean))];
+    where.push(`LOWER(l.city) = ANY(${add(forms)}::text[])`);
   }
-  if (filters.district) where.push(`l.district = ${add(String(filters.district))}`);
-  if (filters.metro) where.push(`l.metro = ${add(String(filters.metro))}`);
+  if (filters.district) where.push(`LOWER(l.district) = ${add(String(filters.district).toLowerCase())}`);
+  if (filters.metro) where.push(`LOWER(l.metro) = ${add(String(filters.metro).toLowerCase())}`);
 
   if (filters.metroMaxM != null) {
     const metroDistance = `COALESCE(${jsonNumber('l.data', 'metroDistanceM')}, ${jsonNumber("(l.data->'metroNearby'->0)", 'distanceM')})`;
