@@ -2,18 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const queueServer = readFileSync(new URL('../src/queue-task-server.js', import.meta.url), 'utf8');
+const queuePlan = readFileSync(new URL('../src/queuePlan.js', import.meta.url), 'utf8');
 const queueTasks = readFileSync(new URL('../src/queueTasks.js', import.meta.url), 'utf8');
 const queueDedup = readFileSync(new URL('../src/queueTaskDedup.js', import.meta.url), 'utf8');
 const pgQueue = readFileSync(new URL('../src/pgQueue.js', import.meta.url), 'utf8');
 const scheduler = readFileSync(new URL('../src/scheduler.js', import.meta.url), 'utf8');
-const worker = readFileSync(new URL('../../queue-worker/worker.py', import.meta.url), 'utf8');
-const workerDockerfile = readFileSync(new URL('../../queue-worker/Dockerfile', import.meta.url), 'utf8');
+const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
+const bootstrap = readFileSync(new URL('../src/bootstrap.js', import.meta.url), 'utf8');
 const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
 
 test('queue plan seeds one OLX page and lets successful tasks extend the chain', () => {
-  assert.doesNotMatch(queueServer, /page\s*<=\s*5/);
-  assert.match(queueServer, /page:\s*1/);
+  assert.doesNotMatch(queuePlan, /page\s*<=\s*5/);
+  assert.match(queuePlan, /page:\s*1/);
   assert.match(queueTasks, /pastCutoff/);
   assert.match(queueTasks, /rawCount\s*<=\s*0/);
   assert.match(queueTasks, /nextTasks:/);
@@ -21,11 +21,11 @@ test('queue plan seeds one OLX page and lets successful tasks extend the chain',
 });
 
 test('queue protocol v3 partitions stable crawl chains', () => {
-  assert.match(queueServer, /queueProtocol = Math\.max\(3,/);
-  assert.match(queueServer, /function stableHash/);
-  assert.match(queueServer, /function chainKey/);
-  assert.match(queueServer, /crawlerShard: crawlerShard\(task\)/);
-  assert.match(queueServer, /crawlGeneration = randomUUID\(\)/);
+  assert.match(queuePlan, /QUEUE_PROTOCOL_VERSION = Math\.max/);
+  assert.match(queuePlan, /function stableHash/);
+  assert.match(queuePlan, /function chainKey/);
+  assert.match(queuePlan, /crawlerShard: crawlerShard\(task, shardCount\)/);
+  assert.match(queuePlan, /crawlGeneration = randomUUID\(\)/);
   assert.match(queueTasks, /crawlerShard: task\.crawlerShard/);
   assert.match(queueTasks, /crawlGeneration: task\.crawlGeneration/);
 });
@@ -43,31 +43,24 @@ test('PostgreSQL owns durable queue state, priority, leases and retries', () => 
   assert.match(pgQueue, /RETRY_MAX_MS/);
 });
 
-test('queue-task API dispatches generations and exposes atomic claim/complete/fail transitions', () => {
-  assert.match(queueServer, /dispatchGenerationIfIdle/);
-  assert.match(queueServer, /\/internal\/queue-claim/);
-  assert.match(queueServer, /\/internal\/queue-complete/);
-  assert.match(queueServer, /\/internal\/queue-fail/);
-  assert.match(queueServer, /initCrawlQueueSchema/);
-  assert.match(queueServer, /dispatchTick/);
-  assert.match(queueServer, /setInterval\(\(\) => void dispatchTick\(\), dispatchPollMs\)/);
+test('one Node worker owns dispatch, queue transitions and task execution directly', () => {
+  assert.match(worker, /dispatchGenerationIfIdle/);
+  assert.match(worker, /claimTask/);
+  assert.match(worker, /processQueueTask/);
+  assert.match(worker, /completeTask/);
+  assert.match(worker, /failTask/);
+  assert.match(worker, /initCrawlQueueSchema/);
+  assert.match(worker, /workerLoop\('telegram', 0\)/);
+  assert.doesNotMatch(worker, /\/internal\/queue-/);
+  assert.doesNotMatch(compose, /flat-finder-queue-task-api:/);
+  assert.doesNotMatch(compose, /flat-finder-queue-worker-/);
 });
 
-test('OLX workers remain pinned to independent shards', () => {
-  assert.match(worker, /QUEUE_SHARD/);
-  assert.match(worker, /WORKER_ROLE == "telegram"/);
-  assert.match(worker, /task_type == "flat\.olx\.page" and shard == QUEUE_SHARD/);
-  assert.match(worker, /\/internal\/queue-claim/);
-  assert.match(compose, /QUEUE_WORKER_ROLE: olx/);
-  assert.match(compose, /QUEUE_SHARD: 0/);
-  assert.match(compose, /QUEUE_SHARD: 1/);
-});
-
-test('Telegram tasks stay isolated on the dedicated worker', () => {
-  assert.match(worker, /return task_type == "flat\.telegram\.channel"/);
-  assert.match(compose, /flat-finder-queue-worker-telegram:/);
-  assert.match(compose, /QUEUE_WORKER_ROLE: telegram/);
-  assert.match(compose, /TELEGRAM_WORKER_MEMORY_LIMIT:-256m/);
+test('OLX shards remain concurrent inside the isolated worker process', () => {
+  assert.match(worker, /Array\.from\(\{ length: QUEUE_SHARDS \}/);
+  assert.match(worker, /workerLoop\('olx', shard\)/);
+  assert.match(pgQueue, /type = 'flat\.olx\.page' AND crawler_shard = \$1/);
+  assert.match(compose, /QUEUE_SHARDS=\$\{QUEUE_SHARDS:-2\}/);
 });
 
 test('successful completion enqueues chained OLX pages in the same Postgres transaction', () => {
@@ -84,7 +77,7 @@ test('each OLX shard is pinned to a different fetcher', () => {
   assert.match(compose, /OLX_FETCHER_URL_1=http:\/\/flat-finder-olx-fetcher-ua:4020/);
 });
 
-test('task execution deduplication remains PostgreSQL-backed during transport migration', () => {
+test('task execution deduplication remains PostgreSQL-backed', () => {
   assert.match(queueTasks, /executeQueueTaskOnce/);
   assert.match(queueDedup, /crawl_task_runs/);
   assert.match(queueDedup, /ON CONFLICT \(task_key\)/);
@@ -93,25 +86,20 @@ test('task execution deduplication remains PostgreSQL-backed during transport mi
   assert.match(queueDedup, /deduplicated: true/);
 });
 
-test('RabbitMQ and Redis are absent from the Flat Finder runtime', () => {
+test('API runtime does not start recurring crawler schedulers', () => {
+  assert.doesNotMatch(bootstrap, /startSocialHousingScheduler/);
+  assert.match(compose, /DISABLE_SCHEDULER=1/);
+  assert.match(worker, /startSocialHousingScheduler/);
+  assert.match(worker, /refreshPlaces/);
+  assert.match(scheduler, /DISABLE_SCHEDULER/);
+});
+
+test('RabbitMQ, Redis and HTTP queue proxy workers are absent', () => {
   assert.doesNotMatch(compose, /flat-finder-rabbitmq:/);
   assert.doesNotMatch(compose, /flat-finder-redis:/);
   assert.doesNotMatch(compose, /RABBITMQ_/);
   assert.doesNotMatch(compose, /REDIS_URL=/);
-  assert.doesNotMatch(worker, /\bpika\b/);
-  assert.doesNotMatch(worker, /basic_get|basic_ack|basic_publish|heartbeat/i);
-  assert.doesNotMatch(workerDockerfile, /pip install/);
+  assert.doesNotMatch(compose, /QUEUE_TASK_API_URL/);
   assert.doesNotMatch(compose, /flat-finder-queue-dispatcher:/);
-});
-
-test('worker retries through Postgres state and logs useful task identity', () => {
-  assert.match(worker, /\/internal\/queue-fail/);
-  assert.match(worker, /target = "dead" if outcome\.get\("dead"\) else "retry"/);
-  assert.match(worker, /segment=\{payload\.get\('segment'\) or payload\.get\('channel'\) or '-'\}/);
-});
-
-test('legacy in-process crawler stands down when the durable queue is configured', () => {
-  assert.match(scheduler, /QUEUE_INTERNAL_KEY/);
-  assert.match(scheduler, /ENABLE_LEGACY_LISTING_SCHEDULER/);
-  assert.match(scheduler, /PostgreSQL queue owns crawl/);
+  assert.match(compose, /^\s{2}flat-finder-worker:\s*$/m);
 });

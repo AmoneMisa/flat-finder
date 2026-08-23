@@ -12,10 +12,7 @@ services:
       - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
       - SOCIAL_FETCHER_URL=http://flat-finder-social-fetcher:4040
-      - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
-      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1000}
-      - OLX_UA_CITY_BUDGET_MS=${OLX_UA_CITY_BUDGET_MS:-600000}
-      - SOURCE_DEADLINE_MS=${SOURCE_DEADLINE_MS:-7200000}
+      - DISABLE_SCHEDULER=1
       - PHOTO_CACHE_DIR=/var/cache/flat-photos
       - PHOTO_CACHE_MAX_MB=${PHOTO_CACHE_MAX_MB:-512}
     volumes:
@@ -39,9 +36,12 @@ services:
       retries: 3
       start_period: 15s
 
-  flat-finder-queue-task-api:
+  flat-finder-worker:
+    # One Node process owns crawl scheduling, direct PostgreSQL queue transitions,
+    # OLX/Telegram execution, persistence/indexing and recurring maintenance.
+    # The public API never executes scheduled crawler work.
     image: ghcr.io/amonemisa/flat-finder-backend:${IMAGE_TAG:-latest}
-    command: ["node", "src/queue-task-server.js"]
+    command: ["node", "src/worker.js"]
     restart: unless-stopped
     env_file:
       - ./.env
@@ -50,27 +50,23 @@ services:
       - PGPORT=5432
       - ELASTICSEARCH_URL=http://flat-finder-elasticsearch:9200
       - ELASTICSEARCH_INDEX=flat-listings-v1
+      - AI_WORKER_URL=http://ai-worker:4030
       - OLX_FETCHER_URL=http://flat-finder-olx-router:4021
       - OLX_FETCHER_URL_0=http://flat-finder-olx-fetcher:4020
       - OLX_FETCHER_URL_1=http://flat-finder-olx-fetcher-ua:4020
-      - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
-      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1000}
-      - OLX_UA_CITY_BUDGET_MS=${OLX_UA_CITY_BUDGET_MS:-600000}
-      - SOURCE_DEADLINE_MS=${SOURCE_DEADLINE_MS:-7200000}
-      - QUEUE_TASK_PORT=4010
-      - QUEUE_INTERNAL_KEY=${QUEUE_INTERNAL_KEY}
+      - SOCIAL_FETCHER_URL=http://flat-finder-social-fetcher:4040
       - QUEUE_PROTOCOL_VERSION=${QUEUE_PROTOCOL_VERSION:-3}
       - QUEUE_SHARDS=${QUEUE_SHARDS:-2}
       - QUEUE_REFRESH_SECONDS=${QUEUE_REFRESH_SECONDS:-1800}
+      - QUEUE_POLL_SECONDS=${QUEUE_POLL_SECONDS:-1}
       - QUEUE_MAX_ATTEMPTS=${QUEUE_MAX_ATTEMPTS:-5}
       - QUEUE_TASK_LEASE_SECONDS=${QUEUE_TASK_LEASE_SECONDS:-300}
       - QUEUE_RETRY_BASE_MS=${QUEUE_RETRY_BASE_MS:-30000}
       - QUEUE_RETRY_MAX_MS=${QUEUE_RETRY_MAX_MS:-300000}
-    expose:
-      - "4010"
-    networks:
-      - default
-      - ai-net
+      - OLX_UA_CITIES_PER_RUN=${OLX_UA_CITIES_PER_RUN:-40}
+      - OLX_UA_CITY_MAX_PAGES=${OLX_UA_CITY_MAX_PAGES:-1000}
+      - OLX_UA_CITY_BUDGET_MS=${OLX_UA_CITY_BUDGET_MS:-600000}
+      - SOURCE_DEADLINE_MS=${SOURCE_DEADLINE_MS:-7200000}
     depends_on:
       flat-finder-postgres:
         condition: service_healthy
@@ -80,62 +76,17 @@ services:
         condition: service_healthy
       flat-finder-olx-fetcher-ua:
         condition: service_healthy
-      flat-finder-olx-router:
+      flat-finder-social-fetcher:
         condition: service_healthy
+    networks:
+      - default
+      - ai-net
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:4010/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 10s
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
       timeout: 5s
-      retries: 10
-      start_period: 15s
-
-  flat-finder-queue-worker-1:
-    image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
-    restart: unless-stopped
-    environment:
-      QUEUE_WORKER_ROLE: olx
-      QUEUE_SHARD: 0
-      QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
-      QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
-      QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
-      QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
-      QUEUE_POLL_SECONDS: ${QUEUE_POLL_SECONDS:-1}
-      QUEUE_EXECUTE_TIMEOUT_SECONDS: ${QUEUE_EXECUTE_TIMEOUT_SECONDS:-180}
-    depends_on:
-      flat-finder-queue-task-api:
-        condition: service_healthy
-
-  flat-finder-queue-worker-2:
-    image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
-    restart: unless-stopped
-    environment:
-      QUEUE_WORKER_ROLE: olx
-      QUEUE_SHARD: 1
-      QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
-      QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
-      QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
-      QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
-      QUEUE_POLL_SECONDS: ${QUEUE_POLL_SECONDS:-1}
-      QUEUE_EXECUTE_TIMEOUT_SECONDS: ${QUEUE_EXECUTE_TIMEOUT_SECONDS:-180}
-    depends_on:
-      flat-finder-queue-task-api:
-        condition: service_healthy
-
-  flat-finder-queue-worker-telegram:
-    image: ghcr.io/amonemisa/flat-finder-queue-worker:${IMAGE_TAG:-latest}
-    restart: unless-stopped
-    mem_limit: ${TELEGRAM_WORKER_MEMORY_LIMIT:-256m}
-    environment:
-      QUEUE_WORKER_ROLE: telegram
-      QUEUE_SHARDS: ${QUEUE_SHARDS:-2}
-      QUEUE_PROTOCOL_VERSION: ${QUEUE_PROTOCOL_VERSION:-3}
-      QUEUE_TASK_API_URL: http://flat-finder-queue-task-api:4010
-      QUEUE_INTERNAL_KEY: ${QUEUE_INTERNAL_KEY}
-      QUEUE_POLL_SECONDS: ${QUEUE_POLL_SECONDS:-1}
-      QUEUE_EXECUTE_TIMEOUT_SECONDS: ${QUEUE_EXECUTE_TIMEOUT_SECONDS:-180}
-    depends_on:
-      flat-finder-queue-task-api:
-        condition: service_healthy
+      retries: 3
+      start_period: 20s
 
   flat-finder-olx-fetcher:
     image: ghcr.io/amonemisa/flat-finder-olx-fetcher:${IMAGE_TAG:-latest}

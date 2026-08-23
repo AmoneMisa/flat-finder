@@ -19,10 +19,7 @@ echo "Deploying flat-finder application images with tag: ${IMAGE_TAG}"
 
 APP_SERVICES=(
   flat-finder-backend
-  flat-finder-queue-task-api
-  flat-finder-queue-worker-1
-  flat-finder-queue-worker-2
-  flat-finder-queue-worker-telegram
+  flat-finder-worker
   flat-finder-olx-fetcher
   flat-finder-olx-fetcher-ua
   flat-finder-social-fetcher
@@ -47,8 +44,6 @@ if [[ "$UPDATE_ELASTICSEARCH" == "true" ]]; then
   docker compose pull flat-finder-elasticsearch
   docker compose up -d flat-finder-elasticsearch
 elif [[ -z "$ES_CONTAINER_ID" ]]; then
-  # First deployment / manually removed container. Use the last published ES
-  # image instead of assuming this application SHA has an ES image.
   echo "No Elasticsearch container exists; starting the latest published image"
   IMAGE_TAG=latest docker compose pull flat-finder-elasticsearch
   IMAGE_TAG=latest docker compose up -d flat-finder-elasticsearch
@@ -56,11 +51,6 @@ else
   echo "Keeping the existing Elasticsearch container unchanged"
 fi
 
-# --no-deps below bypasses every depends_on condition, not just the
-# Elasticsearch one, so on a cold start the API can outrace Postgres.
-# Wait for hard dependencies explicitly, in the same degrade-rather-than-fail
-# style used for Elasticsearch: warn on timeout and carry on, since services
-# restart automatically once their dependency appears.
 wait_for_healthy() {
   local service="$1" deadline=$((SECONDS + ${2:-120})) cid status
   while [[ $SECONDS -lt $deadline ]]; do
@@ -77,44 +67,32 @@ wait_for_healthy() {
 }
 
 wait_for_healthy flat-finder-postgres 120
+wait_for_healthy flat-finder-olx-fetcher 90
+wait_for_healthy flat-finder-olx-fetcher-ua 90
 wait_for_healthy flat-finder-social-fetcher 90
 
-# Both Node services already degrade gracefully when Elasticsearch is
-# unavailable. --no-deps is deliberate: an unhealthy search node must not block
-# deployment of the API or queue task API.
+# The API and direct worker both tolerate Elasticsearch being temporarily
+# unavailable. --no-deps prevents an unhealthy search node from blocking an
+# otherwise healthy application deployment.
 docker compose up -d --no-deps \
   flat-finder-backend \
-  flat-finder-queue-task-api
+  flat-finder-worker
 
-docker compose up -d --no-deps \
-  flat-finder-queue-worker-1 \
-  flat-finder-queue-worker-2 \
-  flat-finder-queue-worker-telegram
-
-# Remove containers for services that no longer exist in Compose, including
-# previously retired RabbitMQ/dispatcher/Redis containers.
+# Remove the retired queue-task-api and Python HTTP worker containers, together
+# with any other services no longer present in Compose.
 docker compose up -d --remove-orphans --no-deps \
   flat-finder-backend \
-  flat-finder-queue-task-api \
-  flat-finder-queue-worker-1 \
-  flat-finder-queue-worker-2 \
-  flat-finder-queue-worker-telegram \
+  flat-finder-worker \
   flat-finder-olx-fetcher \
   flat-finder-olx-fetcher-ua \
   flat-finder-social-fetcher \
   flat-finder-olx-router \
   flat-finder-postgres
 
-# Plain `image prune -f` drops only dangling layers, and every build keeps its
-# :<sha> tag, so it never collected anything while superseded images piled up.
-# Images still attached to a container are preserved either way.
 docker image prune -af --filter "until=336h"
 
 docker compose ps
 
-# Do not fail the whole deploy solely because Elasticsearch is unhealthy. Print
-# enough diagnostics into the Actions log to make the underlying ES problem
-# visible and actionable on the next pass.
 ES_CONTAINER_ID="$(docker compose ps -q flat-finder-elasticsearch 2>/dev/null || true)"
 if [[ -n "$ES_CONTAINER_ID" ]]; then
   ES_HEALTH="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$ES_CONTAINER_ID" 2>/dev/null || true)"
