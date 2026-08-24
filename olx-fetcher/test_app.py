@@ -1,6 +1,23 @@
+import json
 import unittest
 
 from app import classify_offer_response, _valid_offer_url, PORTALS
+
+
+def offer_page(public_id="ID4saUY"):
+    state = {
+        "offer": {
+            "url": f"https://www.olx.uz/d/obyavlenie/test-{public_id}.html",
+            "title": "Квартира в аренду",
+            "price": {"regularPrice": {"value": 400, "currencyCode": "UYE"}},
+            "location": {"cityName": "Ташкент"},
+        }
+    }
+    encoded = json.dumps(json.dumps(state, ensure_ascii=False), ensure_ascii=False)
+    return (
+        f"<script>window.__PRERENDERED_STATE__ = {encoded};</script>"
+        "<main>Квартира в аренду</main>"
+    )
 
 
 class AvailabilityClassifierTests(unittest.TestCase):
@@ -41,13 +58,35 @@ class AvailabilityClassifierTests(unittest.TestCase):
         self.assertEqual((status, reason), ("inactive", "inactive_page"))
 
     def test_script_translation_does_not_create_false_inactive(self):
+        document = (
+            "<script>window.copy='Объявление не активно'</script>" +
+            offer_page("ID4saUY")
+        )
         status, reason = classify_offer_response(
             200,
-            "<script>window.copy='Объявление не активно'</script><main>Квартира в аренду</main>",
-            "65813684",
-            "https://www.olx.uz/d/obyavlenie/test-65813684.html",
+            document,
+            "ID4saUY",
+            "https://www.olx.uz/d/obyavlenie/test-ID4saUY.html",
         )
-        self.assertEqual((status, reason), ("active", "offer_page"))
+        self.assertEqual((status, reason), ("active", "offer_payload"))
+
+    def test_live_offer_requires_real_prerender_payload(self):
+        status, reason = classify_offer_response(
+            200,
+            offer_page("ID4saUY"),
+            "ID4saUY",
+            "https://www.olx.uz/d/obyavlenie/test-ID4saUY.html",
+        )
+        self.assertEqual((status, reason), ("active", "offer_payload"))
+
+    def test_preserved_offer_url_without_payload_is_inactive(self):
+        status, reason = classify_offer_response(
+            200,
+            "<main><h1>OLX</h1><p>Другие объявления</p></main>",
+            "ID4saUY",
+            "https://www.olx.uz/d/obyavlenie/test-ID4saUY.html",
+        )
+        self.assertEqual((status, reason), ("inactive", "missing_offer_payload"))
 
     def test_generic_error_shell_is_not_active_even_when_url_keeps_offer_id(self):
         status, reason = classify_offer_response(
