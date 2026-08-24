@@ -18,26 +18,14 @@ import {
   looksHousingWanted,
 } from '../textparse.js';
 
-// Base URL of the MTProto worker (set in docker-compose). When unset the
-// telegram source simply yields nothing, so the backend is not hard-coupled to
-// the worker being up — OLX and the other sources still return results.
 const TG_WORKER_URL = process.env.TG_WORKER_URL || '';
 
-// Only keep messages that look like housing posts. Covers RU/UA/RO plus Uzbek
-// (uy/kvartira/xona/ijara) and Kazakh (пәтер/үй/жалға).
 const HOUSING_RE =
   /(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
 
-// Telegram channels often append a generic promotional footer containing an
-// admin handle or the word "makler". Explicit direct-owner/no-broker language
-// in the listing itself must win over that footer.
 const TELEGRAM_DIRECT_OWNER_RE =
   /(?:makler\s*[- ]?siz|maklersiz|bez\s*makler(?:a|ov)?|bezmakler(?:a|ov)?|vositachi\s*[- ]?siz|vositachisiz|egasidan|uy\s+egasidan|без\s+(?:макл(?:ер[а-яё]*)?|посредник[а-яё]*|ри[еэ]?лтор[а-яё]*|агент[а-яё]*)|от\s+(?:собственник[а-яё]*|хозяин[а-яё]*)|owner\s+direct|direct\s+from\s+(?:owner|landlord))/iu;
 
-// A bare amount such as `Shayxontohur 500 Samarqand Darvoza ...` is a very
-// common Uzbek Telegram shorthand for a monthly USD rent. The generic parser
-// intentionally ignores unlabelled values below 1000 to avoid floors/areas, so
-// add a Telegram-specific fallback with tight guards.
 const TELEGRAM_BARE_USD_RE =
   /^.{0,70}?(?<![\d+])([1-9]\d{2,3})(?!\d)(?=\s+(?!m2\b|m²\b|м2\b|м²\b|qavat\b|этаж\b|xona\b|xonali\b|комнат\b|kvartal\b|квартал\b)[\p{L}])/iu;
 
@@ -49,9 +37,6 @@ export function classifyTelegramAgency(text) {
 
 export function guessTelegramPropertyType(text) {
   if (!text) return 'flat';
-  // hovli/xovli is a courtyard house. `hovlini yarimi` / `xovlini yarimi`
-  // means part/half of such a house, but the current Listing contract only has
-  // `house` vs `flat`, so preserve it as a house rather than a flat.
   if (/(?:^|[^\p{L}\p{N}_])[xh]ovli(?:ni|da|dan|ning)?(?=$|[^\p{L}\p{N}_])/iu.test(text)) {
     return 'house';
   }
@@ -63,199 +48,86 @@ export function parseTelegramPrice(text, country, dealType = null) {
   const parsed = parsePriceFromText(text, fallbackCurrency);
   if (parsed.price != null) return parsed;
 
+  const value = String(text || '');
   const isUzbek = String(country?.code || '').toUpperCase() === 'UZ';
-  const isRental = dealType === 'longRent' || dealType === 'shortRent' ||
-    /(?:ijara|ijaraga|arenda|аренд|сдам|сда[её]тся|rent\b)/iu.test(text || '');
-  if (!isUzbek || !isRental) return parsed;
+  const explicitlySale = dealType === 'sale' ||
+    /(?:sotiladi|sotuv|sotaman|прода[её]тся|продам|продажа|for\s+sale|\bsale\b)/iu.test(value);
+  if (!isUzbek || explicitlySale) return parsed;
 
-  const head = String(text || '').slice(0, 100);
+  // Most configured Uzbek Telegram feeds are rental feeds but do not carry a
+  // dealType flag. A 3-4 digit bare amount at the start is therefore accepted
+  // as USD when the post itself still looks like housing. Sale language above
+  // is an explicit veto, and the regexp excludes area/floor/room/block labels.
+  const rentalOrHousing = dealType === 'longRent' || dealType === 'shortRent' ||
+    /(?:ijara|ijaraga|arenda|аренд|сдам|сда[её]тся|rent\b|xona|xonali|kvartira|uy\b|[xh]ovli)/iu.test(value);
+  if (!rentalOrHousing) return parsed;
+
+  const head = value.slice(0, 100);
   const match = head.match(TELEGRAM_BARE_USD_RE);
   if (!match) return parsed;
 
   const price = Number(match[1]);
-  // Below 100 is too easy to confuse with room/floor/block numbers; above 9999
-  // is not the small bare-USD convention this fallback is meant to cover.
   if (!Number.isFinite(price) || price < 100 || price > 9999) return parsed;
 
   return {price, currency: 'USD'};
 }
 
-// Turn one worker message ({ id, text, date, hasPhoto }) into a listing, or
-// null if it isn't a housing post. Search filters are applied to the complete
-// normalized snapshot in server.js, just like the vacancy feed.
-function messageToListing(
-    msg,
-    channelConfig,
-    country,
-) {
-  const channel =
-      channelConfig.name;
+function messageToListing(msg, channelConfig, country) {
+  const channel = channelConfig.name;
+  const text = (msg.text || '').replace(/[ \t]+/g, ' ').trim();
 
-  const text =
-      (msg.text || '')
-          .replace(/[ \t]+/g, ' ')
-          .trim();
-  /*
-   * Flat Finder показывает предложения жилья,
-   * а не объявления людей, которые ищут
-   * целую квартиру/дом.
-   *
-   * "Ищу на подселение" здесь НЕ отсекается,
-   * потому что looksHousingWanted()
-   * специально оставляет room/shared posts.
-   */
-  if (looksHousingWanted(text)) {
-    return null;
-  }
+  if (looksHousingWanted(text)) return null;
+  if (text.length < 10) return null;
+  if (!HOUSING_RE.test(text)) return null;
 
-  if (text.length < 10) {
-    return null;
-  }
+  const {price, currency} = parseTelegramPrice(text, country, channelConfig.dealType);
+  const type = guessTelegramPropertyType(text);
+  const byAgency = classifyTelegramAgency(text);
+  const title = text.split('\n')[0].slice(0, 90);
+  const postPath = `${channel}/${msg.id}`;
 
-  if (!HOUSING_RE.test(text)) {
-    return null;
-  }
-
-  const {
-    price,
-    currency,
-  } =
-      parseTelegramPrice(
-          text,
-          country,
-          channelConfig.dealType,
-      );
-
-  const type =
-      guessTelegramPropertyType(
-          text,
-      );
-
-  const byAgency =
-      classifyTelegramAgency(
-          text,
-      );
-
-  const title =
-      text
-          .split('\n')[0]
-          .slice(0, 90);
-
-  const postPath =
-      `${channel}/${msg.id}`;
-
-  const photoIds =
-      Array.isArray(
-          msg.photoIds,
-      ) &&
-      msg.photoIds.length
-          ? msg.photoIds
-          : msg.hasPhoto
-              ? [msg.id]
-              : [];
-
-  const photos =
-      photoIds.map(
-          (pid) =>
-              `/api/tg-photo/${channel}/${pid}`,
-      );
-
-  // Worker fingerprints Telegram's stripped thumbnail bytes during /history,
-  // so this does not download media while crawling. Sort to make an album key
-  // stable even if the same photos are reposted in a different order. At least
-  // two fingerprints are required later before photos alone can dedupe a post.
+  const photoIds = Array.isArray(msg.photoIds) && msg.photoIds.length
+    ? msg.photoIds
+    : msg.hasPhoto ? [msg.id] : [];
+  const photos = photoIds.map((pid) => `/api/tg-photo/${channel}/${pid}`);
   const photoFingerprints = [
-      ...new Set(
-          (Array.isArray(msg.photoFingerprints) ? msg.photoFingerprints : [])
-              .map((value) => String(value || '').toLowerCase())
-              .filter((value) => /^[a-f0-9]{64}$/.test(value)),
-      ),
+    ...new Set(
+      (Array.isArray(msg.photoFingerprints) ? msg.photoFingerprints : [])
+        .map((value) => String(value || '').toLowerCase())
+        .filter((value) => /^[a-f0-9]{64}$/.test(value)),
+    ),
   ].sort();
 
   return makeListing({
-    id:
-        `tg-${channel}-${postPath}`,
-
-    source:
-        'telegram',
-
-    country:
-    country.code,
-
+    id: `tg-${channel}-${postPath}`,
+    source: 'telegram',
+    country: country.code,
     title,
-
-    description:
-    text,
-
-    propertyType:
-    type,
-
-    // Uzbek rental channels often advertise a place in an existing flat as
-    // "qizlarga joy bor" / "қизларга жой бор" without saying "room". That is
-    // a room/share offer, not a whole apartment. Keep the generic normalizer as
-    // the fallback for all other languages and wording.
-    roomOnly:
-        looksTelegramRoomShare(text)
-            ? true
-            : undefined,
-
+    description: text,
+    propertyType: type,
+    roomOnly: looksTelegramRoomShare(text) ? true : undefined,
     byAgency,
-
-    // In this data model a direct owner has no broker commission. Keep those
-    // fields consistent instead of showing "owner" together with an unknown fee.
-    commission:
-        byAgency ? undefined : false,
-
-    commissionPercent:
-        byAgency ? undefined : 0,
-
+    commission: byAgency ? undefined : false,
+    commissionPercent: byAgency ? undefined : 0,
     price,
-
     currency,
-
-    rooms:
-        parseRoomsFromText(
-            text,
-        ),
-
-    areaSqm:
-        parseAreaFromText(
-            text,
-        ),
-
-    /*
-     * Самое важное изменение:
-     * город известен уже из конфигурации
-     * Telegram-канала.
-     *
-     * Поэтому объявлению не обязательно
-     * писать "Львів" или "Харків"
-     * внутри самого текста.
-     */
+    rooms: parseRoomsFromText(text),
+    areaSqm: parseAreaFromText(text),
     city: channelConfig.city ?? null,
     lat: null,
     lng: null,
     photos,
     photoFingerprints,
-    photoFingerprintKey:
-        photoFingerprints.length >= 2
-            ? photoFingerprints.join('|')
-            : null,
-    dealType:
-        channelConfig.dealType ??
-        null,
+    photoFingerprintKey: photoFingerprints.length >= 2 ? photoFingerprints.join('|') : null,
+    dealType: channelConfig.dealType ?? null,
     url: `https://t.me/${postPath}`,
-    createdAt:
-    msg.date,
+    createdAt: msg.date,
   });
 }
-// Fetch one history page from the worker. Returns the parsed messages plus the
-// smallest message id seen (the `beforeId` cursor for paging to older posts).
+
 async function fetchWorkerPage(channel, beforeId, deadline) {
-  const params = new URLSearchParams({ channel, limit: '100' });
+  const params = new URLSearchParams({channel, limit: '100'});
   if (beforeId) params.set('beforeId', String(beforeId));
-  // Cap the per-request wait by whatever budget remains, so a slow worker call
-  // can't overrun the outer telegram budget.
   const budgetLeft = deadline === Infinity ? 15_000 : Math.max(1_000, deadline - Date.now());
   const res = await fetch(`${TG_WORKER_URL}/history?${params}`, {
     signal: AbortSignal.timeout(Math.min(15_000, budgetLeft)),
@@ -266,409 +138,126 @@ async function fetchWorkerPage(channel, beforeId, deadline) {
   return body;
 }
 
-// The worker returns up to 100 messages per call; page back via the `beforeId`
-// cursor to cover the full freshness window. The early-stop keeps dead channels
-// cheap (bail as soon as a page is entirely older than MAX_AGE_MS).
 const TG_MAX_PAGES = 8;
 
-export async function fetchChannel(
-    channelConfig,
-    country,
-    filters = {},
-    deadline = Infinity,
-) {
-  const channel =
-      channelConfig.name;
-
+export async function fetchChannel(channelConfig, country, filters = {}, deadline = Infinity) {
+  const channel = channelConfig.name;
   const listings = [];
+  let beforeId = 0;
 
-  let beforeId =
-      0;
+  for (let page = 0; page < TG_MAX_PAGES; page++) {
+    if (Date.now() >= deadline) break;
 
-  for (
-      let page = 0;
-      page < TG_MAX_PAGES;
-      page++
-  ) {
-    if (
-        Date.now() >=
-        deadline
-    ) {
-      break;
-    }
+    const {messages, minId} = await fetchWorkerPage(channel, beforeId, deadline);
+    if (!messages.length && minId === null) break;
 
-    const {
-      messages,
-      minId,
-    } =
-        await fetchWorkerPage(
-            channel,
-            beforeId,
-            deadline,
-        );
-
-    if (
-        !messages.length &&
-        minId === null
-    ) {
-      break;
-    }
-
-    let oldestTs =
-        null;
-
-    for (
-        const message
-        of messages
-        ) {
-      const listing =
-          messageToListing(
-              message,
-              channelConfig,
-              country,
-          );
-
-      if (listing) {
-        listings.push(
-            listing,
-        );
-      }
+    let oldestTs = null;
+    for (const message of messages) {
+      const listing = messageToListing(message, channelConfig, country);
+      if (listing) listings.push(listing);
 
       if (message.date) {
-        const time =
-            Date.parse(
-                message.date,
-            );
-
-        if (
-            !Number.isNaN(
-                time,
-            )
-        ) {
-          oldestTs =
-              oldestTs === null
-                  ? time
-                  : Math.min(
-                      oldestTs,
-                      time,
-                  );
+        const time = Date.parse(message.date);
+        if (!Number.isNaN(time)) {
+          oldestTs = oldestTs === null ? time : Math.min(oldestTs, time);
         }
       }
     }
 
-    if (
-        minId === null ||
-        minId === beforeId
-    ) {
-      break;
-    }
-
-    if (
-        oldestTs &&
-        Date.now() -
-        oldestTs >
-        MAX_AGE_MS
-    ) {
-      break;
-    }
-
-    beforeId =
-        minId;
+    if (minId === null || minId === beforeId) break;
+    if (oldestTs && Date.now() - oldestTs > MAX_AGE_MS) break;
+    beforeId = minId;
   }
 
   return listings;
 }
 
-// Fetch a channel with one retry, mirroring the previous adapter's resilience.
-async function fetchChannelWithRetry(
-    channelConfig,
-    country,
-    filters,
-    deadline = Infinity,
-) {
-  for (
-      let attempt = 0;
-      attempt < 2;
-      attempt++
-  ) {
+async function fetchChannelWithRetry(channelConfig, country, filters, deadline = Infinity) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const result =
-          await fetchChannel(
-              channelConfig,
-              country,
-              filters,
-              deadline,
-          );
-
-      if (
-          result.length > 0 ||
-          attempt === 1
-      ) {
-        return result;
-      }
+      const result = await fetchChannel(channelConfig, country, filters, deadline);
+      if (result.length > 0 || attempt === 1) return result;
     } catch (err) {
-      if (
-          attempt === 1
-      ) {
-        console.warn(
-            `[telegram] @${channelConfig.name}: ` +
-            `${err?.message ?? err}`,
-        );
-
+      if (attempt === 1) {
+        console.warn(`[telegram] @${channelConfig.name}: ${err?.message ?? err}`);
         return [];
       }
     }
 
-    if (
-        Date.now() >=
-        deadline
-    ) {
-      return [];
-    }
-
-    await new Promise(
-        (resolve) =>
-            setTimeout(
-                resolve,
-                500,
-            ),
-    );
+    if (Date.now() >= deadline) return [];
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   return [];
 }
-// Wall-clock budget for a whole telegram scrape, so one slow channel can't blow
-// past the nginx proxy timeout and starve the fast OLX results.
+
 const TG_BUDGET_MS = Number(process.env.TG_BUDGET_MS) || 12000;
-const telegramChannelCursor =
-    new Map();
+const telegramChannelCursor = new Map();
+const TG_CHANNELS_PER_RUN = Math.max(1, Number(process.env.TG_CHANNELS_PER_RUN) || 6);
 
-const TG_CHANNELS_PER_RUN =
-    Math.max(
-        1,
-        Number(
-            process.env
-                .TG_CHANNELS_PER_RUN,
-        ) || 6,
-    );
-
-function selectTelegramChannels(
-    country,
-) {
-  const all =
-      (
-          country.telegramChannels ??
-          []
-      )
-          .map(normalizeChannelConfig,)
-          .filter(Boolean);
-
-  if (
-      all.length <=
-      TG_CHANNELS_PER_RUN
-  ) {
-    return {
-      channels:
-      all,
-
-      complete:
-          true,
-    };
+function selectTelegramChannels(country) {
+  const all = (country.telegramChannels ?? []).map(normalizeChannelConfig).filter(Boolean);
+  if (all.length <= TG_CHANNELS_PER_RUN) {
+    return {channels: all, complete: true};
   }
 
-  let start =
-      telegramChannelCursor.get(
-          country.code,
-      );
-
-  /*
-   * После рестарта не начинаем
-   * обязательно с первых каналов.
-   */
-  if (
-      !Number.isInteger(
-          start,
-      )
-  ) {
-    start =
-        (
-            Math.floor(
-                Date.now() /
-                60_000,
-            ) *
-            TG_CHANNELS_PER_RUN
-        ) %
-        all.length;
+  let start = telegramChannelCursor.get(country.code);
+  if (!Number.isInteger(start)) {
+    start = (Math.floor(Date.now() / 60_000) * TG_CHANNELS_PER_RUN) % all.length;
   }
 
-  const selected =
-      [];
-
-  for (
-      let index = 0;
-      index <
-      TG_CHANNELS_PER_RUN;
-      index +=
-          1
-  ) {
-    selected.push(
-        all[
-        (
-            start +
-            index
-        ) %
-        all.length
-            ],
-    );
+  const selected = [];
+  for (let index = 0; index < TG_CHANNELS_PER_RUN; index += 1) {
+    selected.push(all[(start + index) % all.length]);
   }
 
   telegramChannelCursor.set(
-      country.code,
-      (
-          start +
-          TG_CHANNELS_PER_RUN
-      ) %
-      all.length,
+    country.code,
+    (start + TG_CHANNELS_PER_RUN) % all.length,
   );
 
-  return {
-    channels:
-    selected,
-
-    complete:
-        false,
-  };
+  return {channels: selected, complete: false};
 }
 
-export async function scrapeTelegram(
-    country,
-    filters,
-) {
-  if (!TG_WORKER_URL) {
-    throw new Error(
-        'TG_WORKER_URL is not configured',
+export async function scrapeTelegram(country, filters) {
+  if (!TG_WORKER_URL) throw new Error('TG_WORKER_URL is not configured');
+
+  const {channels, complete} = selectTelegramChannels(country);
+  const CONCURRENCY = 4;
+  const deadline = Date.now() + TG_BUDGET_MS;
+  const listings = [];
+
+  for (let index = 0; index < channels.length; index += CONCURRENCY) {
+    if (Date.now() >= deadline) break;
+
+    const batch = channels.slice(index, index + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((channel) => fetchChannelWithRetry(channel, country, filters, deadline)),
     );
-  }
 
-  const {
-    channels,
-    complete,
-  } =
-      selectTelegramChannels(
-          country,
-      );
-
-  const CONCURRENCY =
-      4;
-
-  const deadline =
-      Date.now() +
-      TG_BUDGET_MS;
-
-  const listings =
-      [];
-
-  for (
-      let index = 0;
-      index <
-      channels.length;
-      index +=
-          CONCURRENCY
-  ) {
-    if (
-        Date.now() >=
-        deadline
-    ) {
-      break;
-    }
-
-    const batch =
-        channels.slice(
-            index,
-            index +
-            CONCURRENCY,
-        );
-
-    const results =
-        await Promise.allSettled(
-            batch.map(
-                (channel) =>
-                    fetchChannelWithRetry(
-                        channel,
-                        country,
-                        filters,
-                        deadline,
-                    ),
-            ),
-        );
-
-    for (
-        const result
-        of results
-        ) {
-      if (
-          result.status ===
-          'fulfilled'
-      ) {
-        listings.push(
-            ...result.value,
-        );
-      }
+    for (const result of results) {
+      if (result.status === 'fulfilled') listings.push(...result.value);
     }
   }
 
-  /*
-   * complete=false здесь НЕ ошибка.
-   *
-   * Просто большой список каналов
-   * намеренно обходим порциями.
-   *
-   * PostgreSQL постепенно
-   * аккумулирует результаты.
-   */
   return {
     listings,
-
     complete,
-
-    partialExpected:
-        !complete,
-
-    processedChannels:
-        channels.map(
-            (channel) =>
-                channel.name,
-        ),
+    partialExpected: !complete,
+    processedChannels: channels.map((channel) => channel.name),
   };
 }
 
 function normalizeChannelConfig(value) {
   if (typeof value === 'string') {
-    return {
-      name: value,
-      city: null,
-      dealType: null,
-    };
+    return {name: value, city: null, dealType: null};
   }
 
-  if (
-      value &&
-      typeof value === 'object' &&
-      value.name
-  ) {
+  if (value && typeof value === 'object' && value.name) {
     return {
-      name:
-          String(value.name),
-
-      city:
-          value.city
-              ? String(value.city)
-              : null,
-
-      dealType:
-          value.dealType
-              ? String(value.dealType)
-              : null,
+      name: String(value.name),
+      city: value.city ? String(value.city) : null,
+      dealType: value.dealType ? String(value.dealType) : null,
     };
   }
 
