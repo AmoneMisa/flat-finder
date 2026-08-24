@@ -285,6 +285,7 @@ function listingDedupeSql(alias = 'l') {
   const photo1 = olxPhotoSql(alias, 1);
   const title = `LOWER(REGEXP_REPLACE(BTRIM(COALESCE(${alias}.title, '')), '\\s+', ' ', 'g'))`;
   const description = `LOWER(REGEXP_REPLACE(BTRIM(COALESCE(${alias}.description, '')), '\\s+', ' ', 'g'))`;
+  const telegramPhotoKey = `COALESCE(${alias}.data->>'photoFingerprintKey', '')`;
 
   return `CASE
     WHEN LOWER(${alias}.source) = 'olx'
@@ -305,6 +306,12 @@ function listingDedupeSql(alias = 'l') {
         COALESCE(ROUND(${alias}.area_sqm::numeric, 1)::text, ''),
         ${title},
         ${description}
+      ))
+    WHEN LOWER(${alias}.source) = 'telegram'
+      AND LENGTH(${telegramPhotoKey}) >= 129
+      THEN 'telegram:photos:' || MD5(CONCAT_WS('|',
+        UPPER(${alias}.country),
+        ${telegramPhotoKey}
       ))
     WHEN LOWER(${alias}.source) = 'telegram'
       AND LENGTH(${description}) >= 40
