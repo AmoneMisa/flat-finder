@@ -18,7 +18,10 @@ test('recognizes Uzbek place-in-flat offers without treating audience alone as r
 
 test('Telegram scraper forwards colloquial share detection into normalized roomOnly', () => {
   assert.match(telegramScraper, /import \{looksTelegramRoomShare\} from '\.\.\/telegram-room-share\.js'/);
-  assert.match(telegramScraper, /roomOnly:\s*\n\s*looksTelegramRoomShare\(text\)/);
+  assert.match(
+    telegramScraper,
+    /roomOnly:\s*looksTelegramRoomShare\(text\)(?:\s*\?\s*true\s*:\s*undefined)?/,
+  );
 });
 
 test('single-photo Telegram reposts require matching structured listing fields', () => {
