@@ -215,6 +215,8 @@ export function makeListing(partial) {
     sourceCoordinateRejected: coords.rejected || partial.sourceCoordinateRejected === true,
     photo: partial.photo ?? (Array.isArray(partial.photos) ? partial.photos[0] : null) ?? null,
     photos: Array.isArray(partial.photos) ? partial.photos : (partial.photo ? [partial.photo] : []),
+    photoFingerprints: Array.isArray(partial.photoFingerprints) ? partial.photoFingerprints : [],
+    photoFingerprintKey: partial.photoFingerprintKey ?? null,
     url: partial.url ?? '',
     createdAt: partial.createdAt ?? null,
     description,
