@@ -4,8 +4,7 @@ import {
   parseResidentialComplex as baseParseResidentialComplex,
   parseRoomsFromText as baseParseRoomsFromText,
 } from './textparse.js';
-
-const NO_COMMISSION_RE = /(?:без\s+(?:комисси[а-яёіїґ]*|комісі[а-яіїґ]*|комиссионн[а-яё]*|макл(?:ер[а-яё]*)?|ри[еэ]?лтор[а-яё]*|посредник[а-яё]*|агент[а-яё]*)|от\s+(?:хозяин[а-яё]*|собственник[а-яё]*)|власник[а-яіїґ]*\s+без\s+комісі[а-яіїґ]*|no\s+(?:commission|agency\s+fee|broker\s+fee|realtor\s+fee|agent\s+fee|agency|broker|realtor|agent)|owner\s+direct|direct\s+from\s+(?:owner|landlord)|f(?:ă|a)r(?:ă|a)\s+(?:comision|agen(?:ț|t)ie|intermediar\w*)|direct\s+(?:de\s+la\s+)?proprietar|komissiya\s*[- ]?siz|komissiyasiz|makler\s*[- ]?siz|maklersiz|vositachi\s*[- ]?siz|vositachisiz|egasidan|uy\s+egasidan|комиссиясыз|комиссия\s*жоқ|делдалсыз|делдал\s*жоқ|иесінен|үй\s+иесінен)/iu;
+import {hasZeroCommissionSignal} from './seller-signals.js';
 
 const COMMISSION_PERCENT_RE = [
   /(?:комисси[а-яёіїґ]*|комісі[а-яіїґ]*|commission|comision|komissiya|комиссия)\s*[:=\-]?\s*(\d{1,3})\s*%/iu,
@@ -20,7 +19,7 @@ const RC_TRAILING_NO_BROKER_RE = /\s+(?:без\s+(?:макл(?:ер[а-яё]*)?|
 
 export function parseCommission(text) {
   if (!text) return { has: null, percent: null };
-  if (NO_COMMISSION_RE.test(text)) return { has: false, percent: 0 };
+  if (hasZeroCommissionSignal(text)) return { has: false, percent: 0 };
   for (const re of COMMISSION_PERCENT_RE) {
     const match = text.match(re);
     if (!match) continue;
@@ -50,9 +49,6 @@ function structuredLayout(text) {
     return validLayout(Number(converted[2]), Number(converted[3]), Number(converted[4]));
   }
 
-  // Unlabelled compact forms are accepted only when followed by an area. This
-  // covers titles such as `... Глинка 3/10/10 90 кв` without interpreting
-  // arbitrary slash-separated numbers, dates or identifiers as room layouts.
   const withArea = text.match(/(?:^|[^\d])([1-9])\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?=\s+\d{1,4}\s*(?:кв(?:\.?\s*м)?|м²|m²|m2|sqm)(?=$|[^\p{L}\p{N}_]))/iu);
   if (withArea) {
     return validLayout(Number(withArea[1]), Number(withArea[2]), Number(withArea[3]));
