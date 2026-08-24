@@ -9,6 +9,7 @@
 import {makeListing} from '../normalize.js';
 import {MAX_AGE_MS} from '../listing-policy.js';
 import {looksTelegramRoomShare} from '../telegram-room-share.js';
+import {isDirectOwner} from '../seller-signals.js';
 import {
   parsePriceFromText,
   parseRoomsFromText,
@@ -23,15 +24,12 @@ const TG_WORKER_URL = process.env.TG_WORKER_URL || '';
 const HOUSING_RE =
   /(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
 
-const TELEGRAM_DIRECT_OWNER_RE =
-  /(?:makler\s*[- ]?siz|maklersiz|bez\s*makler(?:a|ov)?|bezmakler(?:a|ov)?|vositachi\s*[- ]?siz|vositachisiz|egasidan|uy\s+egasidan|без\s+(?:макл(?:ер[а-яё]*)?|посредник[а-яё]*|ри[еэ]?лтор[а-яё]*|агент[а-яё]*)|от\s+(?:собственник[а-яё]*|хозяин[а-яё]*)|owner\s+direct|direct\s+from\s+(?:owner|landlord))/iu;
-
 const TELEGRAM_BARE_USD_RE =
   /^.{0,70}?(?<![\d+])([1-9]\d{2,3})(?!\d)(?=\s+(?!m2\b|m²\b|м2\b|м²\b|qavat\b|этаж\b|xona\b|xonali\b|комнат\b|kvartal\b|квартал\b)[\p{L}])/iu;
 
 export function classifyTelegramAgency(text) {
   if (!text) return false;
-  if (TELEGRAM_DIRECT_OWNER_RE.test(text)) return false;
+  if (isDirectOwner(text)) return false;
   return classifyAgency(text);
 }
 
@@ -54,10 +52,6 @@ export function parseTelegramPrice(text, country, dealType = null) {
     /(?:sotiladi|sotuv|sotaman|прода[её]тся|продам|продажа|for\s+sale|\bsale\b)/iu.test(value);
   if (!isUzbek || explicitlySale) return parsed;
 
-  // Most configured Uzbek Telegram feeds are rental feeds but do not carry a
-  // dealType flag. A 3-4 digit bare amount at the start is therefore accepted
-  // as USD when the post itself still looks like housing. Sale language above
-  // is an explicit veto, and the regexp excludes area/floor/room/block labels.
   const rentalOrHousing = dealType === 'longRent' || dealType === 'shortRent' ||
     /(?:ijara|ijaraga|arenda|аренд|сдам|сда[её]тся|rent\b|xona|xonali|kvartira|uy\b|[xh]ovli)/iu.test(value);
   if (!rentalOrHousing) return parsed;
@@ -107,8 +101,8 @@ function messageToListing(msg, channelConfig, country) {
     propertyType: type,
     roomOnly: looksTelegramRoomShare(text) ? true : undefined,
     byAgency,
-    commission: byAgency ? undefined : false,
-    commissionPercent: byAgency ? undefined : 0,
+    commission: isDirectOwner(text) ? false : undefined,
+    commissionPercent: isDirectOwner(text) ? 0 : undefined,
     price,
     currency,
     rooms: parseRoomsFromText(text),
