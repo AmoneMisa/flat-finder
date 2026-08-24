@@ -400,28 +400,35 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     visible AS MATERIALIZED (
       SELECT * FROM ranked WHERE dedupe_rank = 1
     ),
-    deal_rows AS (
+    classified AS MATERIALIZED (
       SELECT
+        visible.*,
         CASE
           WHEN data @> '{"roomOnly":true}'::jsonb THEN 'roomRent'
           WHEN deal_type IN ('sale', 'longRent', 'shortRent') THEN deal_type
           ELSE 'unknown'
-        END AS key,
+        END AS deal_key
+      FROM visible
+    ),
+    deal_rows AS (
+      SELECT
+        deal_key AS key,
         COUNT(*)::int AS count,
         COUNT(price_usd)::int AS price_count,
         ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_usd))::numeric, 2) AS median_usd,
         ROUND(AVG(price_usd)::numeric, 2) AS average_usd
-      FROM visible
-      GROUP BY 1
+      FROM classified
+      GROUP BY deal_key
     ),
     geo_rows AS (
       SELECT
+        CASE WHEN GROUPING(v.deal_key) = 1 THEN NULL ELSE v.deal_key END AS deal_key,
         geo.dimension,
         geo.label,
         COUNT(*)::int AS count,
         COUNT(v.price_usd)::int AS price_count,
         ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v.price_usd))::numeric, 2) AS median_usd
-      FROM visible v
+      FROM classified v
       CROSS JOIN LATERAL (VALUES
         ('country', NULLIF(BTRIM(v.country), '')),
         ('city', NULLIF(BTRIM(v.city), '')),
@@ -430,14 +437,17 @@ export async function searchPostgresListings({ filters, countries, rates = null,
         ('metro', NULLIF(BTRIM(v.metro), ''))
       ) AS geo(dimension, label)
       WHERE geo.label IS NOT NULL
-      GROUP BY geo.dimension, geo.label
+      GROUP BY GROUPING SETS (
+        (geo.dimension, geo.label),
+        (v.deal_key, geo.dimension, geo.label)
+      )
     ),
     geo_ranked AS (
-      SELECT *, ROW_NUMBER() OVER (PARTITION BY dimension ORDER BY count DESC, label ASC) AS position
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY deal_key, dimension ORDER BY count DESC, label ASC) AS position
       FROM geo_rows
     ),
     geo_json AS (
-      SELECT dimension, JSONB_AGG(
+      SELECT deal_key, dimension, JSONB_AGG(
         JSONB_BUILD_OBJECT(
           'label', label,
           'count', count,
@@ -447,7 +457,13 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       ) AS items
       FROM geo_ranked
       WHERE position <= 12
-      GROUP BY dimension
+      GROUP BY deal_key, dimension
+    ),
+    geo_by_deal_json AS (
+      SELECT deal_key, JSONB_OBJECT_AGG(dimension, items) AS dimensions
+      FROM geo_json
+      WHERE deal_key IS NOT NULL
+      GROUP BY deal_key
     ),
     activity_rows AS (
       SELECT
@@ -471,7 +487,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
         ) ORDER BY count DESC, key ASC)
         FROM deal_rows
       ), '[]'::jsonb) AS deal_types,
-      COALESCE((SELECT JSONB_OBJECT_AGG(dimension, items) FROM geo_json), '{}'::jsonb) AS geographies,
+      COALESCE((SELECT JSONB_OBJECT_AGG(dimension, items) FROM geo_json WHERE deal_key IS NULL), '{}'::jsonb) AS geographies,
+      COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, dimensions) FROM geo_by_deal_json), '{}'::jsonb) AS geographies_by_deal,
       JSONB_BUILD_OBJECT(
         'owners', (SELECT COUNT(*)::int FROM visible WHERE by_agency = FALSE),
         'agencies', (SELECT COUNT(*)::int FROM visible WHERE by_agency = TRUE),
@@ -561,6 +578,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     currency: 'USD',
     dealTypes: countOrStatsResult.rows[0]?.deal_types || [],
     geographies: countOrStatsResult.rows[0]?.geographies || {},
+    geographiesByDeal: countOrStatsResult.rows[0]?.geographies_by_deal || {},
     ownership: countOrStatsResult.rows[0]?.ownership || {},
     activity: countOrStatsResult.rows[0]?.activity || [],
     quality: countOrStatsResult.rows[0]?.quality || {},
