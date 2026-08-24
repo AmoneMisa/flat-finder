@@ -102,6 +102,18 @@ function messageToListing(
               `/api/tg-photo/${channel}/${pid}`,
       );
 
+  // Worker fingerprints Telegram's stripped thumbnail bytes during /history,
+  // so this does not download media while crawling. Sort to make an album key
+  // stable even if the same photos are reposted in a different order. At least
+  // two fingerprints are required later before photos alone can dedupe a post.
+  const photoFingerprints = [
+      ...new Set(
+          (Array.isArray(msg.photoFingerprints) ? msg.photoFingerprints : [])
+              .map((value) => String(value || '').toLowerCase())
+              .filter((value) => /^[a-f0-9]{64}$/.test(value)),
+      ),
+  ].sort();
+
   return makeListing({
     id:
         `tg-${channel}-${postPath}`,
@@ -161,6 +173,11 @@ function messageToListing(
     lat: null,
     lng: null,
     photos,
+    photoFingerprints,
+    photoFingerprintKey:
+        photoFingerprints.length >= 2
+            ? photoFingerprints.join('|')
+            : null,
     dealType:
         channelConfig.dealType ??
         null,
