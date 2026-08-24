@@ -505,9 +505,9 @@ export function classifyAudience(text) {
   if (!text) return null;
   const t = text.toLowerCase();
   // Families and single tenants are both accepted: this is not a restriction.
-  if (/(?:семейн|для семь)[^.\n]{0,80}(?:одиноч|мужчин|женщин)|(?:одиноч|мужчин|женщин)[^.\n]{0,80}(?:семейн|для семь)/.test(t))
+  if (/(?:семейн|сімейн|для семь|для сім)[^.\n]{0,80}(?:одиноч|мужчин|женщин|чоловік|жінок)|(?:одиноч|мужчин|женщин|чоловік|жінок)[^.\n]{0,80}(?:семейн|сімейн|для семь|для сім)/.test(t))
     return null;
-  if (/(для семь|семейн|для сім|для родин|for famil|families?|pentru famil|oila(?:ga| uchun|\s+qo['’`]?yiladi|\s+quyiladi)|оила|отбасы)/.test(t))
+  if (/(для семь|семейн|сімейн|для сім|для родин|for famil|families?|pentru famil|oila(?:ga| uchun|\s+qo['’`]?yiladi|\s+quyiladi)|оила|отбасы)/.test(t))
     return 'family';
   if (/(девуш|девоч|для дівч|дівчат|for girls|for women|only girls|doar fete|\bfete\b|qiz(?:lar|la)?(?:ga| uchun)?|(?:қ|к)из(?:лар|ла)?|қыздар)/.test(t))
     return 'women';

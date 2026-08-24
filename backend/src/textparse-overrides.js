@@ -8,13 +8,14 @@ import {hasZeroCommissionSignal} from './seller-signals.js';
 
 const COMMISSION_PERCENT_RE = [
   /(?:комисси[а-яёіїґ]*|комісі[а-яіїґ]*|commission|comision|komissiya|комиссия)\s*[:=\-]?\s*(\d{1,3})\s*%/iu,
-  /(?:макл(?:ер[а-яё]*)?|makler|ри[еэ]?лтор[а-яё]*|rieltor|realtor|broker|agent|vositachi|делдал)\s*(?:fee|haq(?:i)?|хак|ақы)?\s*[:=\-]?\s*(\d{1,3})\s*%/iu,
+  /(?:макл(?:ер[а-яё]*)?|makler|р[иі][еєэ]?лтор[а-яёіїґ]*|rieltor|realtor|broker|agent|vositachi|делдал)\s*(?:fee|haq(?:i)?|хак|ақы)?\s*[,;:]?\s*(\d{1,3})\s*%/iu,
+  /(\d{1,3})\s*%\s*(?:комисси[а-яёіїґ]*|комісі[а-яіїґ]*|commission|comision|komissiya)/iu,
   /(?:^|[^\p{L}\p{N}_])[mм]\s*[:.\-]?\s*(\d{1,3})\s*%/iu,
 ];
 
 const EXPLICIT_FEE_RE = /(?:агентск[а-яё]*\s+(?:комисси[а-яё]*|вознаграждени[а-яё]*)|комисси[а-яё]*\s+(?:есть|оплачива[а-яё]*|взима[а-яё]*|бер[её]тся|требу[а-яё]*)|комісі[а-яіїґ]*\s+(?:є|сплачу[а-яіїґ]*|оплачу[а-яіїґ]*)|agency\s+fee|broker\s+fee|realtor\s+fee|agent\s+fee|comision\s+(?:agen(?:ț|t)ie|intermediar)|komissiya\s+(?:bor|olinadi|to['’`]?lanadi)|makler\s+(?:haqi|xaqi|haq)|rieltor\s+(?:haqi|xaqi|haq)|vositachi\s+(?:haqi|xaqi|haq)|комиссия\s+(?:бар|алынады|төленеді)|делдал\s+(?:ақысы|ақы))/iu;
 
-const BROKER_MENTION_RE = /(?:макл(?:ер[а-яё]*)?|makler|ри[еэ]?лтор[а-яё]*|rieltor|realtor|broker|agent|агентств[а-яё]*|vositachi|делдал|agen(?:ț|t)ie|intermediar)/iu;
+const BROKER_MENTION_RE = /(?:макл(?:ер[а-яё]*)?|makler|р[иі][еєэ]?лтор[а-яёіїґ]*|rieltor|realtor|broker|agent|агентств[а-яё]*|vositachi|делдал|agen(?:ț|t)ie|intermediar)/iu;
 const RC_TRAILING_NO_BROKER_RE = /\s+(?:без\s+(?:макл(?:ер[а-яё]*)?|ри[еэ]?лтор[а-яё]*|посредник[а-яё]*|агент[а-яё]*)|no\s+(?:broker|realtor|agent|agency)|f(?:ă|a)r(?:ă|a)\s+(?:agen(?:ț|t)ie|intermediar\w*)|maklersiz|vositachisiz|egasidan|делдалсыз|иесінен)(?=$|[^\p{L}\p{N}_])[\s\S]*$/iu;
 
 export function parseCommission(text) {

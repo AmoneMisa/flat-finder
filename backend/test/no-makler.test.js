@@ -44,6 +44,7 @@ test('explicit commission percentage is parsed across languages', () => {
   const samples = [
     ['Комиссия 50%', 50],
     ['Комісія 40%', 40],
+    ['Рієлтор, 50% комісійних + перший місяць', 50],
     ['Commission 25%', 25],
     ['Comision 30%', 30],
     ['Komissiya 35%', 35],
@@ -55,6 +56,20 @@ test('explicit commission percentage is parsed across languages', () => {
   for (const [sample, percent] of samples) {
     assert.deepEqual(parseCommission(sample), { has: true, percent }, sample);
   }
+});
+
+test('Ukrainian family restriction and realtor percentage populate normalized fields', () => {
+  const listing = makeListing({
+    id: 'ua-family-commission',
+    source: 'olx',
+    country: 'UA',
+    title: 'Оренда квартири',
+    description: 'РОЗГЛЯДАЄМО СІМЕЙНУ ПАРУ З ДІТКАМИ ВІД 6-ТИ РОКІВ, БЕЗ ТВАРИН. Рієлтор, 50% комісійних + перший місяць.',
+  });
+
+  assert.equal(listing.audience, 'family');
+  assert.equal(listing.commission, true);
+  assert.equal(listing.commissionPercent, 50);
 });
 
 test('broker mention alone does not imply commission', () => {

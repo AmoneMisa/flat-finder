@@ -6,7 +6,7 @@ import {searchListingMatches} from './elasticsearch.js';
 import {checkRate} from './request-rate-limit.js';
 import {prepareCustomSources} from './custom-source-queue.js';
 
-const VALID_SOURCES = ['olx', 'telegram'];
+const VALID_SOURCES = ['olx', 'telegram', 'facebook', 'threads'];
 const VALID_SORTS = [
   'newest',
   'oldest',
@@ -83,11 +83,13 @@ export function parseListingFilters(q) {
     pets: bool(q.pets),
     children: bool(q.children),
     roomOnly: bool(q.roomOnly),
+    withPhotos: bool(q.withPhotos),
     maxAgeDays: num(q.maxAgeDays),
     sources,
     offset,
     limit,
     cursor: q.cursor ? String(q.cursor) : '',
+    includeStats: bool(q.includeStats) === true,
   };
 }
 
@@ -160,6 +162,7 @@ async function tryPostgresSearch({filters, codes, force}) {
     queryMs: result.queryMs,
     nextCursor: result.nextCursor,
     listings: result.listings,
+    ...(result.statistics ? {statistics: result.statistics} : {}),
   };
 }
 

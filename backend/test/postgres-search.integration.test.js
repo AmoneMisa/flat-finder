@@ -57,6 +57,7 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
     sort: 'newest',
     limit: 1,
     offset: 0,
+    includeStats: true,
   };
 
   const first = await searchPostgresListings({
@@ -69,6 +70,10 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   assert.equal(first.listings.length, 1);
   assert.equal(first.listings[0].id, 'usd-250');
   assert.ok(first.nextCursor);
+  assert.equal(first.statistics.total, 2);
+  assert.equal(first.statistics.dealTypes[0]?.key, 'longRent');
+  assert.equal(first.statistics.dealTypes[0]?.count, 2);
+  assert.equal(first.statistics.geographies.city[0]?.label, 'Odesa');
 
   const second = await searchPostgresListings({
     filters: {...filters, cursor: first.nextCursor, offset: 999},

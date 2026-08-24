@@ -69,9 +69,11 @@ test('listing filters preserve the existing public query contract', () => {
     customSources: 'https://example.com/a,https://example.com/a,ftp://bad',
     pets: 'true',
     children: '1',
+    withPhotos: 'true',
     limit: '999',
     offset: '20',
     cursor: 'abc',
+    includeStats: '1',
   });
 
   assert.equal(filters.propertyType, 'flat');
@@ -88,9 +90,19 @@ test('listing filters preserve the existing public query contract', () => {
   assert.deepEqual(filters.customSources, ['https://example.com/a']);
   assert.equal(filters.pets, true);
   assert.equal(filters.children, true);
+  assert.equal(filters.withPhotos, true);
   assert.equal(filters.limit, 60);
   assert.equal(filters.offset, 20);
   assert.equal(filters.cursor, 'abc');
+  assert.equal(filters.includeStats, true);
+});
+
+test('analytics reuse the filtered deduplicated PostgreSQL dataset', () => {
+  assert.match(postgresSearchSource, /filters\.includeStats \? pool\.query\(statsSql, baseParams\)/);
+  assert.match(postgresSearchSource, /duplicatesRejected/);
+  assert.match(postgresSearchSource, /suspectedFake/);
+  assert.match(postgresSearchSource, /'microdistrict'/);
+  assert.doesNotMatch(listingRoutesSource, /compute.*stat/i);
 });
 
 test('listing filters sanitize invalid numeric values and pagination bounds', () => {
