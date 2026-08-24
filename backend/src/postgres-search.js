@@ -306,6 +306,20 @@ function listingDedupeSql(alias = 'l') {
         ${title},
         ${description}
       ))
+    WHEN LOWER(${alias}.source) = 'telegram'
+      AND LENGTH(${description}) >= 40
+      THEN 'telegram:content:' || MD5(CONCAT_WS('|',
+        UPPER(${alias}.country),
+        LOWER(COALESCE(${alias}.city, '')),
+        COALESCE(${alias}.deal_type, ''),
+        COALESCE(${alias}.property_type, ''),
+        COALESCE(${alias}.price::text, ''),
+        UPPER(COALESCE(${alias}.currency, '')),
+        COALESCE(${alias}.rooms::text, ''),
+        COALESCE(ROUND(${alias}.area_sqm::numeric, 1)::text, ''),
+        ${title},
+        ${description}
+      ))
     ELSE CONCAT_WS(':', LOWER(${alias}.source), UPPER(${alias}.country), ${alias}.source_id)
   END`;
 }
@@ -318,8 +332,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const dedupeKey = listingDedupeSql('l');
 
   // Dedupe only affects normal feeds. An exact share-link lookup already narrows
-  // to one source_id and must keep resolving that exact OLX URL even if a newer
-  // repost of the same apartment is the feed representative.
+  // to one source_id and must keep resolving that exact source URL even if a
+  // newer repost of the same apartment is the feed representative.
   const dedupeEnabled = !filters.listingId;
 
   const filteredSql = `
