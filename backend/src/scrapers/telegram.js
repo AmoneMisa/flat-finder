@@ -8,6 +8,7 @@
 
 import {makeListing} from '../normalize.js';
 import {MAX_AGE_MS} from '../listing-policy.js';
+import {looksTelegramRoomShare} from '../telegram-room-share.js';
 import {
   parsePriceFromText,
   parseRoomsFromText,
@@ -118,6 +119,15 @@ function messageToListing(
 
     propertyType:
     type,
+
+    // Uzbek rental channels often advertise a place in an existing flat as
+    // "qizlarga joy bor" / "қизларга жой бор" without saying "room". That is
+    // a room/share offer, not a whole apartment. Keep the generic normalizer as
+    // the fallback for all other languages and wording.
+    roomOnly:
+        looksTelegramRoomShare(text)
+            ? true
+            : undefined,
 
     byAgency:
         classifyAgency(
