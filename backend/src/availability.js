@@ -246,8 +246,8 @@ export function confirmRepeatedOlxGenericError(row, result) {
   return result;
 }
 
-async function verifyRow(row) {
-  const cached = cachedResult(row);
+async function verifyRow(row, {force = false} = {}) {
+  const cached = force ? null : cachedResult(row);
   if (cached) return cached;
 
   const key = listingKey(row.source, row.country, row.source_id);
@@ -311,7 +311,7 @@ async function mapConcurrent(items, fn) {
   return results;
 }
 
-export async function verifyListingAvailability(items) {
+export async function verifyListingAvailability(items, {force = false} = {}) {
   const requested = normalizeRequests(items);
   if (!requested.length) return [];
 
@@ -325,5 +325,5 @@ export async function verifyListingAvailability(items) {
     .map((item) => byKey.get(listingKey(item.source, item.country, item.id)))
     .filter(Boolean);
 
-  return mapConcurrent(present, verifyRow);
+  return mapConcurrent(present, (row) => verifyRow(row, {force}));
 }
