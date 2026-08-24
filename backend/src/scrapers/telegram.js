@@ -28,6 +28,58 @@ const TG_WORKER_URL = process.env.TG_WORKER_URL || '';
 const HOUSING_RE =
   /(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
 
+// Telegram channels often append a generic promotional footer containing an
+// admin handle or the word "makler". Explicit direct-owner/no-broker language
+// in the listing itself must win over that footer.
+const TELEGRAM_DIRECT_OWNER_RE =
+  /(?:makler\s*[- ]?siz|maklersiz|bez\s*makler(?:a|ov)?|bezmakler(?:a|ov)?|vositachi\s*[- ]?siz|vositachisiz|egasidan|uy\s+egasidan|без\s+(?:макл(?:ер[а-яё]*)?|посредник[а-яё]*|ри[еэ]?лтор[а-яё]*|агент[а-яё]*)|от\s+(?:собственник[а-яё]*|хозяин[а-яё]*)|owner\s+direct|direct\s+from\s+(?:owner|landlord))/iu;
+
+// A bare amount such as `Shayxontohur 500 Samarqand Darvoza ...` is a very
+// common Uzbek Telegram shorthand for a monthly USD rent. The generic parser
+// intentionally ignores unlabelled values below 1000 to avoid floors/areas, so
+// add a Telegram-specific fallback with tight guards.
+const TELEGRAM_BARE_USD_RE =
+  /^.{0,70}?(?<![\d+])([1-9]\d{2,3})(?!\d)(?=\s+(?!m2\b|m²\b|м2\b|м²\b|qavat\b|этаж\b|xona\b|xonali\b|комнат\b|kvartal\b|квартал\b)[\p{L}])/iu;
+
+export function classifyTelegramAgency(text) {
+  if (!text) return false;
+  if (TELEGRAM_DIRECT_OWNER_RE.test(text)) return false;
+  return classifyAgency(text);
+}
+
+export function guessTelegramPropertyType(text) {
+  if (!text) return 'flat';
+  // hovli/xovli is a courtyard house. `hovlini yarimi` / `xovlini yarimi`
+  // means part/half of such a house, but the current Listing contract only has
+  // `house` vs `flat`, so preserve it as a house rather than a flat.
+  if (/(?:^|[^\p{L}\p{N}_])[xh]ovli(?:ni|da|dan|ning)?(?=$|[^\p{L}\p{N}_])/iu.test(text)) {
+    return 'house';
+  }
+  return guessPropertyType(text);
+}
+
+export function parseTelegramPrice(text, country, dealType = null) {
+  const fallbackCurrency = country?.currency || '';
+  const parsed = parsePriceFromText(text, fallbackCurrency);
+  if (parsed.price != null) return parsed;
+
+  const isUzbek = String(country?.code || '').toUpperCase() === 'UZ';
+  const isRental = dealType === 'longRent' || dealType === 'shortRent' ||
+    /(?:ijara|ijaraga|arenda|аренд|сдам|сда[её]тся|rent\b)/iu.test(text || '');
+  if (!isUzbek || !isRental) return parsed;
+
+  const head = String(text || '').slice(0, 100);
+  const match = head.match(TELEGRAM_BARE_USD_RE);
+  if (!match) return parsed;
+
+  const price = Number(match[1]);
+  // Below 100 is too easy to confuse with room/floor/block numbers; above 9999
+  // is not the small bare-USD convention this fallback is meant to cover.
+  if (!Number.isFinite(price) || price < 100 || price > 9999) return parsed;
+
+  return {price, currency: 'USD'};
+}
+
 // Turn one worker message ({ id, text, date, hasPhoto }) into a listing, or
 // null if it isn't a housing post. Search filters are applied to the complete
 // normalized snapshot in server.js, just like the vacancy feed.
@@ -68,13 +120,19 @@ function messageToListing(
     price,
     currency,
   } =
-      parsePriceFromText(
+      parseTelegramPrice(
           text,
-          country.currency,
+          country,
+          channelConfig.dealType,
       );
 
   const type =
-      guessPropertyType(
+      guessTelegramPropertyType(
+          text,
+      );
+
+  const byAgency =
+      classifyTelegramAgency(
           text,
       );
 
@@ -141,10 +199,15 @@ function messageToListing(
             ? true
             : undefined,
 
-    byAgency:
-        classifyAgency(
-            text,
-        ),
+    byAgency,
+
+    // In this data model a direct owner has no broker commission. Keep those
+    // fields consistent instead of showing "owner" together with an unknown fee.
+    commission:
+        byAgency ? undefined : false,
+
+    commissionPercent:
+        byAgency ? undefined : 0,
 
     price,
 
@@ -445,7 +508,8 @@ function selectTelegramChannels(
       let index = 0;
       index <
       TG_CHANNELS_PER_RUN;
-      index++
+      index +=
+          1
   ) {
     selected.push(
         all[
