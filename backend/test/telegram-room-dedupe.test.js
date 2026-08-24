@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
+import {makeListing} from '../src/normalize.js';
 import {looksTelegramRoomShare} from '../src/telegram-room-share.js';
 
 const postgresSearch = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
 const telegramScraper = await readFile(new URL('../src/scrapers/telegram.js', import.meta.url), 'utf8');
-const normalize = await readFile(new URL('../src/normalize.js', import.meta.url), 'utf8');
 
 test('recognizes Uzbek place-in-flat offers without treating audience alone as room-only', () => {
   assert.equal(looksTelegramRoomShare('Kvartira ijarasi. Qizlarga joy bor. Novza metro.'), true);
@@ -21,14 +21,37 @@ test('Telegram scraper forwards colloquial share detection into normalized roomO
   assert.match(telegramScraper, /roomOnly:\s*\n\s*looksTelegramRoomShare\(text\)/);
 });
 
-test('Telegram scraper canonicalizes photo fingerprints without using photo ids as a semantic key', () => {
-  assert.match(telegramScraper, /msg\.photoFingerprints/);
-  assert.match(telegramScraper, /photoFingerprints\.join\('\|'\)/);
-  assert.match(telegramScraper, /photoFingerprints\.length >= 2/);
-  assert.match(normalize, /photoFingerprintKey: partial\.photoFingerprintKey \?\? null/);
+test('single-photo Telegram reposts require matching structured listing fields', () => {
+  const fingerprint = 'a'.repeat(64);
+  const base = {
+    source: 'telegram',
+    country: 'UZ',
+    title: 'Kvartira Ijarasi | Maklersiz ✅',
+    description: 'Same apartment repost with slightly different trailing text',
+    propertyType: 'flat',
+    dealType: 'longRent',
+    price: 100,
+    currency: 'USD',
+    rooms: 3,
+    city: 'Tashkent',
+    photoFingerprints: [fingerprint],
+  };
+
+  const first = makeListing({...base, id: 'one'});
+  const repost = makeListing({...base, id: 'two', description: 'Text can differ while structured identity stays the same'});
+  const differentPrice = makeListing({...base, id: 'three', price: 150});
+
+  assert.equal(first.photoFingerprintKey?.length, 129);
+  assert.equal(first.photoFingerprintKey, repost.photoFingerprintKey);
+  assert.notEqual(first.photoFingerprintKey, differentPrice.photoFingerprintKey);
 });
 
-test('PostgreSQL feed prefers two-photo fingerprint dedupe, falls back to content, and keeps exact-id lookup', () => {
+test('Telegram scraper canonicalizes multi-photo fingerprints without using photo ids as a semantic key', () => {
+  assert.match(telegramScraper, /msg\.photoFingerprints/);
+  assert.match(telegramScraper, /photoFingerprints\.join\('\|'\)/);
+});
+
+test('PostgreSQL feed consumes photo fingerprint keys, falls back to content, and keeps exact-id lookup', () => {
   assert.match(postgresSearch, /'telegram:photos:' \|\| MD5/);
   assert.match(postgresSearch, /data->>'photoFingerprintKey'/);
   assert.match(postgresSearch, /LENGTH\(\$\{telegramPhotoKey\}\) >= 129/);
