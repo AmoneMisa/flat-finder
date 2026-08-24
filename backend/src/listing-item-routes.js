@@ -1,4 +1,5 @@
 import {COUNTRIES, COUNTRY_CODES} from './countries.js';
+import {verifyListingAvailability} from './availability.js';
 import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateCustomSource} from './custom-source-queue.js';
 import {checkRate} from './request-rate-limit.js';
@@ -20,6 +21,14 @@ export function installListingItemRoutes(app) {
     }
 
     try {
+      const [availability] = await verifyListingAvailability([
+        {source, country: code, id},
+      ], {force: true});
+
+      if (availability?.status === 'inactive') {
+        return res.status(404).json({error: 'Listing no longer available'});
+      }
+
       const listing = await fetchOlxOffer(country, id);
       if (!listing) {
         return res.status(404).json({error: 'Listing no longer available'});
