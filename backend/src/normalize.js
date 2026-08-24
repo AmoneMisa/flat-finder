@@ -1,4 +1,5 @@
 // A single normalized Listing shape that the Flutter app consumes.
+import {createHash} from 'node:crypto';
 import {extractTags} from './tags.js';
 import {canonicalCityName} from './countries.js';
 import {
@@ -194,6 +195,38 @@ export function makeListing(partial) {
     address,
     city,
   });
+  const price = partial.price != null ? Number(partial.price) : null;
+  const currency = partial.currency ?? '';
+  const areaSqm = partial.areaSqm != null ? Number(partial.areaSqm) : parseAreaFromText(combined);
+  const photoFingerprints = [...new Set(
+    (Array.isArray(partial.photoFingerprints) ? partial.photoFingerprints : [])
+      .map((value) => String(value || '').toLowerCase())
+      .filter((value) => /^[a-f0-9]{64}$/.test(value)),
+  )].sort();
+
+  let photoFingerprintKey = partial.photoFingerprintKey ?? null;
+  if (!photoFingerprintKey && partial.source === 'telegram') {
+    if (photoFingerprints.length >= 2) {
+      photoFingerprintKey = photoFingerprints.join('|');
+    } else if (photoFingerprints.length === 1 && price != null) {
+      // One image alone is too weak: channels can reuse a generic photo. Pair
+      // it with stable listing attributes so a single-photo repost is collapsed
+      // only when the actual offer still looks like the same object.
+      const structured = JSON.stringify([
+        String(partial.country || '').toUpperCase(),
+        String(city || '').toLowerCase(),
+        dealType || '',
+        propertyType,
+        price,
+        String(currency || '').toUpperCase(),
+        rooms ?? null,
+        areaSqm ?? null,
+        String(title || '').toLowerCase(),
+      ]);
+      const structuredHash = createHash('sha256').update(structured).digest('hex');
+      photoFingerprintKey = `${photoFingerprints[0]}|${structuredHash}`;
+    }
+  }
 
   return {
     id: String(partial.id),
@@ -202,10 +235,10 @@ export function makeListing(partial) {
     title,
     propertyType,
     byAgency,
-    price: partial.price != null ? Number(partial.price) : null,
-    currency: partial.currency ?? '',
+    price,
+    currency,
     rooms,
-    areaSqm: partial.areaSqm != null ? Number(partial.areaSqm) : parseAreaFromText(combined),
+    areaSqm,
     city,
     region: partial.region ?? loc.region ?? null,
     microdistrict: coords.rejected ? null : (partial.microdistrict ?? loc.microdistrict ?? null),
@@ -215,8 +248,8 @@ export function makeListing(partial) {
     sourceCoordinateRejected: coords.rejected || partial.sourceCoordinateRejected === true,
     photo: partial.photo ?? (Array.isArray(partial.photos) ? partial.photos[0] : null) ?? null,
     photos: Array.isArray(partial.photos) ? partial.photos : (partial.photo ? [partial.photo] : []),
-    photoFingerprints: Array.isArray(partial.photoFingerprints) ? partial.photoFingerprints : [],
-    photoFingerprintKey: partial.photoFingerprintKey ?? null,
+    photoFingerprints,
+    photoFingerprintKey,
     url: partial.url ?? '',
     createdAt: partial.createdAt ?? null,
     description,
