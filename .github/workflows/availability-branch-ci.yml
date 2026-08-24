@@ -9,11 +9,14 @@ on:
       - 'backend/src/availability.js'
       - 'backend/src/availability-routes.js'
       - 'backend/src/availability-sweep.js'
+      - 'backend/src/listing-item-routes.js'
       - 'backend/src/app.js'
       - 'backend/migrations/**'
       - 'backend/src/migrate.js'
       - 'backend/src/migration-files.js'
       - 'backend/test/availability.integration.test.js'
+      - 'backend/test/availability-force.integration.test.js'
+      - 'backend/test/listing-item-availability.test.js'
       - 'olx-fetcher/app.py'
       - 'olx-fetcher/test_app.py'
       - '.github/workflows/availability-branch-ci.yml'
@@ -68,11 +71,14 @@ jobs:
           node --check backend/src/availability.js
           node --check backend/src/availability-routes.js
           node --check backend/src/availability-sweep.js
+          node --check backend/src/listing-item-routes.js
           node --check backend/src/app.js
           python -m py_compile olx-fetcher/app.py
       - name: Apply database migrations
         run: npm run migrate --prefix backend
       - name: Test OLX status classifier
         run: cd olx-fetcher && python -m unittest -v test_app.py
-      - name: Test PostgreSQL availability cache
-        run: node --test backend/test/availability.integration.test.js
+      - name: Test PostgreSQL availability checks
+        run: node --test backend/test/availability.integration.test.js backend/test/availability-force.integration.test.js
+      - name: Test direct listing availability route
+        run: node --test backend/test/listing-item-availability.test.js
