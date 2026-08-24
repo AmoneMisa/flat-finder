@@ -67,12 +67,16 @@ function accepted(item, minConfidence = 0.75) {
   return item && item.value != null && Number(item.confidence) >= minConfidence;
 }
 
-function mergeVision(listing, result) {
+export function mergeVision(listing, result) {
   const data = result?.data || {};
   const merged = { ...listing };
-  const fill = (field, item) => {
+  const derivedFields = new Set(
+    Array.isArray(listing?.vision?.derivedFields) ? listing.vision.derivedFields.map(String) : [],
+  );
+  const fill = (field, item, provenanceField = field) => {
     if ((merged[field] == null || merged[field] === '') && accepted(item)) {
       merged[field] = item.value;
+      derivedFields.add(provenanceField);
     }
   };
 
@@ -87,33 +91,35 @@ function mergeVision(listing, result) {
   fill('condition', data.renovationLevel);
 
   const amenityMap = {
-    closedYard: 'closed_yard',
-    kitchenVisible: 'kitchen',
-    washingMachineVisible: 'washing_machine',
-    dishwasherVisible: 'dishwasher',
-    tvVisible: 'tv',
-    gasWaterHeaterVisible: 'gas_water_heater',
-    waterBoilerVisible: 'water_boiler',
+    closedYard: { amenity: 'closed_yard', field: 'closedYard' },
+    kitchenVisible: { amenity: 'kitchen', field: 'kitchen' },
+    washingMachineVisible: { amenity: 'washing_machine', field: 'washingMachine' },
+    dishwasherVisible: { amenity: 'dishwasher', field: 'dishwasher' },
+    tvVisible: { amenity: 'tv', field: 'tv' },
+    gasWaterHeaterVisible: { amenity: 'gas_water_heater', field: 'gasWaterHeater' },
+    waterBoilerVisible: { amenity: 'water_boiler', field: 'waterBoiler' },
   };
   const amenities = new Set(merged.amenities || []);
-  for (const [visionField, amenity] of Object.entries(amenityMap)) {
+  for (const [visionField, { amenity, field }] of Object.entries(amenityMap)) {
     const item = data[visionField];
-    if (accepted(item) && item.value === true) amenities.add(amenity);
+    if (accepted(item) && item.value === true && !amenities.has(amenity)) {
+      amenities.add(amenity);
+      derivedFields.add(field);
+    }
   }
   merged.amenities = [...amenities];
 
-  if ((merged.gasWaterHeater == null || merged.gasWaterHeater === '') && accepted(data.gasWaterHeaterVisible)) {
-    merged.gasWaterHeater = data.gasWaterHeaterVisible.value;
-  }
-  if ((merged.waterBoiler == null || merged.waterBoiler === '') && accepted(data.waterBoilerVisible)) {
-    merged.waterBoiler = data.waterBoilerVisible.value;
-  }
+  fill('gasWaterHeater', data.gasWaterHeaterVisible);
+  fill('waterBoiler', data.waterBoilerVisible);
 
   // Keep provenance/evidence available to the API/UI without allowing vision to
-  // silently overwrite deterministic/text facts.
+  // silently overwrite deterministic/text facts. `derivedFields` contains only
+  // values that vision actually supplied; merely agreeing with an existing
+  // deterministic/text value does not mark that field as AI-derived.
   merged.vision = {
     provider: result.provider || null,
     analyzedAt: result.analyzedAt || new Date().toISOString(),
+    derivedFields: [...derivedFields].sort(),
     data,
   };
   return merged;
