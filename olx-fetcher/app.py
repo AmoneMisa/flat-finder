@@ -88,17 +88,82 @@ _GENERIC_ERROR_PATTERNS = [
 ]
 
 
-def extract_ads(html):
-    """Return the list of ad objects from the page state, or None if not present."""
-    m = _STATE_RE.search(html)
+def _extract_state(document):
+    """Decode OLX's prerender state once and reuse it for list/detail checks."""
+    m = _STATE_RE.search(document or "")
     if not m:
         return None
     try:
         state = json.loads(json.loads(m.group(1)))
     except (ValueError, TypeError):
         return None
+    return state if isinstance(state, dict) else None
+
+
+def extract_ads(html):
+    """Return the list of ad objects from the page state, or None if not present."""
+    state = _extract_state(html)
+    if state is None:
+        return None
     ads = (((state or {}).get("listing") or {}).get("listing") or {}).get("ads")
     return ads if isinstance(ads, list) else None
+
+
+def _looks_like_offer_object(value, offer_id):
+    if not isinstance(value, dict):
+        return False
+
+    offer_id = str(offer_id or "").strip()
+    if not offer_id:
+        return False
+
+    identity_values = []
+    for key in ("url", "link", "canonicalUrl", "canonical_url"):
+        raw = value.get(key)
+        if raw:
+            identity_values.append(str(raw))
+
+    raw_id = value.get("id")
+    identity_matches = (
+        any(offer_id in candidate for candidate in identity_values)
+        or (raw_id is not None and str(raw_id) == offer_id)
+    )
+    if not identity_matches:
+        return False
+
+    title = str(value.get("title") or "").strip()
+    if not title:
+        return False
+
+    detail_keys = {
+        "price",
+        "photos",
+        "location",
+        "map",
+        "params",
+        "description",
+        "createdTime",
+        "created_time",
+    }
+    return any(key in value for key in detail_keys)
+
+
+def _state_has_live_offer(document, offer_id):
+    """Require an actual offer payload, not merely the old ID surviving in the URL."""
+    state = _extract_state(document)
+    if state is None:
+        return False
+
+    stack = [state]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            if _looks_like_offer_object(current, offer_id):
+                return True
+            stack.extend(current.values())
+        elif isinstance(current, list):
+            stack.extend(current)
+    return False
 
 
 def _ad_created_at(ad):
@@ -172,15 +237,18 @@ def classify_offer_response(status_code, document, requested_id, final_url):
 
     for pattern in _GENERIC_ERROR_PATTERNS:
         if pattern.search(visible):
-            # One generic shell can be a transient OLX outage. The backend keeps
-            # this unknown and only deactivates after the same result repeats on
-            # the next availability window.
+            # A generic shell can be a transient OLX outage. Do not deactivate
+            # on that response alone.
             return "unknown", "generic_error_page"
 
     offer_id = str(requested_id or "").strip()
     final = str(final_url or "")
     if offer_id and offer_id in final:
-        return "active", "offer_page"
+        if _state_has_live_offer(document, offer_id):
+            return "active", "offer_payload"
+        # OLX commonly preserves the old canonical URL for removed offers while
+        # returning HTTP 200. Without the offer payload this is not a live ad.
+        return "inactive", "missing_offer_payload"
 
     return "unknown", "unrecognized_page"
 
