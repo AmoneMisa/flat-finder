@@ -10,7 +10,9 @@ import {
   UA_REGION_ENTRIES as UA_REGIONS,
   UA_REGIONAL_LOCATION_EXTENSIONS,
   UA_SECONDARY_CITIES,
+  centralAsiaLocationCities,
   locationCities,
+  matchCentralAsiaLocationEntities,
   matchOdesaMetropolitanEntities,
   matchTashkentPoi,
   matchTashkentResidentialComplex,
@@ -23,6 +25,7 @@ import {
 let mergedUkraine = null;
 
 function mergedCountry(countryCode) {
+  if (countryCode === 'KZ' || countryCode === 'UZ') return centralAsiaLocationCities(countryCode);
   if (countryCode !== 'UA') return locationCities(countryCode);
   if (!mergedUkraine) {
     mergedUkraine = mergeLocationCountries(
@@ -142,6 +145,38 @@ function applyOdesaMetropolitan(result, text) {
   }
 }
 
+function applyCentralAsiaLocations(result, central) {
+  if (!central) return;
+  if (central.city) result.city ||= central.city;
+
+  for (const item of central.matches || []) {
+    result.locationEntities.push({ type: item.type, name: item.name, parent: item.parent || null });
+
+    if (item.type === 'district' && !result.district) result.district = item.name;
+    else if (item.type === 'microdistrict' && !result.microdistrict) result.microdistrict = item.name;
+    else if (item.type === 'mahalla') pushUnique(result.mahallas, item.name);
+    else if (item.type === 'local_area') pushUnique(result.localAreas, item.name);
+    else if (item.type === 'suburb') {
+      pushUnique(result.suburbs, item.name);
+      result.locality ||= item.name;
+    } else if (item.type === 'settlement') {
+      pushUnique(result.settlements, item.name);
+      result.locality ||= item.name;
+    } else if (item.type === 'metro' && !result.metro) result.metro = item.name;
+    else if (item.type === 'residential_complex' && !result.residentialComplex) result.residentialComplex = item.name;
+    else if (item.type === 'street' && !result.street) result.street = item.name;
+    else if (item.type === 'poi' && !result.landmark) {
+      result.landmark = item.name;
+      result.landmarkCategory = item.key === 'landmarks' ? 'poi' : item.key || 'poi';
+    }
+  }
+
+  for (const cluster of central.searchClusters || []) {
+    pushUnique(result.searchClusters, cluster.name);
+    result.locationEntities.push({ type: cluster.type, name: cluster.name, parent: cluster.city || null });
+  }
+}
+
 export function matchDictionaryEntities(text, countryCode, preferredCity = null) {
   const result = {
     region: null,
@@ -154,8 +189,10 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     landmark: null,
     landmarkCategory: null,
     locality: null,
+    mahallas: [],
     localAreas: [],
     suburbs: [],
+    settlements: [],
     informalAreas: [],
     developmentAreas: [],
     searchClusters: [],
@@ -174,10 +211,24 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     }
   }
 
+  const central = countryCode === 'KZ' || countryCode === 'UZ'
+    ? matchCentralAsiaLocationEntities(text, countryCode, preferredCity)
+    : null;
+  applyCentralAsiaLocations(result, central);
+
   const cities = mergedCountry(countryCode);
-  const ordered = preferredCity && cities[preferredCity]
-    ? [[preferredCity, cities[preferredCity]], ...Object.entries(cities).filter(([name]) => name !== preferredCity)]
-    : Object.entries(cities);
+  let ordered;
+  if (central?.city && cities[central.city]) {
+    ordered = [[central.city, cities[central.city]]];
+  } else if (central?.candidates?.length) {
+    // Parent-aware Central Asia resolver found only ambiguous city candidates.
+    // Do not fall back to first-match-wins across the whole country.
+    ordered = [];
+  } else {
+    ordered = preferredCity && cities[preferredCity]
+      ? [[preferredCity, cities[preferredCity]], ...Object.entries(cities).filter(([name]) => name !== preferredCity)]
+      : Object.entries(cities);
+  }
 
   for (const [cityName, data] of ordered) {
     const district = (data.districts || []).find((x) => x.re.test(text));
@@ -198,7 +249,7 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     if (!result.street && street) result.street = street.name;
     if (!result.landmark && landmark) {
       result.landmark = landmark.name;
-      result.landmarkCategory = landmark.category || null;
+      result.landmarkCategory = landmark.category || landmark.entityType || null;
     }
 
     if (!result.city && (district || microdistrict || metro || residentialComplex || street || landmark)) result.city = cityName;
@@ -243,6 +294,10 @@ export function dictionaryLocationLists(countryCode) {
       districts: (data.districts || []).map((x) => x.name),
       metro: (data.metro || []).map((x) => x.name),
       microdistricts: (data.microdistricts || []).map((x) => x.name),
+      mahallas: (data.mahallas || []).map((x) => x.name),
+      localAreas: (data.localAreas || []).map((x) => x.name),
+      suburbs: (data.suburbs || []).map((x) => x.name),
+      settlements: (data.settlements || []).map((x) => x.name),
       residentialComplexes: residentialComplexes.map((x) => x.name),
       streets: (data.streets || []).map((x) => x.name),
       landmarks: landmarks.map((x) => x.name),
