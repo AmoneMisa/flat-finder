@@ -15,7 +15,7 @@ const GENERIC_NEARBY = GENERIC_LANDMARK_TERMS.map((item) => ({
   re: aliasesToRegex([item.canonical, ...aliasesOf(item)]),
 }));
 
-export function parseLocation(text, countryCode) {
+export function parseLocation(text, countryCode, preferredCity = null) {
   const result = {
     region: null,
     district: null,
@@ -30,10 +30,17 @@ export function parseLocation(text, countryCode) {
     landmarkCategory: null,
     nearby: [],
     city: null,
+    locality: null,
+    localAreas: [],
+    suburbs: [],
+    informalAreas: [],
+    developmentAreas: [],
+    searchClusters: [],
+    locationEntities: [],
   };
   if (!text) return result;
 
-  const dictionary = matchDictionaryEntities(text, countryCode);
+  const dictionary = matchDictionaryEntities(text, countryCode, preferredCity);
   result.region = dictionary.region;
   result.microdistrict = dictionary.microdistrict;
   result.residentialComplex = dictionary.residentialComplex;
@@ -42,6 +49,13 @@ export function parseLocation(text, countryCode) {
   result.district = dictionary.district;
   result.metro = dictionary.metro;
   result.landmarkCategory = dictionary.landmarkCategory || null;
+  result.locality = dictionary.locality || null;
+  result.localAreas = [...(dictionary.localAreas || [])];
+  result.suburbs = [...(dictionary.suburbs || [])];
+  result.informalAreas = [...(dictionary.informalAreas || [])];
+  result.developmentAreas = [...(dictionary.developmentAreas || [])];
+  result.searchClusters = [...(dictionary.searchClusters || [])];
+  result.locationEntities = [...(dictionary.locationEntities || [])];
   if (dictionary.landmark) result.nearby.push(dictionary.landmark);
 
   // Tashkent's colloquial area resolver also handles legacy/historical place names
@@ -82,5 +96,7 @@ export function cityLocations(countryCode) {
     landmarks: [...new Set(data.landmarks || [])],
     ...(data.metroLabels ? { metroLabels: data.metroLabels } : {}),
     ...(data.poiGroups ? { poiGroups: data.poiGroups } : {}),
+    ...(data.metropolitanEntities ? { metropolitanEntities: data.metropolitanEntities } : {}),
+    ...(data.searchClusters ? { searchClusters: data.searchClusters } : {}),
   }]));
 }
