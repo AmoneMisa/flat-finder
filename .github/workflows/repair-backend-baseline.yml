@@ -22,14 +22,44 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - name: Update parsing lexicon
         run: npm install --prefix backend '@whiteslove/parsing-lexicon@https://github.com/AmoneMisa/parsing-lexicon/archive/c0e01d88b6dbe92e1bdb17ff5d237f9b42003da8.tar.gz' --save-exact
-      - name: Patch mock location adapter
+      - name: Patch compatibility layers
         run: |
           python - <<'PY'
           from pathlib import Path
+
           p = Path('backend/src/mock.js')
           s = p.read_text()
           s = s.replace("import { LOCATIONS } from './locations.js';", "import { cityLocations } from './locations.js';")
           s = s.replace("    const cityLoc = LOCATIONS[countryCode]?.[cityName];\n    const pick = (arr) => (arr && arr.length ? arr[Math.floor(rand() * arr.length)].name : null);", "    const cityLoc = cityLocations(countryCode)?.[cityName];\n    const pick = (arr) => (arr && arr.length ? arr[Math.floor(rand() * arr.length)] : null);")
+          p.write_text(s)
+
+          p = Path('backend/src/normalize.js')
+          s = p.read_text()
+          s = s.replace("    : (housingStructured.rooms ?? parseRoomsFromText(combined));", "    : (parseRoomsFromText(combined) ?? housingStructured.rooms);")
+          s = s.replace("    : (housingStructured.floor.floor ?? parsedFloor.floor);", "    : (parsedFloor.floor ?? housingStructured.floor.floor);")
+          s = s.replace("    : (housingStructured.floor.totalFloors ?? parsedFloor.totalFloors);", "    : (parsedFloor.totalFloors ?? housingStructured.floor.totalFloors);")
+          s = s.replace("  const sourceCity = parseCanonicalCity(country, partial.city || '');\n  const loc = parseLocation(combined, country, sourceCity || null);\n  const city = sourceCity || parseCanonicalCity(country, loc.city || '');\n  const coords = sourceCoordinates(partial, city, country);\n  const explicitDistrict = parseExplicitDistrict(combined, country);", "  const sourceCity = parseCanonicalCity(country, partial.city || '');\n  const explicitDistrict = parseExplicitDistrict(combined, country);\n  const loc = parseLocation(combined, country, sourceCity || null);\n  const city = sourceCity || parseCanonicalCity(country, loc.city || '') || (country === 'UZ' && explicitDistrict ? 'Tashkent' : '');\n  const coords = sourceCoordinates(partial, city, country);")
+          s = s.replace("  const residenceComplex = partial.residenceComplex\n    ?? loc.residentialComplex\n    ?? parseResidentialComplex(combined);", "  const residenceComplex = partial.residenceComplex\n    ?? parseResidentialComplex(combined)\n    ?? loc.residentialComplex;")
+          p.write_text(s)
+
+          p = Path('backend/src/locations.js')
+          s = p.read_text()
+          s = s.replace("  for (const item of GENERIC_NEARBY) {\n    if (result.nearby.length >= 6) break;", "  for (const item of GENERIC_NEARBY) {\n    if (result.nearby.length >= 6) break;\n    if (item.name === 'Metro') continue;")
+          p.write_text(s)
+
+          p = Path('backend/src/location-dictionary-resolver.js')
+          s = p.read_text()
+          s = s.replace("    else if (item.type === 'metro' && !result.metro) result.metro = item.name;", "    else if (item.type === 'metro') { /* contextual metro matching is handled below */ }")
+          marker = "  const cities = mergedCountry(countryCode);\n  let ordered;\n  if (central?.city && cities[central.city]) {\n    ordered = [[central.city, cities[central.city]]];"
+          replacement = "  const cities = mergedCountry(countryCode);\n  if (countryCode === 'UZ') {\n    const tashkentRc = matchTashkentResidentialComplex(text);\n    const tashkentLandmark = matchTashkentPoi(text);\n    if (tashkentRc || tashkentLandmark) {\n      result.city ||= 'Tashkent';\n      if (tashkentRc && !result.residentialComplex) result.residentialComplex = tashkentRc.name;\n      if (tashkentLandmark && !result.landmark) {\n        result.landmark = tashkentLandmark.name;\n        result.landmarkCategory = tashkentLandmark.category || tashkentLandmark.entityType || null;\n      }\n    }\n  }\n  let ordered;\n  const resolvedCity = central?.city || result.city;\n  if (resolvedCity && cities[resolvedCity]) {\n    ordered = [[resolvedCity, cities[resolvedCity]]];"
+          if marker not in s: raise SystemExit('resolver marker not found')
+          s = s.replace(marker, replacement)
+          p.write_text(s)
+
+          p = Path('backend/src/tashkent-areas.js')
+          s = p.read_text()
+          s = s.replace("  if (!explicitSergeliDistrict && /(?:^|\\s)(?:сергели|sergeli|sergile|sergele)(?:\\s|$)/iu.test(text)) {\n    return result('Sergeli', null, 0.35, true);\n  }", "  if (explicitSergeliDistrict) return result('Sergeli', 'Sergeli');\n  if (/(?:^|\\s)(?:сергели|sergeli|sergile|sergele)(?:\\s|$)/iu.test(text)) {\n    return result('Sergeli', null, 0.35, true);\n  }")
+          s = s.replace("  if (!explicitChilanzarDistrict && /(?:^|\\s)(?:чиланзар|чилонзор|chilanzar|chilonzor)(?:\\s|$)/iu.test(text)) {\n    return result('Chilanzar', null, 0.35, true);\n  }", "  if (explicitChilanzarDistrict) return result('Chilanzar', 'Chilanzar');\n  if (/(?:^|\\s)(?:чиланзар|чилонзор|chilanzar|chilonzor)(?:\\s|$)/iu.test(text)) {\n    return result('Chilanzar', null, 0.35, true);\n  }")
           p.write_text(s)
           PY
       - name: Install dependencies
@@ -39,7 +69,7 @@ jobs:
       - name: Commit repairs
         if: success()
         run: |
-          git add backend/package.json backend/package-lock.json backend/src/mock.js
+          git add backend/package.json backend/package-lock.json backend/src/mock.js backend/src/normalize.js backend/src/locations.js backend/src/location-dictionary-resolver.js backend/src/tashkent-areas.js
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fix: restore backend parsing baseline"
