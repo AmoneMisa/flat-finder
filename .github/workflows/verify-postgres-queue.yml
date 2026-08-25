@@ -81,6 +81,7 @@ jobs:
           node --test
           backend/test/pg-queue.integration.test.js
           backend/test/postgres-search.integration.test.js
+          backend/test/market-comparison.integration.test.js
           backend/test/filter-parity.integration.test.js
           backend/test/queue-crawl-stability.test.js
           backend/test/map-amenity-sort.test.js

@@ -2,6 +2,7 @@ import {COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {getRates} from './fx.js';
 import {refreshAll} from './scheduler.js';
 import {searchPostgresListings} from './postgres-search.js';
+import {attachMarketComparisons} from './market-comparison.js';
 import {searchListingMatches} from './elasticsearch.js';
 import {checkRate} from './request-rate-limit.js';
 import {prepareCustomSources} from './custom-source-queue.js';
@@ -146,6 +147,15 @@ async function tryPostgresSearch({filters, codes, force}) {
     searchMatches,
   });
 
+  let listings = result.listings;
+  if (listings.length && fxRates) {
+    try {
+      listings = await attachMarketComparisons(listings, fxRates);
+    } catch (err) {
+      console.warn('[market-comparison] enrichment failed:', err?.message ?? err);
+    }
+  }
+
   return {
     count: result.count,
     degradedCountries: [],
@@ -162,7 +172,7 @@ async function tryPostgresSearch({filters, codes, force}) {
     searchTruncated: searchMatches?.truncated ?? false,
     queryMs: result.queryMs,
     nextCursor: result.nextCursor,
-    listings: result.listings,
+    listings,
     ...(result.statistics ? {statistics: result.statistics} : {}),
   };
 }
