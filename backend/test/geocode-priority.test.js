@@ -9,7 +9,7 @@ const country = {
   center: { lat: 41.3111, lng: 69.2797 },
 };
 
-test('orders geocoding signals from exact to broad with metro above nearby POI', () => {
+test('orders geocoding signals from exact to broad with street and metro above nearby POI', () => {
   const listing = {
     id: 'priority',
     city: 'Tashkent',
@@ -18,13 +18,55 @@ test('orders geocoding signals from exact to broad with metro above nearby POI',
     nearbyShops: ['Korzinka'],
     nearby: ['Bobur Park'],
     metro: 'Chilonzor',
+    street: 'Bunyodkor shoh kochasi',
     address: 'Bunyodkor shoh kochasi 10',
   };
 
   assert.deepEqual(
     geocodeCandidates(listing, country).map((candidate) => candidate.source),
-    ['address', 'metro', 'nearby', 'nearby', 'area', 'district', 'city'],
+    ['address', 'street', 'metro', 'nearby', 'nearby', 'area', 'district', 'city'],
   );
+});
+
+test('uses expanded shared geography before district and city', () => {
+  const listing = {
+    id: 'expanded',
+    city: 'Tashkent',
+    district: 'Yakkasaray',
+    microdistrict: 'Qushbegi',
+    localAreas: ['Bogibaland mahalla'],
+    locality: 'Yakkasaray locality',
+    developmentAreas: ['New development'],
+    informalAreas: ['Old town'],
+    suburbs: ['Sergeli outskirts'],
+    settlements: ['Nearby settlement'],
+    searchClusters: ['South Tashkent'],
+  };
+
+  const sources = geocodeCandidates(listing, country).map((candidate) => candidate.source);
+  assert.deepEqual(sources, [
+    'microdistrict', 'localArea', 'locality', 'developmentArea', 'informalArea',
+    'suburb', 'settlement', 'searchCluster', 'district', 'city',
+  ]);
+});
+
+test('uses typed locationEntities as geocoding candidates and deduplicates equal queries', () => {
+  const listing = {
+    id: 'entities',
+    city: 'Tashkent',
+    district: 'Mirabad',
+    microdistrict: 'Oybek',
+    locationEntities: [
+      { type: 'microdistrict', name: 'Oybek' },
+      { type: 'mahalla', name: 'Afrosiyob', parent: 'Mirabad' },
+      { type: 'street', name: 'Shahrisabz Street', parent: 'Mirabad' },
+    ],
+  };
+
+  const candidates = geocodeCandidates(listing, country);
+  assert.equal(candidates.filter((candidate) => candidate.source === 'microdistrict').length, 1);
+  assert.ok(candidates.some((candidate) => candidate.source === 'localArea' && /Afrosiyob/.test(candidate.q)));
+  assert.ok(candidates.some((candidate) => candidate.source === 'street' && /Shahrisabz Street/.test(candidate.q)));
 });
 
 test('uses area/kvartal before district and city', () => {
@@ -86,8 +128,6 @@ test('detects inflected Korzinka text and scopes the POI by area and district', 
 });
 
 test('solves two POI circles and uses the geographic prior to choose the intended intersection', () => {
-  // Two anchors about 800 m apart with equal 500 m radii have two intersections.
-  // The northern prior should choose the northern solution.
   const anchors = [
     { lat: 41.3000, lng: 69.2000, distanceM: 500 },
     { lat: 41.3000, lng: 69.2096, distanceM: 500 },
