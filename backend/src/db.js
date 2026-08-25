@@ -1,4 +1,5 @@
 import pg from 'pg';
+import {enrichListingDetails} from './listing-enrichment.js';
 
 const { Pool } = pg;
 
@@ -81,7 +82,9 @@ function safeTimestamp(value) {
         .toISOString();
 }
 
-function dbListing(listing) {
+function dbListing(inputListing) {
+    const listing = enrichListingDetails(inputListing);
+
     return {
         source:
             String(
