@@ -1,7 +1,6 @@
 // A single normalized Listing shape that the Flutter app consumes.
 import {createHash} from 'node:crypto';
 import {extractTags} from './tags.js';
-import {canonicalCityName} from './countries.js';
 import {
   classifyChildren, classifyDealType, classifyPets, looksCommercial, looksRoomOnly,
   parseAirConditioner, parseAmenities, parseAreaFromText, parseBalcony, parseBathrooms, parseBedrooms,
@@ -15,6 +14,19 @@ import {
 } from './textparse-overrides.js';
 import {canonicalDistrict, parseLocation} from './locations.js';
 import {parseDishwasher, parsePrivateYard, parseTerrace} from './amenity-parse.js';
+import {
+  parseAppliances,
+  parseCanonicalCity,
+  parseCanonicalCountryCode,
+  parseCanonicalRegion,
+  parseDepositKind,
+  parseHousingIntent,
+  parseHousingOccupancyType,
+  parseHousingSemanticContext,
+  parseHousingStructuredContext,
+  parseLexiconAddress,
+  parseLexiconDealType,
+} from './lexicon-parse.js';
 
 function stripHtml(s) {
   return String(s ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
@@ -24,7 +36,7 @@ function stripHtml(s) {
 }
 
 const PARKING_OBJECT_RE = /(?:парко?мест[а-яёіїґ]*|парковочн[а-яёіїґ]*\s+мест[а-яёіїґ]*|машино[-\s]?мест[а-яёіїґ]*|мест[а-яёіїґ]*\s+(?:в|на)\s+(?:паркинг[а-яёіїґ]*|парковк[а-яёіїґ]*)|parking\s+(?:space|spot)s?)/iu;
-const HOUSING_OBJECT_RE = /(?:квартир[а-яёіїґ]*|апартамент[а-яёіїґ]*|студи[яії][а-яёіїґ]*|будин[а-яіїґ]*|(?:^|[^\p{L}\p{N}_])дом(?:а|ом|у|ов)?(?=$|[^\p{L}\p{N}_])|жиль[а-яё]*|житл[а-яіїґ]*|flat\b|apartment\b|studio\b|house\b|xonadon\b|kvartira\b)/iu;
+const HOUSING_OBJECT_RE = /(?:квартир[а-яёіїґ]*|апартамент[а-яёіїґ]*|студи[яії][а-яёіїґ]*|будин[а-яіїґ]*|(?:^|[^\p{L}\p{N}_])дом(?:а|ом|у|ов)?(?=$|[^\p{L}\p{N}_])|жиль[а-яё]*|житл[а-яіїґ]*|flat\b|apartment\b|studio\b|house\b|xonadon\b|kvartira\b|apartament\b|garsonier[ăa]\b)/iu;
 const EXPLICIT_SHORT_STAY_RE = /(?:^|[^\p{L}\p{N}_])сут(?:ки|ок)(?=$|[^\p{L}\p{N}_])/iu;
 
 export function looksParkingOnly(text) {
@@ -50,35 +62,19 @@ function normalizeListingTitle(value, {propertyType, rooms, residenceComplex, ad
   return place ? `${base} · ${place}` : base;
 }
 
-function parseAddress(text) {
-  if (!text) return null;
-  const labeled = text.match(/(?:адрес|адреса|manzil|address)\s*[:\-–]\s*([^\n]{3,80})/i);
-  if (labeled) return labeled[1].replace(/\s+/g, ' ').trim().replace(/[.;,]+$/, '');
-  const street = text.match(/((?:ул(?:иц[аы])?|просп(?:ект)?|проспект|мкр|микрорайон|проезд|переулок)\.?\s+[^\n,.;]{2,40}(?:,?\s*\d+[\w/-]*)?|[^\n,.;]{2,40}\s+(?:ko['’]?chasi|k[oó]chasi))/i);
-  if (street) return street[1].replace(/\s+/g, ' ').trim();
-
-  // OLX descriptions often omit the street prefix: "..., Балтиморская 9, ...".
-  // Require a word-like street name plus a house number in a delimited segment
-  // so area/price/floor numbers are not accidentally promoted to addresses.
-  const bare = text.match(/(?:^|[,;\n]\s*)([\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,4}\s+\d+[\p{L}0-9/-]*)(?=\s*(?:[,.;\n]|$))/iu);
-  return bare ? bare[1].replace(/\s+/g, ' ').trim() : null;
-}
-
 // Cheap synchronous guard for the concrete production failure that prompted
-// the general asynchronous bbox validator. It also protects the legacy cached
-// scraper path before its final geocoding pass. Bounds are intentionally broad
-// enough for all of Odesa proper, including the northern residential districts.
+// the general asynchronous bbox validator. Bounds are intentionally broad.
 const SOURCE_CITY_BOUNDS = {
-  'UA:Odesa': [46.25, 30.45, 46.65, 30.88], // south, west, north, east
+  'UA:Odesa': [46.25, 30.45, 46.65, 30.88],
 };
 
-function sourceCoordinates(partial, city) {
+function sourceCoordinates(partial, city, country) {
   const lat = partial.lat != null ? Number(partial.lat) : null;
   const lng = partial.lng != null ? Number(partial.lng) : null;
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {lat: null, lng: null, rejected: false};
   }
-  const bounds = SOURCE_CITY_BOUNDS[`${String(partial.country || '').toUpperCase()}:${city}`];
+  const bounds = SOURCE_CITY_BOUNDS[`${country}:${city}`];
   if (!bounds) return {lat, lng, rejected: false};
   const [south, west, north, east] = bounds;
   const rejected = lat < south || lat > north || lng < west || lng > east;
@@ -91,15 +87,24 @@ export function makeListing(partial) {
   const sourceTitle = partial.title ?? '';
   const description = stripHtml(partial.description ?? '');
   const combined = `${sourceTitle} ${description}`;
+  const country = parseCanonicalCountryCode(partial.country) || '';
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
-  const byAgency = Boolean(partial.byAgency);
-  const rooms = partial.rooms != null ? Number(partial.rooms) : parseRoomsFromText(combined);
-  const parsedDealType = classifyDealType(combined);
+  const housingStructured = parseHousingStructuredContext(combined);
+  const byAgency = partial.byAgency != null
+    ? Boolean(partial.byAgency)
+    : housingStructured.seller.type === 'agency';
+  const rooms = partial.rooms != null
+    ? Number(partial.rooms)
+    : (housingStructured.rooms ?? parseRoomsFromText(combined));
+  const housingIntent = housingStructured.intent ?? parseHousingIntent(combined);
+  const housingContext = housingStructured.context ?? parseHousingSemanticContext(combined);
+  const housingAction = partial.housingAction ?? partial.action ?? housingIntent?.action ?? null;
+  const listingKind = partial.listingKind ?? housingIntent?.listingKind ?? 'propertyOffer';
+  const parsedDealType = housingIntent?.dealType ?? parseLexiconDealType(combined) ?? classifyDealType(combined);
   const explicitShortStay = parsedDealType === 'shortRent' || EXPLICIT_SHORT_STAY_RE.test(combined);
 
-  // Explicit short-term language ("сутки", "посуточно", "daily", etc.) is
-  // stronger than a scraper's generic `longRent` default. Keep an explicit sale
-  // authoritative because sale copy may advertise potential daily-rental income.
+  // Explicit short-term language outranks a scraper's generic long-rent default.
+  // An explicit sale stays authoritative because sale copy can mention rental yield.
   let dealType = partial.dealType === 'sale'
     ? 'sale'
     : explicitShortStay
@@ -130,40 +135,64 @@ export function makeListing(partial) {
   }
 
   const parsedFloor = parseFloor(combined);
-  const floor = partial.floor != null ? Number(partial.floor) : parsedFloor.floor;
-  const totalFloors = partial.totalFloors != null ? Number(partial.totalFloors) : parsedFloor.totalFloors;
+  const floor = partial.floor != null
+    ? Number(partial.floor)
+    : (housingStructured.floor.floor ?? parsedFloor.floor);
+  const totalFloors = partial.totalFloors != null
+    ? Number(partial.totalFloors)
+    : (housingStructured.floor.totalFloors ?? parsedFloor.totalFloors);
   const buildingYear = partial.buildingYear != null ? Number(partial.buildingYear) : parseYear(combined);
   const bedrooms = partial.bedrooms != null ? Number(partial.bedrooms) : parseBedrooms(combined);
   const audience = partial.audience ?? classifyAudience(combined);
   const contact = partial.contact ?? parseContact(combined);
-  const loc = parseLocation(combined, partial.country);
-  const city = canonicalCityName(partial.country, partial.city || loc.city || '');
-  const coords = sourceCoordinates(partial, city);
-  const explicitDistrict = parseExplicitDistrict(combined, partial.country);
+  const sourceCity = parseCanonicalCity(country, partial.city || '');
+  const loc = parseLocation(combined, country, sourceCity || null);
+  const city = sourceCity || parseCanonicalCity(country, loc.city || '');
+  const coords = sourceCoordinates(partial, city, country);
+  const explicitDistrict = parseExplicitDistrict(combined, country);
   const district = canonicalDistrict(
     (coords.rejected ? null : partial.district) ?? explicitDistrict ?? loc.district,
-    partial.country,
+    country,
   );
   const metro = partial.metro ?? loc.metro;
   const nearby = partial.nearby
     ?? [...new Set([...(loc.nearby || []), ...parseNearbyPlaces(combined)])];
   const residenceComplex = partial.residenceComplex
-    ?? parseResidentialComplex(combined)
-    ?? loc.residentialComplex;
-  const address = partial.address ?? parseAddress(combined);
+    ?? loc.residentialComplex
+    ?? parseResidentialComplex(combined);
+  const street = partial.street ?? loc.street ?? null;
+  const address = partial.address ?? parseLexiconAddress(combined, street);
   const commercial = partial.commercial === true || looksCommercial(combined) || looksParkingOnly(combined);
   const petsAllowed = partial.petsAllowed ?? classifyPets(combined);
   const childrenAllowed = partial.childrenAllowed ?? classifyChildren(combined);
-  const roomOnly = partial.roomOnly ?? looksRoomOnly(combined);
+  const occupancyType = partial.occupancyType ?? parseHousingOccupancyType(combined);
+  const roomOnly = partial.roomOnly
+    ?? (['room', 'sharedRoom', 'bedSpace'].includes(occupancyType) || looksRoomOnly(combined));
 
   const dep = parseDeposit(combined);
-  const deposit = partial.deposit ?? dep.required;
-  const depositAmount = partial.depositAmount ?? dep.amount;
-  const depositCurrency = partial.depositCurrency ?? dep.currency ?? null;
+  const structuredDeposit = housingStructured.payments.deposit;
+  const depositKind = partial.depositKind
+    ?? structuredDeposit.kind
+    ?? parseDepositKind(combined);
+  const deposit = partial.deposit
+    ?? structuredDeposit.required
+    ?? (depositKind === 'noDeposit' ? false : dep.required);
+  const depositAmount = partial.depositAmount
+    ?? structuredDeposit.amount
+    ?? dep.amount;
+  const depositCurrency = partial.depositCurrency
+    ?? structuredDeposit.currency
+    ?? dep.currency
+    ?? null;
 
   const com = parseCommission(combined);
-  const commission = partial.commission ?? com.has;
-  const commissionPercent = partial.commissionPercent ?? com.percent;
+  const structuredCommission = housingStructured.payments.commission;
+  const commission = partial.commission
+    ?? structuredCommission.required
+    ?? com.has;
+  const commissionPercent = partial.commissionPercent
+    ?? structuredCommission.percent
+    ?? com.percent;
 
   const balcony = partial.balcony ?? parseBalcony(combined);
   const terrace = partial.terrace ?? parseTerrace(combined);
@@ -180,6 +209,7 @@ export function makeListing(partial) {
   const kvartal = partial.kvartal ?? area;
   const nearbyShops = partial.nearbyShops ?? parseNearbyShops(combined);
   const amenities = Array.isArray(partial.amenities) ? partial.amenities : parseAmenities(combined);
+  const appliances = Array.isArray(partial.appliances) ? partial.appliances : parseAppliances(combined);
   const parking = partial.parking ?? parseParking(combined);
   const elevator = partial.elevator ?? parseElevator(combined);
   const heating = partial.heating ?? parseHeating(combined);
@@ -197,7 +227,9 @@ export function makeListing(partial) {
   });
   const price = partial.price != null ? Number(partial.price) : null;
   const currency = partial.currency ?? '';
-  const areaSqm = partial.areaSqm != null ? Number(partial.areaSqm) : parseAreaFromText(combined);
+  const areaSqm = partial.areaSqm != null
+    ? Number(partial.areaSqm)
+    : (housingStructured.area.total ?? parseAreaFromText(combined));
   const photoFingerprints = [...new Set(
     (Array.isArray(partial.photoFingerprints) ? partial.photoFingerprints : [])
       .map((value) => String(value || '').toLowerCase())
@@ -209,11 +241,8 @@ export function makeListing(partial) {
     if (photoFingerprints.length >= 2) {
       photoFingerprintKey = photoFingerprints.join('|');
     } else if (photoFingerprints.length === 1 && price != null) {
-      // One image alone is too weak: channels can reuse a generic photo. Pair
-      // it with stable listing attributes so a single-photo repost is collapsed
-      // only when the actual offer still looks like the same object.
       const structured = JSON.stringify([
-        String(partial.country || '').toUpperCase(),
+        country,
         String(city || '').toLowerCase(),
         dealType || '',
         propertyType,
@@ -231,7 +260,7 @@ export function makeListing(partial) {
   return {
     id: String(partial.id),
     source: partial.source,
-    country: partial.country,
+    country,
     title,
     propertyType,
     byAgency,
@@ -239,9 +268,18 @@ export function makeListing(partial) {
     currency,
     rooms,
     areaSqm,
+    areaDetails: partial.areaDetails ?? housingStructured.area,
     city,
-    region: partial.region ?? loc.region ?? null,
+    region: parseCanonicalRegion(country, partial.region ?? loc.region) ?? null,
+    locality: partial.locality ?? loc.locality ?? null,
+    localAreas: Array.isArray(partial.localAreas) ? partial.localAreas : [...(loc.localAreas || [])],
+    suburbs: Array.isArray(partial.suburbs) ? partial.suburbs : [...(loc.suburbs || [])],
+    informalAreas: Array.isArray(partial.informalAreas) ? partial.informalAreas : [...(loc.informalAreas || [])],
+    developmentAreas: Array.isArray(partial.developmentAreas) ? partial.developmentAreas : [...(loc.developmentAreas || [])],
+    searchClusters: Array.isArray(partial.searchClusters) ? partial.searchClusters : [...(loc.searchClusters || [])],
+    locationEntities: Array.isArray(partial.locationEntities) ? partial.locationEntities : [...(loc.locationEntities || [])],
     microdistrict: coords.rejected ? null : (partial.microdistrict ?? loc.microdistrict ?? null),
+    street,
     address: address || null,
     lat: coords.lat,
     lng: coords.lng,
@@ -253,7 +291,10 @@ export function makeListing(partial) {
     url: partial.url ?? '',
     createdAt: partial.createdAt ?? null,
     description,
+    housingAction,
+    listingKind,
     dealType,
+    occupancyType,
     floor,
     totalFloors,
     buildingYear,
@@ -273,10 +314,15 @@ export function makeListing(partial) {
     childrenAllowed,
     roomOnly,
     deposit,
+    depositKind,
     depositAmount,
     depositCurrency,
     commission,
     commissionPercent,
+    paymentContext: partial.paymentContext ?? housingStructured.payments,
+    sellerType: partial.sellerType ?? housingStructured.seller.type ?? (byAgency ? 'agency' : null),
+    sellerConfidence: partial.sellerConfidence ?? housingStructured.seller.confidence,
+    infrastructure: Array.isArray(partial.infrastructure) ? partial.infrastructure : [...housingStructured.infrastructure],
     balcony,
     terrace,
     privateYard,
@@ -296,8 +342,24 @@ export function makeListing(partial) {
     smokingAllowed,
     negotiable,
     furnished,
-    condition: partial.condition ?? null,
+    furnitureState: partial.furnitureState ?? housingContext.furniture ?? null,
+    condition: partial.condition ?? housingContext.condition ?? null,
+    propertyCondition: partial.propertyCondition ?? housingContext.condition ?? null,
+    layoutTypes: Array.isArray(partial.layoutTypes) ? partial.layoutTypes : [...housingContext.layouts],
+    buildingType: partial.buildingType ?? housingContext.buildingType ?? null,
+    buildingStatus: partial.buildingStatus ?? housingContext.buildingStatus ?? null,
+    priceContext: partial.priceContext ?? housingContext.priceContext ?? null,
+    priceModifiers: Array.isArray(partial.priceModifiers) ? partial.priceModifiers : [...housingContext.priceModifiers],
+    rentDuration: partial.rentDuration ?? housingContext.rentDuration ?? null,
+    floorConstraints: Array.isArray(partial.floorConstraints) ? partial.floorConstraints : [...housingContext.floorConstraints],
+    tenantPolicies: partial.tenantPolicies ?? housingContext.tenantPolicies,
+    documentStatus: Array.isArray(partial.documentStatus) ? partial.documentStatus : [...housingContext.documents],
+    financing: Array.isArray(partial.financing) ? partial.financing : [...housingContext.financing],
+    locationRelations: Array.isArray(partial.locationRelations) ? partial.locationRelations : [...housingContext.locationRelations],
+    availability: partial.availability ?? housingContext.availability ?? null,
+    listingStatus: partial.listingStatus ?? housingContext.listingStatus ?? 'active',
     amenities,
+    appliances,
     tags: partial.tags ?? extractTags({
       title,
       description,
