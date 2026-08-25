@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const source = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
+const routes = await readFile(new URL('../src/listing-routes.js', import.meta.url), 'utf8');
 
 test('listing geography statistics are split by sale, rent, short rent and room rent', () => {
   assert.match(source, /AS deal_key/u);
@@ -11,4 +12,12 @@ test('listing geography statistics are split by sale, rent, short rent and room 
   assert.match(source, /AS geographies_by_deal/u);
   assert.match(source, /geographiesByDeal: countOrStatsResult\.rows\[0\]\?\.geographies_by_deal/u);
   assert.match(source, /WHEN data @> '\{"roomOnly":true\}'::jsonb THEN 'roomRent'/u);
+});
+
+test('stats-only requests do not repeat the full ranked page query', () => {
+  assert.match(routes, /statsOnly: bool\(q\.statsOnly\) === true/u);
+  assert.match(source, /if \(filters\.includeStats && filters\.statsOnly\)/u);
+  assert.match(source, /countOrStatsResult = await pool\.query\(statsSql, baseParams\)/u);
+  assert.match(source, /let pageResult = \{rows: \[\]\}/u);
+  assert.match(source, /if \(!filters\.statsOnly && rows\.length === limit/u);
 });
