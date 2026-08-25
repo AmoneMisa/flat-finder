@@ -21,6 +21,7 @@ import {
   mergeLocationCountries,
   tashkentMetroLabels,
 } from '@whiteslove/parsing-lexicon';
+import { matchTashkentHousingTransit } from '@whiteslove/parsing-lexicon/tashkent-housing-geography';
 
 let mergedUkraine = null;
 
@@ -85,12 +86,7 @@ function matchMetro(text, entries, overlappingAreaName = null) {
     const numberedArea = /^\s*[-№#]?\s*\d{1,3}(?=$|[\s,.;-])/u.test(after);
     if (!contextual && numberedArea) continue;
 
-    if (
-      entry.name === 'Toshkent' &&
-      /северн[а-яё]*\s+(?:железнодорожн[а-яё]*\s+)?вокзал|shimoliy\s+vokzal|north\s+(?:railway\s+)?station/iu.test(after)
-    ) {
-      continue;
-    }
+    if (entry.name === 'Toshkent' && matchTashkentHousingTransit(value.slice(start, end + 64))) continue;
 
     matches.push({ entry, contextual });
   }
