@@ -18,14 +18,15 @@ import {
   classifyAgency,
   looksHousingWanted,
 } from '../textparse.js';
+import {classifyChildren, parseCondition, parseKvartal} from '../textparse-overrides.js';
 
 const TG_WORKER_URL = process.env.TG_WORKER_URL || '';
 
 const HOUSING_RE =
-  /(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy|будин|пәтер|үй|кімнат|комнат|xona|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
+  /(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy\b|будин|пәтер|үй|кімнат|комнат|xona|хона|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
 
 const TELEGRAM_BARE_USD_RE =
-  /^.{0,70}?(?<![\d+])([1-9]\d{2,3})(?!\d)(?=\s+(?!m2\b|m²\b|м2\b|м²\b|qavat\b|этаж\b|xona\b|xonali\b|комнат\b|kvartal\b|квартал\b)[\p{L}])/iu;
+  /^.{0,70}?(?<![\d+])([1-9]\d{2,3})(?!\d)(?=\s+(?!m2\b|m²\b|м2\b|м²\b|qavat\b|этаж\b|xona\b|xonali\b|хона\b|хонали\b|комнат\b|kvartal\b|квартал\b)[\p{L}])/iu;
 
 export function classifyTelegramAgency(text) {
   if (!text) return false;
@@ -53,7 +54,7 @@ export function parseTelegramPrice(text, country, dealType = null) {
   if (!isUzbek || explicitlySale) return parsed;
 
   const rentalOrHousing = dealType === 'longRent' || dealType === 'shortRent' ||
-    /(?:ijara|ijaraga|arenda|аренд|сдам|сда[её]тся|rent\b|xona|xonali|kvartira|uy\b|[xh]ovli)/iu.test(value);
+    /(?:ijara|ijaraga|arenda|аренд|сдам|сда[её]тся|rent\b|xona|xonali|хона|хонали|kvartira|uy\b|[xh]ovli)/iu.test(value);
   if (!rentalOrHousing) return parsed;
 
   const head = value.slice(0, 100);
@@ -107,6 +108,9 @@ function messageToListing(msg, channelConfig, country) {
     currency,
     rooms: parseRoomsFromText(text),
     areaSqm: parseAreaFromText(text),
+    kvartal: parseKvartal(text) ?? undefined,
+    childrenAllowed: classifyChildren(text) ?? undefined,
+    condition: parseCondition(text) ?? undefined,
     city: channelConfig.city ?? null,
     lat: null,
     lng: null,

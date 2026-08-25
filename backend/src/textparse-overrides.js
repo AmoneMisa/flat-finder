@@ -1,6 +1,8 @@
 import {
   classifyAudience as baseClassifyAudience,
+  classifyChildren as baseClassifyChildren,
   parseFloor as baseParseFloor,
+  parseKvartal as baseParseKvartal,
   parseResidentialComplex as baseParseResidentialComplex,
   parseRoomsFromText as baseParseRoomsFromText,
 } from './textparse.js';
@@ -74,6 +76,35 @@ export function classifyAudience(text) {
   return baseClassifyAudience(text);
 }
 
+/**
+ * Uzbek Telegram posts are frequently typed phonetically (`bollar` instead of
+ * `bolalar`). Treat it as children-allowed only in the same post as an explicit
+ * family signal; by itself `bollar` can also colloquially mean "guys".
+ */
+export function classifyChildren(text) {
+  const parsed = baseClassifyChildren(text);
+  if (parsed != null || !text) return parsed;
+  const family = /(?:^|[^\p{L}\p{N}_])(?:oilaga|oila|оилага|оила)(?=$|[^\p{L}\p{N}_])/iu.test(text);
+  const children = /(?:^|[^\p{L}\p{N}_])(?:bollar|боллар)(?=$|[^\p{L}\p{N}_])/iu.test(text);
+  return family && children ? true : null;
+}
+
+/** Accept common Cyrillic/phonetic misspellings of `kvartal` seen in posts. */
+export function parseKvartal(text) {
+  const parsed = baseParseKvartal(text);
+  if (parsed || !text) return parsed;
+  const match = String(text).match(/(?:^|[^\d])([1-9]\d?)\s*(?:квартил|kvartil)(?=$|[^\p{L}\p{N}_])/iu);
+  return match ? `${Number(match[1])} kvartal` : null;
+}
+
+/** Parse only explicit renovation claims; never infer condition from adjectives. */
+export function parseCondition(text) {
+  if (!text) return null;
+  if (/(?:remont\s*dan\s+chiq{1,2}an|ремонт\s*дан\s+чи[кқ]{1,2}ан|ремонтдан\s+чи[кқ]{1,2}ан|после\s+(?:свежего\s+)?ремонт[а-яё]*)/iu.test(text)) return 'good';
+  if (/(?:ремонт\s+(?:требуется|нужен)|требует\s+ремонт|needs?\s+renovation|ta['’`]?mir\s+kerak)/iu.test(text)) return 'needs_renovation';
+  return null;
+}
+
 const PEARL_NUMERIC_RE = /(?:^|[^\p{L}\p{N}_])([1-9]\d?)\s*(?:[-–—]?\s*(?:я|ая|а|й|st|nd|rd|th))?\s*(?:жемчужин[а-яё]*|перлин[а-яіїґ]*)(?=$|[^\p{L}\p{N}_])/iu;
 const PEARL_TENS = new Map([
   ['двадцять', 20], ['тридцять', 30], ['сорок', 40],
@@ -126,7 +157,7 @@ export function parseResidentialComplex(text) {
 const UZ_EXPLICIT_DISTRICTS = [
   ['Bektemir', /бектемирск[а-яё]*\s+район|bektemir\s+(?:tumani|district)/iu],
   ['Chilanzar', /чиланзарск[а-яё]*\s+район|чиланзар\s+туман[а-яё]*|chilonzor\s+(?:tumani|district)|chilanzar\s+district/iu],
-  ['Yunusabad', /юнусабадск[а-яё]*\s+район|yunusobod\s+(?:tumani|district)|yunusabad\s+district/iu],
+  ['Yunusabad', /юнусабадск[а-яё]*\s+район|(?:^|[^\p{L}\p{N}_])(?:yunusobod|yunusabad|юнусобод|юнусабад)(?=$|[^\p{L}\p{N}_])(?:\s+(?:tumani|district|туман[а-яё]*|район))?/iu],
   ['Yakkasaray', /яккасарайск[а-яё]*\s+район|yakkasaroy\s+(?:tumani|district)|yakkasaray\s+district/iu],
   ['Mirzo Ulugbek', /мирзо[-\s]?улугбекск[а-яё]*\s+район|mirzo\s+ulug['’]?bek\s+(?:tumani|district)/iu],
   ['Mirobod', /мир[оа]б[оа]дск[а-яё]*\s+район|mirobod\s+(?:tumani|district)/iu],
