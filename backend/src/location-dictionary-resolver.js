@@ -1,8 +1,10 @@
 import {
   LOCATION_DICTIONARIES,
+  TASHKENT_RESIDENTIAL_COMPLEXES,
   UA_REGION_ENTRIES as UA_REGIONS,
   UA_SECONDARY_CITIES,
   locationCities,
+  matchTashkentResidentialComplex,
   matchUkraineRegion,
   matchUkraineSecondaryCity,
   tashkentMetroLabels,
@@ -106,7 +108,9 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     const district = (data.districts || []).find((x) => x.re.test(text));
     const microdistrict = (data.microdistricts || []).find((x) => x.re.test(text));
     const metro = matchMetro(text, data.metro, microdistrict?.name || null);
-    const residentialComplex = (data.residentialComplexes || []).find((x) => x.re.test(text));
+    const residentialComplex = countryCode === 'UZ' && cityName === 'Tashkent'
+      ? matchTashkentResidentialComplex(text)
+      : (data.residentialComplexes || []).find((x) => x.re.test(text));
     const street = (data.streets || []).find((x) => x.re.test(text));
     const landmark = (data.landmarks || []).find((x) => x.re.test(text));
 
@@ -146,11 +150,15 @@ export function canonicalDictionaryDistrict(name, countryCode) {
 export function dictionaryLocationLists(countryCode) {
   const out = {};
   for (const [city, data] of Object.entries(mergedCountry(countryCode))) {
+    const residentialComplexes = countryCode === 'UZ' && city === 'Tashkent'
+      ? TASHKENT_RESIDENTIAL_COMPLEXES
+      : (data.residentialComplexes || []);
+
     out[city] = {
       districts: (data.districts || []).map((x) => x.name),
       metro: (data.metro || []).map((x) => x.name),
       microdistricts: (data.microdistricts || []).map((x) => x.name),
-      residentialComplexes: (data.residentialComplexes || []).map((x) => x.name),
+      residentialComplexes: residentialComplexes.map((x) => x.name),
       streets: (data.streets || []).map((x) => x.name),
       landmarks: (data.landmarks || []).map((x) => x.name),
       ...(countryCode === 'UZ' && city === 'Tashkent' ? { metroLabels: tashkentMetroLabels() } : {}),
