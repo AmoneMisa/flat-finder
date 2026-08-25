@@ -3,6 +3,12 @@ import {
   aliasesOf,
   aliasesToRegex,
 } from '@whiteslove/parsing-lexicon';
+import {
+  matchTashkentHousingLandmarks,
+  matchTashkentHousingMetro,
+  matchTashkentHousingTransit,
+  matchTashkentNumberedArea,
+} from '@whiteslove/parsing-lexicon/tashkent-housing-geography';
 import { resolveTashkentArea } from './tashkent-areas.js';
 import {
   canonicalDictionaryDistrict,
@@ -14,6 +20,24 @@ const GENERIC_NEARBY = GENERIC_LANDMARK_TERMS.map((item) => ({
   name: item.canonical,
   re: aliasesToRegex([item.canonical, ...aliasesOf(item)]),
 }));
+
+function explicitTashkentMetro(text) {
+  const transit = matchTashkentHousingTransit(text);
+  if (transit) return transit.name;
+
+  const explicit = String(text).match(/(?:метро|metro|м\.)\s*[:\-–—]?\s*([^\n,.;]{2,52})/iu)?.[1] || '';
+  if (explicit) {
+    const station = matchTashkentHousingMetro(explicit);
+    if (station) return station.name;
+  }
+
+  const beforeMarker = String(text).match(/(?:^|[^\p{L}\p{N}_])([\p{L}'’`-]{3,28})\s+metro(?:da|ga)?(?=$|[^\p{L}\p{N}_])/iu)?.[1] || '';
+  if (beforeMarker) {
+    const station = matchTashkentHousingMetro(beforeMarker);
+    if (station) return station.name;
+  }
+  return null;
+}
 
 export function parseLocation(text, countryCode, preferredCity = null) {
   const result = {
@@ -65,8 +89,8 @@ export function parseLocation(text, countryCode, preferredCity = null) {
   result.locationEntities = [...(dictionary.locationEntities || [])];
   if (dictionary.landmark) result.nearby.push(dictionary.landmark);
 
-  // Tashkent's colloquial area resolver also handles legacy/historical place names
-  // and remains domain logic; its lexical source is separate from generic geo entities.
+  // Tashkent's colloquial area resolver keeps only ambiguity/district policy;
+  // all place names and spelling variants come from the shared package.
   if (countryCode === 'UZ') {
     const resolvedArea = resolveTashkentArea(text);
     if (resolvedArea) {
@@ -77,9 +101,26 @@ export function parseLocation(text, countryCode, preferredCity = null) {
       result.requireExactAddress = resolvedArea.requireExactAddress;
       result.city = 'Tashkent';
     }
+
+    const explicitMetro = explicitTashkentMetro(text);
+    if (explicitMetro) {
+      result.metro = explicitMetro;
+      result.nearby = result.nearby.filter((name) => name !== explicitMetro && !(explicitMetro === 'Tashkent North Railway Station' && name === 'Railway station'));
+    }
+    if (result.metro === 'Chilonzor' && matchTashkentNumberedArea(text, 'Chilanzar') && explicitMetro !== 'Chilonzor') {
+      result.metro = null;
+    }
+
+    for (const landmark of matchTashkentHousingLandmarks(text)) {
+      result.city ||= 'Tashkent';
+      if (!result.nearby.includes(landmark.name)) result.nearby.push(landmark.name);
+    }
   }
 
   for (const item of GENERIC_NEARBY) {
+    if (item.name === 'Metro') continue;
+    if (item.name === 'Railway station' && result.metro === 'Tashkent North Railway Station') continue;
+    if (item.name === 'Market' && result.nearby.some((name) => /Bazaar$/i.test(name))) continue;
     if (result.nearby.length >= 6) break;
     if (item.name === 'Park' && result.nearby.some((name) => /Park$/i.test(name))) continue;
     if (item.re.test(text) && !result.nearby.includes(item.name)) result.nearby.push(item.name);

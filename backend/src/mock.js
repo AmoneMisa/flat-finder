@@ -4,7 +4,7 @@
 
 import { COUNTRIES } from './countries.js';
 import { makeListing } from './normalize.js';
-import { LOCATIONS } from './locations.js';
+import { cityLocations } from './locations.js';
 
 const FEATURES = [
   'furnished, renovated, with balcony',
@@ -76,8 +76,8 @@ export function generateMock(countryCode, count = 30) {
 
     // Attach intra-city location data when we have it for the picked city.
     const cityName = cities[Math.floor(rand() * cities.length)];
-    const cityLoc = LOCATIONS[countryCode]?.[cityName];
-    const pick = (arr) => (arr && arr.length ? arr[Math.floor(rand() * arr.length)].name : null);
+    const cityLoc = cityLocations(countryCode)?.[cityName];
+    const pick = (arr) => (arr && arr.length ? arr[Math.floor(rand() * arr.length)] : null);
     const district = pick(cityLoc?.districts);
     const metro = pick(cityLoc?.metro);
     const nearby =

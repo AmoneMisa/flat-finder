@@ -162,10 +162,10 @@ const UZ_EXPLICIT_DISTRICTS = [
   ['Mirzo Ulugbek', /мирзо[-\s]?улугбекск[а-яё]*\s+район|mirzo\s+ulug['’]?bek\s+(?:tumani|district)/iu],
   ['Mirobod', /мир[оа]б[оа]дск[а-яё]*\s+район|mirobod\s+(?:tumani|district)/iu],
   ['Almazar', /алмазарск[а-яё]*\s+район|олмазор\s+(?:tumani|district)|almazar\s+district/iu],
-  ['Uchtepa', /учтепинск[а-яё]*\s+район|уч\s*теп[а-яё]*\s+район|uchtepa\s+(?:tumani|district)/iu],
-  ['Yashnobod', /яшнабадск[а-яё]*\s+район|yashnobod\s+(?:tumani|district)/iu],
+  ['Uchtepa', /учтепинск[а-яё]*\s+район|уч\s*теп[а-яё]*\s+район|uchtepa\s+(?:tumani|district)|(?:^|[^\p{L}\p{N}_])uch\s*tepa(?=\s+\d{1,3}\s*[-–]?\s*kvartal)/iu],
+  ['Yashnobod', /яшнабадск[а-яё]*\s+район|(?:^|[^\p{L}\p{N}_])#?яшнабадск[а-яё]*(?=$|[^\p{L}\p{N}_])|yashnobod\s+(?:tumani|district)/iu],
   ['Shaykhantahur', /шайхантахурск[а-яё]*\s+район|shayxontohur\s+(?:tumani|district)/iu],
-  ['Sergeli', /сергелийск[а-яё]*\s+район|sergeli\s+(?:tumani|district)/iu],
+  ['Sergeli', /сергелийск[а-яё]*\s+район|serg(?:eli|ile|ele)\s+(?:tumani|district)/iu],
   ['Yangihayot', /янгиха[её]тск[а-яё]*\s+район|yangihayot\s+(?:tumani|district)/iu],
 ];
 

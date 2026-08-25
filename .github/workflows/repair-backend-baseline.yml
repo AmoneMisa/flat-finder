@@ -1,0 +1,68 @@
+name: Repair backend baseline
+
+on:
+  push:
+    branches:
+      - fix/backend-ci-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/backend-ci-baseline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Update parsing lexicon
+        run: npm install --prefix backend '@whiteslove/parsing-lexicon@https://github.com/AmoneMisa/parsing-lexicon/archive/c0e01d88b6dbe92e1bdb17ff5d237f9b42003da8.tar.gz' --save-exact
+      - name: Apply compatibility repairs
+        run: |
+          python .github/scripts/repair_backend_baseline.py
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/src/locations.js')
+          s = p.read_text().replace('      station.re.lastIndex = 0;\n', '')
+          old = "  if (beforeMarker) {\n    for (const station of TASHKENT_METRO) {"
+          new = "  if (beforeMarker) {\n    if (/^serg(?:eli|ile|ele)$/iu.test(beforeMarker)) return 'Sergeli';\n    for (const station of TASHKENT_METRO) {"
+          if old not in s: raise SystemExit('before-marker metro hook missing')
+          s = s.replace(old, new, 1)
+          old = "    if (explicitMetro) result.metro = explicitMetro;\n"
+          new = "    if (explicitMetro) {\n      result.metro = explicitMetro;\n      result.nearby = result.nearby.filter((name) => name !== explicitMetro && !(explicitMetro === 'Tashkent North Railway Station' && name === 'Railway station'));\n    }\n"
+          if old not in s: raise SystemExit('explicit metro marker missing')
+          s = s.replace(old, new, 1)
+          old = "    if (item.name === 'Metro') continue;\n"
+          new = "    if (item.name === 'Metro') continue;\n    if (item.name === 'Railway station' && result.metro === 'Tashkent North Railway Station') continue;\n"
+          if old not in s: raise SystemExit('generic metro marker missing')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('backend/src/textparse-overrides.js')
+          s = p.read_text()
+          old = "  ['Sergeli', /сергелийск[а-яё]*\\s+район|sergeli\\s+(?:tumani|district)/iu],"
+          new = "  ['Sergeli', /сергелийск[а-яё]*\\s+район|serg(?:eli|ile|ele)\\s+(?:tumani|district)/iu],"
+          if old not in s: raise SystemExit('Sergeli explicit district marker missing')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('backend/src/tashkent-areas.js')
+          s = p.read_text()
+          if 'hudud|худуд' not in s: raise SystemExit('numbered area suffix marker missing')
+          p.write_text(s.replace('hudud|худуд', 'hudud(?:da)?|худуд(?:да)?', 1))
+          PY
+      - name: Install dependencies
+        run: npm ci --prefix backend
+      - name: Run backend suite
+        run: npm test --prefix backend
+      - name: Commit repairs
+        if: success()
+        run: |
+          git add backend/package.json backend/package-lock.json backend/src backend/test/city-canonicalization.test.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: restore backend parsing baseline"
+          git push origin HEAD:fix/backend-ci-baseline

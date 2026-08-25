@@ -21,6 +21,7 @@ import {
   mergeLocationCountries,
   tashkentMetroLabels,
 } from '@whiteslove/parsing-lexicon';
+import { matchTashkentHousingTransit } from '@whiteslove/parsing-lexicon/tashkent-housing-geography';
 
 let mergedUkraine = null;
 
@@ -85,12 +86,7 @@ function matchMetro(text, entries, overlappingAreaName = null) {
     const numberedArea = /^\s*[-№#]?\s*\d{1,3}(?=$|[\s,.;-])/u.test(after);
     if (!contextual && numberedArea) continue;
 
-    if (
-      entry.name === 'Toshkent' &&
-      /северн[а-яё]*\s+(?:железнодорожн[а-яё]*\s+)?вокзал|shimoliy\s+vokzal|north\s+(?:railway\s+)?station/iu.test(after)
-    ) {
-      continue;
-    }
+    if (entry.name === 'Toshkent' && matchTashkentHousingTransit(value.slice(start, end + 64))) continue;
 
     matches.push({ entry, contextual });
   }
@@ -125,14 +121,14 @@ function applyOdesaMetropolitan(result, text) {
   for (const item of metropolitan.matches) {
     result.locationEntities.push({ type: item.type, name: item.name, parent: item.parent || null });
 
-    if (item.type === 'microdistrict' && !result.microdistrict) result.microdistrict = item.name;
+    if (item.type === 'microdistrict') result.microdistrict = item.name;
     else if (item.type === 'local_area') pushUnique(result.localAreas, item.name);
     else if (item.type === 'suburb') {
       pushUnique(result.suburbs, item.name);
       result.locality ||= item.name;
     } else if (item.type === 'informal_area') pushUnique(result.informalAreas, item.name);
     else if (item.type === 'development_area') pushUnique(result.developmentAreas, item.name);
-    else if (item.type === 'residential_complex' && !result.residentialComplex) result.residentialComplex = item.name;
+    else if (item.type === 'residential_complex') result.residentialComplex = item.name;
     else if (item.type.startsWith('poi.') && !result.landmark) {
       result.landmark = item.name;
       result.landmarkCategory = item.type.slice(4) || null;
@@ -217,9 +213,22 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
   applyCentralAsiaLocations(result, central);
 
   const cities = mergedCountry(countryCode);
+  if (countryCode === 'UZ') {
+    const tashkentRc = matchTashkentResidentialComplex(text);
+    const tashkentLandmark = matchTashkentPoi(text);
+    if (tashkentRc || tashkentLandmark) {
+      result.city ||= 'Tashkent';
+      if (tashkentRc && !result.residentialComplex) result.residentialComplex = tashkentRc.name;
+      if (tashkentLandmark && !result.landmark) {
+        result.landmark = tashkentLandmark.name;
+        result.landmarkCategory = tashkentLandmark.category || tashkentLandmark.entityType || null;
+      }
+    }
+  }
   let ordered;
-  if (central?.city && cities[central.city]) {
-    ordered = [[central.city, cities[central.city]]];
+  const resolvedCity = central?.city || result.city;
+  if (resolvedCity && cities[resolvedCity]) {
+    ordered = [[resolvedCity, cities[resolvedCity]]];
   } else if (central?.candidates?.length) {
     // Parent-aware Central Asia resolver found only ambiguous city candidates.
     // Do not fall back to first-match-wins across the whole country.
