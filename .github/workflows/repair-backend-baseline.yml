@@ -1,0 +1,46 @@
+name: Repair backend baseline
+
+on:
+  push:
+    branches:
+      - fix/backend-ci-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/backend-ci-baseline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Update parsing lexicon
+        run: npm install --prefix backend '@whiteslove/parsing-lexicon@https://github.com/AmoneMisa/parsing-lexicon/archive/c0e01d88b6dbe92e1bdb17ff5d237f9b42003da8.tar.gz' --save-exact
+      - name: Patch mock location adapter
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/src/mock.js')
+          s = p.read_text()
+          s = s.replace("import { LOCATIONS } from './locations.js';", "import { cityLocations } from './locations.js';")
+          s = s.replace("    const cityLoc = LOCATIONS[countryCode]?.[cityName];\n    const pick = (arr) => (arr && arr.length ? arr[Math.floor(rand() * arr.length)].name : null);", "    const cityLoc = cityLocations(countryCode)?.[cityName];\n    const pick = (arr) => (arr && arr.length ? arr[Math.floor(rand() * arr.length)] : null);")
+          p.write_text(s)
+          PY
+      - name: Install dependencies
+        run: npm ci --prefix backend
+      - name: Run backend suite
+        run: npm test --prefix backend
+      - name: Commit repairs
+        if: success()
+        run: |
+          git add backend/package.json backend/package-lock.json backend/src/mock.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: restore backend parsing baseline"
+          git push origin HEAD:fix/backend-ci-baseline
