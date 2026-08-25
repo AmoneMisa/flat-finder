@@ -57,7 +57,7 @@ function parseAreaSqm(text) {
   if (!text) return null;
   const value = String(text);
   const explicit = value.match(/(?:площад(?:ь|и)|метраж|area|maydon|майдон)\s*[:=\-–—]?\s*(\d{1,3}(?:[.,]\d+)?)\s*(?:м\s*[²2]|m\s*[²2]|кв\.?\s*м|kv\.?\s*m)?/iu)
-    || value.match(/\b(\d{1,3}(?:[.,]\d+)?)\s*(?:м\s*[²2]|m\s*[²2]|кв\.?\s*м|kv\.?\s*m)\b/iu);
+    || value.match(/(?:^|[^\d])(\d{1,3}(?:[.,]\d+)?)\s*(?:м\s*[²2]|m\s*[²2]|кв\.?\s*м|kv\.?\s*m)(?=$|[\s,.;:\/\\])/iu);
   if (explicit) {
     const area = Number(String(explicit[1]).replace(',', '.'));
     return Number.isFinite(area) && area >= 5 && area <= 1000 ? area : null;
@@ -66,7 +66,7 @@ function parseAreaSqm(text) {
   // Telegram/Uzbek shorthand occasionally writes only `22кв` for 22 m².
   // Require at least two digits so ordinary `2кв` (= two-room flat) is not
   // mistaken for two square metres.
-  const shorthand = value.match(/(?:^|[^\d])(\d{2,3})\s*(?:кв|kv)\b/iu);
+  const shorthand = value.match(/(?:^|[^\d])(\d{2,3})\s*(?:кв|kv)(?=$|[\s,.;:\/\\])/iu);
   const area = Number(shorthand?.[1]);
   return Number.isFinite(area) && area >= 15 && area <= 500 ? area : null;
 }
