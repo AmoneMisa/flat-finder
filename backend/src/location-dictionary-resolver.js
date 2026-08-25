@@ -5,7 +5,10 @@ import {
   TASHKENT_LANDMARKS,
   TASHKENT_POI_GROUPS,
   TASHKENT_RESIDENTIAL_COMPLEXES,
+  UA_MAJOR_LOCATION_EXTENSIONS,
+  UA_METRO_LOCATION_EXTENSIONS,
   UA_REGION_ENTRIES as UA_REGIONS,
+  UA_REGIONAL_LOCATION_EXTENSIONS,
   UA_SECONDARY_CITIES,
   locationCities,
   matchOdesaMetropolitanEntities,
@@ -13,11 +16,23 @@ import {
   matchTashkentResidentialComplex,
   matchUkraineRegion,
   matchUkraineSecondaryCity,
+  mergeLocationCountries,
   tashkentMetroLabels,
 } from '@whiteslove/parsing-lexicon';
 
+let mergedUkraine = null;
+
 function mergedCountry(countryCode) {
-  return locationCities(countryCode);
+  if (countryCode !== 'UA') return locationCities(countryCode);
+  if (!mergedUkraine) {
+    mergedUkraine = mergeLocationCountries(
+      locationCities('UA'),
+      UA_MAJOR_LOCATION_EXTENSIONS,
+      UA_REGIONAL_LOCATION_EXTENSIONS,
+      UA_METRO_LOCATION_EXTENSIONS,
+    );
+  }
+  return mergedUkraine;
 }
 
 export function dictionaryCities(countryCode) {
@@ -56,7 +71,7 @@ function matchMetro(text, entries, overlappingAreaName = null) {
     const before = value.slice(Math.max(0, start - 28), start);
     const after = value.slice(end, end + 64);
     const contextual =
-      /(?:метро|metrou|metro|станц(?:ия|ии)?|station|stația|statia|метро станція|станція)\s*[:\-–—]?\s*$/iu.test(before) ||
+      /(?:метро|metrou|metro|станц(?:ия|ии)?|station|stația|statia|метро станція|станція|ст\.?\s*м\.?|м\.)\s*[:\-–—]?\s*$/iu.test(before) ||
       /^\s*(?:метро|metrou|metro|station|stația|statia|станція)(?=$|[^\p{L}\p{N}_])/iu.test(after);
 
     // Some names denote both a neighbourhood and a metro station. A bare
@@ -91,9 +106,19 @@ function shouldResolveOdesaMetropolitan(text, preferredCity, resolvedCity) {
 
 function applyOdesaMetropolitan(result, text) {
   const metropolitan = matchOdesaMetropolitanEntities(text);
-  if (!metropolitan.matches.length) return;
+  const contextualRivieraMall = metropolitan.matches.some((item) => item.type === 'poi.shopping_mall' && item.name === 'ТРЦ Рів’єра');
 
+  // The broad city catalog contains Riviera as a discovery alias, while the
+  // metropolitan resolver owns its context. Never let bare "Riviera" become
+  // the mall in a ЖК/development-area mention.
+  if (result.landmark === 'Riviera Mall' && !contextualRivieraMall) {
+    result.landmark = null;
+    result.landmarkCategory = null;
+  }
+
+  if (!metropolitan.matches.length) return;
   result.city ||= 'Odesa';
+
   for (const item of metropolitan.matches) {
     result.locationEntities.push({ type: item.type, name: item.name, parent: item.parent || null });
 
