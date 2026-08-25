@@ -1,11 +1,14 @@
 import {
   LOCATION_DICTIONARIES,
+  ODESA_METROPOLITAN_ENTITIES,
+  ODESA_SEARCH_CLUSTERS,
   TASHKENT_LANDMARKS,
   TASHKENT_POI_GROUPS,
   TASHKENT_RESIDENTIAL_COMPLEXES,
   UA_REGION_ENTRIES as UA_REGIONS,
   UA_SECONDARY_CITIES,
   locationCities,
+  matchOdesaMetropolitanEntities,
   matchTashkentPoi,
   matchTashkentResidentialComplex,
   matchUkraineRegion,
@@ -77,6 +80,43 @@ function matchMetro(text, entries, overlappingAreaName = null) {
   return matches.find((item) => item.contextual)?.entry ?? matches[0]?.entry ?? null;
 }
 
+function pushUnique(target, value) {
+  if (value && !target.includes(value)) target.push(value);
+}
+
+function shouldResolveOdesaMetropolitan(text, preferredCity, resolvedCity) {
+  if (preferredCity === 'Odesa' || resolvedCity === 'Odesa') return true;
+  return /(?:^|[^\p{L}\p{N}_])(?:одеса|одесса|odesa|odessa)(?=$|[^\p{L}\p{N}_])/iu.test(String(text));
+}
+
+function applyOdesaMetropolitan(result, text) {
+  const metropolitan = matchOdesaMetropolitanEntities(text);
+  if (!metropolitan.matches.length) return;
+
+  result.city ||= 'Odesa';
+  for (const item of metropolitan.matches) {
+    result.locationEntities.push({ type: item.type, name: item.name, parent: item.parent || null });
+
+    if (item.type === 'microdistrict' && !result.microdistrict) result.microdistrict = item.name;
+    else if (item.type === 'local_area') pushUnique(result.localAreas, item.name);
+    else if (item.type === 'suburb') {
+      pushUnique(result.suburbs, item.name);
+      result.locality ||= item.name;
+    } else if (item.type === 'informal_area') pushUnique(result.informalAreas, item.name);
+    else if (item.type === 'development_area') pushUnique(result.developmentAreas, item.name);
+    else if (item.type === 'residential_complex' && !result.residentialComplex) result.residentialComplex = item.name;
+    else if (item.type.startsWith('poi.') && !result.landmark) {
+      result.landmark = item.name;
+      result.landmarkCategory = item.type.slice(4) || null;
+    }
+  }
+
+  for (const cluster of metropolitan.searchClusters) {
+    pushUnique(result.searchClusters, cluster.name);
+    result.locationEntities.push({ type: cluster.type, name: cluster.name, parent: null });
+  }
+}
+
 export function matchDictionaryEntities(text, countryCode, preferredCity = null) {
   const result = {
     region: null,
@@ -88,6 +128,13 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     street: null,
     landmark: null,
     landmarkCategory: null,
+    locality: null,
+    localAreas: [],
+    suburbs: [],
+    informalAreas: [],
+    developmentAreas: [],
+    searchClusters: [],
+    locationEntities: [],
   };
   if (!text || !countryCode) return result;
   text = normalizeMatchingText(text);
@@ -133,6 +180,10 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     if (result.district && result.microdistrict && result.metro && result.residentialComplex && result.street && result.landmark && result.city) break;
   }
 
+  if (countryCode === 'UA' && shouldResolveOdesaMetropolitan(text, preferredCity, result.city)) {
+    applyOdesaMetropolitan(result, text);
+  }
+
   return result;
 }
 
@@ -159,6 +210,7 @@ export function dictionaryLocationLists(countryCode) {
   const out = {};
   for (const [city, data] of Object.entries(mergedCountry(countryCode))) {
     const isTashkent = countryCode === 'UZ' && city === 'Tashkent';
+    const isOdesa = countryCode === 'UA' && city === 'Odesa';
     const residentialComplexes = isTashkent ? TASHKENT_RESIDENTIAL_COMPLEXES : (data.residentialComplexes || []);
     const landmarks = isTashkent ? TASHKENT_LANDMARKS : (data.landmarks || []);
 
@@ -172,6 +224,10 @@ export function dictionaryLocationLists(countryCode) {
       ...(isTashkent ? {
         metroLabels: tashkentMetroLabels(),
         poiGroups: Object.fromEntries(Object.entries(TASHKENT_POI_GROUPS).map(([group, entries]) => [group, entries.map((x) => x.name)])),
+      } : {}),
+      ...(isOdesa ? {
+        metropolitanEntities: ODESA_METROPOLITAN_ENTITIES.map((x) => ({ name: x.name, type: x.type, parent: x.parent || null })),
+        searchClusters: ODESA_SEARCH_CLUSTERS.map((x) => ({ name: x.name, members: [...x.members] })),
       } : {}),
     };
   }
