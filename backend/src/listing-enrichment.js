@@ -159,6 +159,7 @@ function normalizeAddressCandidate(value) {
     .trim();
 
   if (!cleaned || !/\p{L}{2,}/u.test(cleaned)) return null;
+  if (/^(?:этаж(?:ность)?|qavat|floor|школа|school|рынок|bozor|парк|park|metro|метро)(?=$|[^\p{L}])/iu.test(cleaned)) return null;
   const hasAddressMarker = /(?:ул(?:ица)?|кўча|ko['’]?cha|street|st\.|просп|переул|мкр|квартал|дом\s*№?|uy\s*№?|house|жк|массив|manzil|address)/iu.test(cleaned);
   if (phoneDigits.length && !hasAddressMarker) return null;
   if (/^(?:тел(?:ефон)?|phone|whats?app|telegram|aloqa)(?:\s|$)/iu.test(cleaned)) return null;
