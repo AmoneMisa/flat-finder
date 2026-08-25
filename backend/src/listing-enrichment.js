@@ -41,6 +41,36 @@ function parseBathrooms(text) {
   return null;
 }
 
+function parseCompactLayout(text) {
+  if (!text) return null;
+  const match = String(text).match(/(?:^|[^\d])(\d{1,2})\s*[\/\\]{1,2}\s*(\d{1,2})\s*[\/\\]{1,2}\s*(\d{1,2})(?=\s*[\/\\]*[^\d]|$)/u);
+  if (!match) return null;
+  const rooms = boundedCount(match[1], 12);
+  const floor = Number(match[2]);
+  const totalFloors = Number(match[3]);
+  if (rooms == null || !Number.isInteger(floor) || !Number.isInteger(totalFloors)) return null;
+  if (floor < 0 || totalFloors < 1 || floor > totalFloors || totalFloors > 40) return null;
+  return {rooms, floor, totalFloors};
+}
+
+function parseAreaSqm(text) {
+  if (!text) return null;
+  const value = String(text);
+  const explicit = value.match(/(?:площад(?:ь|и)|метраж|area|maydon|майдон)\s*[:=\-–—]?\s*(\d{1,3}(?:[.,]\d+)?)\s*(?:м\s*[²2]|m\s*[²2]|кв\.?\s*м|kv\.?\s*m)?/iu)
+    || value.match(/\b(\d{1,3}(?:[.,]\d+)?)\s*(?:м\s*[²2]|m\s*[²2]|кв\.?\s*м|kv\.?\s*m)\b/iu);
+  if (explicit) {
+    const area = Number(String(explicit[1]).replace(',', '.'));
+    return Number.isFinite(area) && area >= 5 && area <= 1000 ? area : null;
+  }
+
+  // Telegram/Uzbek shorthand occasionally writes only `22кв` for 22 m².
+  // Require at least two digits so ordinary `2кв` (= two-room flat) is not
+  // mistaken for two square metres.
+  const shorthand = value.match(/(?:^|[^\d])(\d{2,3})\s*(?:кв|kv)\b/iu);
+  const area = Number(shorthand?.[1]);
+  return Number.isFinite(area) && area >= 15 && area <= 500 ? area : null;
+}
+
 function parseFloorPair(text) {
   if (!text) return null;
   const value = String(text);
@@ -60,6 +90,19 @@ function parseFloorPair(text) {
     }
   }
   return null;
+}
+
+function parseAudience(text, current = null) {
+  const value = String(text || '');
+  const family = /(?:семь[яеию]|семейн[а-яё]*|family|oila(?:ga|lar|li)?|oilaga|оилага|оелага|оилавий|oelaga)/iu.test(value);
+  const women = /(?:девушк[а-яё]*|женщин[а-яё]*|girls?|women|qiz(?:lar)?(?:ga)?|киз(?:лар)?(?:га)?|қиз(?:лар)?(?:га)?)/iu.test(value);
+  const men = /(?:мужчин[а-яё]*|парн[еяию]|men|erkak(?:lar)?(?:ga)?)/iu.test(value);
+
+  if (family && women) return {primary: 'family', alternatives: ['family', 'women']};
+  if (family) return {primary: current || 'family', alternatives: ['family']};
+  if (women) return {primary: current || 'women', alternatives: ['women']};
+  if (men) return {primary: current || 'men', alternatives: ['men']};
+  return {primary: current ?? null, alternatives: current ? [current] : []};
 }
 
 function parseCommissionPercent(text) {
@@ -122,9 +165,6 @@ function normalizeAddressCandidate(value) {
   const hasAddressMarker = /(?:ул(?:ица)?|кўча|ko['’]?cha|street|st\.|просп|переул|мкр|квартал|дом\s*№?|uy\s*№?|house|жк|массив|manzil|address)/iu.test(cleaned);
   if (phoneDigits.length && !hasAddressMarker) return null;
   if (/^(?:тел(?:ефон)?|phone|whats?app|telegram|aloqa)\b/iu.test(cleaned)) return null;
-  // Do not turn landmarks, room/floor facts or building-height phrases into an
-  // address. They appeared in production as "школа 160", "Персидский 2-Этаж"
-  // and "Этажность дом 4" after a loose source parser captured a text segment.
   if (!hasAddressMarker && /(?:\b(?:этаж|этажность|qavat|floor|школа|school|рынок|bozor|парк|park|metro|метро)\b|\b(?:xona|xonalar|комнат)\w*\b)/iu.test(cleaned)) {
     return null;
   }
@@ -207,18 +247,15 @@ function classifyPotentiallyUnsafe(listing, text, roomOnly) {
   return roomOnly === true && explicitlyOneWoman(text) && isLowRoomPrice(listing);
 }
 
-/**
- * Last-mile normalization before a listing is persisted. Scrapers keep their
- * source-specific mapping, while this pass fixes fields that are commonly
- * hidden in free text or malformed by contact data.
- */
 export function enrichListingDetails(listing) {
   const source = listing && typeof listing === 'object' ? listing : {};
   const text = `${source.title || ''}\n${source.description || ''}`.trim();
+  const compactLayout = parseCompactLayout(text);
   const floorPair = parseFloorPair(text);
   const commissionPercent = parseCommissionPercent(text);
   const commission = detectCommission(text, source.commission);
   const roomOnly = detectRoomShare(text, source.roomOnly);
+  const audience = parseAudience(text, source.audience);
 
   const existingAddress = normalizeAddressCandidate(source.address);
   const parsedAddress = parseAddress(text);
@@ -229,16 +266,20 @@ export function enrichListingDetails(listing) {
   ])];
   const enriched = {
     ...source,
+    rooms: boundedCount(source.rooms, 12) ?? compactLayout?.rooms ?? null,
+    areaSqm: source.areaSqm != null ? Number(source.areaSqm) : parseAreaSqm(text),
     bedrooms: boundedCount(source.bedrooms, 12) ?? parseBedrooms(text),
     bathrooms: boundedCount(source.bathrooms, 12) ?? parseBathrooms(text),
-    floor: source.floor != null ? Number(source.floor) : (floorPair?.floor ?? null),
-    totalFloors: source.totalFloors != null ? Number(source.totalFloors) : (floorPair?.totalFloors ?? null),
+    floor: source.floor != null ? Number(source.floor) : (compactLayout?.floor ?? floorPair?.floor ?? null),
+    totalFloors: source.totalFloors != null ? Number(source.totalFloors) : (compactLayout?.totalFloors ?? floorPair?.totalFloors ?? null),
     address: existingAddress ?? parsedAddress ?? null,
     commission,
     commissionPercent: commissionPercent ?? source.commissionPercent ?? (commission === false ? 0 : null),
     cadastral: source.cadastral ?? parseCadastral(text),
     firstRental: source.firstRental ?? parseFirstRental(text),
     roomOnly,
+    audience: audience.primary,
+    audienceAlternatives: audience.alternatives,
     nearby,
   };
   enriched.potentiallyUnsafe = source.potentiallyUnsafe === true || classifyPotentiallyUnsafe(enriched, text, roomOnly);
@@ -248,7 +289,10 @@ export function enrichListingDetails(listing) {
 export const __listingEnrichmentTest = {
   parseBedrooms,
   parseBathrooms,
+  parseCompactLayout,
+  parseAreaSqm,
   parseFloorPair,
+  parseAudience,
   parseCommissionPercent,
   detectCommission,
   parseCadastral,
