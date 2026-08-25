@@ -81,8 +81,6 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   if (customSources.length) {
     where.push(`(l.source <> 'custom' OR l.data->>'customSourceUrl' = ANY(${add(customSources)}::text[]))`);
   } else {
-    // Persisted custom URLs are private to the request that supplied them and
-    // must never bleed into the ordinary all-sources feed.
     where.push(`l.source <> 'custom'`);
   }
 
@@ -90,8 +88,6 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
     where.push(`l.source_id = ${add(String(filters.listingId))}`);
   }
 
-  // Commercial listings never enter the housing feed, while a missing flag is
-  // treated as non-commercial on both the PostgreSQL and in-memory paths.
   where.push(`NOT (l.data @> '{"commercial":true}'::jsonb)`);
 
   const ageDays = filters.maxAgeDays != null && filters.maxAgeDays > 0
@@ -221,9 +217,6 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
     where.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(l.data->'nearbyPlaces','[]'::jsonb)) AS place WHERE ${placeChecks.length ? placeChecks.join(' AND ') : 'TRUE'})`);
   }
 
-  // Elasticsearch supplies the authoritative match set. This SQL branch is a
-  // degraded fallback only, so it deliberately favors correctness over an
-  // additional heavyweight text index in PostgreSQL.
   if (filters.query && !elasticsearchAuthoritative) {
     const q = `%${String(filters.query).toLowerCase()}%`;
     const p = add(q);
@@ -280,9 +273,6 @@ function olxPhotoSql(alias, index) {
     ELSE ''
   END`;
 
-  // OLX CDN URLs encode only the rendition after `;s=` (or in the query
-  // string). The underlying file path is stable when the same photos are used
-  // in a repost, so strip the rendition before comparing two ads.
   return `LOWER(REGEXP_REPLACE(SPLIT_PART(COALESCE(${raw}, ''), '?', 1), ';s=.*$', ''))`;
 }
 
@@ -343,10 +333,6 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const baseWhere = context.where.join('\n  AND ');
   const baseParams = [...context.params];
   const dedupeKey = listingDedupeSql('l');
-
-  // Dedupe only affects normal feeds. An exact share-link lookup already narrows
-  // to one source_id and must keep resolving that exact source URL even if a
-  // newer repost of the same apartment is the feed representative.
   const dedupeEnabled = !filters.listingId;
 
   const filteredSql = `
@@ -565,10 +551,16 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     OFFSET ${offsetParam}
   `;
 
-  const [countOrStatsResult, pageResult] = await Promise.all([
-    filters.includeStats ? pool.query(statsSql, baseParams) : pool.query(countSql, baseParams),
-    pool.query(pageSql, pageParams),
-  ]);
+  let countOrStatsResult;
+  let pageResult = {rows: []};
+  if (filters.includeStats && filters.statsOnly) {
+    countOrStatsResult = await pool.query(statsSql, baseParams);
+  } else {
+    [countOrStatsResult, pageResult] = await Promise.all([
+      filters.includeStats ? pool.query(statsSql, baseParams) : pool.query(countSql, baseParams),
+      pool.query(pageSql, pageParams),
+    ]);
+  }
 
   const rows = pageResult.rows;
   const listings = rows.map((row) => row.data || {});
@@ -586,7 +578,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const count = statistics?.total ?? (Number(countOrStatsResult.rows[0]?.count) || 0);
 
   let nextCursor = null;
-  if (rows.length === limit && ['newest', 'oldest'].includes(context.sort)) {
+  if (!filters.statsOnly && rows.length === limit && ['newest', 'oldest'].includes(context.sort)) {
     const last = rows[rows.length - 1];
     const time = last.created_at instanceof Date
       ? last.created_at.toISOString()
