@@ -35,7 +35,7 @@ function normalizeMatchingText(text) {
     .replace(/([\p{L}]+?)щине(?=$|[^\p{L}\p{N}_])/giu, '$1щина');
 }
 
-function matchMetro(text, entries) {
+function matchMetro(text, entries, overlappingAreaName = null) {
   const value = String(text);
   const matches = [];
 
@@ -45,11 +45,16 @@ function matchMetro(text, entries) {
 
     const start = match.index ?? 0;
     const end = start + match[0].length;
-    const before = value.slice(Math.max(0, start - 20), start);
-    const after = value.slice(end, end + 56);
+    const before = value.slice(Math.max(0, start - 28), start);
+    const after = value.slice(end, end + 64);
     const contextual =
-      /(?:метро|metro|станц(?:ия|ии)?|station|stația|statia|метро станція|станція)\s*[:\-–—]?\s*$/iu.test(before) ||
-      /^\s*(?:метро|metro|station|stația|statia|станція)(?=$|[^\p{L}\p{N}_])/iu.test(after);
+      /(?:метро|metrou|metro|станц(?:ия|ии)?|station|stația|statia|метро станція|станція)\s*[:\-–—]?\s*$/iu.test(before) ||
+      /^\s*(?:метро|metrou|metro|station|stația|statia|станція)(?=$|[^\p{L}\p{N}_])/iu.test(after);
+
+    // Some names denote both a neighbourhood and a metro station (Pipera,
+    // Dristor, Titan, Tineretului, etc.). A bare place name means the area;
+    // mark metro only when the text explicitly says metro/station.
+    if (overlappingAreaName && entry.name === overlappingAreaName && !contextual) continue;
 
     // Numbered massifs/kvartals such as Chilonzor 12 / Yunusobod 19 are not subway mentions.
     const numberedArea = /^\s*[-№#]?\s*\d{1,3}(?=$|[\s,.;-])/u.test(after);
@@ -100,7 +105,7 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
   for (const [cityName, data] of ordered) {
     const district = (data.districts || []).find((x) => x.re.test(text));
     const microdistrict = (data.microdistricts || []).find((x) => x.re.test(text));
-    const metro = matchMetro(text, data.metro);
+    const metro = matchMetro(text, data.metro, microdistrict?.name || null);
     const residentialComplex = (data.residentialComplexes || []).find((x) => x.re.test(text));
     const street = (data.streets || []).find((x) => x.re.test(text));
     const landmark = (data.landmarks || []).find((x) => x.re.test(text));
