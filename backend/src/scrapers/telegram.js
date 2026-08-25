@@ -10,8 +10,8 @@ import {makeListing} from '../normalize.js';
 import {MAX_AGE_MS} from '../listing-policy.js';
 import {looksTelegramRoomShare} from '../telegram-room-share.js';
 import {isDirectOwner} from '../seller-signals.js';
-import {parseListingPriceFromText} from '../price-parse.js';
 import {
+  parsePriceFromText,
   parseRoomsFromText,
   parseAreaFromText,
   guessPropertyType,
@@ -44,7 +44,7 @@ export function guessTelegramPropertyType(text) {
 
 export function parseTelegramPrice(text, country, dealType = null) {
   const fallbackCurrency = country?.currency || '';
-  const parsed = parseListingPriceFromText(text, fallbackCurrency);
+  const parsed = parsePriceFromText(text, fallbackCurrency);
   if (parsed.price != null) return parsed;
 
   const value = String(text || '');
