@@ -95,7 +95,7 @@ export function makeListing(partial) {
     : housingStructured.seller.type === 'agency';
   const rooms = partial.rooms != null
     ? Number(partial.rooms)
-    : (housingStructured.rooms ?? parseRoomsFromText(combined));
+    : (parseRoomsFromText(combined) ?? housingStructured.rooms);
   const housingIntent = housingStructured.intent ?? parseHousingIntent(combined);
   const housingContext = housingStructured.context ?? parseHousingSemanticContext(combined);
   const housingAction = partial.housingAction ?? partial.action ?? housingIntent?.action ?? null;
@@ -137,19 +137,19 @@ export function makeListing(partial) {
   const parsedFloor = parseFloor(combined);
   const floor = partial.floor != null
     ? Number(partial.floor)
-    : (housingStructured.floor.floor ?? parsedFloor.floor);
+    : (parsedFloor.floor ?? housingStructured.floor.floor);
   const totalFloors = partial.totalFloors != null
     ? Number(partial.totalFloors)
-    : (housingStructured.floor.totalFloors ?? parsedFloor.totalFloors);
+    : (parsedFloor.totalFloors ?? housingStructured.floor.totalFloors);
   const buildingYear = partial.buildingYear != null ? Number(partial.buildingYear) : parseYear(combined);
   const bedrooms = partial.bedrooms != null ? Number(partial.bedrooms) : parseBedrooms(combined);
   const audience = partial.audience ?? classifyAudience(combined);
   const contact = partial.contact ?? parseContact(combined);
   const sourceCity = parseCanonicalCity(country, partial.city || '');
-  const loc = parseLocation(combined, country, sourceCity || null);
-  const city = sourceCity || parseCanonicalCity(country, loc.city || '');
-  const coords = sourceCoordinates(partial, city, country);
   const explicitDistrict = parseExplicitDistrict(combined, country);
+  const loc = parseLocation(combined, country, sourceCity || null);
+  const city = sourceCity || parseCanonicalCity(country, loc.city || '') || (country === 'UZ' && explicitDistrict ? 'Tashkent' : '');
+  const coords = sourceCoordinates(partial, city, country);
   const district = canonicalDistrict(
     (coords.rejected ? null : partial.district) ?? explicitDistrict ?? loc.district,
     country,
@@ -157,9 +157,12 @@ export function makeListing(partial) {
   const metro = partial.metro ?? loc.metro;
   const nearby = partial.nearby
     ?? [...new Set([...(loc.nearby || []), ...parseNearbyPlaces(combined)])];
+  const parsedResidenceComplex = parseResidentialComplex(combined);
+  const kharkivVorobioviHory = country === 'UA' && city === 'Kharkiv' && /вороб[ьъ]?[её]вы\s+горы/iu.test(combined);
+  const preferLocalResidence = country === 'UZ' || /^\d+ Жемчужина$/u.test(parsedResidenceComplex || '') || kharkivVorobioviHory;
+  const canonicalLocalResidence = kharkivVorobioviHory ? 'Vorobiovi Hory' : parsedResidenceComplex;
   const residenceComplex = partial.residenceComplex
-    ?? loc.residentialComplex
-    ?? parseResidentialComplex(combined);
+    ?? (preferLocalResidence ? (canonicalLocalResidence ?? loc.residentialComplex) : (loc.residentialComplex ?? canonicalLocalResidence));
   const street = partial.street ?? loc.street ?? null;
   const address = partial.address ?? parseLexiconAddress(combined, street);
   const commercial = partial.commercial === true || looksCommercial(combined) || looksParkingOnly(combined);

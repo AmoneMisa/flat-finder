@@ -25,7 +25,7 @@ const result = (areaName, district, confidence = 1, ambiguous = false) => ({
 function numberedMatch(text, names) {
   const alternatives = names.map(normalize).join('|').replace(/ /g, '\\s+');
   return text.match(new RegExp(
-    `(?:^|\\s)(?:${alternatives})(?:\\s+(?:tumani|тумани|district|район|massiv|массив))?\\s+(\\d{1,2})(?:\\s*([adад]))?(?:\\s+(?:chi|чи|й|квартал|kvartal|hudud|худуд))*(?:\\s|$)`,
+    `(?:^|\\s)(?:${alternatives})(?:\\s+(?:tumani|тумани|district|район|massiv|массив))?\\s+(\\d{1,2})(?:\\s*([adад]))?(?:\\s+(?:chi|чи|й|квартал|kvartal|hudud(?:da)?|худуд(?:да)?))*(?:\\s|$)`,
     'iu',
   ));
 }
@@ -85,14 +85,16 @@ export function resolveTashkentArea(value) {
   }
 
   const explicitSergeliDistrict = /(?:сергелийск\p{L}*\s+район|сергели\s+туман\p{L}*|serg(?:eli|ile|ele)\s+(?:tumani|district))/iu.test(value);
-  if (!explicitSergeliDistrict && /(?:^|\s)(?:сергели|sergeli|sergile|sergele)(?:\s|$)/iu.test(text)) {
+  if (explicitSergeliDistrict) return result('Sergeli', 'Sergeli');
+  if (/(?:^|\s)(?:сергели|sergeli|sergile|sergele)(?:\s|$)/iu.test(text)) {
     return result('Sergeli', null, 0.35, true);
   }
   if (/(?:^|\s)(?:куйлюк|куйлик|kuylyuk|kuyliq|qoyliq)(?:\s|$)/iu.test(text)) {
     return result('Kuylyuk', null, 0.25, true);
   }
   const explicitChilanzarDistrict = /(?:чиланзарск\p{L}*\s+район|чиланзар\s+туман\p{L}*|chilanzar\s+district)/iu.test(value);
-  if (!explicitChilanzarDistrict && /(?:^|\s)(?:чиланзар|чилонзор|chilanzar|chilonzor)(?:\s|$)/iu.test(text)) {
+  if (explicitChilanzarDistrict) return result('Chilanzar', 'Chilanzar');
+  if (/(?:^|\s)(?:чиланзар|чилонзор|chilanzar|chilonzor)(?:\s|$)/iu.test(text)) {
     return result('Chilanzar', null, 0.35, true);
   }
 

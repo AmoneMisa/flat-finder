@@ -30,6 +30,7 @@ test('uses the canonical city name in geocoding candidates', () => {
   assert.equal(city.q, 'Tashkent, Uzbekistan');
 });
 
-test('keeps an unknown source city instead of discarding it', () => {
-  assert.equal(listing('Yangiyul').city, 'Yangiyul');
+test('canonicalizes known Yangiyul spelling and keeps a genuinely unknown source city', () => {
+  assert.equal(listing('Yangiyul').city, 'Yangiyol');
+  assert.equal(listing('Imaginaryville').city, 'Imaginaryville');
 });
