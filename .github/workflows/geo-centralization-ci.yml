@@ -6,33 +6,33 @@ on:
       - fix/backend-ci-geo-centralization
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: fix/backend-ci-geo-centralization
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Refresh backend lockfile
-        run: npm install --package-lock-only --prefix backend
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
       - name: Install backend dependencies
         run: npm ci --prefix backend
       - name: Check backend JavaScript syntax
         run: find backend/src backend/test -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Run full backend suite
-        run: npm test --prefix backend
-      - name: Commit refreshed lockfile
+        shell: bash
         run: |
-          if git diff --quiet -- backend/package-lock.json; then
-            exit 0
-          fi
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add backend/package-lock.json
-          git commit -m "chore(geo): refresh parsing lexicon lockfile"
-          git push origin HEAD:fix/backend-ci-geo-centralization
+          set +e
+          npm test --prefix backend 2>&1 | tee backend/test-output.txt
+          status=${PIPESTATUS[0]}
+          exit "$status"
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geo-centralization-test-output
+          path: backend/test-output.txt
+          if-no-files-found: error
