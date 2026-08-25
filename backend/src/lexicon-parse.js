@@ -13,6 +13,8 @@ import {
   escapeRegex,
   findCanonical,
   normalizeUnicode,
+  parseHousingContext,
+  resolveHousingIntent,
 } from '@whiteslove/parsing-lexicon';
 
 const values = (entry) => [entry?.canonical, ...aliasesOf(entry)].filter(Boolean);
@@ -61,8 +63,18 @@ export function parseCanonicalRegion(countryCode, value) {
   return canonicalRegion(value, countryCode) || String(value).trim();
 }
 
+export function parseHousingIntent(text) {
+  return resolveHousingIntent(text);
+}
+
+export function parseHousingSemanticContext(text) {
+  return parseHousingContext(text);
+}
+
 export function parseLexiconDealType(text) {
-  return findCanonical(text, DEAL_TYPES, { partial: true })?.canonical || null;
+  return resolveHousingIntent(text)?.dealType
+    || findCanonical(text, DEAL_TYPES, { partial: true })?.canonical
+    || null;
 }
 
 export function parseHousingOccupancyType(text) {
