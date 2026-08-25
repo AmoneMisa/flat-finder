@@ -1,27 +1,15 @@
-import { LOCATION_DICTIONARIES } from './location-dictionaries.js';
-import { UA_EXTRA_LOCATION_DICTIONARIES } from './location-dictionaries-ua-extra.js';
 import {
-  UA_REGIONS,
+  LOCATION_DICTIONARIES,
+  UA_REGION_ENTRIES as UA_REGIONS,
   UA_SECONDARY_CITIES,
+  locationCities,
   matchUkraineRegion,
   matchUkraineSecondaryCity,
-} from './location-dictionaries-ua-regions.js';
-import { TASHKENT_METRO, tashkentMetroLabels } from './tashkent-metro.js';
+  tashkentMetroLabels,
+} from '@whiteslove/parsing-lexicon';
 
 function mergedCountry(countryCode) {
-  const base = LOCATION_DICTIONARIES[countryCode] || {};
-  if (countryCode === 'UZ' && base.Tashkent) {
-    return {
-      ...base,
-      Tashkent: {
-        ...base.Tashkent,
-        // One authoritative list for both parser matching and filter metadata.
-        metro: TASHKENT_METRO,
-      },
-    };
-  }
-  if (countryCode !== 'UA') return base;
-  return { ...UA_EXTRA_LOCATION_DICTIONARIES, ...base };
+  return locationCities(countryCode);
 }
 
 export function dictionaryCities(countryCode) {
@@ -32,11 +20,7 @@ export function dictionaryCity(countryCode, city) {
   return mergedCountry(countryCode)[city] || null;
 }
 
-/**
- * Hashtags run words together — "#метроБИЙ", "#МирзоУлугбекский", "#ЖКNestOne"
- * — and an alias that expects a word boundary never matches inside one. Only
- * hashtag tokens are split, so ordinary CamelCase names are left alone.
- */
+/** Hashtags can run location words together; split only camel-case hashtag tokens. */
 function expandHashtags(text) {
   return String(text).replace(/#(\S+)/gu, (match, body) =>
     '#' + body.replace(/(\p{Ll}|\d)(\p{Lu})/gu, '$1 $2'),
@@ -45,8 +29,6 @@ function expandHashtags(text) {
 
 function normalizeMatchingText(text) {
   return expandHashtags(text)
-    // Common Ukrainian/Russian locative/genitive forms used in listing prose.
-    // This copy is used only for dictionary matching; listing text stays intact.
     .replace(/([\p{L}]+?)ії(?=$|[^\p{L}\p{N}_])/giu, '$1ія')
     .replace(/([\p{L}]+?)ии(?=$|[^\p{L}\p{N}_])/giu, '$1ия')
     .replace(/([\p{L}]+?)щині(?=$|[^\p{L}\p{N}_])/giu, '$1щина')
@@ -63,29 +45,24 @@ function matchMetro(text, entries) {
 
     const start = match.index ?? 0;
     const end = start + match[0].length;
-    const before = value.slice(Math.max(0, start - 16), start);
-    const after = value.slice(end, end + 48);
+    const before = value.slice(Math.max(0, start - 20), start);
+    const after = value.slice(end, end + 56);
     const contextual =
-      /(?:метро|metro|станц(?:ия|ии)?|station)\s*[:\-–—]?\s*$/iu.test(before) ||
-      /^\s*(?:метро|metro|station)(?=$|[^\p{L}\p{N}_])/iu.test(after);
+      /(?:метро|metro|станц(?:ия|ии)?|station|stația|statia|метро станція|станція)\s*[:\-–—]?\s*$/iu.test(before) ||
+      /^\s*(?:метро|metro|station|stația|statia|станція)(?=$|[^\p{L}\p{N}_])/iu.test(after);
 
-    // `Chilonzor 12`, `Yunusobod 19`, etc. are numbered massifs/kvartals,
-    // not subway mentions. Bare station-name matching is allowed elsewhere,
-    // but a number immediately following the name requires metro context.
+    // Numbered massifs/kvartals such as Chilonzor 12 / Yunusobod 19 are not subway mentions.
     const numberedArea = /^\s*[-№#]?\s*\d{1,3}(?=$|[\s,.;-])/u.test(after);
     if (!contextual && numberedArea) continue;
 
-    // `метро Ташкент Северный вокзал` describes the railway-station landmark;
-    // the short `Toshkent` subway match must not hide the more specific legacy
-    // rule in locations.js that produces `Tashkent North Railway Station`.
     if (
       entry.name === 'Toshkent' &&
-      /северн[а-яё]*\s+(?:железнодорожн[а-яё]*\s+)?вокзал|north\s+(?:railway\s+)?station/iu.test(after)
+      /северн[а-яё]*\s+(?:железнодорожн[а-яё]*\s+)?вокзал|shimoliy\s+vokzal|north\s+(?:railway\s+)?station/iu.test(after)
     ) {
       continue;
     }
 
-    matches.push({entry, contextual});
+    matches.push({ entry, contextual });
   }
 
   return matches.find((item) => item.contextual)?.entry ?? matches[0]?.entry ?? null;
@@ -99,6 +76,8 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     microdistrict: null,
     metro: null,
     residentialComplex: null,
+    street: null,
+    landmark: null,
   };
   if (!text || !countryCode) return result;
   text = normalizeMatchingText(text);
@@ -123,14 +102,18 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     const microdistrict = (data.microdistricts || []).find((x) => x.re.test(text));
     const metro = matchMetro(text, data.metro);
     const residentialComplex = (data.residentialComplexes || []).find((x) => x.re.test(text));
+    const street = (data.streets || []).find((x) => x.re.test(text));
+    const landmark = (data.landmarks || []).find((x) => x.re.test(text));
 
     if (!result.district && district) result.district = district.name;
     if (!result.microdistrict && microdistrict) result.microdistrict = microdistrict.name;
     if (!result.metro && metro) result.metro = metro.name;
     if (!result.residentialComplex && residentialComplex) result.residentialComplex = residentialComplex.name;
+    if (!result.street && street) result.street = street.name;
+    if (!result.landmark && landmark) result.landmark = landmark.name;
 
-    if (!result.city && (district || microdistrict || metro || residentialComplex)) result.city = cityName;
-    if (result.district && result.microdistrict && result.metro && result.residentialComplex && result.city) break;
+    if (!result.city && (district || microdistrict || metro || residentialComplex || street || landmark)) result.city = cityName;
+    if (result.district && result.microdistrict && result.metro && result.residentialComplex && result.street && result.landmark && result.city) break;
   }
 
   return result;
@@ -138,9 +121,8 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
 
 export function matchDictionaryResidentialComplex(text, countryCode = null, preferredCity = null) {
   if (!text) return null;
-  const countries = countryCode ? [countryCode] : Object.keys(LOCATION_DICTIONARIES);
-  if (!countryCode) countries.push('UA');
-  for (const code of [...new Set(countries)]) {
+  const countries = countryCode ? [countryCode] : [...new Set([...Object.keys(LOCATION_DICTIONARIES), 'UA'])];
+  for (const code of countries) {
     const match = matchDictionaryEntities(text, code, preferredCity);
     if (match.residentialComplex) return match.residentialComplex;
   }
@@ -164,6 +146,8 @@ export function dictionaryLocationLists(countryCode) {
       metro: (data.metro || []).map((x) => x.name),
       microdistricts: (data.microdistricts || []).map((x) => x.name),
       residentialComplexes: (data.residentialComplexes || []).map((x) => x.name),
+      streets: (data.streets || []).map((x) => x.name),
+      landmarks: (data.landmarks || []).map((x) => x.name),
       ...(countryCode === 'UZ' && city === 'Tashkent' ? { metroLabels: tashkentMetroLabels() } : {}),
     };
   }
