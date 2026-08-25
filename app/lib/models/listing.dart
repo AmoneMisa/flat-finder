@@ -1,7 +1,32 @@
+/// Market-price comparison attached by the backend for recent comparable listings.
+class MarketComparison {
+  final bool goodPrice;
+  final num? medianUsd;
+  final int comparableCount;
+
+  const MarketComparison({
+    required this.goodPrice,
+    required this.medianUsd,
+    required this.comparableCount,
+  });
+
+  factory MarketComparison.fromJson(Map<String, dynamic> j) => MarketComparison(
+        goodPrice: j['goodPrice'] == true,
+        medianUsd: j['medianUsd'] as num?,
+        comparableCount: (j['comparableCount'] as num?)?.toInt() ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'goodPrice': goodPrice,
+        'medianUsd': medianUsd,
+        'comparableCount': comparableCount,
+      };
+}
+
 /// A normalized listing as returned by the backend `/api/listings` endpoint.
 class Listing {
   final String id;
-  final String source; // olx | housekg | mock
+  final String source; // olx | telegram | mock
   final String country; // RO | UA | KZ | UZ
   final String title;
   final String propertyType; // flat | house
@@ -36,6 +61,7 @@ class Listing {
   final DateTime? createdAt;
   final String description;
   final List<String> tags;
+  final MarketComparison? marketComparison;
 
   Listing({
     required this.id,
@@ -74,12 +100,14 @@ class Listing {
     required this.createdAt,
     required this.description,
     required this.tags,
+    this.marketComparison,
   });
 
   bool get hasLocation => lat != null && lng != null;
 
   factory Listing.fromJson(Map<String, dynamic> j) {
     double? toD(dynamic v) => v == null ? null : (v as num).toDouble();
+    final market = j['marketComparison'];
     return Listing(
       id: j['id'].toString(),
       source: j['source'] ?? 'mock',
@@ -118,6 +146,9 @@ class Listing {
       createdAt: j['createdAt'] != null ? DateTime.tryParse(j['createdAt']) : null,
       description: j['description'] ?? '',
       tags: (j['tags'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      marketComparison: market is Map
+          ? MarketComparison.fromJson(Map<String, dynamic>.from(market))
+          : null,
     );
   }
 
@@ -159,5 +190,6 @@ class Listing {
         'createdAt': createdAt?.toIso8601String(),
         'description': description,
         'tags': tags,
+        if (marketComparison != null) 'marketComparison': marketComparison!.toJson(),
       };
 }

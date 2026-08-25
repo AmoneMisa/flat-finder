@@ -1,8 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
+import '../models/filters.dart';
 import '../models/listing.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
@@ -20,57 +22,33 @@ class ListingCard extends StatelessWidget {
 
   final Listing listing;
   final VoidCallback onTap;
-
-  /// When true the card is laid out for a fixed-height grid cell: the photo
-  /// flexes to fill the cell and the meta section is kept compact so nothing
-  /// overflows. When false it renders as a full-width list card.
   final bool grid;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final settings = context.watch<SettingsState>();
-    final rates = context.watch<AppState>().rates;
+    final appState = context.watch<AppState>();
     final favorites = context.watch<FavoritesState>();
+    final history = context.watch<HistoryState>();
     final s = settings.s;
     final isFav = favorites.isFavorite(listing.id);
-    final isViewed = context.watch<HistoryState>().isViewed(listing.id);
+    final isViewed = history.isViewed(listing.id);
+    final priceState = _priceState(listing, appState.rates);
 
-    // Prominent photo with the price and badges overlaid on a scrim.
     final photo = Stack(
       fit: StackFit.expand,
       children: [
         _CardPhotoCarousel(listing: listing),
-        // Bottom gradient so the white price text stays readable.
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.bottomCenter,
-              end: Alignment.center,
-              colors: [Color(0xB3000000), Color(0x00000000)],
-            ),
+        if (listing.marketComparison?.goodPrice == true)
+          Positioned(
+            left: 8,
+            bottom: 8,
+            child: _GoodPriceBadge(text: _goodPriceLabel(s)),
           ),
-        ),
         Positioned(
-          left: 10,
-          bottom: 8,
-          right: 10,
-          child: Text(
-            formatPrice(listing,
-                rates: rates, displayCurrency: settings.displayCurrency, s: s),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-              shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
-            ),
-          ),
-        ),
-        Positioned(
-          top: 4,
-          left: 4,
+          top: 8,
+          right: 8,
           child: _FavButton(
             isFav: isFav,
             tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
@@ -79,35 +57,15 @@ class ListingCard extends StatelessWidget {
         ),
         if (isViewed)
           Positioned(
-            top: 44,
-            left: 6,
-            child: _ViewedTag(text: s.t('viewedTag')),
+            top: 8,
+            right: 46,
+            child: _ViewedIcon(tooltip: s.t('viewedTag')),
           ),
-        Positioned(
-          top: 8,
-          right: 8,
-          child: Row(
-            children: [
-              if (dealTypeLabel(listing.dealType, s) != null) ...[
-                _Badge(
-                  text: dealTypeLabel(listing.dealType, s)!,
-                  color: theme.colorScheme.tertiaryContainer,
-                ),
-                const SizedBox(width: 4),
-              ],
-              _Badge(
-                text: sourceLabel(listing.source, s),
-                color: theme.colorScheme.secondaryContainer,
-              ),
-            ],
-          ),
-        ),
       ],
     );
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      // Favorite listings get a soft pink glow so they stand out in the list.
       elevation: isFav ? 8 : null,
       shadowColor: isFav ? Colors.pink : null,
       margin: grid
@@ -121,92 +79,316 @@ class ListingCard extends StatelessWidget {
             grid
                 ? Expanded(child: photo)
                 : AspectRatio(aspectRatio: 16 / 8, child: photo),
-            grid ? _meta(theme, s, compact: true) : _meta(theme, s),
+            _meta(
+              theme,
+              s,
+              filters: appState.filters,
+              rates: appState.rates,
+              displayCurrency: settings.displayCurrency,
+              priceState: priceState,
+              compact: grid,
+            ),
           ],
         ),
       ),
     );
   }
 
-  /// Title, location subtitle and (in list mode) the extra icon lines + tags.
-  Widget _meta(ThemeData theme, AppStrings s, {bool compact = false}) => Padding(
-        padding: EdgeInsets.fromLTRB(12, compact ? 8 : 10, 12, compact ? 8 : 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              listing.title,
-              maxLines: compact ? 1 : 2,
-              overflow: TextOverflow.ellipsis,
-              style:
-                  theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Text('${countryFlags[listing.country] ?? ''} ',
-                    style: const TextStyle(fontSize: 14)),
-                Expanded(
-                  child: Text(
-                    subtitleFor(listing, s),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.hintColor),
-                  ),
-                ),
-              ],
-            ),
-            if (!compact) ...[
-              if (postedLabel(listing.createdAt, s) != null)
-                _iconLine(theme, Icons.schedule, postedLabel(listing.createdAt, s)!),
-              if (listing.metro != null)
-                _iconLine(theme, Icons.subway, listing.metro!),
-              if (listing.nearby.isNotEmpty)
-                _iconLine(theme, Icons.place_outlined, listing.nearby.join(' · ')),
-              if (listing.contact != null)
-                _iconLine(theme, Icons.call, listing.contact!),
-              if (listing.tags.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 24,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: listing.tags.length > 6 ? 6 : listing.tags.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 4),
-                    itemBuilder: (_, i) => _TagChip(text: tagLabel(listing.tags[i], s)),
-                  ),
-                ),
-              ],
-            ],
-          ],
-        ),
-      );
+  Widget _meta(
+    ThemeData theme,
+    AppStrings s, {
+    required Filters filters,
+    required Map<String, double> rates,
+    required String? displayCurrency,
+    required _PriceState priceState,
+    bool compact = false,
+  }) {
+    final badges = _contextBadges(filters, s);
+    final location = _locationLabel();
+    final date = postedLabel(listing.createdAt, s);
+    final source = sourceLabel(listing.source, s);
 
-  /// A single small icon + text row (metro, nearby landmarks, contact, …).
-  Widget _iconLine(ThemeData theme, IconData icon, String text) => Padding(
-        padding: const EdgeInsets.only(top: 3),
-        child: Row(
-          children: [
-            Icon(icon, size: 13, color: theme.hintColor),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                text,
+    return Padding(
+      padding: EdgeInsets.fromLTRB(12, compact ? 8 : 10, 12, compact ? 8 : 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _PriceLine(
+            listing: listing,
+            rates: rates,
+            displayCurrency: displayCurrency,
+            state: priceState,
+            s: s,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            listing.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _detailsLabel(s),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+          ),
+          if (badges.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 24,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: badges.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 5),
+                itemBuilder: (_, i) => _TagChip(text: badges[i]),
+              ),
+            ),
+          ],
+          const SizedBox(height: 9),
+          Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.35)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.location_on_outlined, size: 14, color: theme.hintColor),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  location,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                date == null ? source : '$source · $date',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
               ),
-            ),
-          ],
-        ),
-      );
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _detailsLabel(AppStrings s) {
+    final parts = <String>[];
+    if (listing.rooms != null) {
+      parts.add(s.t('roomsN', {'n': '${listing.rooms}'}));
+    }
+    if (listing.areaSqm != null) {
+      final area = listing.areaSqm!;
+      final value = area == area.roundToDouble() ? area.toInt().toString() : area.toString();
+      parts.add('$value m²');
+    }
+    final floor = floorLabel(listing, s);
+    if (floor != null) parts.add(floor);
+    return parts.join(' · ');
+  }
+
+  String _locationLabel() {
+    final parts = <String>[];
+    if (listing.city.trim().isNotEmpty) parts.add(listing.city.trim());
+    final district = listing.district?.trim();
+    if (district != null && district.isNotEmpty) parts.add(district);
+    return parts.isEmpty ? '—' : parts.join(', ');
+  }
+
+  List<String> _contextBadges(Filters filters, AppStrings s) {
+    final result = <String>[];
+    final geoFiltered = filters.district.trim().isNotEmpty || filters.metro.trim().isNotEmpty;
+
+    // Do not repeat a seller value that the user has already selected in filters.
+    if (filters.agency == AgencyFilter.any) {
+      result.add(listing.byAgency ? s.t('agency') : s.t('owner'));
+    } else if (geoFiltered && listing.rooms != null) {
+      // Once a geo facet is fixed by filters, room count is more useful than
+      // repeating the selected district/metro on every card.
+      result.add(s.t('roomsN', {'n': '${listing.rooms}'}));
+    } else {
+      // Seller is already fixed: use the most useful available geo context.
+      final district = listing.district?.trim();
+      final metro = listing.metro?.trim();
+      if (district != null && district.isNotEmpty) {
+        result.add(district);
+      } else if (metro != null && metro.isNotEmpty) {
+        result.add(metro);
+      } else if (listing.nearby.isNotEmpty) {
+        result.add(listing.nearby.first);
+      }
+    }
+
+    // Keep cards compact: add at most two useful, non-duplicating listing tags.
+    for (final raw in listing.tags) {
+      if (result.length >= 3) break;
+      final label = tagLabel(raw, s).trim();
+      if (label.isEmpty || _isRedundantTag(label, s, result)) continue;
+      result.add(label);
+    }
+    return result;
+  }
+
+  bool _isRedundantTag(String label, AppStrings s, List<String> current) {
+    final lower = label.toLowerCase();
+    final blocked = <String>{
+      s.t('owner').toLowerCase(),
+      s.t('agency').toLowerCase(),
+      if (listing.rooms != null) s.t('roomsN', {'n': '${listing.rooms}'}).toLowerCase(),
+      listing.city.toLowerCase(),
+      if (listing.district != null) listing.district!.toLowerCase(),
+      if (listing.metro != null) listing.metro!.toLowerCase(),
+    };
+    return blocked.contains(lower) || current.any((e) => e.toLowerCase() == lower);
+  }
 }
 
-/// Swipeable photo strip filling its parent, with a "current/total" counter
-/// badge when the listing has more than one photo. Falls back to a neutral
-/// home placeholder when there are no photos.
+enum _PriceTier { low, belowAverage, average, high, veryHigh, unknown }
+
+class _PriceState {
+  const _PriceState(this.tier, this.ratio);
+  final _PriceTier tier;
+  final double? ratio;
+
+  Color get color => switch (tier) {
+        _PriceTier.low => const Color(0xFF7FE45C),
+        _PriceTier.belowAverage => const Color(0xFFA9DF6A),
+        _PriceTier.average => Colors.white,
+        _PriceTier.high => const Color(0xFFFF9F43),
+        _PriceTier.veryHigh => const Color(0xFFFF5D61),
+        _PriceTier.unknown => Colors.white,
+      };
+}
+
+_PriceState _priceState(Listing listing, Map<String, double> rates) {
+  final price = listing.price?.toDouble();
+  final median = listing.marketComparison?.medianUsd?.toDouble();
+  final rate = rates[listing.currency];
+  if (price == null || median == null || median <= 0 || rate == null || rate <= 0) {
+    return const _PriceState(_PriceTier.unknown, null);
+  }
+  final ratio = (price / rate) / median;
+  if (ratio <= 0.80) return _PriceState(_PriceTier.low, ratio);
+  if (ratio < 0.95) return _PriceState(_PriceTier.belowAverage, ratio);
+  if (ratio <= 1.05) return _PriceState(_PriceTier.average, ratio);
+  if (ratio <= 1.20) return _PriceState(_PriceTier.high, ratio);
+  return _PriceState(_PriceTier.veryHigh, ratio);
+}
+
+class _PriceLine extends StatelessWidget {
+  const _PriceLine({
+    required this.listing,
+    required this.rates,
+    required this.displayCurrency,
+    required this.state,
+    required this.s,
+  });
+
+  final Listing listing;
+  final Map<String, double> rates;
+  final String? displayCurrency;
+  final _PriceState state;
+  final AppStrings s;
+
+  @override
+  Widget build(BuildContext context) {
+    if (listing.price == null) {
+      return Text(
+        s.t('priceOnRequest'),
+        maxLines: 1,
+        style: TextStyle(color: state.color, fontSize: 18, fontWeight: FontWeight.w800),
+      );
+    }
+
+    final f = NumberFormat.decimalPattern();
+    final native = '${f.format(listing.price!.round())} ${listing.currency}'.trim();
+    String? secondary;
+    final target = displayCurrency;
+    final fromRate = rates[listing.currency];
+    final targetRate = target == null ? null : rates[target];
+    if (target != null &&
+        target != listing.currency &&
+        fromRate != null &&
+        fromRate > 0 &&
+        targetRate != null &&
+        targetRate > 0) {
+      final converted = listing.price! * targetRate / fromRate;
+      secondary = '≈ ${f.format(converted.round())} $target';
+    }
+
+    return Row(
+      children: [
+        Flexible(
+          child: Text(
+            native,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: state.color,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        if (secondary != null) ...[
+          const SizedBox(width: 7),
+          Text('·', style: TextStyle(color: Theme.of(context).hintColor)),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              secondary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).hintColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+String _goodPriceLabel(AppStrings s) => s.lang == 'ru' ? 'Хорошая цена' : 'Good price';
+
+class _GoodPriceBadge extends StatelessWidget {
+  const _GoodPriceBadge({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xDD183B19),
+        border: Border.all(color: const Color(0xFF7FE45C).withValues(alpha: 0.75)),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.savings_outlined, color: Color(0xFF9AF56E), size: 12),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xFFA8F779),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CardPhotoCarousel extends StatefulWidget {
   const _CardPhotoCarousel({required this.listing});
   final Listing listing;
@@ -259,19 +441,20 @@ class _CardPhotoCarouselState extends State<_CardPhotoCarousel> {
             top: 8,
             left: 8,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
                 color: Colors.black54,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.photo_library_outlined,
-                      color: Colors.white, size: 12),
+                  const Icon(Icons.photo_library_outlined, color: Colors.white, size: 11),
                   const SizedBox(width: 4),
-                  Text('${_index + 1}/${photos.length}',
-                      style: const TextStyle(color: Colors.white, fontSize: 11)),
+                  Text(
+                    '${_index + 1}/${photos.length}',
+                    style: const TextStyle(color: Colors.white, fontSize: 10),
+                  ),
                 ],
               ),
             ),
@@ -281,8 +464,6 @@ class _CardPhotoCarouselState extends State<_CardPhotoCarousel> {
   }
 }
 
-/// Heart toggle overlaid on a card photo. Uses a dark scrim so it stays visible
-/// over any image; filled red when the listing is saved.
 class _FavButton extends StatelessWidget {
   const _FavButton({
     required this.isFav,
@@ -297,12 +478,12 @@ class _FavButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.black38,
-      shape: const CircleBorder(),
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(8),
       clipBehavior: Clip.antiAlias,
       child: IconButton(
         tooltip: tooltip,
-        iconSize: 20,
+        iconSize: 19,
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.all(6),
         constraints: const BoxConstraints(),
@@ -316,28 +497,21 @@ class _FavButton extends StatelessWidget {
   }
 }
 
-/// "Already viewed" marker overlaid on the card photo, shown once the listing
-/// has been opened at least once.
-class _ViewedTag extends StatelessWidget {
-  const _ViewedTag({required this.text});
-  final String text;
+class _ViewedIcon extends StatelessWidget {
+  const _ViewedIcon({required this.tooltip});
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.visibility, color: Colors.white70, size: 12),
-          const SizedBox(width: 4),
-          Text(text,
-              style: const TextStyle(color: Colors.white, fontSize: 11)),
-        ],
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: const EdgeInsets.all(7),
+        decoration: BoxDecoration(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.visibility_outlined, color: Colors.white70, size: 17),
       ),
     );
   }
@@ -358,27 +532,14 @@ class _TagChip extends StatelessWidget {
       ),
       child: Text(
         text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: scheme.onPrimaryContainer,
         ),
       ),
-    );
-  }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge({required this.text, required this.color});
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
-      child: Text(text, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
     );
   }
 }
