@@ -16,6 +16,28 @@ test('extracts bedrooms, bathrooms and 5\\5 floor notation', () => {
   assert.equal(listing.totalFloors, 5);
 });
 
+test('extracts compact Uzbek rooms/floor/area and mixed family-or-women audience', () => {
+  const listing = enrichListingDetails({
+    title: 'Уч тепа Аренда 22кв 3//4//4// 500$ Оелага Кизларга берилади Уйда Хамма шароешти бор',
+    description: 'Маклер +998504553244 Риелтор',
+    price: 500,
+    currency: 'USD',
+    rooms: null,
+    areaSqm: null,
+    floor: null,
+    totalFloors: null,
+    audience: null,
+  });
+
+  assert.equal(listing.rooms, 3);
+  assert.equal(listing.areaSqm, 22);
+  assert.equal(listing.floor, 4);
+  assert.equal(listing.totalFloors, 4);
+  assert.equal(listing.audience, 'family');
+  assert.deepEqual(listing.audienceAlternatives, ['family', 'women']);
+  assert.equal(listing.commission, true);
+});
+
 test('extracts realtor commission size and recognizes broker fees without percentages', () => {
   assert.equal(detail.parseCommissionPercent('Комиссия риелтора: 50%'), 50);
   assert.equal(detail.parseCommissionPercent('50 % риэлтору'), 50);
