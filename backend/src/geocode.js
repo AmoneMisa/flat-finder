@@ -1,8 +1,9 @@
 // Best-effort geocoding for listings that arrive without GPS coordinates.
 //
 // Precision order (highest -> lowest):
-//   source coordinates -> exact address -> residential complex -> metro
-//   -> spatial POI constraints -> nearby POI -> area/kvartal -> district -> city.
+//   source coordinates -> exact address -> street -> residential complex -> metro
+//   -> spatial POI constraints -> nearby POI -> microdistrict/area/local place
+//   -> district -> city.
 //
 // Coordinates come from Nominatim (OpenStreetMap). Requests are throttled and
 // cached because geocoding runs during background refreshes, never on the
@@ -71,11 +72,6 @@ async function fetchGeo(query) {
   }
 }
 
-/**
- * One cached, throttled forward geocode. Used by the places sync to resolve
- * station and landmark names — it has no per-run budget because it runs on a
- * monthly schedule, not per listing.
- */
 export async function geocodeQuery(query) {
   if (!query) return null
   const cached = await getCachedGeo(query)
@@ -83,10 +79,6 @@ export async function geocodeQuery(query) {
   return fetchGeo(query)
 }
 
-/**
- * The bounding box of a place, for area queries. Cached like everything else,
- * so the places sync does not re-ask for a city's extent every month.
- */
 export async function geocodeBbox(query) {
   if (!query) return null
   const key = `geo:bbox:v1:${query.toLowerCase().trim()}`
@@ -102,7 +94,6 @@ export async function geocodeBbox(query) {
     })
     if (!res.ok) throw new Error(`nominatim ${res.status}`)
     const data = await res.json()
-    // Nominatim orders it [south, north, west, east].
     const raw = Array.isArray(data) ? data[0]?.boundingbox : null
     const numbers = (raw || []).map(Number)
     const bbox = numbers.length === 4 && numbers.every(Number.isFinite)
@@ -190,7 +181,7 @@ function poiCandidates(listing, city, countryName) {
     ...(listing.nearby || []),
     ...detectedPoiNames(listing),
   ])
-  const area = listing.area || listing.kvartal
+  const area = listing.area || listing.kvartal || listing.microdistrict
   return names.map((name) => {
     const distanceM = poiDistanceM(listing, name)
     return {
@@ -204,15 +195,68 @@ function poiCandidates(listing, city, countryName) {
   })
 }
 
+function listCandidates(values, source, context, accuracyM, jit) {
+  return uniq(values || []).map((value) => ({
+    q: [value, ...context].filter(Boolean).join(', '),
+    source,
+    jit,
+    accuracyM,
+  }))
+}
+
+function locationEntityCandidates(listing, city, countryName) {
+  const entities = Array.isArray(listing.locationEntities) ? listing.locationEntities : []
+  const supported = new Map([
+    ['mahalla', { source: 'localArea', accuracyM: 700, jit: 0.003 }],
+    ['local_area', { source: 'localArea', accuracyM: 800, jit: 0.003 }],
+    ['suburb', { source: 'suburb', accuracyM: 1400, jit: 0.005 }],
+    ['settlement', { source: 'settlement', accuracyM: 1400, jit: 0.005 }],
+    ['informal_area', { source: 'informalArea', accuracyM: 1300, jit: 0.005 }],
+    ['development_area', { source: 'developmentArea', accuracyM: 1200, jit: 0.004 }],
+    ['microdistrict', { source: 'microdistrict', accuracyM: 600, jit: 0.002 }],
+    ['street', { source: 'street', accuracyM: 180, jit: 0 }],
+  ])
+  const out = []
+  for (const entity of entities) {
+    const config = supported.get(entity?.type)
+    if (!config || !entity?.name) continue
+    out.push({
+      q: [entity.name, entity.parent, listing.district, city, countryName].filter(Boolean).join(', '),
+      source: config.source,
+      jit: config.jit,
+      accuracyM: config.accuracyM,
+    })
+  }
+  return out
+}
+
+function dedupeCandidates(candidates) {
+  const seen = new Set()
+  return candidates.filter((candidate) => {
+    if (!candidate?.q) return false
+    const key = candidate.q.toLowerCase().replace(/\s+/g, ' ').trim()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export function geocodeCandidates(listing, country) {
   const { city, countryName } = contextParts(listing, country)
   const area = listing.area || listing.kvartal
+  const localContext = [listing.district, city, countryName]
   const candidates = [
     listing.address && {
       q: [listing.address, city, countryName].filter(Boolean).join(', '),
       source: 'address',
       jit: 0,
       accuracyM: 40,
+    },
+    listing.street && {
+      q: [listing.street, listing.district, city, countryName].filter(Boolean).join(', '),
+      source: 'street',
+      jit: 0,
+      accuracyM: 180,
     },
     listing.residenceComplex && {
       q: [listing.residenceComplex, listing.district, city, countryName].filter(Boolean).join(', '),
@@ -227,12 +271,31 @@ export function geocodeCandidates(listing, country) {
       accuracyM: 250,
     },
     ...poiCandidates(listing, city, countryName),
+    listing.microdistrict && {
+      q: [listing.microdistrict, ...localContext].filter(Boolean).join(', '),
+      source: 'microdistrict',
+      jit: 0.002,
+      accuracyM: 600,
+    },
     area && {
-      q: [area, listing.district, city, countryName].filter(Boolean).join(', '),
+      q: [area, ...localContext].filter(Boolean).join(', '),
       source: 'area',
       jit: 0.003,
       accuracyM: 700,
     },
+    ...listCandidates(listing.localAreas, 'localArea', localContext, 800, 0.003),
+    listing.locality && {
+      q: [listing.locality, city, countryName].filter(Boolean).join(', '),
+      source: 'locality',
+      jit: 0.004,
+      accuracyM: 1000,
+    },
+    ...listCandidates(listing.developmentAreas, 'developmentArea', [city, countryName], 1200, 0.004),
+    ...listCandidates(listing.informalAreas, 'informalArea', [city, countryName], 1300, 0.005),
+    ...listCandidates(listing.suburbs, 'suburb', [city, countryName], 1400, 0.005),
+    ...listCandidates(listing.settlements, 'settlement', [city, countryName], 1400, 0.005),
+    ...listCandidates(listing.searchClusters, 'searchCluster', [city, countryName], 1600, 0.006),
+    ...locationEntityCandidates(listing, city, countryName),
     listing.district && {
       q: [listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'district',
@@ -246,7 +309,7 @@ export function geocodeCandidates(listing, country) {
       accuracyM: 8000,
     },
   ]
-  return candidates.filter(Boolean)
+  return dedupeCandidates(candidates)
 }
 
 function projectPoint(point, origin) {
@@ -383,10 +446,13 @@ export async function geocodeListings(listings, country) {
 
     const candidates = geocodeCandidates(listing, country)
     const exactCandidates = candidates.filter((candidate) =>
-      ['address', 'residentialComplex', 'metro'].includes(candidate.source),
+      ['address', 'street', 'residentialComplex', 'metro'].includes(candidate.source),
     )
     const nearbyCandidates = candidates.filter((candidate) => candidate.source === 'nearby')
-    const broadCandidates = candidates.filter((candidate) => ['area', 'district', 'city'].includes(candidate.source))
+    const broadCandidates = candidates.filter((candidate) => [
+      'microdistrict', 'area', 'localArea', 'locality', 'developmentArea',
+      'informalArea', 'suburb', 'settlement', 'searchCluster', 'district', 'city',
+    ].includes(candidate.source))
 
     let placed = false
 
@@ -450,18 +516,8 @@ export async function geocodeListings(listings, country) {
     }
   }
 
-  // Everything below reads coordinates rather than text, so it runs once every
-  // listing has a position. None of it overwrites what a post stated itself.
-
-  // Administrative hierarchy: mahalla, district, city, country.
   await applyReverseGeo(listings, country)
-
-  // Surroundings from the places table: metro, shops, landmarks, transport.
-  // One query per city per batch, then arithmetic — no per-listing calls.
   const placed = await annotateFromPlaces(listings, country)
-
-  // Only if the table has not been filled yet does the old per-station
-  // geocoding path run, so a fresh deployment still names a station.
   if (!placed) {
     await assignNearestMetro(listings, country, (query) => lookup({ q: query }))
   }
@@ -469,7 +525,6 @@ export async function geocodeListings(listings, country) {
   return listings
 }
 
-/** Annotates a batch from the places table; false when the table is empty. */
 async function annotateFromPlaces(listings, country) {
   const cities = new Set(
     listings
