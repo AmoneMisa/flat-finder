@@ -65,7 +65,11 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
     rankSelect = 'm.rank AS search_rank';
   }
 
-  const where = ['l.active = TRUE'];
+  const where = [
+    'l.active = TRUE',
+    `COALESCE(l.data->>'listingKind', 'propertyOffer') <> 'propertyWanted'`,
+    `COALESCE(l.data->>'listingStatus', 'active') NOT IN ('sold', 'rented', 'closed', 'outdated')`,
+  ];
   if (elasticsearchAuthoritative && matchRows.length === 0) where.push('FALSE');
 
   const countryValues = [...new Set((countries || []).map((v) => String(v).toUpperCase()).filter(Boolean))];

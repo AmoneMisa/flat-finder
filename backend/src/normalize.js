@@ -20,7 +20,9 @@ import {
   parseCanonicalCountryCode,
   parseCanonicalRegion,
   parseDepositKind,
+  parseHousingIntent,
   parseHousingOccupancyType,
+  parseHousingSemanticContext,
   parseLexiconAddress,
   parseLexiconDealType,
 } from './lexicon-parse.js';
@@ -88,7 +90,11 @@ export function makeListing(partial) {
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
   const byAgency = Boolean(partial.byAgency);
   const rooms = partial.rooms != null ? Number(partial.rooms) : parseRoomsFromText(combined);
-  const parsedDealType = parseLexiconDealType(combined) ?? classifyDealType(combined);
+  const housingIntent = parseHousingIntent(combined);
+  const housingContext = parseHousingSemanticContext(combined);
+  const housingAction = partial.housingAction ?? partial.action ?? housingIntent?.action ?? null;
+  const listingKind = partial.listingKind ?? housingIntent?.listingKind ?? 'propertyOffer';
+  const parsedDealType = housingIntent?.dealType ?? parseLexiconDealType(combined) ?? classifyDealType(combined);
   const explicitShortStay = parsedDealType === 'shortRent' || EXPLICIT_SHORT_STAY_RE.test(combined);
 
   // Explicit short-term language outranks a scraper's generic long-rent default.
@@ -257,6 +263,8 @@ export function makeListing(partial) {
     url: partial.url ?? '',
     createdAt: partial.createdAt ?? null,
     description,
+    housingAction,
+    listingKind,
     dealType,
     occupancyType,
     floor,
@@ -302,7 +310,22 @@ export function makeListing(partial) {
     smokingAllowed,
     negotiable,
     furnished,
-    condition: partial.condition ?? null,
+    furnitureState: partial.furnitureState ?? housingContext.furniture ?? null,
+    condition: partial.condition ?? housingContext.condition ?? null,
+    propertyCondition: partial.propertyCondition ?? housingContext.condition ?? null,
+    layoutTypes: Array.isArray(partial.layoutTypes) ? partial.layoutTypes : [...housingContext.layouts],
+    buildingType: partial.buildingType ?? housingContext.buildingType ?? null,
+    buildingStatus: partial.buildingStatus ?? housingContext.buildingStatus ?? null,
+    priceContext: partial.priceContext ?? housingContext.priceContext ?? null,
+    priceModifiers: Array.isArray(partial.priceModifiers) ? partial.priceModifiers : [...housingContext.priceModifiers],
+    rentDuration: partial.rentDuration ?? housingContext.rentDuration ?? null,
+    floorConstraints: Array.isArray(partial.floorConstraints) ? partial.floorConstraints : [...housingContext.floorConstraints],
+    tenantPolicies: partial.tenantPolicies ?? housingContext.tenantPolicies,
+    documentStatus: Array.isArray(partial.documentStatus) ? partial.documentStatus : [...housingContext.documents],
+    financing: Array.isArray(partial.financing) ? partial.financing : [...housingContext.financing],
+    locationRelations: Array.isArray(partial.locationRelations) ? partial.locationRelations : [...housingContext.locationRelations],
+    availability: partial.availability ?? housingContext.availability ?? null,
+    listingStatus: partial.listingStatus ?? housingContext.listingStatus ?? 'active',
     amenities,
     appliances,
     tags: partial.tags ?? extractTags({
