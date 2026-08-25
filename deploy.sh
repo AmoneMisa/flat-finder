@@ -63,7 +63,10 @@ wait_for_healthy() {
     fi
     sleep 3
   done
-  echo "WARNING: ${service} did not become healthy in time; continuing anyway."
+  echo "ERROR: ${service} did not become healthy in time."
+  docker compose ps "$service" || true
+  docker compose logs --tail=200 "$service" || true
+  return 1
 }
 
 wait_for_healthy flat-finder-postgres 120
@@ -82,6 +85,18 @@ docker compose run --rm --no-deps flat-finder-backend node src/migrate.js
 docker compose up -d --no-deps \
   flat-finder-backend \
   flat-finder-worker
+
+# A successful container start is not enough: module import errors and startup
+# failures can put the API into a restart loop before port 4000 is ever opened.
+wait_for_healthy flat-finder-backend 120
+
+curl --fail --silent --show-error --max-time 10 \
+  http://127.0.0.1:4000/health >/dev/null
+
+# Smoke-test the actual listing route as well. This only requires the endpoint
+# to respond successfully; it does not require any listing to exist.
+curl --fail --silent --show-error --max-time 20 \
+  'http://127.0.0.1:4000/api/listings?limit=1' >/dev/null
 
 # Remove the retired queue-task-api and Python HTTP worker containers, together
 # with any other services no longer present in Compose.
