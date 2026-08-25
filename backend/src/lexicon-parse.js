@@ -6,6 +6,7 @@ import {
   HOUSING_OCCUPANCY_TYPES,
   aliasesOf,
   canonicalAnyCity,
+  canonicalCentralAsiaCity,
   canonicalCountryCode,
   canonicalRegion,
   canonicalUkraineCity,
@@ -49,6 +50,9 @@ export function parseCanonicalCountryCode(value) {
 export function parseCanonicalCity(countryCode, value) {
   if (!value) return '';
   if (countryCode === 'UA') return canonicalUkraineCity(value) || String(value).trim();
+  if (countryCode === 'KZ' || countryCode === 'UZ') {
+    return canonicalCentralAsiaCity(value, countryCode) || String(value).trim();
+  }
   return canonicalAnyCity(value, countryCode) || String(value).trim();
 }
 
