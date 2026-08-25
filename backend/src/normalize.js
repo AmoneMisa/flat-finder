@@ -23,6 +23,7 @@ import {
   parseHousingIntent,
   parseHousingOccupancyType,
   parseHousingSemanticContext,
+  parseHousingStructuredContext,
   parseLexiconAddress,
   parseLexiconDealType,
 } from './lexicon-parse.js';
@@ -88,10 +89,15 @@ export function makeListing(partial) {
   const combined = `${sourceTitle} ${description}`;
   const country = parseCanonicalCountryCode(partial.country) || '';
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
-  const byAgency = Boolean(partial.byAgency);
-  const rooms = partial.rooms != null ? Number(partial.rooms) : parseRoomsFromText(combined);
-  const housingIntent = parseHousingIntent(combined);
-  const housingContext = parseHousingSemanticContext(combined);
+  const housingStructured = parseHousingStructuredContext(combined);
+  const byAgency = partial.byAgency != null
+    ? Boolean(partial.byAgency)
+    : housingStructured.seller.type === 'agency';
+  const rooms = partial.rooms != null
+    ? Number(partial.rooms)
+    : (housingStructured.rooms ?? parseRoomsFromText(combined));
+  const housingIntent = housingStructured.intent ?? parseHousingIntent(combined);
+  const housingContext = housingStructured.context ?? parseHousingSemanticContext(combined);
   const housingAction = partial.housingAction ?? partial.action ?? housingIntent?.action ?? null;
   const listingKind = partial.listingKind ?? housingIntent?.listingKind ?? 'propertyOffer';
   const parsedDealType = housingIntent?.dealType ?? parseLexiconDealType(combined) ?? classifyDealType(combined);
@@ -129,8 +135,12 @@ export function makeListing(partial) {
   }
 
   const parsedFloor = parseFloor(combined);
-  const floor = partial.floor != null ? Number(partial.floor) : parsedFloor.floor;
-  const totalFloors = partial.totalFloors != null ? Number(partial.totalFloors) : parsedFloor.totalFloors;
+  const floor = partial.floor != null
+    ? Number(partial.floor)
+    : (housingStructured.floor.floor ?? parsedFloor.floor);
+  const totalFloors = partial.totalFloors != null
+    ? Number(partial.totalFloors)
+    : (housingStructured.floor.totalFloors ?? parsedFloor.totalFloors);
   const buildingYear = partial.buildingYear != null ? Number(partial.buildingYear) : parseYear(combined);
   const bedrooms = partial.bedrooms != null ? Number(partial.bedrooms) : parseBedrooms(combined);
   const audience = partial.audience ?? classifyAudience(combined);
@@ -160,14 +170,29 @@ export function makeListing(partial) {
     ?? (['room', 'sharedRoom', 'bedSpace'].includes(occupancyType) || looksRoomOnly(combined));
 
   const dep = parseDeposit(combined);
-  const depositKind = partial.depositKind ?? parseDepositKind(combined);
-  const deposit = partial.deposit ?? (depositKind === 'noDeposit' ? false : dep.required);
-  const depositAmount = partial.depositAmount ?? dep.amount;
-  const depositCurrency = partial.depositCurrency ?? dep.currency ?? null;
+  const structuredDeposit = housingStructured.payments.deposit;
+  const depositKind = partial.depositKind
+    ?? structuredDeposit.kind
+    ?? parseDepositKind(combined);
+  const deposit = partial.deposit
+    ?? structuredDeposit.required
+    ?? (depositKind === 'noDeposit' ? false : dep.required);
+  const depositAmount = partial.depositAmount
+    ?? structuredDeposit.amount
+    ?? dep.amount;
+  const depositCurrency = partial.depositCurrency
+    ?? structuredDeposit.currency
+    ?? dep.currency
+    ?? null;
 
   const com = parseCommission(combined);
-  const commission = partial.commission ?? com.has;
-  const commissionPercent = partial.commissionPercent ?? com.percent;
+  const structuredCommission = housingStructured.payments.commission;
+  const commission = partial.commission
+    ?? structuredCommission.required
+    ?? com.has;
+  const commissionPercent = partial.commissionPercent
+    ?? structuredCommission.percent
+    ?? com.percent;
 
   const balcony = partial.balcony ?? parseBalcony(combined);
   const terrace = partial.terrace ?? parseTerrace(combined);
@@ -202,7 +227,9 @@ export function makeListing(partial) {
   });
   const price = partial.price != null ? Number(partial.price) : null;
   const currency = partial.currency ?? '';
-  const areaSqm = partial.areaSqm != null ? Number(partial.areaSqm) : parseAreaFromText(combined);
+  const areaSqm = partial.areaSqm != null
+    ? Number(partial.areaSqm)
+    : (housingStructured.area.total ?? parseAreaFromText(combined));
   const photoFingerprints = [...new Set(
     (Array.isArray(partial.photoFingerprints) ? partial.photoFingerprints : [])
       .map((value) => String(value || '').toLowerCase())
@@ -241,6 +268,7 @@ export function makeListing(partial) {
     currency,
     rooms,
     areaSqm,
+    areaDetails: partial.areaDetails ?? housingStructured.area,
     city,
     region: parseCanonicalRegion(country, partial.region ?? loc.region) ?? null,
     locality: partial.locality ?? loc.locality ?? null,
@@ -291,6 +319,10 @@ export function makeListing(partial) {
     depositCurrency,
     commission,
     commissionPercent,
+    paymentContext: partial.paymentContext ?? housingStructured.payments,
+    sellerType: partial.sellerType ?? housingStructured.seller.type ?? (byAgency ? 'agency' : null),
+    sellerConfidence: partial.sellerConfidence ?? housingStructured.seller.confidence,
+    infrastructure: Array.isArray(partial.infrastructure) ? partial.infrastructure : [...housingStructured.infrastructure],
     balcony,
     terrace,
     privateYard,
