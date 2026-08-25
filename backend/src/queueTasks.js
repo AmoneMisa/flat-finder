@@ -205,6 +205,12 @@ async function persist(listings, task) {
     return { saved: 0, indexed: 0 };
   }
 
+  const country = String(task?.country || listings[0]?.country || '').toUpperCase();
+  const config = COUNTRIES[country];
+  if (config) {
+    await geocodeListings(listings, config);
+  }
+
   const saved = await upsertListings(listings);
   let indexed = 0;
 
@@ -267,25 +273,18 @@ async function processQueueTaskInner(task) {
       crawlerShard: task.crawlerShard,
     });
 
-    // Source map coordinates are useful when sane, but OLX occasionally emits
-    // a point far outside the crawled locality. Only those outliers are cleared
-    // and re-geocoded from address/district text, keeping the normal path cheap.
+    // Reject contradictory source coordinates first. persist() then geocodes the
+    // entire batch, which is cheap for rows that already have valid coordinates
+    // and repairs both rejected and originally-missing source coordinates.
     const rejected = await rejectOutOfAreaCoordinates(
       pageResult.listings,
       COUNTRIES[country],
       { areaHint: task.citySlug ? String(task.citySlug) : null },
     );
-    if (rejected.length) {
-      await geocodeListings(rejected, COUNTRIES[country]);
-    }
 
     const nextTask = nextOlxTask(task, pageResult, page);
     const persisted = await persist(pageResult.listings, task);
 
-    // The all-country segment is authoritative. Once its sequential page chain
-    // reaches a normal terminal page, everything in this generation has either
-    // been seen and upserted or is no longer part of the current OLX snapshot.
-    // City-specific chains overlap, so they intentionally never reconcile.
     let reconciliation = null;
     if (!nextTask && !task.citySlug && task.crawlGeneration) {
       reconciliation = await reconcileAuthoritativeOlxSegment({
