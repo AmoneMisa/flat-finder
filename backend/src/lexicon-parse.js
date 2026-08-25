@@ -8,6 +8,7 @@ import {
   canonicalAnyCity,
   canonicalCountryCode,
   canonicalRegion,
+  canonicalUkraineCity,
   escapeRegex,
   findCanonical,
   normalizeUnicode,
@@ -47,6 +48,7 @@ export function parseCanonicalCountryCode(value) {
 
 export function parseCanonicalCity(countryCode, value) {
   if (!value) return '';
+  if (countryCode === 'UA') return canonicalUkraineCity(value) || String(value).trim();
   return canonicalAnyCity(value, countryCode) || String(value).trim();
 }
 
