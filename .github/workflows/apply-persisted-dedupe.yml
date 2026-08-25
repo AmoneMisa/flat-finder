@@ -40,6 +40,7 @@ jobs:
         run: |
           python .github/scripts/apply_persisted_dedupe.py
           python .github/scripts/update_dedupe_contract_test.py
+          git checkout HEAD -- .github/workflows/backend-ci.yml
       - name: Install dependencies
         run: npm ci --prefix backend
       - name: Verify syntax
@@ -49,10 +50,9 @@ jobs:
       - name: Observe full backend baseline
         continue-on-error: true
         run: npm test --prefix backend
-      - name: Commit refactor
+      - name: Commit backend refactor
         run: |
-          git rm .github/scripts/apply_persisted_dedupe.py .github/scripts/update_dedupe_contract_test.py .github/workflows/apply-persisted-dedupe.yml
-          git add -A
+          git add backend/src/postgres-search.js backend/migrations/010_persisted_dedupe_key.sql backend/test/persisted-dedupe-key.integration.test.js backend/test/telegram-room-dedupe.test.js
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "perf: persist listing dedupe fingerprints"
