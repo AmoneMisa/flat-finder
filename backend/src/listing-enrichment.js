@@ -1,5 +1,7 @@
 const PHONE_RUN_RE = /\+?\d[\d\s().-]{7,}\d/g;
 const PHONE_WORD_RE = /(?:тел(?:ефон)?|phone|mobile|моб(?:ильный)?|whats?app|telegram|aloqa)\s*[:.-]?\s*/giu;
+const BROKER_RE = /(?:комисси[а-яёіїґ]*|комісі[а-яіїґ]*|commission|comision|komissiya|макл(?:ер[а-яё]*)?|makler|ри[еэ]лтор[а-яё]*|рієлтор[а-яіїґ]*|rieltor|realtor|broker|agent|агентств[а-яё]*|vositachi|делдал)/iu;
+const NO_COMMISSION_RE = /(?:без\s+комисси|без\s+комісі|no\s+commission|fara\s+comision|fără\s+comision|без\s+маклер|maklersiz|vositachisiz)/iu;
 
 function boundedCount(value, max = 20) {
   const number = Number(value);
@@ -63,7 +65,7 @@ function parseFloorPair(text) {
 function parseCommissionPercent(text) {
   if (!text) return null;
   const value = String(text);
-  const broker = '(?:комисси[а-яёіїґ]*|комісі[а-яіїґ]*|commission|comision|komissiya|макл(?:ер[а-яё]*)?|makler|ри[еэ]лтор[а-яё]*|рієлтор[а-яіїґ]*|rieltor|realtor|broker|agent|агентств[а-яё]*|vositachi|делдал)';
+  const broker = BROKER_RE.source;
   const patterns = [
     new RegExp(`${broker}[^\\d%\\r\\n]{0,24}(\\d{1,3})\\s*%`, 'iu'),
     new RegExp(`(\\d{1,3})\\s*%[^\\r\\n]{0,24}${broker}`, 'iu'),
@@ -78,6 +80,12 @@ function parseCommissionPercent(text) {
     if (Number.isFinite(percent) && percent >= 0 && percent <= 100) return percent;
   }
   return null;
+}
+
+function detectCommission(text, current) {
+  if (current === false || NO_COMMISSION_RE.test(String(text || ''))) return false;
+  if (current === true) return true;
+  return BROKER_RE.test(String(text || '')) ? true : current ?? null;
 }
 
 function parseCadastral(text) {
@@ -111,10 +119,15 @@ function normalizeAddressCandidate(value) {
     .trim();
 
   if (!cleaned || !/\p{L}{2,}/u.test(cleaned)) return null;
-  if (phoneDigits.length && !/(?:ул(?:ица)?|кўча|ko['’]?cha|street|st\.|просп|переул|мкр|квартал|дом|uy|house|жк|массив)/iu.test(cleaned)) {
+  const hasAddressMarker = /(?:ул(?:ица)?|кўча|ko['’]?cha|street|st\.|просп|переул|мкр|квартал|дом\s*№?|uy\s*№?|house|жк|массив|manzil|address)/iu.test(cleaned);
+  if (phoneDigits.length && !hasAddressMarker) return null;
+  if (/^(?:тел(?:ефон)?|phone|whats?app|telegram|aloqa)\b/iu.test(cleaned)) return null;
+  // Do not turn landmarks, room/floor facts or building-height phrases into an
+  // address. They appeared in production as "школа 160", "Персидский 2-Этаж"
+  // and "Этажность дом 4" after a loose source parser captured a text segment.
+  if (!hasAddressMarker && /(?:\b(?:этаж|этажность|qavat|floor|школа|school|рынок|bozor|парк|park|metro|метро)\b|\b(?:xona|xonalar|комнат)\w*\b)/iu.test(cleaned)) {
     return null;
   }
-  if (/^(?:тел(?:ефон)?|phone|whats?app|telegram|aloqa)\b/iu.test(cleaned)) return null;
   return cleaned.slice(0, 120);
 }
 
@@ -132,7 +145,40 @@ function parseAddress(text) {
 function detectRoomShare(text, current) {
   if (current === true) return true;
   if (!text) return false;
-  return /(?:подселени|койко[-\s]?мест|место\s+в\s+(?:комнат|квартир)|одно\s+место|1\s+место|bed\s*space|roommate|flatmate|sherik(?:ka|lik)|шерик(?:ка|лик)|(?:bitta|1)\s+joy\s+(?:bor|mavjud)|(?:битта|1)\s+жой\s+(?:бор|мавжуд))/iu.test(text);
+  const value = String(text);
+  return /(?:подселени|койко[-\s]?мест|место\s+в\s+(?:комнат|квартир)|одно\s+место|1\s+место|bed\s*space|roommate|flatmate|sherik(?:ka|lik)|шерик(?:ка|лик)|(?:bitta|1)\s+joy\s+(?:bor|mavjud)|(?:битта|1)\s+жой\s+(?:бор|мавжуд)|birga\s+yashash(?:ga)?[^\r\n.!?]{0,36}(?:\d+\s*ta?\s*)?(?:qiz|ayol)[^\r\n.!?]{0,20}(?:kerak|kere)|kvartira(?:ga|da)?[^\r\n.!?]{0,36}(?:1|bitta)\s*(?:ta\s*)?(?:qiz|ayol)[^\r\n.!?]{0,20}(?:ijarachi\s*)?(?:kerak|kere))/iu.test(value);
+}
+
+function titleCaseWords(value) {
+  return String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function parseNearbyLandmarks(text) {
+  if (!text) return [];
+  const value = String(text).replace(/\s+/g, ' ').trim();
+  const out = [];
+  const push = (label) => {
+    const clean = String(label || '').replace(/\s+/g, ' ').trim();
+    if (!clean || out.some((item) => item.toLocaleLowerCase() === clean.toLocaleLowerCase())) return;
+    out.push(clean);
+  };
+
+  for (const match of value.matchAll(/([\p{L}'’.-]{2,24})\s+moshina\s+bozor(?:i|iga|ga)?/giu)) {
+    push(`${titleCaseWords(match[1])} Car Market`);
+  }
+  for (const match of value.matchAll(/([\p{L}'’.-]{2,24})\s+dehqon\s+bozor(?:i|iga|ga)?/giu)) {
+    push(`${titleCaseWords(match[1])} Farmers Market`);
+  }
+  for (const match of value.matchAll(/\byaqin\s+([\p{L}'’.-]{2,24}\s+avto)\b/giu)) {
+    push(titleCaseWords(match[1]));
+  }
+
+  return out.slice(0, 8);
 }
 
 function isLowRoomPrice(listing) {
@@ -154,7 +200,7 @@ function isLowRoomPrice(listing) {
 function explicitlyOneWoman(text) {
   if (!text) return false;
   const value = String(text);
-  return /(?:только|нужн[а-яё]*|ищ[еу][а-яё]*|подсел[а-яё]*|возьм[её]м)[^\r\n.!?]{0,24}(?:одн(?:а|ой|у)|1)\s+(?:девушк[а-яё]*|женщин[а-яё]*)|(?:одн(?:а|ой|у)|1)\s+(?:девушк[а-яё]*|женщин[а-яё]*)[^\r\n.!?]{0,24}(?:только|нужн[а-яё]*|ищ[еу][а-яё]*|подсел[а-яё]*)|(?:faqat\s+)?(?:1|bitta)\s+(?:qiz|ayol)(?:\s+(?:kerak|uchun))?|(?:фақат\s+)?(?:1|битта)\s+(?:қиз|аёл)(?:\s+(?:керак|учун))?/iu.test(value);
+  return /(?:только|нужн[а-яё]*|ищ[еу][а-яё]*|подсел[а-яё]*|возьм[её]м)[^\r\n.!?]{0,24}(?:одн(?:а|ой|у)|1)\s+(?:девушк[а-яё]*|женщин[а-яё]*)|(?:одн(?:а|ой|у)|1)\s+(?:девушк[а-яё]*|женщин[а-яё]*)[^\r\n.!?]{0,24}(?:только|нужн[а-яё]*|ищ[еу][а-яё]*|подсел[а-яё]*)|(?:faqat\s+)?(?:1|bitta)\s*(?:ta\s*)?(?:qiz|ayol)[^\r\n.!?]{0,18}(?:ijarachi\s*)?(?:kerak|kere|uchun)?|(?:фақат\s+)?(?:1|битта)\s*(?:та\s*)?(?:қиз|аёл)[^\r\n.!?]{0,18}(?:ижарачи\s*)?(?:керак|учун)?/iu.test(value);
 }
 
 function classifyPotentiallyUnsafe(listing, text, roomOnly) {
@@ -171,10 +217,16 @@ export function enrichListingDetails(listing) {
   const text = `${source.title || ''}\n${source.description || ''}`.trim();
   const floorPair = parseFloorPair(text);
   const commissionPercent = parseCommissionPercent(text);
+  const commission = detectCommission(text, source.commission);
   const roomOnly = detectRoomShare(text, source.roomOnly);
 
   const existingAddress = normalizeAddressCandidate(source.address);
   const parsedAddress = parseAddress(text);
+  const parsedNearby = parseNearbyLandmarks(text);
+  const nearby = [...new Set([
+    ...(Array.isArray(source.nearby) ? source.nearby.filter(Boolean) : []),
+    ...parsedNearby,
+  ])];
   const enriched = {
     ...source,
     bedrooms: boundedCount(source.bedrooms, 12) ?? parseBedrooms(text),
@@ -182,11 +234,12 @@ export function enrichListingDetails(listing) {
     floor: source.floor != null ? Number(source.floor) : (floorPair?.floor ?? null),
     totalFloors: source.totalFloors != null ? Number(source.totalFloors) : (floorPair?.totalFloors ?? null),
     address: existingAddress ?? parsedAddress ?? null,
-    commission: commissionPercent != null ? true : source.commission,
-    commissionPercent: commissionPercent ?? source.commissionPercent ?? (source.commission === false ? 0 : null),
+    commission,
+    commissionPercent: commissionPercent ?? source.commissionPercent ?? (commission === false ? 0 : null),
     cadastral: source.cadastral ?? parseCadastral(text),
     firstRental: source.firstRental ?? parseFirstRental(text),
     roomOnly,
+    nearby,
   };
   enriched.potentiallyUnsafe = source.potentiallyUnsafe === true || classifyPotentiallyUnsafe(enriched, text, roomOnly);
   return enriched;
@@ -197,11 +250,13 @@ export const __listingEnrichmentTest = {
   parseBathrooms,
   parseFloorPair,
   parseCommissionPercent,
+  detectCommission,
   parseCadastral,
   parseFirstRental,
   normalizeAddressCandidate,
   parseAddress,
   detectRoomShare,
+  parseNearbyLandmarks,
   explicitlyOneWoman,
   classifyPotentiallyUnsafe,
 };
