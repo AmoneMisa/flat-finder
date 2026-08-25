@@ -90,6 +90,7 @@ export function parseListingFilters(q) {
     limit,
     cursor: q.cursor ? String(q.cursor) : '',
     includeStats: bool(q.includeStats) === true,
+    statsOnly: bool(q.statsOnly) === true,
   };
 }
 
