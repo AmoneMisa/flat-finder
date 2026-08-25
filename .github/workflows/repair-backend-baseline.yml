@@ -29,6 +29,10 @@ jobs:
           from pathlib import Path
           p = Path('backend/src/locations.js')
           s = p.read_text().replace('      station.re.lastIndex = 0;\n', '')
+          old = "  if (beforeMarker) {\n    for (const station of TASHKENT_METRO) {"
+          new = "  if (beforeMarker) {\n    if (/^serg(?:eli|ile|ele)$/iu.test(beforeMarker)) return 'Sergeli';\n    for (const station of TASHKENT_METRO) {"
+          if old not in s: raise SystemExit('before-marker metro hook missing')
+          s = s.replace(old, new, 1)
           old = "    if (explicitMetro) result.metro = explicitMetro;\n"
           new = "    if (explicitMetro) {\n      result.metro = explicitMetro;\n      result.nearby = result.nearby.filter((name) => name !== explicitMetro && !(explicitMetro === 'Tashkent North Railway Station' && name === 'Railway station'));\n    }\n"
           if old not in s: raise SystemExit('explicit metro marker missing')
