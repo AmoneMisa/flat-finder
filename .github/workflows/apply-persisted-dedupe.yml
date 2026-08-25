@@ -1,0 +1,56 @@
+name: Apply persisted dedupe refactor
+
+on:
+  push:
+    branches:
+      - perf/persist-listing-dedupe-key
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder
+          POSTGRES_DB: flatfinder
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder@127.0.0.1:5432/flatfinder
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/persist-listing-dedupe-key
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Apply refactor
+        run: python .github/scripts/apply_persisted_dedupe.py
+      - name: Install dependencies
+        run: npm ci --prefix backend
+      - name: Verify syntax
+        run: find backend/src backend/test -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Verify dedupe regression
+        run: node --test backend/test/persisted-dedupe-key.integration.test.js backend/test/migrations.test.js
+      - name: Run backend suite
+        run: npm test --prefix backend
+      - name: Commit refactor
+        run: |
+          git rm .github/scripts/apply_persisted_dedupe.py .github/workflows/apply-persisted-dedupe.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "perf: persist listing dedupe fingerprints"
+          git push origin HEAD:perf/persist-listing-dedupe-key
