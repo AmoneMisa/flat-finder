@@ -6,6 +6,7 @@ import {makeListing} from '../src/normalize.js';
 import {looksTelegramRoomShare} from '../src/telegram-room-share.js';
 
 const postgresSearch = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
+const dedupeMigration = await readFile(new URL('../migrations/010_persisted_dedupe_key.sql', import.meta.url), 'utf8');
 const telegramScraper = await readFile(new URL('../src/scrapers/telegram.js', import.meta.url), 'utf8');
 
 test('recognizes Uzbek place-in-flat offers without treating audience alone as room-only', () => {
@@ -54,11 +55,12 @@ test('Telegram scraper canonicalizes multi-photo fingerprints without using phot
   assert.match(telegramScraper, /photoFingerprints\.join\('\|'\)/);
 });
 
-test('PostgreSQL feed consumes photo fingerprint keys, falls back to content, and keeps exact-id lookup', () => {
-  assert.match(postgresSearch, /'telegram:photos:' \|\| MD5/);
-  assert.match(postgresSearch, /data->>'photoFingerprintKey'/);
-  assert.match(postgresSearch, /LENGTH\(\$\{telegramPhotoKey\}\) >= 129/);
-  assert.match(postgresSearch, /'telegram:content:' \|\| MD5/);
-  assert.match(postgresSearch, /LENGTH\(\$\{description\}\) >= 40/);
+test('PostgreSQL feed consumes persisted Telegram fingerprints and keeps exact-id lookup', () => {
+  assert.match(dedupeMigration, /'telegram:photos:' \|\| MD5/);
+  assert.match(dedupeMigration, /p_data->>'photoFingerprintKey'/);
+  assert.match(dedupeMigration, /LENGTH\(telegram_photo_key\) >= 129/);
+  assert.match(dedupeMigration, /'telegram:content:' \|\| MD5/);
+  assert.match(dedupeMigration, /LENGTH\(description\) >= 40/);
+  assert.match(postgresSearch, /dedupeEnabled \? 'l\.dedupe_key'/);
   assert.match(postgresSearch, /const dedupeEnabled = !filters\.listingId/);
 });
