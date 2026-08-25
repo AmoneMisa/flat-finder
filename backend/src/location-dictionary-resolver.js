@@ -1,9 +1,12 @@
 import {
   LOCATION_DICTIONARIES,
+  TASHKENT_LANDMARKS,
+  TASHKENT_POI_GROUPS,
   TASHKENT_RESIDENTIAL_COMPLEXES,
   UA_REGION_ENTRIES as UA_REGIONS,
   UA_SECONDARY_CITIES,
   locationCities,
+  matchTashkentPoi,
   matchTashkentResidentialComplex,
   matchUkraineRegion,
   matchUkraineSecondaryCity,
@@ -53,9 +56,8 @@ function matchMetro(text, entries, overlappingAreaName = null) {
       /(?:метро|metrou|metro|станц(?:ия|ии)?|station|stația|statia|метро станція|станція)\s*[:\-–—]?\s*$/iu.test(before) ||
       /^\s*(?:метро|metrou|metro|station|stația|statia|станція)(?=$|[^\p{L}\p{N}_])/iu.test(after);
 
-    // Some names denote both a neighbourhood and a metro station (Pipera,
-    // Dristor, Titan, Tineretului, etc.). A bare place name means the area;
-    // mark metro only when the text explicitly says metro/station.
+    // Some names denote both a neighbourhood and a metro station. A bare
+    // place name means the area; mark metro only when the text says metro/station.
     if (overlappingAreaName && entry.name === overlappingAreaName && !contextual) continue;
 
     // Numbered massifs/kvartals such as Chilonzor 12 / Yunusobod 19 are not subway mentions.
@@ -85,6 +87,7 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     residentialComplex: null,
     street: null,
     landmark: null,
+    landmarkCategory: null,
   };
   if (!text || !countryCode) return result;
   text = normalizeMatchingText(text);
@@ -112,14 +115,19 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
       ? matchTashkentResidentialComplex(text)
       : (data.residentialComplexes || []).find((x) => x.re.test(text));
     const street = (data.streets || []).find((x) => x.re.test(text));
-    const landmark = (data.landmarks || []).find((x) => x.re.test(text));
+    const landmark = countryCode === 'UZ' && cityName === 'Tashkent'
+      ? matchTashkentPoi(text)
+      : (data.landmarks || []).find((x) => x.re.test(text));
 
     if (!result.district && district) result.district = district.name;
     if (!result.microdistrict && microdistrict) result.microdistrict = microdistrict.name;
     if (!result.metro && metro) result.metro = metro.name;
     if (!result.residentialComplex && residentialComplex) result.residentialComplex = residentialComplex.name;
     if (!result.street && street) result.street = street.name;
-    if (!result.landmark && landmark) result.landmark = landmark.name;
+    if (!result.landmark && landmark) {
+      result.landmark = landmark.name;
+      result.landmarkCategory = landmark.category || null;
+    }
 
     if (!result.city && (district || microdistrict || metro || residentialComplex || street || landmark)) result.city = cityName;
     if (result.district && result.microdistrict && result.metro && result.residentialComplex && result.street && result.landmark && result.city) break;
@@ -150,9 +158,9 @@ export function canonicalDictionaryDistrict(name, countryCode) {
 export function dictionaryLocationLists(countryCode) {
   const out = {};
   for (const [city, data] of Object.entries(mergedCountry(countryCode))) {
-    const residentialComplexes = countryCode === 'UZ' && city === 'Tashkent'
-      ? TASHKENT_RESIDENTIAL_COMPLEXES
-      : (data.residentialComplexes || []);
+    const isTashkent = countryCode === 'UZ' && city === 'Tashkent';
+    const residentialComplexes = isTashkent ? TASHKENT_RESIDENTIAL_COMPLEXES : (data.residentialComplexes || []);
+    const landmarks = isTashkent ? TASHKENT_LANDMARKS : (data.landmarks || []);
 
     out[city] = {
       districts: (data.districts || []).map((x) => x.name),
@@ -160,8 +168,11 @@ export function dictionaryLocationLists(countryCode) {
       microdistricts: (data.microdistricts || []).map((x) => x.name),
       residentialComplexes: residentialComplexes.map((x) => x.name),
       streets: (data.streets || []).map((x) => x.name),
-      landmarks: (data.landmarks || []).map((x) => x.name),
-      ...(countryCode === 'UZ' && city === 'Tashkent' ? { metroLabels: tashkentMetroLabels() } : {}),
+      landmarks: landmarks.map((x) => x.name),
+      ...(isTashkent ? {
+        metroLabels: tashkentMetroLabels(),
+        poiGroups: Object.fromEntries(Object.entries(TASHKENT_POI_GROUPS).map(([group, entries]) => [group, entries.map((x) => x.name)])),
+      } : {}),
     };
   }
   return out;
