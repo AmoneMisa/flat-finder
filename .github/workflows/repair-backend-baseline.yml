@@ -44,6 +44,13 @@ jobs:
           new = "  ['Sergeli', /сергелийск[а-яё]*\\s+район|serg(?:eli|ile|ele)\\s+(?:tumani|district)/iu],"
           if old not in s: raise SystemExit('Sergeli explicit district marker missing')
           p.write_text(s.replace(old, new, 1))
+
+          p = Path('backend/src/tashkent-areas.js')
+          s = p.read_text()
+          old = "(?:\\s+(?:chi|чи|й|квартал|kvartal|hudud|худуд))*"
+          new = "(?:\\s+(?:chi|чи|й|квартал|kvartal|hudud(?:da)?|худуд(?:да)?))*"
+          if old not in s: raise SystemExit('numbered area suffix marker missing')
+          p.write_text(s.replace(old, new, 1))
           PY
       - name: Install dependencies
         run: npm ci --prefix backend
