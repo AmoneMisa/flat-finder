@@ -37,6 +37,13 @@ jobs:
           new = "    if (item.name === 'Metro') continue;\n    if (item.name === 'Railway station' && result.metro === 'Tashkent North Railway Station') continue;\n"
           if old not in s: raise SystemExit('generic metro marker missing')
           p.write_text(s.replace(old, new, 1))
+
+          p = Path('backend/src/textparse-overrides.js')
+          s = p.read_text()
+          old = "  ['Sergeli', /сергелийск[а-яё]*\\s+район|sergeli\\s+(?:tumani|district)/iu],"
+          new = "  ['Sergeli', /сергелийск[а-яё]*\\s+район|serg(?:eli|ile|ele)\\s+(?:tumani|district)/iu],"
+          if old not in s: raise SystemExit('Sergeli explicit district marker missing')
+          p.write_text(s.replace(old, new, 1))
           PY
       - name: Install dependencies
         run: npm ci --prefix backend
