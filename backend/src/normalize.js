@@ -129,8 +129,9 @@ export function makeListing(partial) {
   const bedrooms = partial.bedrooms != null ? Number(partial.bedrooms) : parseBedrooms(combined);
   const audience = partial.audience ?? classifyAudience(combined);
   const contact = partial.contact ?? parseContact(combined);
-  const loc = parseLocation(combined, country);
-  const city = parseCanonicalCity(country, partial.city || loc.city || '');
+  const sourceCity = parseCanonicalCity(country, partial.city || '');
+  const loc = parseLocation(combined, country, sourceCity || null);
+  const city = sourceCity || parseCanonicalCity(country, loc.city || '');
   const coords = sourceCoordinates(partial, city, country);
   const explicitDistrict = parseExplicitDistrict(combined, country);
   const district = canonicalDistrict(
@@ -141,8 +142,8 @@ export function makeListing(partial) {
   const nearby = partial.nearby
     ?? [...new Set([...(loc.nearby || []), ...parseNearbyPlaces(combined)])];
   const residenceComplex = partial.residenceComplex
-    ?? parseResidentialComplex(combined)
-    ?? loc.residentialComplex;
+    ?? loc.residentialComplex
+    ?? parseResidentialComplex(combined);
   const street = partial.street ?? loc.street ?? null;
   const address = partial.address ?? parseLexiconAddress(combined, street);
   const commercial = partial.commercial === true || looksCommercial(combined) || looksParkingOnly(combined);
@@ -236,6 +237,13 @@ export function makeListing(partial) {
     areaSqm,
     city,
     region: parseCanonicalRegion(country, partial.region ?? loc.region) ?? null,
+    locality: partial.locality ?? loc.locality ?? null,
+    localAreas: Array.isArray(partial.localAreas) ? partial.localAreas : [...(loc.localAreas || [])],
+    suburbs: Array.isArray(partial.suburbs) ? partial.suburbs : [...(loc.suburbs || [])],
+    informalAreas: Array.isArray(partial.informalAreas) ? partial.informalAreas : [...(loc.informalAreas || [])],
+    developmentAreas: Array.isArray(partial.developmentAreas) ? partial.developmentAreas : [...(loc.developmentAreas || [])],
+    searchClusters: Array.isArray(partial.searchClusters) ? partial.searchClusters : [...(loc.searchClusters || [])],
+    locationEntities: Array.isArray(partial.locationEntities) ? partial.locationEntities : [...(loc.locationEntities || [])],
     microdistrict: coords.rejected ? null : (partial.microdistrict ?? loc.microdistrict ?? null),
     street,
     address: address || null,
