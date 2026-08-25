@@ -14,6 +14,7 @@ import {
   findCanonical,
   normalizeUnicode,
   parseHousingContext,
+  parseHousingStructured,
   resolveHousingIntent,
 } from '@whiteslove/parsing-lexicon';
 
@@ -69,6 +70,10 @@ export function parseHousingIntent(text) {
 
 export function parseHousingSemanticContext(text) {
   return parseHousingContext(text);
+}
+
+export function parseHousingStructuredContext(text) {
+  return parseHousingStructured(text);
 }
 
 export function parseLexiconDealType(text) {
