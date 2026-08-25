@@ -31,8 +31,10 @@ export function parseLocation(text, countryCode, preferredCity = null) {
     nearby: [],
     city: null,
     locality: null,
+    mahallas: [],
     localAreas: [],
     suburbs: [],
+    settlements: [],
     informalAreas: [],
     developmentAreas: [],
     searchClusters: [],
@@ -50,8 +52,13 @@ export function parseLocation(text, countryCode, preferredCity = null) {
   result.metro = dictionary.metro;
   result.landmarkCategory = dictionary.landmarkCategory || null;
   result.locality = dictionary.locality || null;
-  result.localAreas = [...(dictionary.localAreas || [])];
+  result.mahallas = [...(dictionary.mahallas || [])];
+  // Existing Listing persistence already stores localAreas and locationEntities.
+  // Mirror mahallas into localAreas for backward-compatible filtering while
+  // retaining the precise `mahalla` type in locationEntities.
+  result.localAreas = [...new Set([...(dictionary.localAreas || []), ...(dictionary.mahallas || [])])];
   result.suburbs = [...(dictionary.suburbs || [])];
+  result.settlements = [...(dictionary.settlements || [])];
   result.informalAreas = [...(dictionary.informalAreas || [])];
   result.developmentAreas = [...(dictionary.developmentAreas || [])];
   result.searchClusters = [...(dictionary.searchClusters || [])];
@@ -91,6 +98,10 @@ export function cityLocations(countryCode) {
     districts: [...new Set(data.districts || [])],
     metro: [...new Set(data.metro || [])],
     microdistricts: [...new Set(data.microdistricts || [])],
+    mahallas: [...new Set(data.mahallas || [])],
+    localAreas: [...new Set(data.localAreas || [])],
+    suburbs: [...new Set(data.suburbs || [])],
+    settlements: [...new Set(data.settlements || [])],
     residentialComplexes: [...new Set(data.residentialComplexes || [])],
     streets: [...new Set(data.streets || [])],
     landmarks: [...new Set(data.landmarks || [])],
