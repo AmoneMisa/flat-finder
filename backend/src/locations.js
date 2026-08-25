@@ -27,6 +27,7 @@ export function parseLocation(text, countryCode) {
     locationConfidence: null,
     requireExactAddress: false,
     metro: null,
+    landmarkCategory: null,
     nearby: [],
     city: null,
   };
@@ -40,6 +41,7 @@ export function parseLocation(text, countryCode) {
   result.city = dictionary.city;
   result.district = dictionary.district;
   result.metro = dictionary.metro;
+  result.landmarkCategory = dictionary.landmarkCategory || null;
   if (dictionary.landmark) result.nearby.push(dictionary.landmark);
 
   // Tashkent's colloquial area resolver also handles legacy/historical place names
@@ -79,5 +81,6 @@ export function cityLocations(countryCode) {
     streets: [...new Set(data.streets || [])],
     landmarks: [...new Set(data.landmarks || [])],
     ...(data.metroLabels ? { metroLabels: data.metroLabels } : {}),
+    ...(data.poiGroups ? { poiGroups: data.poiGroups } : {}),
   }]));
 }
