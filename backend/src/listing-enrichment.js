@@ -63,9 +63,6 @@ function parseAreaSqm(text) {
     return Number.isFinite(area) && area >= 5 && area <= 1000 ? area : null;
   }
 
-  // Telegram/Uzbek shorthand occasionally writes only `22кв` for 22 m².
-  // Require at least two digits so ordinary `2кв` (= two-room flat) is not
-  // mistaken for two square metres.
   const shorthand = value.match(/(?:^|[^\d])(\d{2,3})\s*(?:кв|kv)(?=$|[\s,.;:\/\\])/iu);
   const area = Number(shorthand?.[1]);
   return Number.isFinite(area) && area >= 15 && area <= 500 ? area : null;
@@ -164,10 +161,8 @@ function normalizeAddressCandidate(value) {
   if (!cleaned || !/\p{L}{2,}/u.test(cleaned)) return null;
   const hasAddressMarker = /(?:ул(?:ица)?|кўча|ko['’]?cha|street|st\.|просп|переул|мкр|квартал|дом\s*№?|uy\s*№?|house|жк|массив|manzil|address)/iu.test(cleaned);
   if (phoneDigits.length && !hasAddressMarker) return null;
-  if (/^(?:тел(?:ефон)?|phone|whats?app|telegram|aloqa)\b/iu.test(cleaned)) return null;
-  if (!hasAddressMarker && /(?:\b(?:этаж|этажность|qavat|floor|школа|school|рынок|bozor|парк|park|metro|метро)\b|\b(?:xona|xonalar|комнат)\w*\b)/iu.test(cleaned)) {
-    return null;
-  }
+  if (/^(?:тел(?:ефон)?|phone|whats?app|telegram|aloqa)(?:\s|$)/iu.test(cleaned)) return null;
+  if (!hasAddressMarker && /(?:^|[^\p{L}])(?:этаж|этажность|qavat|floor|школа|school|рынок|bozor|парк|park|metro|метро|xona|xonalar|комнат\w*)(?=$|[^\p{L}])/iu.test(cleaned)) return null;
   return cleaned.slice(0, 120);
 }
 
