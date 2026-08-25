@@ -7,6 +7,7 @@ import {
   aliasesOf,
   canonicalAnyCity,
   canonicalCountryCode,
+  canonicalRegion,
   escapeRegex,
   findCanonical,
   normalizeUnicode,
@@ -49,6 +50,11 @@ export function parseCanonicalCity(countryCode, value) {
   return canonicalAnyCity(value, countryCode) || String(value).trim();
 }
 
+export function parseCanonicalRegion(countryCode, value) {
+  if (!value) return null;
+  return canonicalRegion(value, countryCode) || String(value).trim();
+}
+
 export function parseLexiconDealType(text) {
   return findCanonical(text, DEAL_TYPES, { partial: true })?.canonical || null;
 }
@@ -83,8 +89,6 @@ export function parseLexiconAddress(text, canonicalStreet = null) {
   const marked = String(text).match(markedStreetRe);
   if (marked) return cleanAddress(marked[1]);
 
-  // If the structured location resolver identified a canonical street, retain
-  // it rather than returning a false numeric segment as an address.
   if (canonicalStreet) return canonicalStreet;
 
   const bare = String(text).match(
