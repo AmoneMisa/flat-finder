@@ -29,6 +29,22 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder
+          POSTGRES_DB: flatfinder
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder@127.0.0.1:5432/flatfinder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,5 +77,7 @@ jobs:
             backend/test/listing-routes.test.js \
             backend/test/queue-crawl-stability.test.js \
             backend/test/tashkent-metro-contract.test.js
+      - name: Run persisted dedupe regression
+        run: node --test backend/test/persisted-dedupe-key.integration.test.js backend/test/telegram-room-dedupe.test.js
       - name: Run full backend suite
         run: npm test --prefix backend

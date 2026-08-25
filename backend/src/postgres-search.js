@@ -269,74 +269,11 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   };
 }
 
-function olxPhotoSql(alias, index) {
-  const photo = `${alias}.data->'photos'->${index}`;
-  const raw = `CASE
-    WHEN jsonb_typeof(${photo}) = 'string' THEN ${alias}.data->'photos'->>${index}
-    WHEN jsonb_typeof(${photo}) = 'object' THEN COALESCE(${photo}->>'link', ${photo}->>'url', ${photo}->>'src', '')
-    ELSE ''
-  END`;
-
-  return `LOWER(REGEXP_REPLACE(SPLIT_PART(COALESCE(${raw}, ''), '?', 1), ';s=.*$', ''))`;
-}
-
-function listingDedupeSql(alias = 'l') {
-  const photo0 = olxPhotoSql(alias, 0);
-  const photo1 = olxPhotoSql(alias, 1);
-  const title = `LOWER(REGEXP_REPLACE(BTRIM(COALESCE(${alias}.title, '')), '\\s+', ' ', 'g'))`;
-  const description = `LOWER(REGEXP_REPLACE(BTRIM(COALESCE(${alias}.description, '')), '\\s+', ' ', 'g'))`;
-  const telegramPhotoKey = `COALESCE(${alias}.data->>'photoFingerprintKey', '')`;
-
-  return `CASE
-    WHEN LOWER(${alias}.source) = 'olx'
-      AND LENGTH(${photo0}) >= 24
-      AND LENGTH(${photo1}) >= 24
-      AND ${photo0} <> ${photo1}
-      THEN 'olx:photos:' || MD5(CONCAT_WS('|', UPPER(${alias}.country), ${photo0}, ${photo1}))
-    WHEN LOWER(${alias}.source) = 'olx'
-      AND LENGTH(${description}) >= 120
-      THEN 'olx:content:' || MD5(CONCAT_WS('|',
-        UPPER(${alias}.country),
-        LOWER(COALESCE(${alias}.city, '')),
-        COALESCE(${alias}.deal_type, ''),
-        COALESCE(${alias}.property_type, ''),
-        COALESCE(${alias}.price::text, ''),
-        UPPER(COALESCE(${alias}.currency, '')),
-        COALESCE(${alias}.rooms::text, ''),
-        COALESCE(ROUND(${alias}.area_sqm::numeric, 1)::text, ''),
-        ${title},
-        ${description}
-      ))
-    WHEN LOWER(${alias}.source) = 'telegram'
-      AND LENGTH(${telegramPhotoKey}) >= 129
-      THEN 'telegram:photos:' || MD5(CONCAT_WS('|',
-        UPPER(${alias}.country),
-        ${telegramPhotoKey}
-      ))
-    WHEN LOWER(${alias}.source) = 'telegram'
-      AND LENGTH(${description}) >= 40
-      THEN 'telegram:content:' || MD5(CONCAT_WS('|',
-        UPPER(${alias}.country),
-        LOWER(COALESCE(${alias}.city, '')),
-        COALESCE(${alias}.deal_type, ''),
-        COALESCE(${alias}.property_type, ''),
-        COALESCE(${alias}.price::text, ''),
-        UPPER(COALESCE(${alias}.currency, '')),
-        COALESCE(${alias}.rooms::text, ''),
-        COALESCE(ROUND(${alias}.area_sqm::numeric, 1)::text, ''),
-        ${title},
-        ${description}
-      ))
-    ELSE CONCAT_WS(':', LOWER(${alias}.source), UPPER(${alias}.country), ${alias}.source_id)
-  END`;
-}
-
 export async function searchPostgresListings({ filters, countries, rates = null, searchMatches = null }) {
   const startedAt = performance.now();
   const context = buildSearchContext({ filters, countries, rates, searchMatches });
   const baseWhere = context.where.join('\n  AND ');
   const baseParams = [...context.params];
-  const dedupeKey = listingDedupeSql('l');
   const dedupeEnabled = !filters.listingId;
 
   const filteredSql = `
@@ -358,7 +295,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       l.data,
       ${context.priceUsdExpr} AS price_usd,
       ${context.rankSelect},
-      ${dedupeEnabled ? dedupeKey : `CONCAT_WS(':', LOWER(l.source), UPPER(l.country), l.source_id)`} AS dedupe_key
+      ${dedupeEnabled ? 'l.dedupe_key' : `CONCAT_WS(':', LOWER(l.source), UPPER(l.country), l.source_id)`} AS dedupe_key
     ${context.from}
     WHERE ${baseWhere}
   `;
