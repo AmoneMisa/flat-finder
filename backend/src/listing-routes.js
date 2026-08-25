@@ -2,6 +2,7 @@ import {COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {getRates} from './fx.js';
 import {refreshAll} from './scheduler.js';
 import {searchPostgresListings} from './postgres-search.js';
+import {searchPostgresMapPoints} from './map-feed.js';
 import {attachMarketComparisons} from './market-comparison.js';
 import {searchListingMatches} from './elasticsearch.js';
 import {checkRate} from './request-rate-limit.js';
@@ -92,6 +93,7 @@ export function parseListingFilters(q) {
     cursor: q.cursor ? String(q.cursor) : '',
     includeStats: bool(q.includeStats) === true,
     statsOnly: bool(q.statsOnly) === true,
+    mapOnly: bool(q.mapOnly) === true,
   };
 }
 
@@ -139,6 +141,37 @@ async function tryPostgresSearch({filters, codes, force}) {
   try {
     fxRates = (await getRates()).rates;
   } catch {}
+
+  if (filters.mapOnly) {
+    const result = await searchPostgresMapPoints({
+      filters,
+      countries: codes,
+      rates: fxRates,
+      searchMatches,
+    });
+    return {
+      count: result.count,
+      degradedCountries: [],
+      sourceCounts: {},
+      sourceErrors: searchError
+        ? [{source: 'elasticsearch', error: searchError}]
+        : [],
+      warming: false,
+      filters,
+      searchEngine: filters.query
+        ? (searchMatches ? 'elasticsearch+postgres' : 'postgres-fallback')
+        : 'postgres',
+      searchIndexedMatches: searchMatches?.total ?? null,
+      searchTruncated: searchMatches?.truncated ?? false,
+      queryMs: result.queryMs,
+      mapPoints: result.points,
+      mapPointsTruncated: result.truncated,
+      mapPointPages: result.pages,
+      mapPointLimit: result.maxPoints,
+      listings: [],
+      nextCursor: null,
+    };
+  }
 
   const result = await searchPostgresListings({
     filters,
@@ -232,6 +265,7 @@ export function installListingRoutes(app) {
         filters,
         count: 0,
         listings: [],
+        ...(filters.mapOnly ? {mapPoints: []} : {}),
       });
     }
   });
