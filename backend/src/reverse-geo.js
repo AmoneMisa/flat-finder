@@ -12,7 +12,6 @@
 
 import { cacheGet, cacheSet } from './cache.js';
 import { matchDictionaryEntities } from './location-dictionary-resolver.js';
-import { applyUzbekistanCoordinateFallbacks } from './uzbekistan-geo.js';
 
 const REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
 const UA = 'flat-finder/1.0 (housing aggregator; contact: admin@whiteslove.me)';
@@ -79,18 +78,13 @@ export async function reverseGeocode(lat, lng) {
 }
 
 /**
- * Fills country/city/district/microdistrict for listings that have coordinates
- * but no administrative location. Never overwrites what the post itself said.
- *
- * For Uzbekistan, this function is also the final deterministic placement
- * stage: only rows that survived all forward-geocoding attempts without
- * coordinates receive a canonical city-centre fallback from parsing-lexicon.
+ * Fills country/city/district/microdistrict for listings that already have
+ * coordinates. Forward placement and city fallbacks are owned by the geocoding
+ * orchestration / geo-catalog, never by the parsing lexicon.
  */
 export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN) {
   if (!Array.isArray(listings)) return 0;
   const countryCode = String(country?.code || '').toUpperCase();
-
-  if (countryCode === 'UZ') applyUzbekistanCoordinateFallbacks(listings);
 
   const candidates = listings.filter(
     (listing) =>
