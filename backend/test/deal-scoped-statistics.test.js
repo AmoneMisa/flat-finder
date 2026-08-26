@@ -14,6 +14,15 @@ test('listing geography statistics are split by sale, rent, short rent and room 
   assert.match(source, /WHEN data @> '\{"roomOnly":true\}'::jsonb THEN 'roomRent'/u);
 });
 
+test('filtered listing statistics expose min and max USD prices for deals and geography', () => {
+  assert.match(source, /ROUND\(MIN\(price_usd\)::numeric, 2\) AS min_usd/u);
+  assert.match(source, /ROUND\(MAX\(price_usd\)::numeric, 2\) AS max_usd/u);
+  assert.match(source, /ROUND\(MIN\(v\.price_usd\)::numeric, 2\) AS min_usd/u);
+  assert.match(source, /ROUND\(MAX\(v\.price_usd\)::numeric, 2\) AS max_usd/u);
+  assert.match(source, /'minUsd', min_usd/u);
+  assert.match(source, /'maxUsd', max_usd/u);
+});
+
 test('stats-only requests do not repeat the full ranked page query', () => {
   assert.match(routes, /statsOnly: bool\(q\.statsOnly\) === true/u);
   assert.match(source, /if \(filters\.includeStats && filters\.statsOnly\)/u);
