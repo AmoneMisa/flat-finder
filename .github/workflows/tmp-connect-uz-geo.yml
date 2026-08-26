@@ -24,50 +24,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install current master branch package
+      - name: Refresh dependency from parsing-lexicon master
         run: npm install --prefix backend --ignore-scripts --no-audit --no-fund
-      - name: Wire Uzbekistan package fallback
-        shell: bash
+      - name: Verify Uzbekistan integration
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('backend/src/queueTasks.js')
-          text = path.read_text()
-
-          import_line = "import { geocodeListings } from './geocode.js';\n"
-          adapter_import = "import { applyUzbekistanCoordinateFallbacks } from './uzbekistan-geo.js';\n"
-          if adapter_import not in text:
-              if import_line not in text:
-                  raise SystemExit('geocode import anchor not found')
-              text = text.replace(import_line, import_line + adapter_import, 1)
-
-          old = "  if (config) {\n    await geocodeListings(listings, config);\n  }\n"
-          new = "  if (config) {\n    await geocodeListings(listings, config);\n    if (country === 'UZ') applyUzbekistanCoordinateFallbacks(listings);\n  }\n"
-          if new not in text:
-              if old not in text:
-                  raise SystemExit('persist geocode anchor not found')
-              text = text.replace(old, new, 1)
-
-          path.write_text(text)
-          PY
-      - name: Verify integration
-        run: |
-          node --check backend/src/queueTasks.js
+          node --check backend/src/reverse-geo.js
           node --check backend/src/uzbekistan-geo.js
           node --test \
             backend/test/uzbekistan-geo-package.test.js \
             backend/test/geocode-priority.test.js \
             backend/test/city-normalization.test.js
-      - name: Commit generated integration
+      - name: Commit refreshed lock and remove temporary workflow
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git rm -f .github/workflows/tmp-connect-uz-geo.yml
-          git add backend/src/queueTasks.js backend/src/uzbekistan-geo.js backend/test/uzbekistan-geo-package.test.js backend/package-lock.json
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "feat: use Uzbekistan geo package fallbacks"
+          git add backend/package-lock.json
+          git commit -m "chore: refresh parsing lexicon master lock"
           git push origin HEAD:feat/use-uzbekistan-geo-package
