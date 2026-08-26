@@ -1,0 +1,38 @@
+name: Fix housing money export name
+
+on:
+  push:
+    branches:
+      - fix/location-price-regressions
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/location-price-regressions
+      - name: Fix shared export name
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for filename in [
+              'backend/src/textparse.js',
+              'backend/test/location-price-regressions.test.js',
+          ]:
+              path = Path(filename)
+              text = path.read_text()
+              text = text.replace('parseHousingPriceFromText', 'parseHousingPrice')
+              path.write_text(text)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/textparse.js backend/test/location-price-regressions.test.js
+          git commit -m "Fix shared housing money export name"
+          git push origin HEAD:fix/location-price-regressions
