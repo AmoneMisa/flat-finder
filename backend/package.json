@@ -12,12 +12,11 @@
     "dev": "node --watch src/server.js",
     "test": "node --test",
     "migrate": "node src/migrate.js",
-    "reindex": "node src/reindex.js"
+    "reindex": "node src/reindex.js",
+    "install:internal": "npm install --ignore-scripts --no-save --package-lock=false https://github.com/AmoneMisa/parsing-lexicon/archive/refs/heads/master.tar.gz https://github.com/AmoneMisa/geo-catalog/archive/refs/heads/master.tar.gz"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.0",
-    "@whiteslove/geo-catalog": "https://github.com/AmoneMisa/geo-catalog/archive/refs/heads/master.tar.gz",
-    "@whiteslove/parsing-lexicon": "https://github.com/AmoneMisa/parsing-lexicon/archive/refs/heads/master.tar.gz",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.23.0"
