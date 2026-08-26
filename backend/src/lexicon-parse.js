@@ -31,7 +31,6 @@ const streetMarkerPart = alternatives([
   ADDRESS_TERMS.street,
   ADDRESS_TERMS.avenue,
   ADDRESS_TERMS.neighborhood,
-  ADDRESS_TERMS.residentialComplex,
 ]);
 const addressLabelRe = new RegExp(`(?:${addressLabelPart})\\s*[:\\-–—]\\s*([^\\n]{3,100})`, 'iu');
 const markedStreetRe = new RegExp(
