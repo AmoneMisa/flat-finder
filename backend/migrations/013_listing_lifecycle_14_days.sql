@@ -15,8 +15,12 @@ BEGIN
     NEW.inactive_at := COALESCE(NEW.inactive_at, NOW());
   ELSIF NEW.active = TRUE THEN
     NEW.inactive_at := NULL;
-  ELSIF NEW.active = FALSE AND OLD.active IS DISTINCT FROM FALSE THEN
-    NEW.inactive_at := COALESCE(NEW.inactive_at, NOW());
+  ELSIF NEW.active = FALSE THEN
+    IF TG_OP = 'INSERT' THEN
+      NEW.inactive_at := COALESCE(NEW.inactive_at, NOW());
+    ELSIF OLD.active IS DISTINCT FROM FALSE THEN
+      NEW.inactive_at := COALESCE(NEW.inactive_at, NOW());
+    END IF;
   END IF;
 
   RETURN NEW;
