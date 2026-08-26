@@ -44,6 +44,11 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      POSTGRES_DB: flatfinder
+      POSTGRES_USER: flatfinder
+      POSTGRES_PASSWORD: flatfinder
       TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder@127.0.0.1:5432/flatfinder
     steps:
       - uses: actions/checkout@v4
@@ -60,6 +65,15 @@ jobs:
         run: find backend/src backend/test -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Check deployment script syntax
         run: bash -n deploy.sh
+      - name: Apply database migrations
+        run: npm run migrate --prefix backend
+      - name: Run PostgreSQL search regressions
+        env:
+          TEST_POSTGRES_SEARCH: '1'
+        run: |
+          node --test \
+            backend/test/market-comparison.integration.test.js \
+            backend/test/postgres-search.integration.test.js
       - name: Run architecture regression tests
         run: |
           node --test \
