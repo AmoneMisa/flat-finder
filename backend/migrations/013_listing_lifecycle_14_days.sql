@@ -15,7 +15,7 @@ BEGIN
     NEW.inactive_at := COALESCE(NEW.inactive_at, NOW());
   ELSIF NEW.active = TRUE THEN
     NEW.inactive_at := NULL;
-  ELSIF NEW.active = FALSE THEN
+  ELSIF NEW.active = FALSE AND OLD.active IS DISTINCT FROM FALSE THEN
     NEW.inactive_at := COALESCE(NEW.inactive_at, NOW());
   END IF;
 
