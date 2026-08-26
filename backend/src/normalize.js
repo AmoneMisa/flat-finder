@@ -9,7 +9,8 @@ export * from './normalize-legacy.js';
 export function makeListing(partial) {
   const listing = makeLegacyListing(partial);
   const text = `${partial?.title ?? ''}\n${partial?.description ?? ''}`;
-  const fields = parseHousingListingFields(text);
+  const country = String(partial?.country || listing.country || '').toUpperCase();
+  const fields = parseHousingListingFields(text, { country });
   const parsedPrice = parseHousingPrice(text, partial?.currency || listing.currency || '');
 
   const amenities = [...new Set([
@@ -47,7 +48,9 @@ export function makeListing(partial) {
     smokingAllowed: choose('smokingAllowed'),
     negotiable: choose('negotiable'),
     furnished: choose('furnished'),
+    deposit: partial?.deposit ?? fields.depositRequired ?? listing.deposit ?? null,
     firstRent: partial?.firstRent ?? fields.firstRent ?? listing.firstRent ?? null,
+    firstRental: partial?.firstRental ?? fields.firstRent ?? listing.firstRental ?? listing.firstRent ?? null,
     minRentTerm: partial?.minRentTerm ?? fields.minRentTerm ?? listing.minRentTerm ?? null,
     availableFrom: partial?.availableFrom ?? fields.availableFrom ?? listing.availableFrom ?? null,
     utilitiesAmount: partial?.utilitiesAmount ?? fields.utilitiesAmount ?? listing.utilitiesAmount ?? null,
