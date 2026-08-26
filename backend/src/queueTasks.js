@@ -3,6 +3,7 @@ import { makeListing } from './normalize.js';
 import { guessPropertyType } from './textparse.js';
 import { fetchChannel } from './scrapers/telegram.js';
 import { scrapeCustomUrl } from './scrapers/custom.js';
+import { telegramHousingChannels } from './telegram-housing-sources.js';
 import { throttle } from './ratelimit.js';
 import { upsertListings } from './db.js';
 import { indexListings } from './elasticsearch.js';
@@ -188,7 +189,7 @@ function findTelegramChannel(country, name) {
   const config = COUNTRIES[country];
   if (!config) return null;
 
-  for (const value of config.telegramChannels ?? []) {
+  for (const value of telegramHousingChannels(country, config.telegramChannels ?? [])) {
     const channel = typeof value === 'string'
       ? { name: value, city: null, dealType: null }
       : value;
@@ -366,7 +367,9 @@ async function processQueueTaskInner(task) {
       ...listing,
       source: 'custom',
       country,
+      city: listing.city || task.city || '',
       customSourceUrl: sourceUrl,
+      curatedSource: task.curated === true,
     }));
     const persisted = await persist(listings, task);
     const deactivated = await deactivateMissingCustomSourceListings({
