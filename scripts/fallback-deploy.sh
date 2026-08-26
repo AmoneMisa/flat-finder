@@ -164,7 +164,11 @@ log "Building flat-finder application images locally for $SHA."
   fi
 )
 
-# Only advance the live checkout after all local image builds succeeded.
+# Legacy CI used SCP to overwrite these tracked files without advancing the
+# server checkout. Restore only those deployment-managed paths before the first
+# git-based pull so the fallback cannot be blocked by that old dirty state.
+git restore --source=HEAD --staged --worktree -- \
+  docker-compose.yml deploy.sh olx-router/nginx.conf scripts/upgrade-postgres-18.sh || true
 git pull --ff-only origin master
 
 log "Running guarded local deployment for $SHA."
