@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { COUNTRIES } from './countries.js';
 import { telegramHousingChannels } from './telegram-housing-sources.js';
+import { realtorHousingSources } from './realtor-housing-sources.js';
 
 export const QUEUE_PROTOCOL_VERSION = Math.max(
   3,
@@ -54,6 +55,14 @@ function chainKey(task) {
     ].join(':');
   }
 
+  if (task.type === 'flat.custom.url') {
+    return [
+      task.country,
+      'custom',
+      task.segment || task.url || 'unknown',
+    ].join(':');
+  }
+
   return [task.country || 'unknown', task.type || 'unknown'].join(':');
 }
 
@@ -86,6 +95,10 @@ export function taskPriority(task) {
       return 10;
     }
     return 8;
+  }
+
+  if (task.type === 'flat.custom.url') {
+    return 6;
   }
 
   return 1;
@@ -153,6 +166,18 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
         }, crawlGeneration, shardCount);
         tasks.push({ ...task, priority: taskPriority(task) });
       }
+    }
+
+    for (const source of realtorHousingSources(country.code)) {
+      const task = versionTask({
+        type: 'flat.custom.url',
+        country: country.code,
+        city: source.city || null,
+        url: source.url,
+        segment: source.key,
+        curated: true,
+      }, crawlGeneration, shardCount);
+      tasks.push({ ...task, priority: taskPriority(task) });
     }
   }
 
