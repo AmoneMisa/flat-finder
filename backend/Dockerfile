@@ -1,9 +1,7 @@
 FROM node:24-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-# Internal catalogs intentionally track #master. Do not freeze dependency
-# resolution to package-lock here; install:internal resolves the current refs.
-RUN npm install --omit=dev --package-lock=false --legacy-peer-deps \
+RUN npm ci --omit=dev \
   && npm run install:internal
 
 FROM node:24-slim AS runner
