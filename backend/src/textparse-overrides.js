@@ -62,11 +62,33 @@ function structuredLayout(text) {
   return null;
 }
 
+// Keep the high-confidence Ukrainian phrase parser deliberately small and
+// sequential: first identify the apartment floor, then inspect only the nearby
+// tail for the building height. This outranks an unrelated "1/2" in the title.
+function ukrainianFloorPair(text) {
+  if (!text) return null;
+  const floorMatch = String(text).match(/([1-9]\d?)\s*-\s*(?:му|ому|м|й)\s+повер(?:с|х)[а-яіїґ]*/iu);
+  if (!floorMatch) return null;
+
+  const floor = Number(floorMatch[1]);
+  const tailStart = (floorMatch.index ?? 0) + floorMatch[0].length;
+  const tail = String(text).slice(tailStart, tailStart + 120);
+  const totalMatch = tail.match(/([1-9]\d?)\s*-\s*поверхов[а-яіїґ]*/iu);
+  if (!totalMatch) return null;
+
+  const totalFloors = Number(totalMatch[1]);
+  if (floor < 1 || floor > 40 || totalFloors < floor || totalFloors > 40) return null;
+  return {floor, totalFloors};
+}
+
 export function parseRoomsFromText(text) {
   return structuredLayout(text)?.rooms ?? baseParseRoomsFromText(text);
 }
 
 export function parseFloor(text) {
+  const explicitUkrainian = ukrainianFloorPair(text);
+  if (explicitUkrainian) return explicitUkrainian;
+
   const structured = structuredLayout(text);
   return structured ? { floor: structured.floor, totalFloors: structured.totalFloors } : baseParseFloor(text);
 }
