@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.0",
-    "@whiteslove/parsing-lexicon": "https://github.com/AmoneMisa/parsing-lexicon/archive/fcf3ce9dc4d4364f3597aa8201df407311db7963.tar.gz",
+    "@whiteslove/parsing-lexicon": "https://github.com/AmoneMisa/parsing-lexicon/archive/7d417ba6f3baaa5edf448613b70eaeffe044899a.tar.gz",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.23.0"
