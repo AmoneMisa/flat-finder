@@ -24,6 +24,11 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // Mukachevo.
     { name: 'orendari_mukachevo', city: 'Mukachevo' },
 
+    // Chernivtsi: additional active public housing feeds.
+    { name: 'centralne', city: 'Chernivtsi' },
+    { name: 'housecv', city: 'Chernivtsi' },
+    { name: 'realestatechernivtsiID', city: 'Chernivtsi' },
+
     // Odesa: additional active public housing feeds.
     { name: 'odessa_housing', city: 'Odesa' },
     { name: 'okodesa', city: 'Odesa' },
