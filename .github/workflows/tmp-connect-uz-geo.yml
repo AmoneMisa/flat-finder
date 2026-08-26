@@ -1,0 +1,149 @@
+name: Temporary Uzbekistan geo integration
+
+on:
+  push:
+    branches:
+      - feat/use-uzbekistan-geo-package
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/use-uzbekistan-geo-package
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Add Uzbekistan package adapter and wire queue persistence
+        shell: bash
+        run: |
+          cat > backend/src/uzbekistan-geo.js <<'EOF'
+          import { canonicalUzbekistanCity } from '@whiteslove/parsing-lexicon';
+          import { uzbekistanCoordinateFallback } from '@whiteslove/parsing-lexicon/uz-geo-coordinates';
+
+          export function applyUzbekistanCoordinateFallbacks(listings) {
+            if (!Array.isArray(listings)) return listings;
+
+            for (const listing of listings) {
+              if (!listing) continue;
+
+              const city = canonicalUzbekistanCity(listing.city);
+              if (!city) continue;
+              listing.city = city;
+
+              const hasCoordinates = Number.isFinite(Number(listing.lat))
+                && Number.isFinite(Number(listing.lng));
+              if (hasCoordinates) continue;
+
+              const fallback = uzbekistanCoordinateFallback(city);
+              if (!fallback) continue;
+
+              listing.lat = fallback.lat;
+              listing.lng = fallback.lng;
+              listing.locationSource = fallback.source;
+              listing.locationAccuracyM = 8000;
+            }
+
+            return listings;
+          }
+          EOF
+
+          cat > backend/test/uzbekistan-geo-package.test.js <<'EOF'
+          import test from 'node:test';
+          import assert from 'node:assert/strict';
+
+          import { UZ_CITY_COORDINATES } from '@whiteslove/parsing-lexicon/uz-geo-coordinates';
+          import { applyUzbekistanCoordinateFallbacks } from '../src/uzbekistan-geo.js';
+
+          test('canonicalizes Uzbekistan city aliases and fills only missing coordinates', () => {
+            const listings = [
+              { id: 'samarkand', city: 'Самарканд', lat: null, lng: null },
+              {
+                id: 'tashkent-source',
+                city: 'Тошкент',
+                lat: 41.3201,
+                lng: 69.2812,
+                locationSource: 'coordinates',
+                locationAccuracyM: 25,
+              },
+            ];
+
+            applyUzbekistanCoordinateFallbacks(listings);
+
+            assert.equal(listings[0].city, 'Samarkand');
+            assert.equal(listings[0].lat, UZ_CITY_COORDINATES.Samarkand.lat);
+            assert.equal(listings[0].lng, UZ_CITY_COORDINATES.Samarkand.lng);
+            assert.equal(listings[0].locationSource, 'city');
+            assert.equal(listings[0].locationAccuracyM, 8000);
+
+            assert.equal(listings[1].city, 'Tashkent');
+            assert.equal(listings[1].lat, 41.3201);
+            assert.equal(listings[1].lng, 69.2812);
+            assert.equal(listings[1].locationSource, 'coordinates');
+            assert.equal(listings[1].locationAccuracyM, 25);
+          });
+
+          test('covers package cities beyond the old Flat Finder seven-city list', () => {
+            const listings = [
+              { id: 'qarshi', city: 'Карши' },
+              { id: 'khiva', city: 'Xiva' },
+              { id: 'chirchiq', city: 'Чирчик' },
+            ];
+
+            applyUzbekistanCoordinateFallbacks(listings);
+
+            assert.deepEqual(
+              listings.map(({ city }) => city),
+              ['Qarshi', 'Khiva', 'Chirchiq'],
+            );
+            for (const listing of listings) {
+              assert.ok(Number.isFinite(listing.lat));
+              assert.ok(Number.isFinite(listing.lng));
+              assert.equal(listing.locationSource, 'city');
+            }
+          });
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/src/queueTasks.js')
+          text = path.read_text()
+
+          import_line = "import { geocodeListings } from './geocode.js';\n"
+          adapter_import = "import { applyUzbekistanCoordinateFallbacks } from './uzbekistan-geo.js';\n"
+          if adapter_import not in text:
+              if import_line not in text:
+                  raise SystemExit('geocode import anchor not found')
+              text = text.replace(import_line, import_line + adapter_import, 1)
+
+          old = "  if (config) {\n    await geocodeListings(listings, config);\n  }\n"
+          new = "  if (config) {\n    await geocodeListings(listings, config);\n    if (country === 'UZ') applyUzbekistanCoordinateFallbacks(listings);\n  }\n"
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('persist geocode anchor not found')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+      - name: Refresh branch-based dependency lock
+        run: npm install --prefix backend --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Verify integration
+        run: |
+          node --test backend/test/uzbekistan-geo-package.test.js
+          npm test --prefix backend
+      - name: Commit generated integration
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/tmp-connect-uz-geo.yml
+          git add backend/src/queueTasks.js backend/src/uzbekistan-geo.js backend/test/uzbekistan-geo-package.test.js backend/package-lock.json
+          git commit -m "feat: use Uzbekistan geo package fallbacks"
+          git push origin HEAD:feat/use-uzbekistan-geo-package
