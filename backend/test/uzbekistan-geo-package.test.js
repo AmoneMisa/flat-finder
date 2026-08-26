@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { UZ_CITY_COORDINATES } from '@whiteslove/parsing-lexicon/uz-geo-coordinates';
+import { applyReverseGeo } from '../src/reverse-geo.js';
 import { applyUzbekistanCoordinateFallbacks } from '../src/uzbekistan-geo.js';
 
 test('canonicalizes Uzbekistan city aliases and fills only missing coordinates', () => {
@@ -50,4 +51,19 @@ test('covers package cities beyond the old Flat Finder seven-city list', () => {
     assert.ok(Number.isFinite(listing.lng));
     assert.equal(listing.locationSource, 'city');
   }
+});
+
+test('reverse-geocoding stage applies the Uzbekistan fallback after forward geocoding is exhausted', async () => {
+  const listings = [{ id: 'qarshi-pipeline', city: 'Карши', lat: null, lng: null }];
+
+  const filled = await applyReverseGeo(listings, { code: 'UZ' }, 0);
+
+  assert.equal(filled, 0);
+  assert.equal(listings[0].city, 'Qarshi');
+  assert.deepEqual(
+    { lat: listings[0].lat, lng: listings[0].lng },
+    UZ_CITY_COORDINATES.Qarshi,
+  );
+  assert.equal(listings[0].locationSource, 'city');
+  assert.equal(listings[0].locationAccuracyM, 8000);
 });
