@@ -13,7 +13,7 @@
     "test": "node --test",
     "migrate": "node src/migrate.js",
     "reindex": "node src/reindex.js",
-    "install:internal": "npm install --ignore-scripts --no-save --package-lock=false github:AmoneMisa/parsing-lexicon#master github:AmoneMisa/geo-catalog#master"
+    "install:internal": "npm install --ignore-scripts --no-save --package-lock=false --legacy-peer-deps github:AmoneMisa/parsing-lexicon#master github:AmoneMisa/geo-catalog#master"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.0",
