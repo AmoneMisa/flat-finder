@@ -1,7 +1,7 @@
 import {COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {getRates} from './fx.js';
 import {refreshAll} from './scheduler.js';
-import {searchPostgresListings} from './postgres-search.js';
+import {searchPostgresListings} from './postgres-search-fast.js';
 import {searchPostgresMapPoints} from './map-feed.js';
 import {attachMarketComparisons} from './market-comparison.js';
 import {searchListingMatches} from './elasticsearch.js';
