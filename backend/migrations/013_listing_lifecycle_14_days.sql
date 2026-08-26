@@ -27,13 +27,6 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS listings_enforce_lifecycle_14_days ON listings;
-CREATE TRIGGER listings_enforce_lifecycle_14_days
-BEFORE INSERT OR UPDATE OF created_at, first_seen_at, active
-ON listings
-FOR EACH ROW
-EXECUTE FUNCTION enforce_listing_lifecycle_14_days();
-
 -- Apply the lifecycle immediately to data accumulated before this rule existed.
 UPDATE listings
 SET
@@ -42,3 +35,10 @@ SET
   updated_at = NOW()
 WHERE active = TRUE
   AND COALESCE(created_at, first_seen_at) < NOW() - INTERVAL '14 days';
+
+DROP TRIGGER IF EXISTS listings_enforce_lifecycle_14_days ON listings;
+CREATE TRIGGER listings_enforce_lifecycle_14_days
+BEFORE INSERT OR UPDATE OF created_at, first_seen_at, active
+ON listings
+FOR EACH ROW
+EXECUTE FUNCTION enforce_listing_lifecycle_14_days();
