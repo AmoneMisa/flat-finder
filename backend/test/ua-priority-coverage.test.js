@@ -118,6 +118,33 @@ test('ID-like titles are replaced with structured residential metadata', () => {
   assert.equal(listing.title, 'Квартира · 35 Жемчужина');
 });
 
+test('Chernivtsi OLX parser keeps residential complex and address bounded', () => {
+  const listing = makeListing({
+    id: 'chernivtsi-crystal-lake',
+    source: 'olx',
+    country: 'UA',
+    title: 'ПЕРША ЗДАЧА! Оренда 1-кімнатної новобудови ЖК Кришталеве озеро ВІЛЬНА',
+    description: 'ОРЕНДА 1-КІМНАТНОЇ КВАРТИРИ ЖК «Кришталеве озеро» Вул.Чорновола, р-н Руської Поверх — 8/9, є ліфт',
+    propertyType: 'flat',
+    dealType: 'longRent',
+    city: 'Черновцы',
+    price: 400,
+    currency: 'USD',
+  });
+
+  assert.equal(listing.residenceComplex, 'Кришталеве озеро');
+  assert.equal(listing.address, 'Вул.Чорновола');
+  assert.equal(listing.floor, 8);
+  assert.equal(listing.totalFloors, 9);
+});
+
+test('unquoted Ukrainian complex names stop before availability/rent wording', () => {
+  assert.equal(
+    parseResidentialComplex('ЖК Кришталеве озеро ВІЛЬНА ОРЕНДА'),
+    'Кришталеве озеро',
+  );
+});
+
 test('normal concise OLX titles remain untouched', () => {
   const sourceTitle = 'Оренда квартири в Аркадії Каманіна | 1-кімнатна квартира-студія';
   const listing = makeListing({
