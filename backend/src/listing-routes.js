@@ -186,11 +186,15 @@ async function tryPostgresSearch({filters, codes, force}) {
   });
 
   let listings = result.listings;
+  let marketComparisonMs = 0;
   if (listings.length && fxRates) {
+    const marketStartedAt = performance.now();
     try {
       listings = await attachMarketComparisons(listings, fxRates);
     } catch (err) {
       console.warn('[market-comparison] enrichment failed:', err?.message ?? err);
+    } finally {
+      marketComparisonMs = Math.round((performance.now() - marketStartedAt) * 10) / 10;
     }
   }
 
@@ -209,6 +213,10 @@ async function tryPostgresSearch({filters, codes, force}) {
     searchIndexedMatches: searchMatches?.total ?? null,
     searchTruncated: searchMatches?.truncated ?? false,
     queryMs: result.queryMs,
+    countMs: result.countMs ?? null,
+    pageMs: result.pageMs ?? null,
+    marketComparisonMs,
+    searchPath: result.searchPath ?? null,
     nextCursor: result.nextCursor,
     listings,
     ...(result.statistics ? {statistics: result.statistics} : {}),

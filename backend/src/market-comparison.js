@@ -1,7 +1,7 @@
 import { pool } from './db.js';
 import { toUsd } from './fx.js';
 
-const MARKET_MAX_AGE_DAYS = 21;
+const MARKET_MAX_AGE_DAYS = 14;
 const MIN_COMPARABLES = 3;
 
 function safeRateEntries(rates) {
@@ -16,55 +16,6 @@ function priceUsdSql(alias, rateEntries) {
     .map(([currency, rate]) => `WHEN '${currency}' THEN ${alias}.price / ${rate}`)
     .join(' ');
   return `(CASE UPPER(${alias}.currency) ${cases} ELSE NULL END)`;
-}
-
-function olxPhotoSql(alias, index) {
-  const photo = `${alias}.data->'photos'->${index}`;
-  const raw = `CASE
-    WHEN jsonb_typeof(${photo}) = 'string' THEN ${alias}.data->'photos'->>${index}
-    WHEN jsonb_typeof(${photo}) = 'object' THEN COALESCE(${photo}->>'link', ${photo}->>'url', ${photo}->>'src', '')
-    ELSE ''
-  END`;
-  return `LOWER(REGEXP_REPLACE(SPLIT_PART(COALESCE(${raw}, ''), '?', 1), ';s=.*$', ''))`;
-}
-
-// Keep the market sample aligned with the public feed: repeated OLX/Telegram
-// posts must not receive extra weight in the median merely because they were
-// ingested under another source id.
-function marketDedupeSql(alias) {
-  const photo0 = olxPhotoSql(alias, 0);
-  const photo1 = olxPhotoSql(alias, 1);
-  const title = `LOWER(REGEXP_REPLACE(BTRIM(COALESCE(${alias}.title, '')), '\\s+', ' ', 'g'))`;
-  const description = `LOWER(REGEXP_REPLACE(BTRIM(COALESCE(${alias}.description, '')), '\\s+', ' ', 'g'))`;
-  const telegramPhotoKey = `COALESCE(${alias}.data->>'photoFingerprintKey', '')`;
-
-  return `CASE
-    WHEN LOWER(${alias}.source) = 'olx'
-      AND LENGTH(${photo0}) >= 24
-      AND LENGTH(${photo1}) >= 24
-      AND ${photo0} <> ${photo1}
-      THEN 'olx:photos:' || MD5(CONCAT_WS('|', UPPER(${alias}.country), ${photo0}, ${photo1}))
-    WHEN LOWER(${alias}.source) = 'olx'
-      AND LENGTH(${description}) >= 120
-      THEN 'olx:content:' || MD5(CONCAT_WS('|',
-        UPPER(${alias}.country), LOWER(COALESCE(${alias}.city, '')),
-        COALESCE(${alias}.deal_type, ''), COALESCE(${alias}.property_type, ''),
-        COALESCE(${alias}.price::text, ''), UPPER(COALESCE(${alias}.currency, '')),
-        COALESCE(${alias}.rooms::text, ''), COALESCE(ROUND(${alias}.area_sqm::numeric, 1)::text, ''),
-        ${title}, ${description}
-      ))
-    WHEN LOWER(${alias}.source) = 'telegram' AND LENGTH(${telegramPhotoKey}) >= 129
-      THEN 'telegram:photos:' || MD5(CONCAT_WS('|', UPPER(${alias}.country), ${telegramPhotoKey}))
-    WHEN LOWER(${alias}.source) = 'telegram' AND LENGTH(${description}) >= 40
-      THEN 'telegram:content:' || MD5(CONCAT_WS('|',
-        UPPER(${alias}.country), LOWER(COALESCE(${alias}.city, '')),
-        COALESCE(${alias}.deal_type, ''), COALESCE(${alias}.property_type, ''),
-        COALESCE(${alias}.price::text, ''), UPPER(COALESCE(${alias}.currency, '')),
-        COALESCE(${alias}.rooms::text, ''), COALESCE(ROUND(${alias}.area_sqm::numeric, 1)::text, ''),
-        ${title}, ${description}
-      ))
-    ELSE CONCAT_WS(':', LOWER(${alias}.source), UPPER(${alias}.country), ${alias}.source_id)
-  END`;
 }
 
 function dealKey(listing) {
@@ -110,7 +61,6 @@ export async function attachMarketComparisons(listings, rates) {
   if (!targets.length) return listings;
 
   const comparatorPriceUsd = priceUsdSql('c', rateEntries);
-  const dedupeKey = marketDedupeSql('c');
   const sql = `
     WITH targets AS (
       SELECT *
@@ -130,7 +80,7 @@ export async function attachMarketComparisons(listings, rates) {
       SELECT
         t.key,
         ${comparatorPriceUsd} AS price_usd,
-        ${dedupeKey} AS dedupe_key,
+        c.dedupe_key,
         c.created_at,
         c.id
       FROM targets t
@@ -142,7 +92,7 @@ export async function attachMarketComparisons(listings, rates) {
        AND (t.district IS NULL OR LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(t.district)))
        AND c.property_type = t.property_type
        AND (CASE WHEN c.data @> '{"roomOnly":true}'::jsonb THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
-       AND (c.created_at IS NULL OR c.created_at >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day'))
+       AND COALESCE(c.created_at, c.first_seen_at) >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day')
        AND NOT (c.data @> '{"commercial":true}'::jsonb)
        AND (
          (t.rooms IS NOT NULL AND c.rooms = t.rooms)

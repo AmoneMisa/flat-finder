@@ -1,7 +1,7 @@
 import {pool} from './db.js';
 import {searchPostgresListings as searchPostgresListingsLegacy} from './postgres-search.js';
 
-const MAX_AGE_DAYS = 21;
+const MAX_AGE_DAYS = 14;
 const CURSOR_VERSION = 1;
 
 function encodeCursor(value) {
@@ -52,17 +52,7 @@ function canUseFastFeedPath(filters, searchMatches) {
   return true;
 }
 
-function publicVisibility(alias) {
-  return [
-    `${alias}.active = TRUE`,
-    `${alias}.source <> 'custom'`,
-    `NOT (${alias}.data @> '{"commercial":true}'::jsonb)`,
-    `COALESCE(${alias}.data->>'listingKind', 'propertyOffer') <> 'propertyWanted'`,
-    `COALESCE(${alias}.data->>'listingStatus', 'active') NOT IN ('sold', 'rented', 'closed', 'outdated')`,
-  ];
-}
-
-function buildBaseWhere({countries, maxAgeDays}) {
+function buildMemberWhere({countries, maxAgeDays}) {
   const params = [];
   const add = (value) => {
     params.push(value);
@@ -75,44 +65,32 @@ function buildBaseWhere({countries, maxAgeDays}) {
   const ageDays = maxAgeDays != null && Number(maxAgeDays) > 0
     ? Math.min(Number(maxAgeDays), MAX_AGE_DAYS)
     : MAX_AGE_DAYS;
-  const ageParam = add(ageDays);
-  const countryParam = countryValues.length ? add(countryValues) : null;
 
   const where = [
-    ...publicVisibility('l'),
-    `(l.created_at IS NULL OR l.created_at >= NOW() - (${ageParam}::double precision * INTERVAL '1 day'))`,
+    `m.freshness_at >= NOW() - (${add(ageDays)}::double precision * INTERVAL '1 day')`,
   ];
-  if (countryParam) where.push(`l.country = ANY(${countryParam}::text[])`);
-
-  const newerWhere = [
-    ...publicVisibility('newer'),
-    `newer.dedupe_key = l.dedupe_key`,
-    `(newer.created_at IS NULL OR newer.created_at >= NOW() - (${ageParam}::double precision * INTERVAL '1 day'))`,
-  ];
-  if (countryParam) newerWhere.push(`newer.country = ANY(${countryParam}::text[])`);
-
-  newerWhere.push(`(
-    (l.created_at IS NULL AND (
-      newer.created_at IS NOT NULL
-      OR (newer.created_at IS NULL AND newer.id > l.id)
-    ))
-    OR
-    (l.created_at IS NOT NULL AND (
-      newer.created_at > l.created_at
-      OR (newer.created_at = l.created_at AND newer.id > l.id)
-    ))
-  )`);
+  if (countryValues.length) {
+    where.push(`m.country = ANY(${add(countryValues)}::text[])`);
+  }
 
   return {
     params,
     where: where.join('\n      AND '),
-    newerWhere: newerWhere.join('\n          AND '),
+  };
+}
+
+async function timedQuery(sql, params) {
+  const startedAt = performance.now();
+  const result = await pool.query(sql, params);
+  return {
+    result,
+    ms: Math.round((performance.now() - startedAt) * 10) / 10,
   };
 }
 
 async function searchDefaultFeed({filters, countries}) {
   const startedAt = performance.now();
-  const {params: baseParams, where, newerWhere} = buildBaseWhere({
+  const {params: baseParams, where} = buildMemberWhere({
     countries,
     maxAgeDays: filters.maxAgeDays,
   });
@@ -120,10 +98,10 @@ async function searchDefaultFeed({filters, countries}) {
   const countSql = `
     SELECT COUNT(*)::int AS count
     FROM (
-      SELECT l.dedupe_key
-      FROM listings l
+      SELECT m.dedupe_key
+      FROM listing_public_feed_members m
       WHERE ${where}
-      GROUP BY l.dedupe_key
+      GROUP BY m.dedupe_key
     ) visible_keys
   `;
 
@@ -143,14 +121,14 @@ async function searchDefaultFeed({filters, countries}) {
     if (cursor.t) {
       const timeParam = addPage(cursor.t);
       if (sort === 'newest') {
-        pageWhere.push(`(l.created_at < ${timeParam}::timestamptz OR (l.created_at = ${timeParam}::timestamptz AND l.id < ${idParam}::bigint) OR l.created_at IS NULL)`);
+        pageWhere.push(`(d.created_at < ${timeParam}::timestamptz OR (d.created_at = ${timeParam}::timestamptz AND d.db_id < ${idParam}::bigint) OR d.created_at IS NULL)`);
       } else {
-        pageWhere.push(`(l.created_at > ${timeParam}::timestamptz OR (l.created_at = ${timeParam}::timestamptz AND l.id > ${idParam}::bigint) OR l.created_at IS NULL)`);
+        pageWhere.push(`(d.created_at > ${timeParam}::timestamptz OR (d.created_at = ${timeParam}::timestamptz AND d.db_id > ${idParam}::bigint) OR d.created_at IS NULL)`);
       }
     } else if (sort === 'newest') {
-      pageWhere.push(`l.created_at IS NULL AND l.id < ${idParam}::bigint`);
+      pageWhere.push(`d.created_at IS NULL AND d.db_id < ${idParam}::bigint`);
     } else {
-      pageWhere.push(`l.created_at IS NULL AND l.id > ${idParam}::bigint`);
+      pageWhere.push(`d.created_at IS NULL AND d.db_id > ${idParam}::bigint`);
     }
     useCursor = true;
   }
@@ -160,35 +138,40 @@ async function searchDefaultFeed({filters, countries}) {
   const offset = useCursor ? 0 : Math.max(0, Number(filters.offset) || 0);
   const offsetParam = addPage(offset);
   const orderBy = sort === 'oldest'
-    ? 'l.created_at ASC NULLS LAST, l.id ASC'
-    : 'l.created_at DESC NULLS LAST, l.id DESC';
+    ? 'd.created_at ASC NULLS LAST, d.db_id ASC'
+    : 'd.created_at DESC NULLS LAST, d.db_id DESC';
 
   const pageSql = `
-    SELECT
-      l.id AS db_id,
-      l.created_at,
-      l.data
-    FROM listings l
-    WHERE ${where}
-      AND NOT EXISTS (
-        SELECT 1
-        FROM listings newer
-        WHERE ${newerWhere}
-      )
-      ${pageWhere.length ? `AND ${pageWhere.join('\n      AND ')}` : ''}
-    ORDER BY ${orderBy}
-    LIMIT ${limitParam}
-    OFFSET ${offsetParam}
+    WITH deduped AS MATERIALIZED (
+      SELECT DISTINCT ON (m.dedupe_key)
+        m.listing_id AS db_id,
+        m.created_at
+      FROM listing_public_feed_members m
+      WHERE ${where}
+      ORDER BY m.dedupe_key, m.created_at DESC NULLS LAST, m.listing_id DESC
+    ),
+    page AS MATERIALIZED (
+      SELECT d.db_id, d.created_at
+      FROM deduped d
+      ${pageWhere.length ? `WHERE ${pageWhere.join('\n        AND ')}` : ''}
+      ORDER BY ${orderBy}
+      LIMIT ${limitParam}
+      OFFSET ${offsetParam}
+    )
+    SELECT p.db_id, p.created_at, l.data
+    FROM page p
+    JOIN listings l ON l.id = p.db_id
+    ORDER BY ${orderBy.replaceAll('d.', 'p.')}
   `;
 
-  const [countResult, pageResult] = await Promise.all([
-    pool.query(countSql, baseParams),
-    pool.query(pageSql, pageParams),
+  const [countTimed, pageTimed] = await Promise.all([
+    timedQuery(countSql, baseParams),
+    timedQuery(pageSql, pageParams),
   ]);
 
-  const rows = pageResult.rows;
+  const rows = pageTimed.result.rows;
   const listings = rows.map((row) => row.data || {});
-  const count = Number(countResult.rows[0]?.count) || 0;
+  const count = Number(countTimed.result.rows[0]?.count) || 0;
 
   let nextCursor = null;
   if (rows.length === limit) {
@@ -203,8 +186,10 @@ async function searchDefaultFeed({filters, countries}) {
     count,
     listings,
     nextCursor,
+    countMs: countTimed.ms,
+    pageMs: pageTimed.ms,
     queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
-    searchPath: 'postgres-fast-feed-v2',
+    searchPath: 'postgres-feed-members',
   };
 }
 

@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 
 const comparison = await readFile(new URL('../src/market-comparison.js', import.meta.url), 'utf8');
 const routes = await readFile(new URL('../src/listing-routes.js', import.meta.url), 'utf8');
-const migration = await readFile(new URL('../migrations/009_market_comparison_indexes.sql', import.meta.url), 'utf8');
+const marketIndexes = await readFile(new URL('../migrations/009_market_comparison_indexes.sql', import.meta.url), 'utf8');
+const persistedDedupe = await readFile(new URL('../migrations/010_persisted_dedupe_key.sql', import.meta.url), 'utf8');
 
 test('good-price assessment is calculated from the active PostgreSQL market, not the loaded page', () => {
   assert.match(routes, /attachMarketComparisons\(listings, fxRates\)/u);
@@ -25,10 +26,12 @@ test('market comparison matches city, district, deal, property type and rooms wi
   assert.match(comparison, /GREATEST\(5\.0, t\.area_sqm \* 0\.15\)/u);
 });
 
-test('market median uses the same source-level duplicate suppression and has lookup indexes', () => {
+test('market median reuses persisted source-level duplicate suppression and has lookup indexes', () => {
   assert.match(comparison, /SELECT DISTINCT ON \(key, dedupe_key\)/u);
-  assert.match(comparison, /telegram:photos/u);
-  assert.match(comparison, /olx:photos/u);
-  assert.match(migration, /listings_market_rooms_idx/u);
-  assert.match(migration, /listings_market_area_idx/u);
+  assert.match(comparison, /c\.dedupe_key/u);
+  assert.doesNotMatch(comparison, /MD5\(/u);
+  assert.match(persistedDedupe, /telegram:photos/u);
+  assert.match(persistedDedupe, /olx:photos/u);
+  assert.match(marketIndexes, /listings_market_rooms_idx/u);
+  assert.match(marketIndexes, /listings_market_area_idx/u);
 });
