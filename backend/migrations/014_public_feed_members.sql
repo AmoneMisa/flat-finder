@@ -12,18 +12,6 @@ CREATE TABLE IF NOT EXISTS listing_public_feed_members (
   freshness_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS listing_public_feed_members_dedupe_created_idx
-  ON listing_public_feed_members(dedupe_key, created_at DESC, listing_id DESC);
-
-CREATE INDEX IF NOT EXISTS listing_public_feed_members_country_dedupe_created_idx
-  ON listing_public_feed_members(country, dedupe_key, created_at DESC, listing_id DESC);
-
-CREATE INDEX IF NOT EXISTS listing_public_feed_members_freshness_idx
-  ON listing_public_feed_members(freshness_at DESC, dedupe_key, listing_id DESC);
-
-CREATE INDEX IF NOT EXISTS listing_public_feed_members_country_freshness_idx
-  ON listing_public_feed_members(country, freshness_at DESC, dedupe_key, listing_id DESC);
-
 CREATE OR REPLACE FUNCTION sync_listing_public_feed_member()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -105,3 +93,22 @@ WHERE active = TRUE
   AND NOT (data @> '{"commercial":true}'::jsonb)
   AND COALESCE(data->>'listingKind', 'propertyOffer') <> 'propertyWanted'
   AND COALESCE(data->>'listingStatus', 'active') NOT IN ('sold', 'rented', 'closed', 'outdated');
+
+CREATE INDEX IF NOT EXISTS listing_public_feed_members_dedupe_created_idx
+  ON listing_public_feed_members(dedupe_key, created_at DESC, listing_id DESC);
+
+CREATE INDEX IF NOT EXISTS listing_public_feed_members_country_dedupe_created_idx
+  ON listing_public_feed_members(country, dedupe_key, created_at DESC, listing_id DESC);
+
+CREATE INDEX IF NOT EXISTS listing_public_feed_members_freshness_idx
+  ON listing_public_feed_members(freshness_at DESC, dedupe_key, listing_id DESC);
+
+CREATE INDEX IF NOT EXISTS listing_public_feed_members_country_freshness_idx
+  ON listing_public_feed_members(country, freshness_at DESC, dedupe_key, listing_id DESC);
+
+-- Makes the background 14-day deactivation sweep cheap as rows age out.
+CREATE INDEX IF NOT EXISTS listings_active_freshness_idx
+  ON listings((COALESCE(created_at, first_seen_at)), id)
+  WHERE active = TRUE;
+
+ANALYZE listing_public_feed_members;
