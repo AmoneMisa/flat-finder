@@ -62,7 +62,7 @@ export async function attachMarketComparisons(listings, rates) {
 
   const comparatorPriceUsd = priceUsdSql('c', rateEntries);
   const sql = `
-    WITH targets AS (
+    WITH targets AS MATERIALIZED (
       SELECT *
       FROM jsonb_to_recordset($1::jsonb) AS t(
         key text,
@@ -76,7 +76,7 @@ export async function attachMarketComparisons(listings, rates) {
         price_usd double precision
       )
     ),
-    candidates AS (
+    room_candidates AS (
       SELECT
         t.key,
         ${comparatorPriceUsd} AS price_usd,
@@ -85,24 +85,47 @@ export async function attachMarketComparisons(listings, rates) {
         c.id
       FROM targets t
       JOIN listings c
-        ON c.active = TRUE
+        ON t.rooms IS NOT NULL
+       AND c.active = TRUE
        AND c.price IS NOT NULL
        AND UPPER(c.country) = t.country
        AND LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(t.city))
-       AND (t.district IS NULL OR LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(t.district)))
        AND c.property_type = t.property_type
        AND (CASE WHEN c.data @> '{"roomOnly":true}'::jsonb THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
+       AND c.rooms = t.rooms
+       AND (t.district IS NULL OR LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(t.district)))
        AND COALESCE(c.created_at, c.first_seen_at) >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day')
        AND NOT (c.data @> '{"commercial":true}'::jsonb)
-       AND (
-         (t.rooms IS NOT NULL AND c.rooms = t.rooms)
-         OR (
-           t.rooms IS NULL
-           AND t.area_sqm IS NOT NULL
-           AND c.area_sqm IS NOT NULL
-           AND ABS(c.area_sqm - t.area_sqm) <= GREATEST(5.0, t.area_sqm * 0.15)
-         )
-       )
+    ),
+    area_candidates AS (
+      SELECT
+        t.key,
+        ${comparatorPriceUsd} AS price_usd,
+        c.dedupe_key,
+        c.created_at,
+        c.id
+      FROM targets t
+      JOIN listings c
+        ON t.rooms IS NULL
+       AND t.area_sqm IS NOT NULL
+       AND c.active = TRUE
+       AND c.price IS NOT NULL
+       AND UPPER(c.country) = t.country
+       AND LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(t.city))
+       AND c.property_type = t.property_type
+       AND (CASE WHEN c.data @> '{"roomOnly":true}'::jsonb THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
+       AND c.area_sqm IS NOT NULL
+       AND c.area_sqm BETWEEN
+         t.area_sqm - GREATEST(5.0, t.area_sqm * 0.15)
+         AND t.area_sqm + GREATEST(5.0, t.area_sqm * 0.15)
+       AND (t.district IS NULL OR LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(t.district)))
+       AND COALESCE(c.created_at, c.first_seen_at) >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day')
+       AND NOT (c.data @> '{"commercial":true}'::jsonb)
+    ),
+    candidates AS (
+      SELECT * FROM room_candidates
+      UNION ALL
+      SELECT * FROM area_candidates
     ),
     deduped AS (
       SELECT DISTINCT ON (key, dedupe_key)
