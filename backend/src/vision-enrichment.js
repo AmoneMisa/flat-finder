@@ -20,12 +20,6 @@ function listingKey(listing) {
   return `${listing.source}:${listing.id}`;
 }
 
-// Where the AI worker can fetch our own Telegram photos. They are stored as
-// relative `/api/tg-photo/...` paths, and requiring an absolute URL here used to
-// drop them entirely — so vision never ran on Telegram listings, which are
-// precisely the ones with the most missing fields. The worker shares the ai-net
-// network with this service, so the internal address is the cheapest route (and
-// the on-disk photo cache makes repeat fetches fast).
 const PHOTO_BASE_URL = (process.env.VISION_PHOTO_BASE_URL || 'http://flat-finder-backend:4000').replace(/\/$/, '');
 
 function absolutePhotoUrl(raw) {
@@ -112,10 +106,6 @@ export function mergeVision(listing, result) {
   fill('gasWaterHeater', data.gasWaterHeaterVisible);
   fill('waterBoiler', data.waterBoilerVisible);
 
-  // Keep provenance/evidence available to the API/UI without allowing vision to
-  // silently overwrite deterministic/text facts. `derivedFields` contains only
-  // values that vision actually supplied; merely agreeing with an existing
-  // deterministic/text value does not mark that field as AI-derived.
   merged.vision = {
     provider: result.provider || null,
     analyzedAt: result.analyzedAt || new Date().toISOString(),
@@ -200,6 +190,42 @@ function scheduleAntiFake(countryCode, listing, images, fingerprint) {
   return true;
 }
 
+export function scheduleListingsVision(listings) {
+  if (!aiWorkerEnabled() || !Array.isArray(listings) || !listings.length) return 0;
+
+  const batchSize = Math.max(1, Number(process.env.AI_WORKER_VISION_BATCH) || 3);
+  let queued = 0;
+
+  for (const listing of listings) {
+    if (queued >= batchSize) break;
+    if (!needsVision(listing)) continue;
+
+    const images = listingImages(listing);
+    if (!images.length) continue;
+    const fingerprint = visionFingerprint(images);
+    const id = listingKey(listing);
+
+    const acceptedQueue = scheduleVisionAnalysis({
+      id,
+      images,
+      fingerprint,
+      onResult: async (result) => {
+        const merged = mergeVision(listing, result);
+        if (visionFingerprint(listingImages(merged)) !== fingerprint) return;
+        await persistMerged(merged);
+      },
+      onFailed: (status) => {
+        console.warn(`[flats:vision] ${id} failed status=${status}`);
+      },
+    });
+
+    if (acceptedQueue) queued += 1;
+  }
+
+  if (queued) console.log(`[flats:vision] queued persisted-listing vision=${queued}`);
+  return queued;
+}
+
 export function scheduleCountryVision(countryCode, entry) {
   if (!entry?.complete || !Array.isArray(entry.listings)) return 0;
 
@@ -218,8 +244,6 @@ export function scheduleCountryVision(countryCode, entry) {
     const fingerprint = visionFingerprint(images);
     const id = listingKey(listing);
 
-    // Exact-photo anti-fake is independent of external AI and runs even when all
-    // visual amenity fields are already known from text/source metadata.
     const priorAntiFake = entry.antiFake[id];
     if (
       antiFakeQueued < batchSize &&
