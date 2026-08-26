@@ -1,7 +1,7 @@
 // Best-effort extraction of price / rooms / area from free-text posts
 // (Reddit, Telegram, Threads) where there is no structured field.
 
-export {parseHousingPriceFromText as parsePriceFromText} from '@whiteslove/parsing-lexicon/housing-money';
+export {parseHousingPrice as parsePriceFromText} from '@whiteslove/parsing-lexicon/housing-money';
 
 const ok10 = (n) => (n >= 1 && n <= 10 ? n : null); // dwellings have 1–10 rooms
 

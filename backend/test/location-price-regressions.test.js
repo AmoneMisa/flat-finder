@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {parseLexiconAddress} from '../src/lexicon-parse.js';
 import {maskPhoneLikeSpans} from '@whiteslove/parsing-lexicon/contact';
-import {parseHousingPriceFromText} from '@whiteslove/parsing-lexicon/housing-money';
+import {parseHousingPrice} from '@whiteslove/parsing-lexicon/housing-money';
 
 const wantedChernivtsi = `Добрий день! Шукаю 1-к. кв. або підселення в непрохідну окрему кімнату.
 Бюджет:
@@ -13,7 +13,7 @@ const wantedChernivtsi = `Добрий день! Шукаю 1-к. кв. або �
 
 test('phone-like digit groups cannot become housing prices', () => {
   assert.doesNotMatch(maskPhoneLikeSpans(wantedChernivtsi), /095\s+082\s+01\s+03/);
-  assert.deepEqual(parseHousingPriceFromText(wantedChernivtsi, 'UAH'), {
+  assert.deepEqual(parseHousingPrice(wantedChernivtsi, 'UAH'), {
     price: 10000,
     currency: 'UAH',
   });
