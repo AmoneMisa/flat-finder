@@ -52,6 +52,16 @@ function canUseFastFeedPath(filters, searchMatches) {
   return true;
 }
 
+function publicVisibility(alias) {
+  return [
+    `${alias}.active = TRUE`,
+    `${alias}.source <> 'custom'`,
+    `NOT (${alias}.data @> '{"commercial":true}'::jsonb)`,
+    `COALESCE(${alias}.data->>'listingKind', 'propertyOffer') <> 'propertyWanted'`,
+    `COALESCE(${alias}.data->>'listingStatus', 'active') NOT IN ('sold', 'rented', 'closed', 'outdated')`,
+  ];
+}
+
 function buildBaseWhere({countries, maxAgeDays}) {
   const params = [];
   const add = (value) => {
@@ -65,34 +75,56 @@ function buildBaseWhere({countries, maxAgeDays}) {
   const ageDays = maxAgeDays != null && Number(maxAgeDays) > 0
     ? Math.min(Number(maxAgeDays), MAX_AGE_DAYS)
     : MAX_AGE_DAYS;
+  const ageParam = add(ageDays);
+  const countryParam = countryValues.length ? add(countryValues) : null;
 
   const where = [
-    'l.active = TRUE',
-    `COALESCE(l.data->>'listingKind', 'propertyOffer') <> 'propertyWanted'`,
-    `COALESCE(l.data->>'listingStatus', 'active') NOT IN ('sold', 'rented', 'closed', 'outdated')`,
-    `l.source <> 'custom'`,
-    `NOT (l.data @> '{"commercial":true}'::jsonb)`,
-    `(l.created_at IS NULL OR l.created_at >= NOW() - (${add(ageDays)}::double precision * INTERVAL '1 day'))`,
+    ...publicVisibility('l'),
+    `(l.created_at IS NULL OR l.created_at >= NOW() - (${ageParam}::double precision * INTERVAL '1 day'))`,
   ];
+  if (countryParam) where.push(`l.country = ANY(${countryParam}::text[])`);
 
-  if (countryValues.length) {
-    where.push(`l.country = ANY(${add(countryValues)}::text[])`);
-  }
+  const newerWhere = [
+    ...publicVisibility('newer'),
+    `newer.dedupe_key = l.dedupe_key`,
+    `(newer.created_at IS NULL OR newer.created_at >= NOW() - (${ageParam}::double precision * INTERVAL '1 day'))`,
+  ];
+  if (countryParam) newerWhere.push(`newer.country = ANY(${countryParam}::text[])`);
 
-  return {params, where: where.join('\n      AND ')};
+  newerWhere.push(`(
+    (l.created_at IS NULL AND (
+      newer.created_at IS NOT NULL
+      OR (newer.created_at IS NULL AND newer.id > l.id)
+    ))
+    OR
+    (l.created_at IS NOT NULL AND (
+      newer.created_at > l.created_at
+      OR (newer.created_at = l.created_at AND newer.id > l.id)
+    ))
+  )`);
+
+  return {
+    params,
+    where: where.join('\n      AND '),
+    newerWhere: newerWhere.join('\n          AND '),
+  };
 }
 
 async function searchDefaultFeed({filters, countries}) {
   const startedAt = performance.now();
-  const {params: baseParams, where} = buildBaseWhere({
+  const {params: baseParams, where, newerWhere} = buildBaseWhere({
     countries,
     maxAgeDays: filters.maxAgeDays,
   });
 
   const countSql = `
-    SELECT COUNT(DISTINCT l.dedupe_key)::int AS count
-    FROM listings l
-    WHERE ${where}
+    SELECT COUNT(*)::int AS count
+    FROM (
+      SELECT l.dedupe_key
+      FROM listings l
+      WHERE ${where}
+      GROUP BY l.dedupe_key
+    ) visible_keys
   `;
 
   const pageParams = [...baseParams];
@@ -111,14 +143,14 @@ async function searchDefaultFeed({filters, countries}) {
     if (cursor.t) {
       const timeParam = addPage(cursor.t);
       if (sort === 'newest') {
-        pageWhere.push(`(d.created_at < ${timeParam}::timestamptz OR (d.created_at = ${timeParam}::timestamptz AND d.db_id < ${idParam}::bigint) OR d.created_at IS NULL)`);
+        pageWhere.push(`(l.created_at < ${timeParam}::timestamptz OR (l.created_at = ${timeParam}::timestamptz AND l.id < ${idParam}::bigint) OR l.created_at IS NULL)`);
       } else {
-        pageWhere.push(`(d.created_at > ${timeParam}::timestamptz OR (d.created_at = ${timeParam}::timestamptz AND d.db_id > ${idParam}::bigint) OR d.created_at IS NULL)`);
+        pageWhere.push(`(l.created_at > ${timeParam}::timestamptz OR (l.created_at = ${timeParam}::timestamptz AND l.id > ${idParam}::bigint) OR l.created_at IS NULL)`);
       }
     } else if (sort === 'newest') {
-      pageWhere.push(`d.created_at IS NULL AND d.db_id < ${idParam}::bigint`);
+      pageWhere.push(`l.created_at IS NULL AND l.id < ${idParam}::bigint`);
     } else {
-      pageWhere.push(`d.created_at IS NULL AND d.db_id > ${idParam}::bigint`);
+      pageWhere.push(`l.created_at IS NULL AND l.id > ${idParam}::bigint`);
     }
     useCursor = true;
   }
@@ -128,22 +160,22 @@ async function searchDefaultFeed({filters, countries}) {
   const offset = useCursor ? 0 : Math.max(0, Number(filters.offset) || 0);
   const offsetParam = addPage(offset);
   const orderBy = sort === 'oldest'
-    ? 'd.created_at ASC NULLS LAST, d.db_id ASC'
-    : 'd.created_at DESC NULLS LAST, d.db_id DESC';
+    ? 'l.created_at ASC NULLS LAST, l.id ASC'
+    : 'l.created_at DESC NULLS LAST, l.id DESC';
 
   const pageSql = `
-    WITH deduped AS MATERIALIZED (
-      SELECT DISTINCT ON (l.dedupe_key)
-        l.id AS db_id,
-        l.created_at,
-        l.data
-      FROM listings l
-      WHERE ${where}
-      ORDER BY l.dedupe_key, l.created_at DESC NULLS LAST, l.id DESC
-    )
-    SELECT d.db_id, d.created_at, d.data
-    FROM deduped d
-    ${pageWhere.length ? `WHERE ${pageWhere.join('\n      AND ')}` : ''}
+    SELECT
+      l.id AS db_id,
+      l.created_at,
+      l.data
+    FROM listings l
+    WHERE ${where}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM listings newer
+        WHERE ${newerWhere}
+      )
+      ${pageWhere.length ? `AND ${pageWhere.join('\n      AND ')}` : ''}
     ORDER BY ${orderBy}
     LIMIT ${limitParam}
     OFFSET ${offsetParam}
@@ -172,7 +204,7 @@ async function searchDefaultFeed({filters, countries}) {
     listings,
     nextCursor,
     queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
-    searchPath: 'postgres-fast-feed',
+    searchPath: 'postgres-fast-feed-v2',
   };
 }
 
