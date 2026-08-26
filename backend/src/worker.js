@@ -15,6 +15,7 @@ import {buildCrawlPlan, QUEUE_SHARDS} from './queuePlan.js';
 import {refreshPlaces} from './scheduler.js';
 import {startSocialHousingScheduler} from './social-housing-scheduler.js';
 import {verifyDueListingAvailability} from './availability-sweep.js';
+import {deactivateExpiredListings} from './listing-lifecycle.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -30,10 +31,15 @@ const AVAILABILITY_SWEEP_MS = Math.max(
   30_000,
   Number(process.env.LISTING_AVAILABILITY_SWEEP_SECONDS || 30) * 1000,
 );
+const LIFECYCLE_SWEEP_MS = Math.max(
+  60_000,
+  Number(process.env.LISTING_LIFECYCLE_SWEEP_SECONDS || 600) * 1000,
+);
 
 let stopping = false;
 let dispatching = false;
 let availabilityRunning = false;
+let lifecycleRunning = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -77,6 +83,27 @@ async function availabilityTick() {
     console.warn('[flat:worker] availability sweep failed:', error?.message ?? error);
   } finally {
     availabilityRunning = false;
+  }
+}
+
+async function lifecycleTick() {
+  if (lifecycleRunning || stopping) return;
+  lifecycleRunning = true;
+  try {
+    let total = 0;
+    let result;
+    do {
+      result = await deactivateExpiredListings();
+      total += result.deactivated;
+    } while (result.saturated && total < 20_000 && !stopping);
+
+    if (total) {
+      console.log(`[flat:worker] lifecycle deactivated=${total} older-than=14d`);
+    }
+  } catch (error) {
+    console.warn('[flat:worker] lifecycle sweep failed:', error?.message ?? error);
+  } finally {
+    lifecycleRunning = false;
   }
 }
 
@@ -167,6 +194,7 @@ async function main() {
     console.warn('[flat:worker] places startup check failed:', error?.message ?? error);
   });
   void availabilityTick();
+  void lifecycleTick();
 
   await dispatchTick();
 
@@ -184,10 +212,12 @@ async function main() {
     PLACES_CHECK_MS,
   );
   const availabilityTimer = setInterval(() => void availabilityTick(), AVAILABILITY_SWEEP_MS);
+  const lifecycleTimer = setInterval(() => void lifecycleTick(), LIFECYCLE_SWEEP_MS);
   dispatchTimer.unref?.();
   pruneTimer.unref?.();
   placesTimer.unref?.();
   availabilityTimer.unref?.();
+  lifecycleTimer.unref?.();
 
   try {
     await Promise.all([
@@ -200,6 +230,7 @@ async function main() {
     clearInterval(pruneTimer);
     clearInterval(placesTimer);
     clearInterval(availabilityTimer);
+    clearInterval(lifecycleTimer);
     await Promise.allSettled([closeElasticsearch(), closeDb()]);
   }
 }
