@@ -179,6 +179,6 @@ export function cityLocations(countryCode) {
     ...(data.metroLabels ? { metroLabels: data.metroLabels } : {}),
     ...(data.poiGroups ? { poiGroups: data.poiGroups } : {}),
     ...(data.metropolitanEntities ? { metropolitanEntities: data.metropolitanEntities } : {}),
-    ...(data.searchClusters ? { searchClusters: [...new Set(data.searchClusters || [])] } : {}),
+    ...(data.searchClusters ? { searchClusters: data.searchClusters } : {}),
   }]));
 }
