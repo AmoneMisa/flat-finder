@@ -1,0 +1,66 @@
+name: Cleanup GitHub Actions caches
+
+on:
+  workflow_run:
+    workflows:
+      - Verify, build and deploy flat-finder
+    types:
+      - completed
+    branches:
+      - master
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cleanup:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep only current and previous logical caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          caches="$(gh cache list \
+            --repo "$GH_REPO" \
+            --ref refs/heads/master \
+            --limit 10000 \
+            --sort created_at \
+            --order desc \
+            --json id,key,ref,createdAt,lastAccessedAt,sizeInBytes)"
+
+          delete_ids="$(jq -r '
+            map(select((.key | startswith("buildkit-blob-")) | not))
+            | map(. + {
+                family:
+                  if (.key | startswith("index-")) then .key
+                  elif (.key | test("^node-cache-.*-npm-[0-9a-fA-F]{64}$")) then
+                    (.key | sub("-[0-9a-fA-F]{64}$"; "-<lock-hash>"))
+                  else .key
+                  end
+              })
+            | group_by(.family)
+            | map(sort_by(.createdAt) | reverse | .[2:][])
+            | .[].id
+          ' <<<"$caches")"
+
+          if [[ -z "$delete_ids" ]]; then
+            echo "No stale logical cache entries to delete."
+            exit 0
+          fi
+
+          deleted=0
+          while IFS= read -r cache_id; do
+            [[ -z "$cache_id" ]] && continue
+            echo "Deleting cache id $cache_id"
+            gh cache delete "$cache_id" --repo "$GH_REPO"
+            deleted=$((deleted + 1))
+          done <<<"$delete_ids"
+
+          echo "Deleted $deleted stale logical cache entries; kept the two newest entries per cache family."
+          echo "BuildKit buildkit-blob-* objects are intentionally not force-deleted because retained indexes can still reference older blobs."
