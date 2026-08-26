@@ -8,6 +8,7 @@ import {searchListingMatches} from './elasticsearch.js';
 import {checkRate} from './request-rate-limit.js';
 import {prepareCustomSources} from './custom-source-queue.js';
 
+const LISTING_MAX_AGE_DAYS = 14;
 const VALID_SOURCES = ['olx', 'telegram', 'facebook', 'threads'];
 const VALID_SORTS = [
   'newest',
@@ -39,6 +40,10 @@ export function parseListingFilters(q) {
   ].slice(0, 10);
   const offset = Math.max(0, Math.trunc(num(q.offset) ?? 0));
   const limit = Math.max(1, Math.min(Math.trunc(num(q.limit) ?? 40), 60));
+  const requestedMaxAgeDays = num(q.maxAgeDays);
+  const maxAgeDays = requestedMaxAgeDays != null && requestedMaxAgeDays > 0
+    ? Math.min(requestedMaxAgeDays, LISTING_MAX_AGE_DAYS)
+    : LISTING_MAX_AGE_DAYS;
 
   return {
     customSources,
@@ -86,7 +91,7 @@ export function parseListingFilters(q) {
     children: bool(q.children),
     roomOnly: bool(q.roomOnly),
     withPhotos: bool(q.withPhotos),
-    maxAgeDays: num(q.maxAgeDays),
+    maxAgeDays,
     sources,
     offset,
     limit,
