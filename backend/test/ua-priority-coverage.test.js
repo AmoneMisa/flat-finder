@@ -118,6 +118,80 @@ test('ID-like titles are replaced with structured residential metadata', () => {
   assert.equal(listing.title, 'Квартира · 35 Жемчужина');
 });
 
+test('Chernivtsi OLX parser keeps residential complex and address bounded', () => {
+  const listing = makeListing({
+    id: 'chernivtsi-crystal-lake',
+    source: 'olx',
+    country: 'UA',
+    title: 'ПЕРША ЗДАЧА! Оренда 1-кімнатної новобудови ЖК Кришталеве озеро ВІЛЬНА',
+    description: 'ОРЕНДА 1-КІМНАТНОЇ КВАРТИРИ ЖК «Кришталеве озеро» Вул.Чорновола, р-н Руської Поверх — 8/9, є ліфт',
+    propertyType: 'flat',
+    dealType: 'longRent',
+    city: 'Черновцы',
+    price: 400,
+    currency: 'USD',
+  });
+
+  assert.equal(listing.residenceComplex, 'Кришталеве озеро');
+  assert.equal(listing.address, 'Вул.Чорновола');
+  assert.equal(listing.floor, 8);
+  assert.equal(listing.totalFloors, 9);
+});
+
+test('unquoted Ukrainian complex names stop before availability/rent wording', () => {
+  assert.equal(
+    parseResidentialComplex('ЖК Кришталеве озеро ВІЛЬНА ОРЕНДА'),
+    'Кришталеве озеро',
+  );
+});
+
+test('city-centre wording is not promoted to an address', () => {
+  const listing = makeListing({
+    id: 'chernivtsi-centre-basement',
+    source: 'olx',
+    country: 'UA',
+    title: 'Продаж 2х кім кварт(по плану) Чернівці, центр',
+    description: 'Продаж\n2х кім квартира ,центр 1/2\nЧернівці\nЦентр\n42м2\nТакож під квартирою підвал(не в плані квартири)42м2\nРемонт як перший поверх так і підвал',
+    propertyType: 'flat',
+    dealType: 'sale',
+    city: 'Черновцы',
+  });
+
+  assert.equal(listing.address, null);
+});
+
+test('explicit Ukrainian floor phrase outranks unrelated title fraction', () => {
+  const listing = makeListing({
+    id: 'chernivtsi-poletaieva',
+    source: 'olx',
+    country: 'UA',
+    title: 'Продаж 2-кім. квартири 47 м.кв., в. Полетаєва',
+    description: 'Продається 2-кімнатна квартира в Чернівцях на вул. Полетаєва. Загальна площа — 47 м². Квартира розташована на 4-му поверсі 5-поверхового цегляного будинку.',
+    propertyType: 'flat',
+    dealType: 'sale',
+    city: 'Черновцы',
+  });
+
+  assert.equal(listing.floor, 4);
+  assert.equal(listing.totalFloors, 5);
+});
+
+test('explicit Ukrainian floor phrase handles descriptive words before the floor', () => {
+  const listing = makeListing({
+    id: 'chernivtsi-newbuild-floor',
+    source: 'olx',
+    country: 'UA',
+    title: 'Продаж! 2-кімн. НОВОБУДОВА з РЕМОНТом',
+    description: 'Загальна площа 61 кв. м розміщена на зручному 2-му поверсі 3-поверхового будинку.',
+    propertyType: 'flat',
+    dealType: 'sale',
+    city: 'Черновцы',
+  });
+
+  assert.equal(listing.floor, 2);
+  assert.equal(listing.totalFloors, 3);
+});
+
 test('normal concise OLX titles remain untouched', () => {
   const sourceTitle = 'Оренда квартири в Аркадії Каманіна | 1-кімнатна квартира-студія';
   const listing = makeListing({

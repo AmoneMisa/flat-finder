@@ -39,6 +39,34 @@ function explicitTashkentMetro(text) {
   return null;
 }
 
+function applyPoiAdministrativeContext(result, text, countryCode, preferredCity) {
+  if (countryCode !== 'UA') return;
+  const city = preferredCity || result.city || '';
+  if (city !== 'Chernivtsi') return;
+
+  // Resolve the entity in ordered steps: first establish that the word belongs
+  // to a named POI, then remove a district inference made from the same token.
+  // Do not broaden the district regex to encode this exception.
+  const mentionsZhovtnevyiPark = /парк\s+жовтнев(?:ий|ого|ому|им)/iu.test(String(text));
+  if (!mentionsZhovtnevyiPark) return;
+
+  const districtKey = String(result.district || '').toLocaleLowerCase();
+  if (districtKey === 'zhovtnevyi' || districtKey === 'жовтневий' || districtKey === 'жовтневый') {
+    result.district = null;
+  }
+
+  const entity = {
+    type: 'historicalDistrict',
+    name: 'Shevchenkivskyi',
+    source: 'poiContext',
+    relatedTo: 'Парк Жовтневий',
+  };
+  const exists = result.locationEntities.some(
+    (item) => item?.type === entity.type && item?.name === entity.name,
+  );
+  if (!exists) result.locationEntities.push(entity);
+}
+
 export function parseLocation(text, countryCode, preferredCity = null) {
   const result = {
     region: null,
@@ -116,6 +144,8 @@ export function parseLocation(text, countryCode, preferredCity = null) {
       if (!result.nearby.includes(landmark.name)) result.nearby.push(landmark.name);
     }
   }
+
+  applyPoiAdministrativeContext(result, text, countryCode, preferredCity);
 
   for (const item of GENERIC_NEARBY) {
     if (item.name === 'Metro') continue;

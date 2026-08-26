@@ -27,23 +27,28 @@ const alternatives = (entries) => [...new Set(entries.flatMap(values))]
   .join('|');
 
 const addressLabelPart = alternatives([ADDRESS_TERMS.label]);
-const streetMarkerPart = alternatives([
-  ADDRESS_TERMS.street,
-  ADDRESS_TERMS.avenue,
-  ADDRESS_TERMS.neighborhood,
-  ADDRESS_TERMS.residentialComplex,
-]);
+const streetMarkerPart = alternatives([ADDRESS_TERMS.street, ADDRESS_TERMS.avenue]);
 const addressLabelRe = new RegExp(`(?:${addressLabelPart})\\s*[:\\-–—]\\s*([^\\n]{3,100})`, 'iu');
 const markedStreetRe = new RegExp(
   `((?:${streetMarkerPart})\\.?[\\s\\u00a0]*[^\\n,;.]{2,70}(?:,?\\s*(?:${alternatives([ADDRESS_TERMS.house])})?\\.?\\s*\\d+[\\p{L}0-9/-]*)?)`,
   'iu',
 );
+const ADDRESS_NOISE_RE = /(?:поверх|этаж|підвал|подвал|цоколь|ремонт|площа|площад|кімнат|комнат)/iu;
+const ADDRESS_PAREN_CONTEXT_RE = /\s*\((?:парк|park|школ|school|магазин|сільпо|silpo|рынок|ринок|базар|метро|metro)\b.*$/iu;
 
 function cleanAddress(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
+    .replace(ADDRESS_PAREN_CONTEXT_RE, '')
     .trim()
     .replace(/[.;,]+$/, '');
+}
+
+function plausibleAddress(value) {
+  const cleaned = cleanAddress(value);
+  if (!cleaned || cleaned.length < 3 || cleaned.length > 100) return null;
+  if (ADDRESS_NOISE_RE.test(cleaned)) return null;
+  return cleaned;
 }
 
 export function parseCanonicalCountryCode(value) {
@@ -64,17 +69,9 @@ export function parseCanonicalRegion(countryCode, value) {
   return canonicalRegion(value, countryCode) || String(value).trim();
 }
 
-export function parseHousingIntent(text) {
-  return resolveHousingIntent(text);
-}
-
-export function parseHousingSemanticContext(text) {
-  return parseHousingContext(text);
-}
-
-export function parseHousingStructuredContext(text) {
-  return parseHousingStructured(text);
-}
+export function parseHousingIntent(text) { return resolveHousingIntent(text); }
+export function parseHousingSemanticContext(text) { return parseHousingContext(text); }
+export function parseHousingStructuredContext(text) { return parseHousingStructured(text); }
 
 export function parseLexiconDealType(text) {
   return resolveHousingIntent(text)?.dealType
@@ -104,18 +101,37 @@ export function parseAppliances(text) {
   return [...new Set(out)];
 }
 
+// Odesa listings routinely use Fountain stations as the practical address:
+// "10 ст Б Фонтана", "10 станция Большого Фонтана", "10 ст. В. Фонтану".
+// Keep this separate from generic street parsing because "станция" elsewhere
+// is normally transit/rail context, not an address.
+export function parseOdesaFontanStation(text) {
+  if (!text) return null;
+  const value = String(text);
+  const station = value.match(/(?:^|[^\d])([1-9]|1[0-6])\s*(?:[-–—]?\s*(?:я|ая|а))?\s*(?:ст\.?|станци[яи]|станц(?:ія|ії))\s*(?:б\.?|в\.?|больш(?:ого|ой)|велик(?:ого|ий))?\s*фонтан(?:а|у)?(?=$|[^\p{L}\p{N}_])/iu);
+  if (!station) return null;
+  return `${Number(station[1])} станция Большого Фонтана`;
+}
+
 export function parseLexiconAddress(text, canonicalStreet = null) {
-  if (!text) return canonicalStreet || null;
+  if (!text) return plausibleAddress(canonicalStreet);
+
+  const fountainStation = parseOdesaFontanStation(text);
+  if (fountainStation) return fountainStation;
+
   const labeled = String(text).match(addressLabelRe);
-  if (labeled) return cleanAddress(labeled[1]);
+  const labeledAddress = labeled ? plausibleAddress(labeled[1]) : null;
+  if (labeledAddress) return labeledAddress;
 
   const marked = String(text).match(markedStreetRe);
-  if (marked) return cleanAddress(marked[1]);
+  const markedAddress = marked ? plausibleAddress(marked[1]) : null;
+  if (markedAddress) return markedAddress;
 
-  if (canonicalStreet) return canonicalStreet;
+  const canonicalAddress = plausibleAddress(canonicalStreet);
+  if (canonicalAddress) return canonicalAddress;
 
   const bare = String(text).match(
     /(?:^|[,;\n]\s*)([\p{L}][\p{L}'’‘`ʻʼ.-]*(?:\s+[\p{L}][\p{L}'’‘`ʻʼ.-]*){0,5}\s+\d+[\p{L}0-9/-]*)(?=\s*(?:[,.;\n]|$))/iu,
   );
-  return bare ? cleanAddress(bare[1]) : null;
+  return bare ? plausibleAddress(bare[1]) : null;
 }
