@@ -116,6 +116,9 @@ export function parseOdesaFontanStation(text) {
 export function parseLexiconAddress(text, canonicalStreet = null) {
   if (!text) return plausibleAddress(canonicalStreet);
 
+  const fountainStation = parseOdesaFontanStation(text);
+  if (fountainStation) return fountainStation;
+
   const labeled = String(text).match(addressLabelRe);
   const labeledAddress = labeled ? plausibleAddress(labeled[1]) : null;
   if (labeledAddress) return labeledAddress;
