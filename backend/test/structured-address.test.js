@@ -34,6 +34,21 @@ test('source address is split into stable direct fields', () => {
   assert.equal(listing.address, 'Shota Rustaveli 58 корп. 2');
 });
 
+test('explicit listing prose overrides a weak malformed legacy address', () => {
+  const listing = {
+    address: '7 Продаж видової квартири в ЖК',
+    title: 'продаж квартири жк Alter ego 63m2 2к Лабораторний провулок 7',
+    description: 'Продаж видової квартири в ЖК Alter Ego | Лабораторний провулок, 7\nУ продажу стильна квартира.',
+  };
+
+  applyStructuredAddressFields(listing);
+
+  assert.equal(listing.street, 'Лабораторний провулок');
+  assert.equal(listing.houseNumber, '7');
+  assert.equal(listing.building, null);
+  assert.equal(listing.address, 'Лабораторний провулок 7');
+});
+
 test('unrelated prices and phones do not become house numbers', () => {
   const listing = {
     street: 'Воробкевича',
