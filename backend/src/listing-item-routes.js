@@ -1,5 +1,5 @@
 import {COUNTRIES, COUNTRY_CODES} from './countries.js';
-import {verifyListingAvailability} from './availability.js';
+import {recordListingAvailability} from './availability.js';
 import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateCustomSource} from './custom-source-queue.js';
 import {checkRate} from './request-rate-limit.js';
@@ -21,18 +21,29 @@ export function installListingItemRoutes(app) {
     }
 
     try {
-      const [availability] = await verifyListingAvailability([
-        {source, country: code, id},
-      ], {force: true});
-
-      if (availability?.status === 'inactive') {
-        return res.status(404).json({error: 'Listing no longer available'});
-      }
-
+      // fetchOlxOffer is already a live source request. The previous path first
+      // called /olx/check and then fetched the offer again, doubling latency and
+      // WAF exposure for every click. One source fetch now serves as both the
+      // availability check and the fresh listing reload.
       const listing = await fetchOlxOffer(country, id);
       if (!listing) {
+        await recordListingAvailability({
+          source,
+          country: code,
+          id,
+          status: 'inactive',
+          reason: 'offer_not_found',
+        });
         return res.status(404).json({error: 'Listing no longer available'});
       }
+
+      await recordListingAvailability({
+        source,
+        country: code,
+        id,
+        status: 'active',
+        reason: 'offer_reload',
+      });
       return res.json({listing});
     } catch (err) {
       return res.status(502).json({error: err.message});
