@@ -343,7 +343,9 @@ export async function searchPostgresListings({ filters, countries, rates = null,
         COUNT(*)::int AS count,
         COUNT(price_usd)::int AS price_count,
         ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_usd))::numeric, 2) AS median_usd,
-        ROUND(AVG(price_usd)::numeric, 2) AS average_usd
+        ROUND(AVG(price_usd)::numeric, 2) AS average_usd,
+        ROUND(MIN(price_usd)::numeric, 2) AS min_usd,
+        ROUND(MAX(price_usd)::numeric, 2) AS max_usd
       FROM classified
       GROUP BY deal_key
     ),
@@ -354,7 +356,9 @@ export async function searchPostgresListings({ filters, countries, rates = null,
         geo.label,
         COUNT(*)::int AS count,
         COUNT(v.price_usd)::int AS price_count,
-        ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v.price_usd))::numeric, 2) AS median_usd
+        ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v.price_usd))::numeric, 2) AS median_usd,
+        ROUND(MIN(v.price_usd)::numeric, 2) AS min_usd,
+        ROUND(MAX(v.price_usd)::numeric, 2) AS max_usd
       FROM classified v
       CROSS JOIN LATERAL (VALUES
         ('country', NULLIF(BTRIM(v.country), '')),
@@ -379,7 +383,9 @@ export async function searchPostgresListings({ filters, countries, rates = null,
           'label', label,
           'count', count,
           'priceCount', price_count,
-          'medianUsd', median_usd
+          'medianUsd', median_usd,
+          'minUsd', min_usd,
+          'maxUsd', max_usd
         ) ORDER BY count DESC, label ASC
       ) AS items
       FROM geo_ranked
@@ -410,7 +416,9 @@ export async function searchPostgresListings({ filters, countries, rates = null,
           'count', count,
           'priceCount', price_count,
           'medianUsd', median_usd,
-          'averageUsd', average_usd
+          'averageUsd', average_usd,
+          'minUsd', min_usd,
+          'maxUsd', max_usd
         ) ORDER BY count DESC, key ASC)
         FROM deal_rows
       ), '[]'::jsonb) AS deal_types,
