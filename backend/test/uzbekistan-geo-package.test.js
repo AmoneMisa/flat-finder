@@ -1,51 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { UZ_CITY_COORDINATES } from '@whiteslove/parsing-lexicon/uz-geo-coordinates';
+import {
+  applyGeoCatalogBroadAnchor,
+  applyGeoCatalogCityFallback,
+  applyGeoCatalogExactAnchor,
+} from '../src/geo-catalog.js';
 import { applyReverseGeo } from '../src/reverse-geo.js';
-import { applyUzbekistanCoordinateFallbacks } from '../src/uzbekistan-geo.js';
 
-test('canonicalizes Uzbekistan city aliases and fills only missing coordinates', () => {
-  const listings = [
-    { id: 'samarkand', city: 'Самарканд', lat: null, lng: null },
-    {
-      id: 'tashkent-source',
-      city: 'Тошкент',
-      lat: 41.3201,
-      lng: 69.2812,
-      locationSource: 'coordinates',
-      locationAccuracyM: 25,
-    },
-  ];
+test('canonicalizes Uzbekistan city aliases and fills city fallback from geo-catalog', () => {
+  const listing = { id: 'samarkand', city: 'Самарканд', lat: null, lng: null };
 
-  applyUzbekistanCoordinateFallbacks(listings);
-
-  assert.equal(listings[0].city, 'Samarkand');
-  assert.equal(listings[0].lat, UZ_CITY_COORDINATES.Samarkand.lat);
-  assert.equal(listings[0].lng, UZ_CITY_COORDINATES.Samarkand.lng);
-  assert.equal(listings[0].locationSource, 'city');
-  assert.equal(listings[0].locationAccuracyM, 8000);
-
-  assert.equal(listings[1].city, 'Tashkent');
-  assert.equal(listings[1].lat, 41.3201);
-  assert.equal(listings[1].lng, 69.2812);
-  assert.equal(listings[1].locationSource, 'coordinates');
-  assert.equal(listings[1].locationAccuracyM, 25);
+  assert.equal(applyGeoCatalogCityFallback(listing, { code: 'UZ' }), true);
+  assert.equal(listing.city, 'Samarkand');
+  assert.ok(Number.isFinite(listing.lat));
+  assert.ok(Number.isFinite(listing.lng));
+  assert.equal(listing.locationSource, 'city');
+  assert.equal(listing.locationAccuracyM, 8000);
 });
 
-test('covers package cities beyond the old Flat Finder seven-city list', () => {
+test('geo-catalog covers Uzbekistan cities beyond the old seven-city list', () => {
   const listings = [
     { id: 'qarshi', city: 'Карши' },
     { id: 'khiva', city: 'Xiva' },
     { id: 'chirchiq', city: 'Чирчик' },
   ];
 
-  applyUzbekistanCoordinateFallbacks(listings);
+  for (const listing of listings) {
+    assert.equal(applyGeoCatalogCityFallback(listing, { code: 'UZ' }), true);
+  }
 
-  assert.deepEqual(
-    listings.map(({ city }) => city),
-    ['Qarshi', 'Khiva', 'Chirchiq'],
-  );
+  assert.deepEqual(listings.map(({ city }) => city), ['Qarshi', 'Khiva', 'Chirchiq']);
   for (const listing of listings) {
     assert.ok(Number.isFinite(listing.lat));
     assert.ok(Number.isFinite(listing.lng));
@@ -53,17 +38,23 @@ test('covers package cities beyond the old Flat Finder seven-city list', () => {
   }
 });
 
-test('reverse-geocoding stage applies the Uzbekistan fallback after forward geocoding is exhausted', async () => {
-  const listings = [{ id: 'qarshi-pipeline', city: 'Карши', lat: null, lng: null }];
+test('stable exact and broad Uzbekistan entities resolve locally when catalogued', () => {
+  const metro = { city: 'Тошкент', metro: 'Chorsu' };
+  assert.equal(applyGeoCatalogExactAnchor(metro, { code: 'UZ' }), true);
+  assert.equal(metro.city, 'Tashkent');
+  assert.equal(metro.locationSource, 'metro');
 
-  const filled = await applyReverseGeo(listings, { code: 'UZ' }, 0);
+  const district = { city: 'Tashkent', district: 'Chilanzar' };
+  assert.equal(applyGeoCatalogBroadAnchor(district, { code: 'UZ' }), true);
+  assert.equal(district.locationSource, 'district');
+});
+
+test('reverse-geocoding does not invent forward city coordinates', async () => {
+  const listing = { id: 'qarshi-pipeline', city: 'Карши', lat: null, lng: null };
+
+  const filled = await applyReverseGeo([listing], { code: 'UZ' }, 0);
 
   assert.equal(filled, 0);
-  assert.equal(listings[0].city, 'Qarshi');
-  assert.deepEqual(
-    { lat: listings[0].lat, lng: listings[0].lng },
-    UZ_CITY_COORDINATES.Qarshi,
-  );
-  assert.equal(listings[0].locationSource, 'city');
-  assert.equal(listings[0].locationAccuracyM, 8000);
+  assert.equal(listing.lat, null);
+  assert.equal(listing.lng, null);
 });

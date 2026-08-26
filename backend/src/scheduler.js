@@ -3,6 +3,7 @@
 // in PostgreSQL; they never execute marketplace scrapers inside the HTTP process.
 
 import {geocodeBbox, geocodeQuery} from './geocode.js';
+import {promoteLearnedGeo} from './learned-geo-export.js';
 import {placesFreshness} from './places-db.js';
 import {syncAllPlaces} from './places-sync.js';
 import {dispatchGenerationIfIdle} from './pgQueue.js';
@@ -57,15 +58,18 @@ export async function refreshAll(reason = 'manual') {
 }
 
 /**
- * Refills the places table when it is empty or older than the max age. The
- * worker calls this on startup and periodically; failures are deliberately
- * non-fatal because listing ingestion must not depend on OSM availability.
+ * Daily maintenance tick. Learned geocodes are promoted independently of the
+ * slower places-table refresh, so fresh OSM places never suppress promotion.
  */
 export async function refreshPlaces(force = false) {
   if (placesRunning) return null;
   placesRunning = true;
 
   try {
+    await promoteLearnedGeo().catch((error) => {
+      console.warn('[geo:promote] failed:', error?.message || error);
+    });
+
     const freshness = await placesFreshness();
     const newest = freshness.reduce(
       (latest, row) => Math.max(
