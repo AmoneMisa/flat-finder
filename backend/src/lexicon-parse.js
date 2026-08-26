@@ -39,10 +39,14 @@ const markedStreetRe = new RegExp(
   'iu',
 );
 const ADDRESS_NOISE_RE = /(?:поверх|этаж|підвал|подвал|цоколь|ремонт|площа|площад|кімнат|комнат)/iu;
+const ADDRESS_PAREN_CONTEXT_RE = /\s*\((?:парк|park|школ|school|магазин|сільпо|silpo|рынок|ринок|базар|метро|metro)\b.*$/iu;
 
 function cleanAddress(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
+    // Parenthetical POI/infrastructure notes belong to nearby context, not to
+    // the street itself: "Проспект Ювілейний (парк, сільпо)".
+    .replace(ADDRESS_PAREN_CONTEXT_RE, '')
     .trim()
     .replace(/[.;,]+$/, '');
 }
