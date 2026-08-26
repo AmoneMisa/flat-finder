@@ -11,7 +11,9 @@ export function applyUzbekistanCoordinateFallbacks(listings) {
     if (!city) continue;
     listing.city = city;
 
-    const hasCoordinates = Number.isFinite(Number(listing.lat))
+    const hasCoordinates = listing.lat != null
+      && listing.lng != null
+      && Number.isFinite(Number(listing.lat))
       && Number.isFinite(Number(listing.lng));
     if (hasCoordinates) continue;
 
