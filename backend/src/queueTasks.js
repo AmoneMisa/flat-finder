@@ -11,6 +11,7 @@ import { geocodeListingsPersistent } from './geocode-persistent.js';
 import { rejectOutOfAreaCoordinates } from './coordinate-validation.js';
 import { reconcileAuthoritativeOlxSegment } from './crawl-reconciliation.js';
 import { deactivateMissingCustomSourceListings } from './custom-source-repository.js';
+import { scheduleListingsVision } from './vision-enrichment.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
 const OLX_FETCHER_URLS = [
@@ -222,6 +223,10 @@ async function persist(listings, task) {
     );
   }
 
+  // AI Vision is intentionally off the critical persistence path. Queueing is
+  // synchronous/cheap; the worker result is merged back into PostgreSQL and ES.
+  scheduleListingsVision(listings);
+
   return { saved, indexed };
 }
 
@@ -273,9 +278,6 @@ async function processQueueTaskInner(task) {
       crawlerShard: task.crawlerShard,
     });
 
-    // Reject contradictory source coordinates first. persist() then geocodes the
-    // entire batch, which is cheap for rows that already have valid coordinates
-    // and repairs both rejected and originally-missing source coordinates.
     const rejected = await rejectOutOfAreaCoordinates(
       pageResult.listings,
       COUNTRIES[country],
