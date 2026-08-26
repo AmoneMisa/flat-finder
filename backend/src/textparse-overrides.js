@@ -19,6 +19,8 @@ const EXPLICIT_FEE_RE = /(?:агентск[а-яё]*\s+(?:комисси[а-яё
 
 const BROKER_MENTION_RE = /(?:макл(?:ер[а-яё]*)?|makler|р[иі][еєэ]?лтор[а-яёіїґ]*|rieltor|realtor|broker|agent|агентств[а-яё]*|vositachi|делдал|agen(?:ț|t)ie|intermediar)/iu;
 const RC_TRAILING_NO_BROKER_RE = /\s+(?:без\s+(?:макл(?:ер[а-яё]*)?|ри[еэ]?лтор[а-яё]*|посредник[а-яё]*|агент[а-яё]*)|no\s+(?:broker|realtor|agent|agency)|f(?:ă|a)r(?:ă|a)\s+(?:agen(?:ț|t)ie|intermediar\w*)|maklersiz|vositachisiz|egasidan|делдалсыз|иесінен)(?=$|[^\p{L}\p{N}_])[\s\S]*$/iu;
+const RC_QUOTED_NAME_RE = /(?:жк|жм|ж\/к|residential complex|ansamblu(?: rezidential)?|turar[- ]?joy majmuasi)\s*[:;—–\-·•]*\s*[«"„“']\s*([^»"„“'\n]{2,60})\s*[»"“']?/iu;
+const RC_TRAILING_ACTION_RE = /\s+(?:вільн[а-яіїґ]*|оренд[а-яіїґ]*|здач[а-яіїґ]*|зда[єе]ться|здам|продаж[а-яіїґ]*|прода[єе]ться|продам|аренд[а-яё]*|сдач[а-яё]*|сда[её]тся|сдам|продаж[а-яё]*|прода[её]тся)(?=$|[^\p{L}\p{N}_])[\s\S]*$/iu;
 
 export function parseCommission(text) {
   if (!text) return { has: null, percent: null };
@@ -143,10 +145,14 @@ export function parseResidentialComplex(text) {
   const pearl = parsePearlComplex(text);
   if (pearl) return pearl;
 
+  const quoted = String(text || '').match(RC_QUOTED_NAME_RE)?.[1]?.trim();
+  if (quoted && /[a-zA-Zа-яёіїґ]{2,}/i.test(quoted)) return quoted;
+
   const raw = baseParseResidentialComplex(text);
   if (!raw) return null;
   const cleaned = raw
     .replace(RC_TRAILING_NO_BROKER_RE, '')
+    .replace(RC_TRAILING_ACTION_RE, '')
     .replace(/\s+[1-9]\s*(?:[вv>]\s*[1-9])?\s*\/\s*[0-9]{1,2}\s*\/\s*[0-9]{1,2}\b[\s\S]*$/iu, '')
     .replace(/\s+(?:глинка|glinka)\s*$/iu, '')
     .replace(/\s*[!|]+\s*$/g, '')
