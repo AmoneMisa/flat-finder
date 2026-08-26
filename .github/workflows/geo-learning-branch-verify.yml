@@ -1,0 +1,92 @@
+name: Verify geo learning branch
+
+on:
+  push:
+    branches:
+      - fix/use-geo-catalog-for-coordinates
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      POSTGRES_DB: flatfinder
+      POSTGRES_USER: flatfinder
+      POSTGRES_PASSWORD: flatfinder-test
+      TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder-test@127.0.0.1:5432/flatfinder
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/use-geo-catalog-for-coordinates
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Refresh mutable internal package lock entries
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'backend/package-lock.json';
+          const lock = JSON.parse(fs.readFileSync(path, 'utf8'));
+          delete lock.packages?.['node_modules/@whiteslove/parsing-lexicon'];
+          delete lock.packages?.['node_modules/@whiteslove/geo-catalog'];
+          fs.writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`);
+          NODE
+          npm install --package-lock-only --ignore-scripts --prefix backend
+
+      - name: Verify clean install
+        run: npm ci --prefix backend
+
+      - name: Check changed JavaScript syntax
+        run: |
+          node --check backend/src/geo-catalog.js
+          node --check backend/src/geocode-persistent.js
+          node --check backend/src/learned-geo.js
+          node --check backend/src/learned-geo-export.js
+          node --check backend/src/structured-address.js
+
+      - name: Apply migrations
+        run: npm run migrate --prefix backend
+
+      - name: Run geo regressions
+        run: >-
+          node --test
+          backend/test/learned-geo.test.js
+          backend/test/structured-address.test.js
+          backend/test/uzbekistan-geo-package.test.js
+
+      - name: Run full backend suite
+        run: npm test --prefix backend
+
+      - name: Commit refreshed lockfile
+        shell: bash
+        run: |
+          if git diff --quiet -- backend/package-lock.json; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/package-lock.json
+          git commit -m "chore: refresh internal package lock"
+          git push origin HEAD:fix/use-geo-catalog-for-coordinates
