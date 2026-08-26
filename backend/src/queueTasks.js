@@ -7,7 +7,7 @@ import { throttle } from './ratelimit.js';
 import { upsertListings } from './db.js';
 import { indexListings } from './elasticsearch.js';
 import { executeQueueTaskOnce } from './queueTaskDedup.js';
-import { geocodeListings } from './geocode.js';
+import { geocodeListingsPersistent } from './geocode-persistent.js';
 import { rejectOutOfAreaCoordinates } from './coordinate-validation.js';
 import { reconcileAuthoritativeOlxSegment } from './crawl-reconciliation.js';
 import { deactivateMissingCustomSourceListings } from './custom-source-repository.js';
@@ -208,7 +208,7 @@ async function persist(listings, task) {
   const country = String(task?.country || listings[0]?.country || '').toUpperCase();
   const config = COUNTRIES[country];
   if (config) {
-    await geocodeListings(listings, config);
+    await geocodeListingsPersistent(listings, config);
   }
 
   const saved = await upsertListings(listings);
