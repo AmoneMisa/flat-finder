@@ -1,5 +1,29 @@
 const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
   UA: [
+    // Kyiv: additional active public housing feeds.
+    { name: 'OrendakvartyrKyiv_UK', city: 'Kyiv' },
+    { name: 'ArendaKyiva', city: 'Kyiv' },
+    { name: 'ArendaUA', city: 'Kyiv' },
+    { name: 'arendakyiv_ua', city: 'Kyiv' },
+    { name: 'rentapartmentkyiv', city: 'Kyiv' },
+
+    // Kharkiv.
+    { name: 'KH_Rent', city: 'Kharkiv' },
+    { name: 'kh_rent_apartment', city: 'Kharkiv' },
+    { name: 'xaarenda', city: 'Kharkiv' },
+    { name: 'RENTUA_KHARKIV', city: 'Kharkiv' },
+
+    // Ivano-Frankivsk.
+    { name: 'ivano_frankivsk_dom', city: 'Ivano-Frankivsk' },
+    { name: 'RENTIN_FRANKIVSK', city: 'Ivano-Frankivsk' },
+
+    // Lutsk.
+    { name: 'lutskrent', city: 'Lutsk' },
+    { name: 'rentin_lutsk', city: 'Lutsk' },
+
+    // Mukachevo.
+    { name: 'orendari_mukachevo', city: 'Mukachevo' },
+
     // Odesa: additional active public housing feeds.
     { name: 'odessa_housing', city: 'Odesa' },
     { name: 'okodesa', city: 'Odesa' },
@@ -11,7 +35,6 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // Tashkent: additional active public housing feeds.
     { name: 'kvartira_maklersiz_bezmakler', city: 'Tashkent' },
     { name: 'kvartira_bez_posrednika', city: 'Tashkent' },
-    { name: 'nedvijemosttashkent', city: 'Tashkent' },
     { name: 'nedvij_tashkent', city: 'Tashkent' },
     { name: 'iHometashkent', city: 'Tashkent' },
   ],
