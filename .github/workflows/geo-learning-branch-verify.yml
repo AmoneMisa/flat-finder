@@ -6,7 +6,7 @@ on:
       - fix/use-geo-catalog-for-coordinates
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -42,21 +42,11 @@ jobs:
         with:
           node-version: 24
 
-      - name: Refresh mutable internal package lock entries
-        shell: bash
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const path = 'backend/package-lock.json';
-          const lock = JSON.parse(fs.readFileSync(path, 'utf8'));
-          delete lock.packages?.['node_modules/@whiteslove/parsing-lexicon'];
-          delete lock.packages?.['node_modules/@whiteslove/geo-catalog'];
-          fs.writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`);
-          NODE
-          npm install --package-lock-only --ignore-scripts --prefix backend
-
-      - name: Verify clean install
+      - name: Verify locked dependencies
         run: npm ci --prefix backend
+
+      - name: Install mutable internal packages from master
+        run: npm run install:internal --prefix backend
 
       - name: Check changed JavaScript syntax
         run: |
@@ -78,15 +68,3 @@ jobs:
 
       - name: Run full backend suite
         run: npm test --prefix backend
-
-      - name: Commit refreshed lockfile
-        shell: bash
-        run: |
-          if git diff --quiet -- backend/package-lock.json; then
-            exit 0
-          fi
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add backend/package-lock.json
-          git commit -m "chore: refresh internal package lock"
-          git push origin HEAD:fix/use-geo-catalog-for-coordinates
