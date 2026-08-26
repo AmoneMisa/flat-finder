@@ -27,12 +27,7 @@ const alternatives = (entries) => [...new Set(entries.flatMap(values))]
   .join('|');
 
 const addressLabelPart = alternatives([ADDRESS_TERMS.label]);
-// A neighbourhood / city-centre marker is location context, not a street.
-// Treating it as an address prefix made phrases after "центр" become addresses.
-const streetMarkerPart = alternatives([
-  ADDRESS_TERMS.street,
-  ADDRESS_TERMS.avenue,
-]);
+const streetMarkerPart = alternatives([ADDRESS_TERMS.street, ADDRESS_TERMS.avenue]);
 const addressLabelRe = new RegExp(`(?:${addressLabelPart})\\s*[:\\-–—]\\s*([^\\n]{3,100})`, 'iu');
 const markedStreetRe = new RegExp(
   `((?:${streetMarkerPart})\\.?[\\s\\u00a0]*[^\\n,;.]{2,70}(?:,?\\s*(?:${alternatives([ADDRESS_TERMS.house])})?\\.?\\s*\\d+[\\p{L}0-9/-]*)?)`,
@@ -44,8 +39,6 @@ const ADDRESS_PAREN_CONTEXT_RE = /\s*\((?:парк|park|школ|school|мага
 function cleanAddress(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
-    // Parenthetical POI/infrastructure notes belong to nearby context, not to
-    // the street itself: "Проспект Ювілейний (парк, сільпо)".
     .replace(ADDRESS_PAREN_CONTEXT_RE, '')
     .trim()
     .replace(/[.;,]+$/, '');
@@ -76,17 +69,9 @@ export function parseCanonicalRegion(countryCode, value) {
   return canonicalRegion(value, countryCode) || String(value).trim();
 }
 
-export function parseHousingIntent(text) {
-  return resolveHousingIntent(text);
-}
-
-export function parseHousingSemanticContext(text) {
-  return parseHousingContext(text);
-}
-
-export function parseHousingStructuredContext(text) {
-  return parseHousingStructured(text);
-}
+export function parseHousingIntent(text) { return resolveHousingIntent(text); }
+export function parseHousingSemanticContext(text) { return parseHousingContext(text); }
+export function parseHousingStructuredContext(text) { return parseHousingStructured(text); }
 
 export function parseLexiconDealType(text) {
   return resolveHousingIntent(text)?.dealType
@@ -114,6 +99,18 @@ export function parseAppliances(text) {
     if (findCanonical(text, [entry], { partial: true })) out.push(entry.canonical);
   }
   return [...new Set(out)];
+}
+
+// Odesa listings routinely use Fountain stations as the practical address:
+// "10 ст Б Фонтана", "10 станция Большого Фонтана", "10 ст. В. Фонтану".
+// Keep this separate from generic street parsing because "станция" elsewhere
+// is normally transit/rail context, not an address.
+export function parseOdesaFontanStation(text) {
+  if (!text) return null;
+  const value = String(text);
+  const station = value.match(/(?:^|[^\d])([1-9]|1[0-6])\s*(?:[-–—]?\s*(?:я|ая|а))?\s*(?:ст\.?|станци[яи]|станц(?:ія|ії))\s*(?:б\.?|в\.?|больш(?:ого|ой)|велик(?:ого|ий))?\s*фонтан(?:а|у)?(?=$|[^\p{L}\p{N}_])/iu);
+  if (!station) return null;
+  return `${Number(station[1])} станция Большого Фонтана`;
 }
 
 export function parseLexiconAddress(text, canonicalStreet = null) {
