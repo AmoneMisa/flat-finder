@@ -154,19 +154,23 @@ export async function attachMarketComparisons(listings, rates) {
     const key = targetKey(listing);
     const stats = byKey.get(key) || { comparableCount: 0, medianUsd: null };
     const target = targetByKey.get(key);
-    const goodPrice = Boolean(
-      target
-      && stats.comparableCount >= MIN_COMPARABLES
-      && Number.isFinite(stats.medianUsd)
-      && target.price_usd < stats.medianUsd,
-    );
+    const comparableMedian = stats.comparableCount >= MIN_COMPARABLES && Number.isFinite(stats.medianUsd)
+      ? stats.medianUsd
+      : null;
+    const priceUsd = target && Number.isFinite(target.price_usd) ? target.price_usd : null;
+    const priceRatio = priceUsd != null && comparableMedian != null && comparableMedian > 0
+      ? priceUsd / comparableMedian
+      : null;
+    const goodPrice = Boolean(priceRatio != null && priceRatio < 1);
 
     return {
       ...listing,
       marketComparison: {
         goodPrice,
-        medianUsd: stats.comparableCount >= MIN_COMPARABLES ? stats.medianUsd : null,
+        medianUsd: comparableMedian,
         comparableCount: stats.comparableCount,
+        priceUsd,
+        priceRatio,
       },
     };
   });
