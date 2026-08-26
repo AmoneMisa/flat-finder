@@ -25,7 +25,10 @@ jobs:
         with:
           node-version: 24
       - name: Refresh dependency from parsing-lexicon master
-        run: npm install --prefix backend --ignore-scripts --no-audit --no-fund
+        run: >-
+          npm install --prefix backend
+          '@whiteslove/parsing-lexicon@https://github.com/AmoneMisa/parsing-lexicon/archive/refs/heads/master.tar.gz'
+          --save-exact --ignore-scripts --no-audit --no-fund
       - name: Verify Uzbekistan integration
         run: |
           node --check backend/src/reverse-geo.js
@@ -40,6 +43,6 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git rm -f .github/workflows/tmp-connect-uz-geo.yml
-          git add backend/package-lock.json
+          git add backend/package.json backend/package-lock.json
           git commit -m "chore: refresh parsing lexicon master lock"
           git push origin HEAD:feat/use-uzbekistan-geo-package
