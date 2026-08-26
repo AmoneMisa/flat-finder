@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { COUNTRIES } from './countries.js';
+import { telegramHousingChannels } from './telegram-housing-sources.js';
 
 export const QUEUE_PROTOCOL_VERSION = Math.max(
   3,
@@ -140,7 +141,7 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
     }
 
     if (country.sources?.includes('telegram')) {
-      for (const raw of country.telegramChannels ?? []) {
+      for (const raw of telegramHousingChannels(country.code, country.telegramChannels ?? [])) {
         const channel = channelConfig(raw);
         if (!channel) continue;
 
