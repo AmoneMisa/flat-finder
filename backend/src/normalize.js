@@ -39,6 +39,45 @@ const PARKING_OBJECT_RE = /(?:парко?мест[а-яёіїґ]*|парково
 const HOUSING_OBJECT_RE = /(?:квартир[а-яёіїґ]*|апартамент[а-яёіїґ]*|студи[яії][а-яёіїґ]*|будин[а-яіїґ]*|(?:^|[^\p{L}\p{N}_])дом(?:а|ом|у|ов)?(?=$|[^\p{L}\p{N}_])|жиль[а-яё]*|житл[а-яіїґ]*|flat\b|apartment\b|studio\b|house\b|xonadon\b|kvartira\b|apartament\b|garsonier[ăa]\b)/iu;
 const EXPLICIT_SHORT_STAY_RE = /(?:^|[^\p{L}\p{N}_])сут(?:ки|ок)(?=$|[^\p{L}\p{N}_])/iu;
 
+const NEARBY_CATEGORY_ALIASES = [
+  ['park', ['park', 'парк']],
+  ['school', ['school', 'школа']],
+  ['market', ['market', 'рынок', 'ринок', 'базар']],
+  ['stadium', ['stadium', 'стадион', 'стадіон']],
+  ['clinic', ['clinic', 'клиника', 'клініка']],
+];
+
+function normalizeNearbyPlaces(values) {
+  const unique = [];
+  const seen = new Set();
+  for (const raw of values || []) {
+    const value = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!value) continue;
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(value);
+  }
+
+  const categoryForExact = (value) => {
+    const key = value.toLocaleLowerCase();
+    return NEARBY_CATEGORY_ALIASES.find(([, aliases]) => aliases.includes(key))?.[0] || null;
+  };
+  const hasSpecific = (category) => {
+    const aliases = NEARBY_CATEGORY_ALIASES.find(([name]) => name === category)?.[1] || [];
+    return unique.some((value) => {
+      const key = value.toLocaleLowerCase();
+      if (aliases.includes(key)) return false;
+      return aliases.some((alias) => key.startsWith(`${alias} `) || key.endsWith(` ${alias}`));
+    });
+  };
+
+  return unique.filter((value) => {
+    const category = categoryForExact(value);
+    return !category || !hasSpecific(category);
+  });
+}
+
 export function looksParkingOnly(text) {
   const value = String(text || '').replace(/\s+/g, ' ').trim();
   if (!value || !PARKING_OBJECT_RE.test(value)) return false;
@@ -156,7 +195,8 @@ export function makeListing(partial) {
   );
   const metro = partial.metro ?? loc.metro;
   const nearby = partial.nearby
-    ?? [...new Set([...(loc.nearby || []), ...parseNearbyPlaces(combined)])];
+    ? normalizeNearbyPlaces(partial.nearby)
+    : normalizeNearbyPlaces([...(loc.nearby || []), ...parseNearbyPlaces(combined)]);
   const parsedResidenceComplex = parseResidentialComplex(combined);
   const kharkivVorobioviHory = country === 'UA' && city === 'Kharkiv' && /вороб[ьъ]?[её]вы\s+горы/iu.test(combined);
   const preferLocalResidence = country === 'UZ' || /^\d+ Жемчужина$/u.test(parsedResidenceComplex || '') || kharkivVorobioviHory;
