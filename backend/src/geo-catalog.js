@@ -35,9 +35,25 @@ const DEFAULT_ACCURACY_M = Object.freeze({
   city: 8000,
 });
 
+const BROAD_TYPE_PRIORITY = Object.freeze({
+  microdistrict: 10,
+  mahalla: 20,
+  local_area: 30,
+  suburb: 40,
+  settlement: 40,
+  district: 90,
+});
+
 function text(value) {
   const result = String(value ?? '').trim();
   return result || null;
+}
+
+function hasCoordinates(listing) {
+  return listing?.lat != null
+    && listing?.lng != null
+    && Number.isFinite(Number(listing.lat))
+    && Number.isFinite(Number(listing.lng));
 }
 
 export function canonicalGeoCatalogCity(countryCode, value) {
@@ -57,6 +73,8 @@ function entityType(value) {
 function resolve(countryCode, city, type, canonical) {
   const normalizedType = entityType(type);
   const name = text(canonical);
+  // Streets/addresses remain external-geocoder responsibilities. POIs are not
+  // used as direct placement anchors because listing text usually means “near”.
   if (!name || normalizedType === 'street' || normalizedType === 'poi') return null;
   return resolveLexiconGeoEntity({
     country: countryCode,
@@ -94,7 +112,7 @@ function uniqueInputs(inputs) {
 }
 
 export function applyGeoCatalogExactAnchor(listing, country) {
-  if (!listing) return false;
+  if (!listing || hasCoordinates(listing)) return false;
   const { countryCode, city } = canonicalContext(listing, country);
   if (!countryCode || !city) return false;
 
@@ -114,17 +132,18 @@ export function applyGeoCatalogExactAnchor(listing, country) {
 }
 
 export function applyGeoCatalogBroadAnchor(listing, country) {
-  if (!listing) return false;
+  if (!listing || hasCoordinates(listing)) return false;
   const { countryCode, city } = canonicalContext(listing, country);
   if (!countryCode || !city) return false;
 
   const locationEntities = (Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
     .map((entity) => ({ type: entityType(entity?.type), canonical: entity?.name }))
-    .filter((input) => !['street', 'poi', 'residential_complex', 'metro', 'city'].includes(input.type));
+    .filter((input) => Object.hasOwn(BROAD_TYPE_PRIORITY, input.type))
+    .sort((a, b) => BROAD_TYPE_PRIORITY[a.type] - BROAD_TYPE_PRIORITY[b.type]);
 
   const inputs = [
-    ...locationEntities,
     { type: 'microdistrict', canonical: listing.microdistrict },
+    ...locationEntities,
     { type: 'local_area', canonical: listing.area || listing.kvartal },
     ...(listing.localAreas || []).map((canonical) => ({ type: 'local_area', canonical })),
     ...(listing.suburbs || []).map((canonical) => ({ type: 'suburb', canonical })),
@@ -140,7 +159,7 @@ export function applyGeoCatalogBroadAnchor(listing, country) {
 }
 
 export function applyGeoCatalogCityFallback(listing, country) {
-  if (!listing) return false;
+  if (!listing || hasCoordinates(listing)) return false;
   const { countryCode, city } = canonicalContext(listing, country);
   if (!countryCode || !city) return false;
   const entity = resolve(countryCode, city, 'city', city);
