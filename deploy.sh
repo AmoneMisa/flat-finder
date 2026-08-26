@@ -1,21 +1,32 @@
 #!/usr/bin/env bash
-# Standalone deploy for the flat-finder stack. Application images are built in
-# GitHub Actions and pulled from GHCR; the production server never builds them.
-# Elasticsearch is intentionally treated as stateful infrastructure: ordinary
-# application deploys leave its running container untouched.
+# Standalone deploy for the flat-finder stack. Application images are normally
+# built in GitHub Actions and pulled from GHCR. LOCAL_BUILD=1 lets the guarded
+# server-side fallback deploy images built directly on the production host.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 IMAGE_TAG="${1:-${IMAGE_TAG:-latest}}"
 UPDATE_ELASTICSEARCH="${2:-false}"
+DEPLOY_SHA="${DEPLOY_SHA:-$IMAGE_TAG}"
+DEPLOY_SOURCE="${DEPLOY_SOURCE:-manual}"
+LOCAL_BUILD="${LOCAL_BUILD:-0}"
+FORCE_DEPLOY="${FORCE_DEPLOY:-0}"
+STATE_DIR="${DEPLOY_STATE_DIR:-/var/lib/flat-finder-deploy}"
 export IMAGE_TAG
+mkdir -p "$STATE_DIR"
+
+if [[ "$FORCE_DEPLOY" != "1" && -f "$STATE_DIR/deployed.sha" ]] &&
+   [[ "$(cat "$STATE_DIR/deployed.sha")" == "$DEPLOY_SHA" ]]; then
+  echo "Commit $DEPLOY_SHA is already deployed; skipping duplicate rollout."
+  exit 0
+fi
 
 if [[ "$UPDATE_ELASTICSEARCH" != "true" ]]; then
   UPDATE_ELASTICSEARCH="false"
 fi
 
-echo "Deploying flat-finder application images with tag: ${IMAGE_TAG}"
+echo "Deploying flat-finder application images with tag: ${IMAGE_TAG} (source=${DEPLOY_SOURCE})"
 
 APP_SERVICES=(
   flat-finder-backend
@@ -25,7 +36,11 @@ APP_SERVICES=(
   flat-finder-social-fetcher
 )
 
-docker compose pull "${APP_SERVICES[@]}"
+if [[ "$LOCAL_BUILD" == "1" ]]; then
+  echo "Using locally built application images; registry pull skipped."
+else
+  docker compose pull "${APP_SERVICES[@]}"
+fi
 
 # Bring up stateless/core dependencies that are safe to reconcile on every
 # deploy. Elasticsearch is handled separately below so a normal application
@@ -41,12 +56,18 @@ ES_CONTAINER_ID="$(docker compose ps -q flat-finder-elasticsearch 2>/dev/null ||
 
 if [[ "$UPDATE_ELASTICSEARCH" == "true" ]]; then
   echo "Elasticsearch image changed; updating it to tag: ${IMAGE_TAG}"
-  docker compose pull flat-finder-elasticsearch
+  if [[ "$LOCAL_BUILD" != "1" ]]; then
+    docker compose pull flat-finder-elasticsearch
+  fi
   docker compose up -d flat-finder-elasticsearch
 elif [[ -z "$ES_CONTAINER_ID" ]]; then
   echo "No Elasticsearch container exists; starting the latest published image"
-  IMAGE_TAG=latest docker compose pull flat-finder-elasticsearch
-  IMAGE_TAG=latest docker compose up -d flat-finder-elasticsearch
+  if [[ "$LOCAL_BUILD" == "1" ]]; then
+    docker compose up -d flat-finder-elasticsearch
+  else
+    IMAGE_TAG=latest docker compose pull flat-finder-elasticsearch
+    IMAGE_TAG=latest docker compose up -d flat-finder-elasticsearch
+  fi
 else
   echo "Keeping the existing Elasticsearch container unchanged"
 fi
@@ -86,20 +107,15 @@ docker compose up -d --no-deps \
   flat-finder-backend \
   flat-finder-worker
 
-# A successful container start is not enough: module import errors and startup
-# failures can put the API into a restart loop before port 4000 is ever opened.
 wait_for_healthy flat-finder-backend 120
 
 curl --fail --silent --show-error --max-time 10 \
   http://127.0.0.1:4000/health >/dev/null
 
-# Smoke-test the actual listing route as well. This only requires the endpoint
-# to respond successfully; it does not require any listing to exist.
 curl --fail --silent --show-error --max-time 20 \
   'http://127.0.0.1:4000/api/listings?limit=1' >/dev/null
 
-# Remove the retired queue-task-api and Python HTTP worker containers, together
-# with any other services no longer present in Compose.
+# Remove retired services and any other containers no longer present in Compose.
 docker compose up -d --remove-orphans --no-deps \
   flat-finder-backend \
   flat-finder-worker \
@@ -124,3 +140,11 @@ if [[ -n "$ES_CONTAINER_ID" ]]; then
     echo "Elasticsearch is still starting; application deployment continues in degraded-search mode until it becomes healthy."
   fi
 fi
+
+# Record only a fully successful rollout. GitHub and local fallback both consult
+# this marker, so a late hosted runner cannot deploy the same SHA twice.
+printf '%s\n' "$DEPLOY_SHA" > "$STATE_DIR/deployed.sha.tmp"
+mv "$STATE_DIR/deployed.sha.tmp" "$STATE_DIR/deployed.sha"
+printf 'SHA=%s\nSOURCE=%s\nTIME=%s\n' \
+  "$DEPLOY_SHA" "$DEPLOY_SOURCE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STATE_DIR/deployed.meta"
+echo "Recorded successful deployment: $DEPLOY_SHA ($DEPLOY_SOURCE)"
