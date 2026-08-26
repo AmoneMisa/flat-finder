@@ -20,6 +20,14 @@ const DEFAULT_FACEBOOK_TARGETS = {
     { target: 'https://www.facebook.com/groups/antimakler/', city: 'Tashkent' },
     { target: 'https://www.facebook.com/groups/741615396187925/', city: 'Tashkent' },
     { target: 'https://www.facebook.com/groups/281140502050492/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/kvartira/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/SvoyDomTashkent/', city: 'Tashkent' },
+  ],
+  UA: [
+    { target: 'https://www.facebook.com/groups/rieltory.zlo/', city: 'Kyiv' },
+    { target: 'https://www.facebook.com/groups/445199492349490/', city: 'Kyiv' },
+    { target: 'https://www.facebook.com/groups/1500652316919278/', city: 'Kyiv' },
+    { target: 'https://www.facebook.com/groups/RealEstateOfKyivSuburbanWithoutACommission/', city: 'Kyiv' },
   ],
 };
 
