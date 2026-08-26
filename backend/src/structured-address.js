@@ -8,6 +8,16 @@ function text(value) {
   return out || null;
 }
 
+function parsedCandidate(value) {
+  return value?.street ? value : null;
+}
+
+function bestParsedAddress(sourceAddress, parsedText) {
+  return [parsedCandidate(sourceAddress), parsedCandidate(parsedText)]
+    .filter(Boolean)
+    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))[0] || null;
+}
+
 export function applyStructuredAddressFields(listing) {
   if (!listing || typeof listing !== 'object') return listing;
 
@@ -17,17 +27,16 @@ export function applyStructuredAddressFields(listing) {
     : null;
   const prose = `${listing.title || ''}\n${listing.description || ''}`.trim();
   const parsedText = prose
-    ? parseHousingAddress(prose, { knownStreet: knownStreet || sourceAddress?.street || null })
+    ? parseHousingAddress(prose, { knownStreet })
     : null;
+  const bestParsed = bestParsedAddress(sourceAddress, parsedText);
 
-  const street = knownStreet || sourceAddress?.street || parsedText?.street || null;
+  const street = knownStreet || bestParsed?.street || null;
   const houseNumber = text(listing.houseNumber)
-    || sourceAddress?.houseNumber
-    || parsedText?.houseNumber
+    || bestParsed?.houseNumber
     || null;
   const building = text(listing.building)
-    || sourceAddress?.building
-    || parsedText?.building
+    || bestParsed?.building
     || null;
 
   const canonicalAddress = composeHousingAddress({ street, houseNumber, building });
@@ -36,9 +45,8 @@ export function applyStructuredAddressFields(listing) {
   listing.houseNumber = houseNumber;
   listing.building = building;
   listing.address = canonicalAddress
-    || sourceAddress?.address
+    || bestParsed?.address
     || text(listing.address)
-    || parsedText?.address
     || null;
 
   return listing;
