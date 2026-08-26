@@ -73,24 +73,15 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   if (elasticsearchAuthoritative && matchRows.length === 0) where.push('FALSE');
 
   const countryValues = [...new Set((countries || []).map((v) => String(v).toUpperCase()).filter(Boolean))];
-  if (countryValues.length) {
-    where.push(`l.country = ANY(${add(countryValues)}::text[])`);
-  }
+  if (countryValues.length) where.push(`l.country = ANY(${add(countryValues)}::text[])`);
 
-  if (filters.sources?.length) {
-    where.push(`l.source = ANY(${add(filters.sources.map((v) => String(v).toLowerCase()))}::text[])`);
-  }
+  if (filters.sources?.length) where.push(`l.source = ANY(${add(filters.sources.map((v) => String(v).toLowerCase()))}::text[])`);
 
   const customSources = [...new Set((filters.customSources || []).map(String).filter(Boolean))];
-  if (customSources.length) {
-    where.push(`(l.source <> 'custom' OR l.data->>'customSourceUrl' = ANY(${add(customSources)}::text[]))`);
-  } else {
-    where.push(`l.source <> 'custom'`);
-  }
+  if (customSources.length) where.push(`(l.source <> 'custom' OR l.data->>'customSourceUrl' = ANY(${add(customSources)}::text[]))`);
+  else where.push(`l.source <> 'custom'`);
 
-  if (filters.listingId) {
-    where.push(`l.source_id = ${add(String(filters.listingId))}`);
-  }
+  if (filters.listingId) where.push(`l.source_id = ${add(String(filters.listingId))}`);
 
   where.push(`NOT (l.data @> '{"commercial":true}'::jsonb)`);
 
@@ -99,18 +90,12 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
     : MAX_AGE_DAYS;
   where.push(`(l.created_at IS NULL OR l.created_at >= NOW() - (${add(ageDays)}::double precision * INTERVAL '1 day'))`);
 
-  if (filters.propertyType && filters.propertyType !== 'any') {
-    where.push(`l.property_type = ${add(filters.propertyType)}`);
-  }
-  if (filters.dealType && filters.dealType !== 'any') {
-    where.push(`l.deal_type = ${add(filters.dealType)}`);
-  }
+  if (filters.propertyType && filters.propertyType !== 'any') where.push(`l.property_type = ${add(filters.propertyType)}`);
+  if (filters.dealType && filters.dealType !== 'any') where.push(`l.deal_type = ${add(filters.dealType)}`);
   if (filters.agency === 'agency') where.push('l.by_agency = TRUE');
   if (filters.agency === 'owner') where.push('l.by_agency = FALSE');
 
-  const effectiveMax = filters.priceMax != null
-    ? Number(filters.priceMax) + Number(filters.priceTolerance || 0)
-    : null;
+  const effectiveMax = filters.priceMax != null ? Number(filters.priceMax) + Number(filters.priceTolerance || 0) : null;
   const rateEntries = safeRateEntries(rates);
   const convertPrices = rateEntries.length > 0 && filters.priceCurrency;
 
@@ -183,25 +168,13 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   }
 
   const booleanFilters = [
-    ['dishwasher', 'dishwasher'],
-    ['airConditioner', 'airConditioner'],
-    ['parking', 'parking'],
-    ['internet', 'internet'],
-    ['gas', 'gas'],
-    ['balcony', 'balcony'],
-    ['terrace', 'terrace'],
-    ['privateYard', 'privateYard'],
+    ['dishwasher', 'dishwasher'], ['airConditioner', 'airConditioner'], ['parking', 'parking'], ['internet', 'internet'],
+    ['gas', 'gas'], ['balcony', 'balcony'], ['terrace', 'terrace'], ['privateYard', 'privateYard'],
   ];
-  for (const [filterName, dataName] of booleanFilters) {
-    if (filters[filterName] === true) {
-      where.push(`l.data @> '{"${dataName}":true}'::jsonb`);
-    }
-  }
+  for (const [filterName, dataName] of booleanFilters) if (filters[filterName] === true) where.push(`l.data @> '{"${dataName}":true}'::jsonb`);
 
   if (filters.city) {
-    const forms = [...new Set((filters.cityAliases?.length ? filters.cityAliases : [filters.city])
-      .map((value) => String(value).toLowerCase())
-      .filter(Boolean))];
+    const forms = [...new Set((filters.cityAliases?.length ? filters.cityAliases : [filters.city]).map((value) => String(value).toLowerCase()).filter(Boolean))];
     where.push(`LOWER(l.city) = ANY(${add(forms)}::text[])`);
   }
   if (filters.district) where.push(`LOWER(l.district) = ${add(String(filters.district).toLowerCase())}`);
@@ -215,58 +188,31 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   if (filters.nearbyKind || filters.nearbyMaxM != null) {
     const placeChecks = [];
     if (filters.nearbyKind) placeChecks.push(`LOWER(COALESCE(place->>'kind','')) = ${add(String(filters.nearbyKind).toLowerCase())}`);
-    if (filters.nearbyMaxM != null) {
-      placeChecks.push(`CASE WHEN jsonb_typeof(place->'distanceM') = 'number' THEN (place->>'distanceM')::double precision ELSE NULL END <= ${add(Number(filters.nearbyMaxM))}`);
-    }
+    if (filters.nearbyMaxM != null) placeChecks.push(`CASE WHEN jsonb_typeof(place->'distanceM') = 'number' THEN (place->>'distanceM')::double precision ELSE NULL END <= ${add(Number(filters.nearbyMaxM))}`);
     where.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(l.data->'nearbyPlaces','[]'::jsonb)) AS place WHERE ${placeChecks.length ? placeChecks.join(' AND ') : 'TRUE'})`);
   }
 
   if (filters.query && !elasticsearchAuthoritative) {
-    const q = `%${String(filters.query).toLowerCase()}%`;
-    const p = add(q);
+    const p = add(`%${String(filters.query).toLowerCase()}%`);
     where.push(`LOWER(CONCAT_WS(' ', l.title, l.description, l.city, l.district, l.metro, l.data->>'region', l.data->>'microdistrict', l.data->>'residenceComplex', l.data->>'tags')) LIKE ${p}`);
   }
 
   let orderBy;
   let sort = filters.sort || null;
-  if (matchRows.length && !sort) {
-    orderBy = 'm.rank ASC, l.created_at DESC NULLS LAST, l.id DESC';
-  } else {
+  if (matchRows.length && !sort) orderBy = 'm.rank ASC, l.created_at DESC NULLS LAST, l.id DESC';
+  else {
     sort = sort || 'newest';
     switch (sort) {
-      case 'oldest':
-        orderBy = 'l.created_at ASC NULLS LAST, l.id ASC';
-        break;
-      case 'priceAsc':
-        orderBy = `${priceUsdExpr} ASC NULLS LAST, l.id ASC`;
-        break;
-      case 'priceDesc':
-        orderBy = `${priceUsdExpr} DESC NULLS LAST, l.id DESC`;
-        break;
-      case 'titleAsc':
-        orderBy = 'LOWER(l.title) ASC NULLS LAST, l.id ASC';
-        break;
-      case 'titleDesc':
-        orderBy = 'LOWER(l.title) DESC NULLS LAST, l.id DESC';
-        break;
-      case 'newest':
-      default:
-        sort = 'newest';
-        orderBy = 'l.created_at DESC NULLS LAST, l.id DESC';
-        break;
+      case 'oldest': orderBy = 'l.created_at ASC NULLS LAST, l.id ASC'; break;
+      case 'priceAsc': orderBy = `${priceUsdExpr} ASC NULLS LAST, l.id ASC`; break;
+      case 'priceDesc': orderBy = `${priceUsdExpr} DESC NULLS LAST, l.id DESC`; break;
+      case 'titleAsc': orderBy = 'LOWER(l.title) ASC NULLS LAST, l.id ASC'; break;
+      case 'titleDesc': orderBy = 'LOWER(l.title) DESC NULLS LAST, l.id DESC'; break;
+      case 'newest': default: sort = 'newest'; orderBy = 'l.created_at DESC NULLS LAST, l.id DESC'; break;
     }
   }
 
-  return {
-    params,
-    from,
-    where,
-    rankSelect,
-    orderBy,
-    sort,
-    priceUsdExpr,
-    matchRows,
-  };
+  return { params, from, where, rankSelect, orderBy, sort, priceUsdExpr, matchRows };
 }
 
 export async function searchPostgresListings({ filters, countries, rates = null, searchMatches = null }) {
@@ -278,21 +224,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
 
   const filteredSql = `
     SELECT
-      l.id,
-      l.source,
-      l.country,
-      l.source_id,
-      l.created_at,
-      l.first_seen_at,
-      l.price,
-      l.currency,
-      l.title,
-      l.deal_type,
-      l.by_agency,
-      l.city,
-      l.district,
-      l.metro,
-      l.data,
+      l.id, l.source, l.country, l.source_id, l.created_at, l.first_seen_at, l.price, l.currency, l.title,
+      l.deal_type, l.by_agency, l.city, l.district, l.metro, l.data,
       ${context.priceUsdExpr} AS price_usd,
       ${context.rankSelect},
       ${dedupeEnabled ? 'l.dedupe_key' : `CONCAT_WS(':', LOWER(l.source), UPPER(l.country), l.source_id)`} AS dedupe_key
@@ -301,35 +234,19 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   `;
 
   const rankedSql = `
-    SELECT
-      filtered.*,
-      ROW_NUMBER() OVER (
-        PARTITION BY filtered.dedupe_key
-        ORDER BY filtered.created_at DESC NULLS LAST, filtered.id DESC
-      ) AS dedupe_rank
-    FROM (
-      ${filteredSql}
-    ) filtered
+    SELECT filtered.*, ROW_NUMBER() OVER (
+      PARTITION BY filtered.dedupe_key ORDER BY filtered.created_at DESC NULLS LAST, filtered.id DESC
+    ) AS dedupe_rank
+    FROM (${filteredSql}) filtered
   `;
 
-  const countSql = `
-    SELECT COUNT(*)::int AS count
-    FROM (
-      ${rankedSql}
-    ) l
-    WHERE l.dedupe_rank = 1
-  `;
+  const countSql = `SELECT COUNT(*)::int AS count FROM (${rankedSql}) l WHERE l.dedupe_rank = 1`;
 
   const statsSql = `
-    WITH ranked AS MATERIALIZED (
-      ${rankedSql}
-    ),
-    visible AS MATERIALIZED (
-      SELECT * FROM ranked WHERE dedupe_rank = 1
-    ),
+    WITH ranked AS MATERIALIZED (${rankedSql}),
+    visible AS MATERIALIZED (SELECT * FROM ranked WHERE dedupe_rank = 1),
     classified AS MATERIALIZED (
-      SELECT
-        visible.*,
+      SELECT visible.*,
         CASE
           WHEN data @> '{"roomOnly":true}'::jsonb THEN 'roomRent'
           WHEN deal_type IN ('sale', 'longRent', 'shortRent') THEN deal_type
@@ -338,8 +255,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       FROM visible
     ),
     deal_rows AS (
-      SELECT
-        deal_key AS key,
+      SELECT deal_key AS key,
         COUNT(*)::int AS count,
         COUNT(price_usd)::int AS price_count,
         ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_usd))::numeric, 2) AS median_usd,
@@ -349,11 +265,34 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       FROM classified
       GROUP BY deal_key
     ),
+    price_band_rows AS (
+      SELECT c.deal_key,
+        CASE
+          WHEN c.price_usd / d.median_usd < 0.70 THEN 'green'
+          WHEN c.price_usd / d.median_usd < 0.85 THEN 'blue'
+          WHEN c.price_usd / d.median_usd <= 1.15 THEN 'pink'
+          WHEN c.price_usd / d.median_usd < 1.31 THEN 'orange'
+          WHEN c.price_usd / d.median_usd < 1.45 THEN 'yellow'
+          ELSE 'red'
+        END AS band_key,
+        COUNT(*)::int AS count
+      FROM classified c
+      JOIN deal_rows d ON d.key = c.deal_key
+      WHERE c.price_usd IS NOT NULL AND c.price_usd > 0 AND d.median_usd IS NOT NULL AND d.median_usd > 0
+      GROUP BY c.deal_key, band_key
+    ),
+    price_band_json AS (
+      SELECT deal_key,
+        JSONB_AGG(JSONB_BUILD_OBJECT('key', band_key, 'count', count) ORDER BY
+          CASE band_key WHEN 'green' THEN 1 WHEN 'blue' THEN 2 WHEN 'pink' THEN 3 WHEN 'orange' THEN 4 WHEN 'yellow' THEN 5 ELSE 6 END
+        ) AS bands,
+        SUM(count)::int AS samples
+      FROM price_band_rows
+      GROUP BY deal_key
+    ),
     geo_rows AS (
-      SELECT
-        CASE WHEN GROUPING(v.deal_key) = 1 THEN NULL ELSE v.deal_key END AS deal_key,
-        geo.dimension,
-        geo.label,
+      SELECT CASE WHEN GROUPING(v.deal_key) = 1 THEN NULL ELSE v.deal_key END AS deal_key,
+        geo.dimension, geo.label,
         COUNT(*)::int AS count,
         COUNT(v.price_usd)::int AS price_count,
         ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v.price_usd))::numeric, 2) AS median_usd,
@@ -368,93 +307,59 @@ export async function searchPostgresListings({ filters, countries, rates = null,
         ('metro', NULLIF(BTRIM(v.metro), ''))
       ) AS geo(dimension, label)
       WHERE geo.label IS NOT NULL
-      GROUP BY GROUPING SETS (
-        (geo.dimension, geo.label),
-        (v.deal_key, geo.dimension, geo.label)
-      )
+      GROUP BY GROUPING SETS ((geo.dimension, geo.label), (v.deal_key, geo.dimension, geo.label))
     ),
     geo_ranked AS (
       SELECT *, ROW_NUMBER() OVER (PARTITION BY deal_key, dimension ORDER BY count DESC, label ASC) AS position
       FROM geo_rows
     ),
     geo_json AS (
-      SELECT deal_key, dimension, JSONB_AGG(
-        JSONB_BUILD_OBJECT(
-          'label', label,
-          'count', count,
-          'priceCount', price_count,
-          'medianUsd', median_usd,
-          'minUsd', min_usd,
-          'maxUsd', max_usd
-        ) ORDER BY count DESC, label ASC
-      ) AS items
+      SELECT deal_key, dimension,
+        JSONB_AGG(JSONB_BUILD_OBJECT(
+          'label', label, 'count', count, 'priceCount', price_count,
+          'medianUsd', median_usd, 'minUsd', min_usd, 'maxUsd', max_usd
+        ) ORDER BY count DESC, label ASC) AS items
       FROM geo_ranked
       WHERE position <= 12
       GROUP BY deal_key, dimension
     ),
     geo_by_deal_json AS (
       SELECT deal_key, JSONB_OBJECT_AGG(dimension, items) AS dimensions
-      FROM geo_json
-      WHERE deal_key IS NOT NULL
-      GROUP BY deal_key
+      FROM geo_json WHERE deal_key IS NOT NULL GROUP BY deal_key
     ),
     activity_rows AS (
-      SELECT
-        DATE_TRUNC('day', COALESCE(first_seen_at, created_at))::date AS day,
-        COUNT(*)::int AS count
-      FROM visible
-      WHERE COALESCE(first_seen_at, created_at) IS NOT NULL
-      GROUP BY 1
-      ORDER BY 1
+      SELECT DATE_TRUNC('day', COALESCE(first_seen_at, created_at))::date AS day, COUNT(*)::int AS count
+      FROM visible WHERE COALESCE(first_seen_at, created_at) IS NOT NULL GROUP BY 1 ORDER BY 1
     )
     SELECT
       (SELECT COUNT(*)::int FROM visible) AS total,
       (SELECT COUNT(*)::int FROM ranked) AS raw_total,
-      COALESCE((
-        SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
-          'key', key,
-          'count', count,
-          'priceCount', price_count,
-          'medianUsd', median_usd,
-          'averageUsd', average_usd,
-          'minUsd', min_usd,
-          'maxUsd', max_usd
-        ) ORDER BY count DESC, key ASC)
-        FROM deal_rows
-      ), '[]'::jsonb) AS deal_types,
+      COALESCE((SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+        'key', key, 'count', count, 'priceCount', price_count,
+        'medianUsd', median_usd, 'averageUsd', average_usd, 'minUsd', min_usd, 'maxUsd', max_usd
+      ) ORDER BY count DESC, key ASC) FROM deal_rows), '[]'::jsonb) AS deal_types,
+      COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, bands) FROM price_band_json), '{}'::jsonb) AS price_bands_by_deal,
+      COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, samples) FROM price_band_json), '{}'::jsonb) AS price_band_samples_by_deal,
       COALESCE((SELECT JSONB_OBJECT_AGG(dimension, items) FROM geo_json WHERE deal_key IS NULL), '{}'::jsonb) AS geographies,
       COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, dimensions) FROM geo_by_deal_json), '{}'::jsonb) AS geographies_by_deal,
       JSONB_BUILD_OBJECT(
         'owners', (SELECT COUNT(*)::int FROM visible WHERE by_agency = FALSE),
         'agencies', (SELECT COUNT(*)::int FROM visible WHERE by_agency = TRUE),
-        'commission', (SELECT COUNT(*)::int FROM visible WHERE
-          data @> '{"commission":true}'::jsonb
-          OR (jsonb_typeof(data->'commissionPercent') = 'number' AND (data->>'commissionPercent')::numeric > 0)
-        ),
-        'noCommission', (SELECT COUNT(*)::int FROM visible WHERE
-          data @> '{"commission":false}'::jsonb
-          OR (jsonb_typeof(data->'commissionPercent') = 'number' AND (data->>'commissionPercent')::numeric = 0)
-        )
+        'commission', (SELECT COUNT(*)::int FROM visible WHERE data @> '{"commission":true}'::jsonb OR (jsonb_typeof(data->'commissionPercent') = 'number' AND (data->>'commissionPercent')::numeric > 0)),
+        'noCommission', (SELECT COUNT(*)::int FROM visible WHERE data @> '{"commission":false}'::jsonb OR (jsonb_typeof(data->'commissionPercent') = 'number' AND (data->>'commissionPercent')::numeric = 0))
       ) AS ownership,
-      COALESCE((
-        SELECT JSONB_AGG(JSONB_BUILD_OBJECT('date', day, 'count', count) ORDER BY day)
-        FROM activity_rows
-      ), '[]'::jsonb) AS activity,
+      COALESCE((SELECT JSONB_AGG(JSONB_BUILD_OBJECT('date', day, 'count', count) ORDER BY day) FROM activity_rows), '[]'::jsonb) AS activity,
       JSONB_BUILD_OBJECT(
         'duplicatesRejected', (SELECT COUNT(*)::int FROM ranked WHERE dedupe_rank > 1),
         'suspectedFake', (SELECT COUNT(*)::int FROM visible WHERE
           data->>'duplicatePhotoRisk' IN ('high', 'very_high')
           OR data->'antiFake' @> '{"suspectedClone":true}'::jsonb
-          OR data->'antiFake' @> '{"conflictingClone":true}'::jsonb
-        )
+          OR data->'antiFake' @> '{"conflictingClone":true}'::jsonb)
       ) AS quality
   `;
 
   const pageParams = [...baseParams];
-  const addPage = (value) => {
-    pageParams.push(value);
-    return `$${pageParams.length}`;
-  };
+  const addPage = (value) => { pageParams.push(value); return `$${pageParams.length}`; };
 
   const cursor = decodeCursor(filters.cursor);
   const pageWhere = ['l.dedupe_rank = 1'];
@@ -463,16 +368,10 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     const idParam = addPage(String(cursor.id));
     if (cursor.t) {
       const timeParam = addPage(cursor.t);
-      if (context.sort === 'newest') {
-        pageWhere.push(`(l.created_at < ${timeParam}::timestamptz OR (l.created_at = ${timeParam}::timestamptz AND l.id < ${idParam}::bigint) OR l.created_at IS NULL)`);
-      } else {
-        pageWhere.push(`(l.created_at > ${timeParam}::timestamptz OR (l.created_at = ${timeParam}::timestamptz AND l.id > ${idParam}::bigint) OR l.created_at IS NULL)`);
-      }
-    } else if (context.sort === 'newest') {
-      pageWhere.push(`l.created_at IS NULL AND l.id < ${idParam}::bigint`);
-    } else {
-      pageWhere.push(`l.created_at IS NULL AND l.id > ${idParam}::bigint`);
-    }
+      if (context.sort === 'newest') pageWhere.push(`(l.created_at < ${timeParam}::timestamptz OR (l.created_at = ${timeParam}::timestamptz AND l.id < ${idParam}::bigint) OR l.created_at IS NULL)`);
+      else pageWhere.push(`(l.created_at > ${timeParam}::timestamptz OR (l.created_at = ${timeParam}::timestamptz AND l.id > ${idParam}::bigint) OR l.created_at IS NULL)`);
+    } else if (context.sort === 'newest') pageWhere.push(`l.created_at IS NULL AND l.id < ${idParam}::bigint`);
+    else pageWhere.push(`l.created_at IS NULL AND l.id > ${idParam}::bigint`);
     useCursor = true;
   }
 
@@ -483,17 +382,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const orderBy = context.orderBy.replaceAll('m.rank', 'l.search_rank');
 
   const pageSql = `
-    SELECT
-      l.id AS db_id,
-      l.created_at,
-      l.price,
-      l.currency,
-      l.title,
-      l.data,
-      l.search_rank
-    FROM (
-      ${rankedSql}
-    ) l
+    SELECT l.id AS db_id, l.created_at, l.price, l.currency, l.title, l.data, l.search_rank
+    FROM (${rankedSql}) l
     WHERE ${pageWhere.join('\n      AND ')}
     ORDER BY ${orderBy}
     LIMIT ${limitParam}
@@ -502,9 +392,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
 
   let countOrStatsResult;
   let pageResult = {rows: []};
-  if (filters.includeStats && filters.statsOnly) {
-    countOrStatsResult = await pool.query(statsSql, baseParams);
-  } else {
+  if (filters.includeStats && filters.statsOnly) countOrStatsResult = await pool.query(statsSql, baseParams);
+  else {
     [countOrStatsResult, pageResult] = await Promise.all([
       filters.includeStats ? pool.query(statsSql, baseParams) : pool.query(countSql, baseParams),
       pool.query(pageSql, pageParams),
@@ -518,6 +407,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     rawTotal: Number(countOrStatsResult.rows[0]?.raw_total) || 0,
     currency: 'USD',
     dealTypes: countOrStatsResult.rows[0]?.deal_types || [],
+    priceBandsByDeal: countOrStatsResult.rows[0]?.price_bands_by_deal || {},
+    priceBandSamplesByDeal: countOrStatsResult.rows[0]?.price_band_samples_by_deal || {},
     geographies: countOrStatsResult.rows[0]?.geographies || {},
     geographiesByDeal: countOrStatsResult.rows[0]?.geographies_by_deal || {},
     ownership: countOrStatsResult.rows[0]?.ownership || {},
@@ -529,9 +420,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   let nextCursor = null;
   if (!filters.statsOnly && rows.length === limit && ['newest', 'oldest'].includes(context.sort)) {
     const last = rows[rows.length - 1];
-    const time = last.created_at instanceof Date
-      ? last.created_at.toISOString()
-      : (last.created_at ? new Date(last.created_at).toISOString() : null);
+    const time = last.created_at instanceof Date ? last.created_at.toISOString() : (last.created_at ? new Date(last.created_at).toISOString() : null);
     nextCursor = encodeCursor({ v: CURSOR_VERSION, sort: context.sort, t: time, id: String(last.db_id) });
   }
 
