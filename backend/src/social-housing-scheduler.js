@@ -15,13 +15,67 @@ const THREADS_QUERIES_PER_CYCLE = Math.max(
 let timer = null;
 let running = false;
 
-const FACEBOOK_TARGETS = {
+const DEFAULT_FACEBOOK_TARGETS = {
   UZ: [
     { target: 'https://www.facebook.com/groups/antimakler/', city: 'Tashkent' },
     { target: 'https://www.facebook.com/groups/741615396187925/', city: 'Tashkent' },
     { target: 'https://www.facebook.com/groups/281140502050492/', city: 'Tashkent' },
   ],
 };
+
+function normalizedFacebookTarget(value) {
+  if (typeof value === 'string') {
+    const target = value.trim();
+    return target ? {target} : null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const target = String(value.target || value.url || '').trim();
+  if (!target) return null;
+  return {
+    target,
+    ...(value.city ? {city: String(value.city)} : {}),
+    ...(value.dealType ? {dealType: String(value.dealType)} : {}),
+  };
+}
+
+function configuredFacebookTargets() {
+  const merged = Object.fromEntries(
+    Object.entries(DEFAULT_FACEBOOK_TARGETS).map(([country, targets]) => [country, [...targets]]),
+  );
+  const raw = String(process.env.SOCIAL_HOUSING_FACEBOOK_TARGETS_JSON || '').trim();
+  if (!raw) return merged;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    console.warn(`[social-housing] invalid SOCIAL_HOUSING_FACEBOOK_TARGETS_JSON: ${error.message}`);
+    return merged;
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    console.warn('[social-housing] SOCIAL_HOUSING_FACEBOOK_TARGETS_JSON must be an object keyed by country code');
+    return merged;
+  }
+
+  for (const [countryRaw, values] of Object.entries(parsed)) {
+    const country = String(countryRaw).toUpperCase();
+    if (!COUNTRIES[country] || !Array.isArray(values)) continue;
+    const normalized = values.map(normalizedFacebookTarget).filter(Boolean);
+    if (!normalized.length) continue;
+    const existing = merged[country] || [];
+    const seen = new Set(existing.map((item) => String(item.target).toLowerCase()));
+    for (const item of normalized) {
+      const key = item.target.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      existing.push(item);
+    }
+    merged[country] = existing;
+  }
+
+  return merged;
+}
 
 function countryConfig(code, { facebookHousingTargets = [], threadsHousingQueries = [] } = {}) {
   return {
@@ -89,11 +143,19 @@ async function persist(source, countryCode, result, crawlStartedAt, allowMissing
 
 async function refreshFacebook() {
   let total = 0;
-  for (const [countryCode, targets] of Object.entries(FACEBOOK_TARGETS)) {
+  const targetsByCountry = configuredFacebookTargets();
+  for (const [countryCode, targets] of Object.entries(targetsByCountry)) {
+    if (!targets.length) continue;
     const startedAt = new Date().toISOString();
     try {
       const result = await scrapeFacebook(countryConfig(countryCode, { facebookHousingTargets: targets }));
-      total += await persist('facebook', countryCode, result, startedAt, true);
+      const saved = await persist('facebook', countryCode, result, startedAt, true);
+      total += saved;
+      console.log(
+        `[social-housing] Facebook/${countryCode} targets=${targets.length} ` +
+        `fetched=${result?.diagnostics?.fetched || 0} classified=${result?.diagnostics?.classified || 0} ` +
+        `saved=${saved} errors=${Array.isArray(result?.errors) ? result.errors.length : 0}`,
+      );
     } catch (error) {
       console.warn(`[social-housing] Facebook/${countryCode} failed: ${error?.message || error}`);
     }
@@ -111,7 +173,13 @@ async function refreshThreads() {
       const result = await scrapeThreads(countryConfig(countryCode, { threadsHousingQueries: targets }));
       // Coverage is intentionally rotated: a successful batch is not a complete
       // country crawl, so it must never deactivate listings from other batches.
-      total += await persist('threads', countryCode, result, startedAt, false);
+      const saved = await persist('threads', countryCode, result, startedAt, false);
+      total += saved;
+      console.log(
+        `[social-housing] Threads/${countryCode} queries=${targets.length} ` +
+        `fetched=${result?.diagnostics?.fetched || 0} classified=${result?.diagnostics?.classified || 0} ` +
+        `saved=${saved} errors=${Array.isArray(result?.errors) ? result.errors.length : 0}`,
+      );
     } catch (error) {
       console.warn(`[social-housing] Threads/${countryCode} failed: ${error?.message || error}`);
     }
@@ -159,6 +227,10 @@ export function startSocialHousingScheduler() {
     return;
   }
 
+  const facebookTargets = configuredFacebookTargets();
+  const facebookCountries = Object.entries(facebookTargets).filter(([, targets]) => targets.length).length;
+  const facebookCount = Object.values(facebookTargets).reduce((sum, targets) => sum + targets.length, 0);
+
   const first = setTimeout(
     () => refreshSocialHousing('startup').catch((error) =>
       console.warn(`[social-housing] startup failed: ${error?.message || error}`),
@@ -177,6 +249,7 @@ export function startSocialHousingScheduler() {
 
   console.log(
     `[social-housing] refresh every ${SOCIAL_REFRESH_MINUTES} min; ` +
+    `Facebook targets=${facebookCount} countries=${facebookCountries}; ` +
     `Threads queries/cycle=${THREADS_QUERIES_PER_CYCLE}`,
   );
 }
