@@ -26,6 +26,21 @@ def _threads_query(value):
     return query
 
 
+def _wait_for_threads_results(page):
+    """Give the logged-out SPA a moment to hydrate before reading post anchors."""
+    try:
+        page.wait_for_selector(
+            'a[href*="/post/"]',
+            state="attached",
+            timeout=min(BROWSER_TIMEOUT_MS, 8000),
+        )
+    except Exception:
+        # Empty searches and logged-out interstitials legitimately have no post
+        # anchor. A short final delay lets late client-side rendering settle
+        # without turning every empty query into a full browser timeout.
+        page.wait_for_timeout(1200)
+
+
 def fetch_threads_search(payload):
     query = _threads_query(payload.get("query") or payload.get("target"))
     limit = _limit(payload.get("limit"), 50)
@@ -44,6 +59,7 @@ def fetch_threads_search(payload):
             page = context.new_page()
             page.set_default_timeout(BROWSER_TIMEOUT_MS)
             page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
+            _wait_for_threads_results(page)
 
             collected = {}
             for _ in range(THREADS_SCROLLS):
