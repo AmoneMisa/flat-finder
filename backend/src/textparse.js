@@ -2,6 +2,10 @@
 // housing semantics into @whiteslove/parsing-lexicon.
 export * from './textparse-legacy.js';
 export { looksCommercialHousing as looksCommercial } from '@whiteslove/parsing-lexicon/housing-commercial';
+export {
+  parseHousingRoomsFromText as parseRoomsFromText,
+  parseHousingResidentialComplex as parseResidentialComplex,
+} from '@whiteslove/parsing-lexicon/housing-text';
 
 import { parseHousingListingFields } from '@whiteslove/parsing-lexicon';
 
