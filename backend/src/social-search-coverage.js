@@ -1,3 +1,8 @@
+import { countryByCode } from '@whiteslove/parsing-lexicon/countries';
+import { CITIES } from '@whiteslove/parsing-lexicon/geography';
+import { PROPERTY_TYPES } from '@whiteslove/parsing-lexicon/housing';
+import { HOUSING_DEAL_TYPES } from '@whiteslove/parsing-lexicon/housing-intent';
+
 export const UKRAINE_OBLASTS = [
   { region: 'Vinnytsia Oblast', ua: 'Вінницька область' },
   { region: 'Volyn Oblast', ua: 'Волинська область' },
@@ -25,39 +30,51 @@ export const UKRAINE_OBLASTS = [
   { region: 'Chernihiv Oblast', ua: 'Чернігівська область' },
 ];
 
-export const SOCIAL_HOUSING_COUNTRIES = {
-  UZ: {
-    countryTerms: ['Узбекистан', 'Uzbekistan'],
-    cities: [
-      ['Tashkent', 'Ташкент'], ['Samarkand', 'Самарканд'], ['Bukhara', 'Бухара'],
-      ['Namangan', 'Наманган'], ['Andijan', 'Андижан'], ['Fergana', 'Фергана'],
-      ['Qarshi', 'Карши'], ['Nukus', 'Нукус'], ['Jizzakh', 'Джизак'], ['Urgench', 'Ургенч'],
-    ],
-    topics: ['Аренда', 'Жильё', 'Квартира', 'Недвижимость'],
-    localTopics: ['Ijara', 'Kvartira', 'Uy'],
-  },
-  KZ: {
-    countryTerms: ['Казахстан', 'Қазақстан'],
-    cities: [
-      ['Almaty', 'Алматы'], ['Astana', 'Астана'], ['Shymkent', 'Шымкент'],
-      ['Karaganda', 'Караганда'], ['Aktobe', 'Актобе'], ['Atyrau', 'Атырау'],
-      ['Pavlodar', 'Павлодар'], ['Kostanay', 'Костанай'], ['Aktau', 'Актау'],
-      ['Oskemen', 'Өскемен'],
-    ],
-    topics: ['Аренда', 'Жильё', 'Квартира', 'Недвижимость'],
-    localTopics: ['Пәтер', 'Жалға', 'Үй'],
-  },
-  RO: {
-    countryTerms: ['România'],
-    cities: [
-      ['Bucharest', 'București'], ['Cluj-Napoca', 'Cluj-Napoca'], ['Timișoara', 'Timișoara'],
-      ['Iași', 'Iași'], ['Brașov', 'Brașov'], ['Constanța', 'Constanța'],
-      ['Craiova', 'Craiova'], ['Sibiu', 'Sibiu'], ['Oradea', 'Oradea'], ['Ploiești', 'Ploiești'],
-    ],
-    topics: ['Chirie', 'Apartament', 'Locuință', 'Imobiliare'],
-    localTopics: [],
-  },
-};
+export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
+  UZ: Object.freeze({
+    languages: Object.freeze(['ru', 'uzLatn']),
+    crawlCities: Object.freeze([
+      'Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana',
+      'Qarshi', 'Nukus', 'Jizzakh', 'Urgench',
+    ]),
+  }),
+  KZ: Object.freeze({
+    languages: Object.freeze(['ru', 'kk']),
+    crawlCities: Object.freeze([
+      'Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau',
+      'Pavlodar', 'Kostanay', 'Aktau', 'Oskemen',
+    ]),
+  }),
+  RO: Object.freeze({
+    languages: Object.freeze(['ro']),
+    crawlCities: Object.freeze([
+      'Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta',
+      'Craiova', 'Sibiu', 'Oradea', 'Ploiesti',
+    ]),
+  }),
+});
+
+const SEARCH_TOPIC_ENTITIES = Object.freeze([
+  HOUSING_DEAL_TYPES.find((item) => item.canonical === 'longRent'),
+  PROPERTY_TYPES.find((item) => item.canonical === 'flat'),
+  PROPERTY_TYPES.find((item) => item.canonical === 'house'),
+].filter(Boolean));
+
+function preferredAlias(entity, language) {
+  return entity?.aliases?.[language]?.[0] || entity?.canonical || null;
+}
+
+function cityByCanonical(country, canonical) {
+  return CITIES.find((item) => item.country === country && item.canonical === canonical) || null;
+}
+
+function searchVocabulary(country, language) {
+  const countryEntity = countryByCode(country);
+  return {
+    country: preferredAlias(countryEntity, language),
+    topics: SEARCH_TOPIC_ENTITIES.map((entity) => preferredAlias(entity, language)).filter(Boolean),
+  };
+}
 
 function add(targets, country, target, city = null, region = null) {
   targets.push({ country, target, ...(city ? { city } : {}), ...(region ? { region } : {}) });
@@ -67,26 +84,24 @@ export function buildThreadsHousingCoverage() {
   const targets = [];
 
   for (const [country, config] of Object.entries(SOCIAL_HOUSING_COUNTRIES)) {
-    for (const countryTerm of config.countryTerms) {
-      for (const topic of config.topics.slice(0, 2)) add(targets, country, `${topic} ${countryTerm}`);
-    }
+    for (const language of config.languages) {
+      const vocabulary = searchVocabulary(country, language);
+      if (!vocabulary.country) continue;
+      for (const topic of vocabulary.topics) add(targets, country, `${topic} ${vocabulary.country}`);
 
-    for (const [city, localName] of config.cities) {
-      for (const topic of config.topics) add(targets, country, `${topic} ${localName}`, city);
-      for (const topic of config.localTopics) add(targets, country, `${topic} ${localName}`, city);
+      for (const city of config.crawlCities) {
+        const localName = preferredAlias(cityByCanonical(country, city), language) || city;
+        for (const topic of vocabulary.topics) add(targets, country, `${topic} ${localName}`, city);
+      }
     }
   }
 
-  add(targets, 'UA', 'Оренда Україна');
-  add(targets, 'UA', 'Житло Україна');
-  add(targets, 'UA', 'Нерухомість Україна');
+  const uaVocabulary = searchVocabulary('UA', 'uk');
+  for (const topic of uaVocabulary.topics) add(targets, 'UA', `${topic} ${uaVocabulary.country}`);
   for (const oblast of UKRAINE_OBLASTS) {
     // Oblast-wide searches must not be stamped with the regional centre as the
     // listing city; the post itself/normalizer can resolve a real city later.
-    add(targets, 'UA', `Оренда ${oblast.ua}`, null, oblast.region);
-    add(targets, 'UA', `Квартира ${oblast.ua}`, null, oblast.region);
-    add(targets, 'UA', `Житло ${oblast.ua}`, null, oblast.region);
-    add(targets, 'UA', `Нерухомість ${oblast.ua}`, null, oblast.region);
+    for (const topic of uaVocabulary.topics) add(targets, 'UA', `${topic} ${oblast.ua}`, null, oblast.region);
   }
 
   const seen = new Set();

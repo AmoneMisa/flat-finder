@@ -9,22 +9,24 @@ test('social housing covers all 24 Ukrainian oblasts without assigning an oblast
   const coverage = buildThreadsHousingCoverage();
   for (const oblast of UKRAINE_OBLASTS) {
     const matches = coverage.filter((target) => target.country === 'UA' && target.region === oblast.region);
-    assert.equal(matches.length, 4, `${oblast.ua} should have four broad housing searches`);
+    assert.equal(matches.length, 3, `${oblast.ua} should have three package-backed housing searches`);
     assert.ok(matches.every((target) => !target.city), `${oblast.ua} must remain oblast-wide`);
   }
 });
 
-test('housing coverage includes broad country and major-city searches', () => {
+test('housing coverage includes package-backed searches in local languages', () => {
   const coverage = buildThreadsHousingCoverage();
   for (const query of [
-    'Аренда Узбекистан',
-    'Аренда Ташкент',
-    'Квартира Ташкент',
-    'Аренда Алматы',
-    'Chirie București',
-    'Оренда Україна',
+    'аренда Узбекистан',
+    'аренда Ташкент',
+    'квартира Ташкент',
+    'ijara Toshkent',
+    'аренда Алматы',
+    'жалдау Алматы',
+    'închiriere București',
+    'оренда Україна',
   ]) {
-    assert.ok(coverage.some((target) => target.target === query), `missing ${query}`);
+    assert.ok(coverage.some((target) => target.target.toLocaleLowerCase() === query.toLocaleLowerCase()), `missing ${query}`);
   }
 });
 
