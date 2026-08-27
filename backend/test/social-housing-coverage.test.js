@@ -21,6 +21,8 @@ test('housing coverage includes package-backed searches in local languages', () 
     'аренда Ташкент',
     'квартира Ташкент',
     'ijara Toshkent',
+    'ижара Тошкент',
+    'квартира Тошкент',
     'аренда Алматы',
     'жалдау Алматы',
     'închiriere București',
@@ -37,6 +39,7 @@ test('social housing classifier accepts offers and rejects demand in supported l
   assert.equal(classifyHousingOffer('Închiriez apartament în București, 600 EUR'), 'longRent');
   assert.equal(classifyHousingOffer('Vând apartament în Cluj-Napoca, 85000 EUR'), 'sale');
   assert.equal(classifyHousingOffer('Uy ijaraga beriladi Toshkent, 500 USD'), 'longRent');
+  assert.equal(classifyHousingOffer('Уй ижарага берилади Тошкент, 500 USD'), 'longRent');
   assert.equal(classifyHousingOffer('Пәтер жалға беріледі Алматы, 250000 теңге'), 'longRent');
 
   assert.equal(classifyHousingOffer('Ищу квартиру в Ташкенте, сниму на год'), null);
