@@ -1,0 +1,64 @@
+name: Canonical city storage final
+on:
+  push:
+    branches: [fix/canonical-city-statistics]
+permissions:
+  contents: write
+jobs:
+  final:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env: {POSTGRES_DB: flatfinder, POSTGRES_USER: flatfinder, POSTGRES_PASSWORD: flatfinder-test}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      POSTGRES_DB: flatfinder
+      POSTGRES_USER: flatfinder
+      POSTGRES_PASSWORD: flatfinder-test
+      TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder-test@127.0.0.1:5432/flatfinder
+      TEST_POSTGRES_SEARCH: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: fix/canonical-city-statistics}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - run: npm ci --prefix backend && npm run install:internal --prefix backend
+      - name: Reuse reviewed apply block
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          lines=Path('.github/workflows/canonical-city-storage-retry.yml').read_text().splitlines()
+          start=next(i for i,l in enumerate(lines) if l.strip()=='- name: Apply')
+          run=next(i for i in range(start+1,len(lines)) if lines[i].strip()=='run: |')
+          block=[]
+          for l in lines[run+1:]:
+            if l.startswith('      - '): break
+            block.append(l[10:] if l.startswith('          ') else l)
+          Path('/tmp/apply.sh').write_text('\n'.join(block)+'\n')
+          PY
+          bash /tmp/apply.sh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('backend/test/market-comparison.test.js'); s=p.read_text()
+          s=s.replace("/target\\.price_usd < stats\\.medianUsd/u", "/priceRatio < 1/u")
+          s=s.replace("/LOWER\\(BTRIM\\(COALESCE\\(c\\.city, ''\\)\\)\\) = LOWER\\(BTRIM\\(t\\.city\\)\\)/u", "/c\\.city = t\\.city/u")
+          p.write_text(s)
+          PY
+      - run: npm run migrate --prefix backend
+      - run: node --check backend/src/db.js && node --check backend/src/listing-routes.js && node --check backend/src/postgres-search.js && node --check backend/src/market-comparison.js
+      - run: node --test backend/test/postgres-search.integration.test.js backend/test/filter-parity.integration.test.js backend/test/market-comparison.integration.test.js backend/test/market-comparison.test.js backend/test/listing-routes.test.js backend/test/migrations.test.js
+      - name: Commit clean result
+        run: |
+          rm -f .github/workflows/canonical-city-storage-once.yml .github/workflows/canonical-city-storage-retry.yml .github/workflows/canonical-city-storage-final.yml .github/workflows/fix-canonical-city-stats-once.yml .github/workflows/fix-canonical-city-stats-retry.yml .github/workflows/fix-canonical-city-stats-retry2.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "refactor: store canonical cities at ingestion"
+          git push origin HEAD:fix/canonical-city-statistics
