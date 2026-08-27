@@ -14,12 +14,12 @@ test('good-price assessment is calculated from the active PostgreSQL market, not
   assert.match(comparison, /c\.active = TRUE/u);
   assert.match(comparison, /PERCENTILE_CONT\(0\.5\) WITHIN GROUP \(ORDER BY price_usd\)/u);
   assert.match(comparison, /stats\.comparableCount >= MIN_COMPARABLES/u);
-  assert.match(comparison, /target\.price_usd < stats\.medianUsd/u);
+  assert.match(comparison, /priceRatio < 1/u);
 });
 
 test('market comparison matches city, district, deal and property type with indexed room and area branches', () => {
   assert.match(comparison, /UPPER\(c\.country\) = t\.country/u);
-  assert.match(comparison, /LOWER\(BTRIM\(COALESCE\(c\.city, ''\)\)\) = LOWER\(BTRIM\(t\.city\)\)/u);
+  assert.match(comparison, /c\.city = t\.city/u);
   assert.match(comparison, /t\.district IS NULL OR LOWER\(BTRIM\(COALESCE\(c\.district, ''\)\)\) = LOWER\(BTRIM\(t\.district\)\)/u);
   assert.match(comparison, /c\.property_type = t\.property_type/u);
   assert.match(comparison, /roomOnly/u);

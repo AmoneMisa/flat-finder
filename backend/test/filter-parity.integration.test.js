@@ -113,7 +113,7 @@ test('in-memory and PostgreSQL search share core filter semantics', {skip: !enab
       baseFilters({airConditioner: true}),
       baseFilters({pets: true, children: true}),
       baseFilters({roomsMin: 2, roomsMax: 2, areaMin: 45, areaMax: 55}),
-      baseFilters({city: 'parity city', cityAliases: ['Parity City']}),
+      baseFilters({city: 'Parity City'}),
       baseFilters({district: 'central district'}),
       baseFilters({metro: 'main station'}),
     ];

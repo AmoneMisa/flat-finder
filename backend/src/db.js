@@ -1,5 +1,6 @@
 import pg from 'pg';
 import {enrichListingDetails} from './listing-enrichment.js';
+import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 
 const { Pool } = pg;
 
@@ -84,6 +85,10 @@ function safeTimestamp(value) {
 
 function dbListing(inputListing) {
     const listing = enrichListingDetails(inputListing);
+    const country = String(listing.country || '').toUpperCase();
+    const sourceCity = String(listing.city || '').trim();
+    const city = sourceCity ? (canonicalCity(sourceCity, country) || sourceCity) : null;
+    const data = city && sourceCity && city !== sourceCity ? {...listing, city, sourceCity} : {...listing, city};
 
     return {
         source:
@@ -91,10 +96,7 @@ function dbListing(inputListing) {
                 listing.source || '',
             ).toLowerCase(),
 
-        country:
-            String(
-                listing.country || '',
-            ).toUpperCase(),
+        country,
 
         source_id:
             String(
@@ -113,8 +115,7 @@ function dbListing(inputListing) {
         deal_type:
             listing.dealType ?? null,
 
-        city:
-            listing.city ?? null,
+        city,
 
         district:
             listing.district ?? null,
@@ -163,7 +164,7 @@ function dbListing(inputListing) {
 
         // Полный normalized Listing.
         // ES позже будем строить именно из него.
-        data: listing,
+        data,
     };
 }
 
