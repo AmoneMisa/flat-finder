@@ -51,7 +51,6 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
     priceTolerance: 0,
     priceCurrency: 'USD',
     city: 'Odesa',
-    cityAliases: ['Odesa'],
     airConditioner: true,
     sources: [],
     sort: 'newest',
@@ -74,6 +73,18 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   assert.equal(first.statistics.dealTypes[0]?.key, 'longRent');
   assert.equal(first.statistics.dealTypes[0]?.count, 2);
   assert.equal(first.statistics.geographies.city[0]?.label, 'Odesa');
+
+  await upsertListings([
+    listing('kyiv-ru', 600, 'USD', 'Киев', true, 6),
+    listing('kyiv-uk', 800, 'USD', 'Київ', true, 7),
+  ]);
+  const kyiv = await searchPostgresListings({filters: {...filters, city: 'Kyiv', priceMax: null, limit: 20, includeStats: true}, countries: ['UA'], rates: {USD: 1, UAH: 40}});
+  assert.equal(kyiv.count, 3);
+  assert.equal(kyiv.statistics.geographies.city.length, 1);
+  assert.equal(kyiv.statistics.geographies.city[0]?.label, 'Kyiv');
+  assert.equal(kyiv.statistics.geographies.city[0]?.medianUsd, 600);
+  const storedKyiv = await pool.query("SELECT city, data->>'city' AS data_city, data->>'sourceCity' AS source_city FROM listings WHERE source='pg-search-test' AND source_id='kyiv-ru'");
+  assert.deepEqual(storedKyiv.rows[0], {city: 'Kyiv', data_city: 'Kyiv', source_city: 'Киев'});
 
   const second = await searchPostgresListings({
     filters: {...filters, cursor: first.nextCursor, offset: 999},
@@ -145,7 +156,6 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
     agency: 'any',
     audience: 'any',
     city: 'Tashkent',
-    cityAliases: ['Tashkent'],
     sources: ['olx'],
     sort: 'newest',
     limit: 20,

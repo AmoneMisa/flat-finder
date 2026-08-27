@@ -1,4 +1,5 @@
-import {COUNTRIES, COUNTRY_CODES} from './countries.js';
+import {COUNTRY_CODES} from './countries.js';
+import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 import {getRates} from './fx.js';
 import {refreshAll} from './scheduler.js';
 import {searchPostgresListings} from './postgres-search-fast.js';
@@ -111,17 +112,12 @@ function resolveCountries(query) {
   return requested.length ? requested : COUNTRY_CODES;
 }
 
-function addCityAliases(filters, codes) {
+function canonicalizeCityFilter(filters, codes) {
   if (!filters.city) return;
-
-  const forms = new Set([filters.city]);
-  for (const code of codes) {
-    for (const alias of COUNTRIES[code]?.cityAliases?.[filters.city] ?? []) {
-      forms.add(alias);
-    }
-  }
-  filters.cityAliases = [...forms];
+  const country = codes.length === 1 ? codes[0] : undefined;
+  filters.city = canonicalCity(filters.city, country) || filters.city;
 }
+
 
 async function tryPostgresSearch({filters, codes, force}) {
   if (force) {
@@ -233,7 +229,7 @@ export function installListingRoutes(app) {
 
     const filters = parseListingFilters(req.query);
     const codes = resolveCountries(req.query);
-    addCityAliases(filters, codes);
+    canonicalizeCityFilter(filters, codes);
 
     let custom = {warming: false, sourceErrors: []};
     if (filters.customSources.length) {

@@ -173,10 +173,7 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   ];
   for (const [filterName, dataName] of booleanFilters) if (filters[filterName] === true) where.push(`l.data @> '{"${dataName}":true}'::jsonb`);
 
-  if (filters.city) {
-    const forms = [...new Set((filters.cityAliases?.length ? filters.cityAliases : [filters.city]).map((value) => String(value).toLowerCase()).filter(Boolean))];
-    where.push(`LOWER(l.city) = ANY(${add(forms)}::text[])`);
-  }
+  if (filters.city) where.push(`l.city = ${add(String(filters.city))}`);
   if (filters.district) where.push(`LOWER(l.district) = ${add(String(filters.district).toLowerCase())}`);
   if (filters.metro) where.push(`LOWER(l.metro) = ${add(String(filters.metro).toLowerCase())}`);
 
