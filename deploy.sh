@@ -125,6 +125,36 @@ docker compose up -d --remove-orphans --no-deps \
   flat-finder-olx-router \
   flat-finder-postgres
 
+verify_service_image() {
+  local service="$1" image_repo="$2" expected_ref expected_id cid actual_ref actual_id
+  expected_ref="${image_repo}:${IMAGE_TAG}"
+  expected_id="$(docker image inspect "$expected_ref" --format '{{.Id}}' 2>/dev/null || true)"
+  cid="$(docker compose ps -q "$service" 2>/dev/null || true)"
+  if [[ -z "$cid" || -z "$expected_id" ]]; then
+    echo "ERROR: cannot verify image for $service (expected $expected_ref)." >&2
+    return 1
+  fi
+  actual_ref="$(docker inspect "$cid" --format '{{.Config.Image}}')"
+  actual_id="$(docker inspect "$cid" --format '{{.Image}}')"
+  if [[ "$actual_ref" != "$expected_ref" || "$actual_id" != "$expected_id" ]]; then
+    echo "ERROR: $service is not running the expected immutable image." >&2
+    echo "  expected ref: $expected_ref" >&2
+    echo "  actual ref:   $actual_ref" >&2
+    echo "  expected id:  $expected_id" >&2
+    echo "  actual id:    $actual_id" >&2
+    return 1
+  fi
+  echo "Verified $service -> $expected_ref ($actual_id)"
+}
+
+# Do not record a successful rollout unless every application container is
+# provably running the exact immutable image tag for this deployment.
+verify_service_image flat-finder-backend ghcr.io/amonemisa/flat-finder-backend
+verify_service_image flat-finder-worker ghcr.io/amonemisa/flat-finder-backend
+verify_service_image flat-finder-olx-fetcher ghcr.io/amonemisa/flat-finder-olx-fetcher
+verify_service_image flat-finder-olx-fetcher-ua ghcr.io/amonemisa/flat-finder-olx-fetcher
+verify_service_image flat-finder-social-fetcher ghcr.io/amonemisa/flat-finder-social-fetcher
+
 docker image prune -af --filter "until=336h"
 
 docker compose ps
