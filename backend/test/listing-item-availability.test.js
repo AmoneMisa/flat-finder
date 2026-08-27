@@ -7,20 +7,25 @@ const source = readFileSync(
   'utf8',
 );
 
-test('direct OLX listing open forces availability verification before reload', () => {
-  assert.match(source, /import \{verifyListingAvailability\} from '\.\/availability\.js'/);
-  assert.match(source, /verifyListingAvailability\(\[\s*\{source, country: code, id\},\s*\], \{force: true\}\)/s);
-  assert.match(source, /availability\?\.status === 'inactive'/);
+test('direct OLX listing open uses one live offer fetch for reload and availability', () => {
+  assert.match(source, /import \{recordListingAvailability\} from '\.\/availability\.js'/);
+  assert.doesNotMatch(source, /verifyListingAvailability/);
 
-  const availabilityIndex = source.indexOf('verifyListingAvailability');
-  const reloadIndex = source.indexOf('fetchOlxOffer(country, id)');
-  assert.ok(availabilityIndex >= 0);
-  assert.ok(reloadIndex > availabilityIndex);
+  const fetchMatches = source.match(/fetchOlxOffer\(country, id\)/g) || [];
+  assert.equal(fetchMatches.length, 1, 'direct open must make one live OLX offer request');
+  assert.match(source, /const listing = await fetchOlxOffer\(country, id\);/);
 });
 
-test('inactive direct OLX listing returns 404 without relying on source reload result', () => {
+test('missing live OLX offer records inactive state and returns 404', () => {
   assert.match(
     source,
-    /if \(availability\?\.status === 'inactive'\) \{\s*return res\.status\(404\)\.json\(\{error: 'Listing no longer available'\}\);\s*\}/s,
+    /if \(!listing\) \{[\s\S]*?recordListingAvailability\(\{[\s\S]*?status: 'inactive',[\s\S]*?reason: 'offer_not_found',[\s\S]*?\}\);[\s\S]*?return res\.status\(404\)\.json\(\{error: 'Listing no longer available'\}\);[\s\S]*?\}/,
+  );
+});
+
+test('successful live OLX offer records active availability', () => {
+  assert.match(
+    source,
+    /recordListingAvailability\(\{[\s\S]*?status: 'active',[\s\S]*?reason: 'offer_reload',[\s\S]*?\}\);/,
   );
 });
