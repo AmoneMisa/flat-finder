@@ -1,0 +1,67 @@
+name: Retry canonical city statistics fix
+
+on:
+  push:
+    branches:
+      - fix/canonical-city-statistics
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      POSTGRES_DB: flatfinder
+      POSTGRES_USER: flatfinder
+      POSTGRES_PASSWORD: flatfinder-test
+      TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder-test@127.0.0.1:5432/flatfinder
+      TEST_POSTGRES_SEARCH: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/canonical-city-statistics
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install backend dependencies
+        run: |
+          npm ci --prefix backend
+          npm run install:internal --prefix backend
+      - name: Apply fix
+        run: python .github/scripts/fix_canonical_city_stats.py
+      - name: Apply migrations
+        run: npm run migrate --prefix backend
+      - name: Validate
+        run: |
+          node --check backend/src/postgres-search.js
+          node --test backend/test/postgres-search.integration.test.js
+          npm test --prefix backend
+      - name: Commit fix
+        shell: bash
+        run: |
+          rm .github/workflows/fix-canonical-city-stats-once.yml
+          rm .github/workflows/fix-canonical-city-stats-retry.yml
+          rm .github/scripts/fix_canonical_city_stats.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/postgres-search.js backend/test/postgres-search.integration.test.js .github/workflows/fix-canonical-city-stats-once.yml .github/workflows/fix-canonical-city-stats-retry.yml .github/scripts/fix_canonical_city_stats.py
+          git commit -m "fix: canonicalize city statistics before aggregation"
+          git push origin HEAD:fix/canonical-city-statistics
