@@ -1,6 +1,7 @@
 // Compatibility facade: keep the public textparse API while moving shared
 // housing semantics into @whiteslove/parsing-lexicon.
 export * from './textparse-legacy.js';
+export { looksCommercialHousing as looksCommercial } from '@whiteslove/parsing-lexicon/housing-commercial';
 
 import { parseHousingListingFields } from '@whiteslove/parsing-lexicon';
 

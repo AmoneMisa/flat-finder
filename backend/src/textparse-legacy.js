@@ -68,18 +68,6 @@ export function parseRoomsFromText(text) {
   return null;
 }
 
-// Non-residential / commercial listings (offices, retail, warehouses) that
-// should not appear among housing results. Kept conservative so amenities like
-// "магазин рядом" (shop nearby) don't wrongly flag a flat.
-// Includes: offices, commercial/business centres, non-residential "помещение",
-// retail/warehouse/production premises, land plots (sotix/sotka/соток/yer
-// maydoni — not housing) and service/auto premises (car wash, repair bay).
-const COMMERCIAL_RE =
-  /(офис[ _|,/.]|под ?офис|офисн|\boffice\b|\bofis\b|кеңсе|коммерческ|commercial|бизнес[ -]?центр|не\s?жил(?:ое|ой|ый|ых|ым|ого)|помещени[ея]|торгов(?:ое|ая) ?площад|торгов(?:ое|ое помещ)|warehouse|склад(?!н|ыв)|производствен(?:ное|ых) ?помещ|spatiu comercial|birou|\d+\s*sot(?:ix|ka)|\d+\s*сот(?:ок|ка|ки|ых)|yer\s*maydoni|bosh\s*yer|уч[аа]сток\s*земл|servis\s*uchun|kassaprav|avtomoyka|автомойк|car\s?wash|шиномонтаж|салон\s*красот|zallik\s*saloni|beauty\s*salon|beauty[\s-]?кабинет|космет(?:ическ|олог)[а-яё]*\s*кабинет|массажн[а-яё]*\s*кабинет|маникюрн[а-яё]*\s*(?:кабинет|студи)|nail\s*(?:bar|studio|salon)|аренда\s+(?:beauty\s+)?кабинет|парикмахерск|барбершоп|barbershop|аренда\s+рабоч(?:его|ее)\s*мест|рабоч(?:ее|его)\s*мест[оае]\s+(?:мастер|для\s+мастер|под\s+)|оренд[аи]\s+робоч(?:ого|е)\s*місц|аренда\s+гараж|гараж[ае]?\s+(?:аренд|сда[её]тся|ijara)|\bgaraj\b|\bgarage\b|o[\u2018\u2019\u02bb\u02bc'`ʻʼ]?quv\s*xona|o[\u2018\u2019\u02bb\u02bc'`ʻʼ]?quv\s*markaz|учебн(?:ый|ое|ая|ого)\s*(?:класс|помещ|кабинет|центр)|под\s+(?:бар|каф[её]|ресторан|магазин|салон|склад|бизнес|спортпит|спорт\s*пит|аптек|пекарн|пункт|шоурум|showroom|офис)|шоурум|showroom|спортпит|sportpit|\bsklad(?:lar)?\b|\bombor(?:xona)?\b|(?:avto\s*)?ser?vis\s+(?:arenda|ijara|beriladi)|авто\s?сервис\s+(?:аренд|сда[её]тся)|детейлинг|detailing|^\s*парковк|avtoturargoh|sot(?:ish|uv)\w*\s*joy|savdo\s*(?:uchun|joy)|\bdo[\u2018\u2019'`ʻʼ]?kon\b|(?:аренд|сда[её]т|сдам|прода|продаж)[а-яё]*\s+(?:(?:в|под|аренду|готов[а-яё]*|действующ[а-яё]*|срочно|отдельн[а-яё]*|стоящ[а-яё]*|цел[а-яё]*)\s+){0,3}(?:здани|каф[её])|бутик|[|,/]\s*(?:салон|бутик|аптек)|arenda\w*\s+joy|ijara\w*\s+joy|готов[а-яё]*\s+бизнес|tayyor\s+biznes|бизнес\s+(?:ресторан|каф[её]|магазин)|(?:сда[её]тся|аренда|прода[её]тся)\s+(?:готов[а-яё]*\s+)?(?:ресторан|каф[её]|чайхан|choyxona)|marojni|muzqaymoq)/i;
-
-export function looksCommercial(text) {
-  return text ? COMMERCIAL_RE.test(text) : false;
-}
 
 // Words that end a complex name: everything after them describes the flat, not
 // the building. Without this the capture ran on for its full character budget
