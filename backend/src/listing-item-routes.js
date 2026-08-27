@@ -1,5 +1,8 @@
 import {COUNTRIES, COUNTRY_CODES} from './countries.js';
-import {recordListingAvailability} from './availability.js';
+import {
+  readFreshActiveListing,
+  recordListingAvailability,
+} from './availability.js';
 import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateCustomSource} from './custom-source-queue.js';
 import {checkRate} from './request-rate-limit.js';
@@ -21,6 +24,17 @@ export function installListingItemRoutes(app) {
     }
 
     try {
+      // A successful source check suppresses every further source request for
+      // one hour. Inactive adverts never reach this branch again through the
+      // feed: they are persisted inactive and removed from search results.
+      const cached = await readFreshActiveListing({source, country: code, id});
+      if (cached) {
+        return res.json({
+          listing: cached.listing,
+          availability: {status: 'active', checkedAt: cached.checkedAt, cached: true},
+        });
+      }
+
       // fetchOlxOffer is already a live source request. The previous path first
       // called /olx/check and then fetched the offer again, doubling latency and
       // WAF exposure for every click. One source fetch now serves as both the
@@ -37,14 +51,20 @@ export function installListingItemRoutes(app) {
         return res.status(404).json({error: 'Listing no longer available'});
       }
 
-      await recordListingAvailability({
+      const availability = await recordListingAvailability({
         source,
         country: code,
         id,
         status: 'active',
         reason: 'offer_reload',
       });
-      return res.json({listing});
+      return res.json({
+        listing: {
+          ...listing,
+          ...(availability.publicId ? {publicId: availability.publicId} : {}),
+        },
+        availability: {status: 'active', checkedAt: availability.checkedAt, cached: false},
+      });
     } catch (err) {
       return res.status(502).json({error: err.message});
     }

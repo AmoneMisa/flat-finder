@@ -22,34 +22,43 @@ function hasValue(value) {
   return value !== null && value !== undefined && value !== '';
 }
 
+const NUMERIC_FILTERS = [
+  'priceMin', 'priceMax', 'priceTolerance', 'roomsMin', 'roomsMax',
+  'bedroomsMin', 'bedroomsMax', 'areaMin', 'areaMax', 'metroMaxM',
+  'nearbyMaxM', 'pricePerSqmMin', 'pricePerSqmMax', 'floorMin', 'floorMax',
+  'totalFloorsMin', 'totalFloorsMax', 'yearMin', 'yearMax',
+];
+
+const BOOLEAN_FILTERS = [
+  'newBuilding', 'dishwasher', 'airConditioner', 'parking', 'internet', 'gas',
+  'balcony', 'terrace', 'privateYard', 'pets', 'children', 'roomOnly', 'withPhotos',
+];
+
+function hasSecondaryFilters(filters) {
+  if (filters.customSources?.length || filters.query || filters.city || filters.district || filters.metro) return true;
+  if (filters.propertyType && filters.propertyType !== 'any') return true;
+  if (filters.dealType && filters.dealType !== 'any') return true;
+  if (filters.agency && filters.agency !== 'any') return true;
+  if (filters.audience && filters.audience !== 'any') return true;
+  if (NUMERIC_FILTERS.some((key) => hasValue(filters[key]))) return true;
+  if (filters.priceCurrency || filters.nearbyKind) return true;
+  return BOOLEAN_FILTERS.some((key) => filters[key] === true);
+}
+
+export function canUseFastListingPath(filters, countries, searchMatches) {
+  if (!filters.listingId || searchMatches) return false;
+  if (filters.includeStats || filters.statsOnly || filters.mapOnly) return false;
+  if (filters.sources?.length !== 1 || countries?.length !== 1) return false;
+  return !hasSecondaryFilters(filters);
+}
+
 function canUseFastFeedPath(filters, searchMatches) {
   if (searchMatches) return false;
   if (filters.includeStats || filters.statsOnly || filters.mapOnly) return false;
-  if (filters.customSources?.length) return false;
-  if (filters.query || filters.listingId || filters.city || filters.district || filters.metro) return false;
+  if (filters.listingId) return false;
   if (filters.sources?.length) return false;
-  if (filters.propertyType && filters.propertyType !== 'any') return false;
-  if (filters.dealType && filters.dealType !== 'any') return false;
-  if (filters.agency && filters.agency !== 'any') return false;
-  if (filters.audience && filters.audience !== 'any') return false;
   if (filters.sort && !['newest', 'oldest'].includes(filters.sort)) return false;
-
-  const numericFilters = [
-    'priceMin', 'priceMax', 'priceTolerance', 'roomsMin', 'roomsMax',
-    'bedroomsMin', 'bedroomsMax', 'areaMin', 'areaMax', 'metroMaxM',
-    'nearbyMaxM', 'pricePerSqmMin', 'pricePerSqmMax', 'floorMin', 'floorMax',
-    'totalFloorsMin', 'totalFloorsMax', 'yearMin', 'yearMax',
-  ];
-  if (numericFilters.some((key) => hasValue(filters[key]))) return false;
-  if (filters.priceCurrency || filters.nearbyKind) return false;
-
-  const booleanFilters = [
-    'newBuilding', 'dishwasher', 'airConditioner', 'parking', 'internet', 'gas',
-    'balcony', 'terrace', 'privateYard', 'pets', 'children', 'roomOnly', 'withPhotos',
-  ];
-  if (booleanFilters.some((key) => filters[key] === true)) return false;
-
-  return true;
+  return !hasSecondaryFilters(filters);
 }
 
 function buildMemberWhere({countries, maxAgeDays}) {
@@ -88,22 +97,43 @@ async function timedQuery(sql, params) {
   };
 }
 
+async function searchExactListing({filters, countries}) {
+  const startedAt = performance.now();
+  const ageDays = filters.maxAgeDays != null && Number(filters.maxAgeDays) > 0
+    ? Math.min(Number(filters.maxAgeDays), MAX_AGE_DAYS)
+    : MAX_AGE_DAYS;
+  const query = await timedQuery(`
+    SELECT l.id AS db_id, l.created_at, l.data
+    FROM listings l
+    WHERE l.source = $1
+      AND l.country = $2
+      AND l.source_id = $3
+      AND l.active = TRUE
+      AND COALESCE(l.data->>'listingKind', 'propertyOffer') <> 'propertyWanted'
+      AND COALESCE(l.data->>'listingStatus', 'active') NOT IN ('sold', 'rented', 'closed', 'outdated')
+      AND NOT (l.data @> '{"commercial":true}'::jsonb)
+      AND (l.created_at IS NULL OR l.created_at >= NOW() - ($4::double precision * INTERVAL '1 day'))
+    LIMIT 1
+  `, [filters.sources[0], countries[0], String(filters.listingId), ageDays]);
+  const row = query.result.rows[0];
+
+  return {
+    count: row ? 1 : 0,
+    listings: row ? [row.data || {}] : [],
+    nextCursor: null,
+    countMs: 0,
+    pageMs: query.ms,
+    queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
+    searchPath: 'postgres-listing-id',
+  };
+}
+
 async function searchDefaultFeed({filters, countries}) {
   const startedAt = performance.now();
   const {params: baseParams, where} = buildMemberWhere({
     countries,
     maxAgeDays: filters.maxAgeDays,
   });
-
-  const countSql = `
-    SELECT COUNT(*)::int AS count
-    FROM (
-      SELECT m.dedupe_key
-      FROM listing_public_feed_members m
-      WHERE ${where}
-      GROUP BY m.dedupe_key
-    ) visible_keys
-  `;
 
   const pageParams = [...baseParams];
   const addPage = (value) => {
@@ -158,20 +188,18 @@ async function searchDefaultFeed({filters, countries}) {
       LIMIT ${limitParam}
       OFFSET ${offsetParam}
     )
-    SELECT p.db_id, p.created_at, l.data
-    FROM page p
-    JOIN listings l ON l.id = p.db_id
+    SELECT totals.count, p.db_id, p.created_at, l.data
+    FROM (SELECT COUNT(*)::int AS count FROM deduped) totals
+    LEFT JOIN page p ON TRUE
+    LEFT JOIN listings l ON l.id = p.db_id
     ORDER BY ${orderBy.replaceAll('d.', 'p.')}
   `;
 
-  const [countTimed, pageTimed] = await Promise.all([
-    timedQuery(countSql, baseParams),
-    timedQuery(pageSql, pageParams),
-  ]);
+  const pageTimed = await timedQuery(pageSql, pageParams);
 
-  const rows = pageTimed.result.rows;
+  const rows = pageTimed.result.rows.filter((row) => row.db_id != null);
   const listings = rows.map((row) => row.data || {});
-  const count = Number(countTimed.result.rows[0]?.count) || 0;
+  const count = Number(pageTimed.result.rows[0]?.count) || 0;
 
   let nextCursor = null;
   if (rows.length === limit) {
@@ -186,7 +214,7 @@ async function searchDefaultFeed({filters, countries}) {
     count,
     listings,
     nextCursor,
-    countMs: countTimed.ms,
+    countMs: 0,
     pageMs: pageTimed.ms,
     queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
     searchPath: 'postgres-feed-members',
@@ -194,6 +222,9 @@ async function searchDefaultFeed({filters, countries}) {
 }
 
 export async function searchPostgresListings(args) {
+  if (canUseFastListingPath(args.filters, args.countries, args.searchMatches)) {
+    return searchExactListing(args);
+  }
   if (canUseFastFeedPath(args.filters, args.searchMatches)) {
     return searchDefaultFeed(args);
   }

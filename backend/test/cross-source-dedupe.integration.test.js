@@ -160,7 +160,7 @@ test('property identity stays on the persisted indexed read path', async () => {
   assert.match(sql, /cross:content:/);
   assert.doesNotMatch(sql, /cross:photos:/);
   assert.match(search, /PARTITION BY filtered\.dedupe_key/);
-  assert.match(fastSearch, /GROUP BY m\.dedupe_key/);
+  assert.match(fastSearch, /DISTINCT ON \(m\.dedupe_key\)/);
   assert.doesNotMatch(search, /listing_property_clusters/);
   assert.doesNotMatch(fastSearch, /listing_property_clusters/);
 });

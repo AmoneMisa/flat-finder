@@ -1,15 +1,11 @@
 import {pool} from './db.js';
 import {COUNTRIES} from './countries.js';
+import {
+  ACTIVE_AVAILABILITY_TTL_MS,
+  UNKNOWN_AVAILABILITY_TTL_MS,
+} from './availability-policy.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
-const ACTIVE_TTL_MS = Math.max(
-  60_000,
-  Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 60 * 60_000,
-);
-const UNKNOWN_TTL_MS = Math.max(
-  30_000,
-  Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 10 * 60_000,
-);
 const REQUEST_TIMEOUT_MS = Math.max(
   3_000,
   Number(process.env.LISTING_AVAILABILITY_REQUEST_TIMEOUT_MS) || 5_000,
@@ -81,6 +77,34 @@ async function loadRows(items) {
   return result.rows;
 }
 
+export async function readFreshActiveListing({source, country, id}) {
+  const result = await pool.query(`
+    SELECT l.id, l.data, l.availability_checked_at
+    FROM listings l
+    WHERE l.source = $1
+      AND l.country = $2
+      AND l.source_id = $3
+      AND l.active = TRUE
+      AND l.availability_status = 'active'
+      AND l.availability_checked_at > NOW() - (
+        $4::bigint * INTERVAL '1 millisecond'
+      )
+    LIMIT 1
+  `, [source, country, String(id), ACTIVE_AVAILABILITY_TTL_MS]);
+
+  const row = result.rows[0];
+  if (!row) return null;
+
+  const publicId = Number(row.id);
+  return {
+    listing: {
+      ...(row.data || {}),
+      ...(Number.isInteger(publicId) ? {publicId} : {}),
+    },
+    checkedAt: new Date(row.availability_checked_at).toISOString(),
+  };
+}
+
 function cachedResult(row) {
   const checkedAt = row.availability_checked_at
     ? new Date(row.availability_checked_at).toISOString()
@@ -106,8 +130,8 @@ function cachedResult(row) {
 
   const age = Date.now() - Date.parse(checkedAt);
   const ttl = row.availability_status === 'unknown'
-    ? UNKNOWN_TTL_MS
-    : ACTIVE_TTL_MS;
+    ? UNKNOWN_AVAILABILITY_TTL_MS
+    : ACTIVE_AVAILABILITY_TTL_MS;
 
   if (!Number.isFinite(age) || age < 0 || age >= ttl) return null;
 
@@ -159,7 +183,7 @@ export async function recordListingAvailability({source, country, id, status, re
       missed_runs = CASE WHEN $4::varchar(16) = 'active' THEN 0 ELSE missed_runs END,
       updated_at = CASE WHEN $4::varchar(16) IN ('active', 'inactive') THEN NOW() ELSE updated_at END
     WHERE source = $1 AND country = $2 AND source_id = $3
-    RETURNING active, availability_checked_at, inactive_at
+    RETURNING id, active, availability_checked_at, inactive_at
   `, [source, country, id, status, reason]);
 
   if (status === 'inactive' && result.rowCount > 0) {
@@ -168,6 +192,7 @@ export async function recordListingAvailability({source, country, id, status, re
 
   const row = result.rows[0];
   return {
+    publicId: Number.isInteger(Number(row?.id)) ? Number(row.id) : null,
     active: row?.active ?? null,
     checkedAt: row?.availability_checked_at
       ? new Date(row.availability_checked_at).toISOString()

@@ -1,14 +1,9 @@
 import {pool} from './db.js';
 import {verifyListingAvailability} from './availability.js';
-
-const ACTIVE_TTL_MS = Math.max(
-  60_000,
-  Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 30 * 60_000,
-);
-const UNKNOWN_TTL_MS = Math.max(
-  30_000,
-  Number(process.env.LISTING_AVAILABILITY_UNKNOWN_TTL_MS) || 10 * 60_000,
-);
+import {
+  ACTIVE_AVAILABILITY_TTL_MS,
+  UNKNOWN_AVAILABILITY_TTL_MS,
+} from './availability-policy.js';
 const MAX_BATCH = Math.max(
   1,
   Math.min(100, Number(process.env.LISTING_AVAILABILITY_SWEEP_BATCH) || 100),
@@ -88,7 +83,7 @@ export async function verifyDueListingAvailability(limit = MAX_BATCH) {
       last_seen_at DESC,
       updated_at DESC
     LIMIT $3
-  `, [UNKNOWN_TTL_MS, ACTIVE_TTL_MS, batch]);
+  `, [UNKNOWN_AVAILABILITY_TTL_MS, ACTIVE_AVAILABILITY_TTL_MS, batch]);
 
   const items = result.rows.map((row) => ({
     source: row.source,

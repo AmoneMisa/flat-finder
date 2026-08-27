@@ -7,13 +7,18 @@ const source = readFileSync(
   'utf8',
 );
 
-test('direct OLX listing open uses one live offer fetch for reload and availability', () => {
-  assert.match(source, /import \{recordListingAvailability\} from '\.\/availability\.js'/);
-  assert.doesNotMatch(source, /verifyListingAvailability/);
+test('direct OLX listing open reuses a fresh active result for sixty minutes', () => {
+  assert.match(source, /readFreshActiveListing/);
+  assert.match(source, /const cached = await readFreshActiveListing\(\{source, country: code, id\}\)/);
+  assert.match(source, /if \(cached\) \{[\s\S]*?cached: true[\s\S]*?\}/);
 
   const fetchMatches = source.match(/fetchOlxOffer\(country, id\)/g) || [];
   assert.equal(fetchMatches.length, 1, 'direct open must make one live OLX offer request');
   assert.match(source, /const listing = await fetchOlxOffer\(country, id\);/);
+  assert.ok(
+    source.indexOf('if (cached)') < source.indexOf('fetchOlxOffer(country, id)'),
+    'fresh active cache must be checked before touching OLX',
+  );
 });
 
 test('missing live OLX offer records inactive state and returns 404', () => {
@@ -28,4 +33,7 @@ test('successful live OLX offer records active availability', () => {
     source,
     /recordListingAvailability\(\{[\s\S]*?status: 'active',[\s\S]*?reason: 'offer_reload',[\s\S]*?\}\);/,
   );
+  assert.match(source, /const availability = await recordListingAvailability/);
+  assert.match(source, /availability\.publicId \? \{publicId: availability\.publicId\}/);
+  assert.match(source, /cached: false/);
 });
