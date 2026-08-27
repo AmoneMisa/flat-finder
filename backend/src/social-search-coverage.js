@@ -32,7 +32,7 @@ export const UKRAINE_OBLASTS = [
 
 export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
   UZ: Object.freeze({
-    languages: Object.freeze(['ru', 'uzLatn']),
+    languages: Object.freeze(['ru', 'uzLatn', 'uzCyrl']),
     crawlCities: Object.freeze([
       'Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana',
       'Qarshi', 'Nukus', 'Jizzakh', 'Urgench',
