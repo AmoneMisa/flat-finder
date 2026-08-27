@@ -1,20 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import pg from 'pg';
-
-const { Pool } = pg;
-
-const pool = new Pool({
-  host: process.env.PGHOST || 'flat-finder-postgres',
-  port: Number(process.env.PGPORT) || 5432,
-  database: process.env.POSTGRES_DB || 'flatfinder',
-  user: process.env.POSTGRES_USER || 'flatfinder',
-  password: process.env.POSTGRES_PASSWORD,
-  max: 2,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000,
-});
+import { pool } from './db.js';
 
 const MAX_IMAGE_BYTES = Math.max(256_000, Number(process.env.ANTIFAKE_MAX_IMAGE_BYTES) || 8 * 1024 * 1024);
 const FETCH_TIMEOUT_MS = Math.max(2000, Number(process.env.ANTIFAKE_IMAGE_TIMEOUT_MS) || 8000);
@@ -23,60 +10,6 @@ const CHRONOLOGY_GAP_MS = Math.max(60_000, (Number(process.env.ANTIFAKE_CHRONOLO
 const PERCEPTUAL_MAX_DISTANCE = Math.max(0, Math.min(16, Number(process.env.ANTIFAKE_PERCEPTUAL_MAX_DISTANCE) || 7));
 const PERCEPTUAL_CANDIDATE_LIMIT = Math.max(50, Math.min(5000, Number(process.env.ANTIFAKE_PERCEPTUAL_CANDIDATE_LIMIT) || 800));
 const PERCEPTUAL_HASH_SCRIPT = fileURLToPath(new URL('./perceptual-hash.py', import.meta.url));
-let schemaPromise = null;
-
-function ensureSchema() {
-  if (!schemaPromise) {
-    schemaPromise = pool.query(`
-      CREATE TABLE IF NOT EXISTS listing_photo_hashes (
-        hash CHAR(64) NOT NULL,
-        source VARCHAR(32) NOT NULL,
-        country VARCHAR(8) NOT NULL,
-        source_id TEXT NOT NULL,
-        city TEXT,
-        photo_url TEXT NOT NULL,
-        first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (hash, source, country, source_id, photo_url)
-      );
-      ALTER TABLE listing_photo_hashes
-        ADD COLUMN IF NOT EXISTS perceptual_hash CHAR(16),
-        ADD COLUMN IF NOT EXISTS title TEXT,
-        ADD COLUMN IF NOT EXISTS price NUMERIC,
-        ADD COLUMN IF NOT EXISTS currency VARCHAR(16),
-        ADD COLUMN IF NOT EXISTS by_agency BOOLEAN,
-        ADD COLUMN IF NOT EXISTS rooms NUMERIC,
-        ADD COLUMN IF NOT EXISTS area_sqm NUMERIC,
-        ADD COLUMN IF NOT EXISTS district TEXT,
-        ADD COLUMN IF NOT EXISTS metro TEXT,
-        ADD COLUMN IF NOT EXISTS residence_complex TEXT,
-        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
-      CREATE INDEX IF NOT EXISTS listing_photo_hashes_hash_idx
-        ON listing_photo_hashes(hash);
-      CREATE INDEX IF NOT EXISTS listing_photo_hashes_listing_idx
-        ON listing_photo_hashes(source, country, source_id);
-      CREATE INDEX IF NOT EXISTS listing_photo_hashes_perceptual_country_idx
-        ON listing_photo_hashes(country, perceptual_hash)
-        WHERE perceptual_hash IS NOT NULL;
-
-      CREATE TABLE IF NOT EXISTS listing_property_clusters (
-        source VARCHAR(32) NOT NULL,
-        country VARCHAR(8) NOT NULL,
-        source_id TEXT NOT NULL,
-        cluster_id TEXT NOT NULL,
-        first_joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (source, country, source_id)
-      );
-      CREATE INDEX IF NOT EXISTS listing_property_clusters_cluster_idx
-        ON listing_property_clusters(cluster_id);
-    `).catch((error) => {
-      schemaPromise = null;
-      throw error;
-    });
-  }
-  return schemaPromise;
-}
 
 function runPerceptualHash(bytes) {
   return new Promise((resolve, reject) => {
@@ -579,7 +512,6 @@ async function assignPropertyCluster(identity, cloneMatches) {
 }
 
 export async function detectExactDuplicatePhotos(listing, images) {
-  await ensureSchema();
   const identity = listingIdentity(listing);
   const matches = [];
   const hashes = [];
