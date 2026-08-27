@@ -5,6 +5,8 @@ export { looksCommercialHousing as looksCommercial } from '@whiteslove/parsing-l
 export {
   parseHousingRoomsFromText as parseRoomsFromText,
   parseHousingResidentialComplex as parseResidentialComplex,
+  parseHousingAreaFromText as parseAreaFromText,
+  parseHousingFloorFromText as parseFloor,
 } from '@whiteslove/parsing-lexicon/housing-text';
 
 import { parseHousingListingFields } from '@whiteslove/parsing-lexicon';

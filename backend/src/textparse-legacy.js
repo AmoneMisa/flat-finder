@@ -3,18 +3,6 @@
 
 export {parseHousingPrice as parsePriceFromText} from '@whiteslove/parsing-lexicon/housing-money';
 
-export function parseAreaFromText(text) {
-  if (!text) return null;
-  const m =
-    // "80 квадратов" / "80 квадрат" is a common colloquial form for m².
-    text.match(/(\d{2,4})\s*(?:m2|m²|мкв|м2|м²|sq ?m|кв\.?\s*м|квадрат[а-яё]*)/i) ||
-    // Telegram shorthand often puts a bare `кв` area after
-    // rooms/floor/storeys: `2/5/16 56кв`. Requiring the three-part prefix
-    // avoids mistaking district labels such as `Chilonzor 16кв` for an area.
-    text.match(/(?:^|\n)[^\d\r\n]{0,8}[1-9]\s*[¹²³⁴⁵⁶⁷⁸⁹]?\s*\/\s*[0-9]{1,2}\s*\/\s*[0-9]{1,2}\s+(\d{2,4})\s*кв(?=\s|$)/im);
-  return m ? Number(m[1]) : null;
-}
-
 // Classify a listing's deal type from its text. Returns one of
 // 'sale' | 'longRent' | 'shortRent' | null (unknown). Short-term is checked
 // first because those posts almost always also contain generic rent words.
@@ -44,103 +32,6 @@ export function classifyDealType(text) {
 
 // Floor and total floors, e.g. "5/9", "этаж 5 из 9", "3-й этаж", "5-qavat",
 // "floor 5". Returns { floor, totalFloors } with nulls when not found.
-export function parseFloor(text) {
-  if (!text) return { floor: null, totalFloors: null };
-  const t = text.toLowerCase();
-  // The "эт." abbreviation requires its dot: as a bare "эт" the alternation
-  // backtracked into "этажный"/"этажей" (whose real suffixes are rejected below)
-  // and matched a building's storey count as the flat's floor.
-  const FLOOR = '(?:этаж(?:да)?|поверх|qavat|қабат|қабатт|etaj|floor|эт\\.)';
-  const ok = (f, total) =>
-    f >= 0 && f <= 200 && (total == null || (total >= f && total <= 200));
-
-  if (/(?:^|\n)[^\d\r\n]{0,8}[1-9]\s*\/\s*0\s*\/\s*-1\s*(?:этаж|эт\.?)?[^\r\n]*(?:подвал|цоколь)/im.test(t)) {
-    return { floor: -1, totalFloors: null };
-  }
-
-  // Central-Asian room/floor/storeys shorthand. The optional superscript after
-  // the room count describes a converted layout and is irrelevant to floors.
-  const compact = t.match(
-    /(?:^|\n)[^\d\r\n]{0,8}[1-9]\s*[¹²³⁴⁵⁶⁷⁸⁹]?\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})[.,;:]?(?=\s|$)/m,
-  );
-  if (compact) {
-    const floor = Number(compact[1]);
-    const total = Number(compact[2]);
-    if (floor >= 1 && floor <= 40 && total >= 2 && total <= 40 && floor <= total) {
-      return { floor, totalFloors: total };
-    }
-  }
-
-  // Uzbek/Russian labelled pairs that put the floor word between the values,
-  // for example "2-qavat / 14-qavatli" or "2 этаж из 14 этажей".
-  const labelledPair =
-    t.match(/([1-9]\d?)\s*-?\s*(?:qavat|этаж|поверх|қабат)\s*(?:\/|из|iz|of)\s*([1-9]\d?)\s*-?\s*(?:qavatli|qavat|этаж(?:ей|ный)?|поверх(?:ів|овий)?|қабатты?)/i);
-  if (labelledPair) {
-    const floor = Number(labelledPair[1]);
-    const total = Number(labelledPair[2]);
-    if (floor <= 40 && total <= 40 && floor <= total) return { floor, totalFloors: total };
-  }
-
-  // "X/Y" (or "X из Y" / "X of Y") with a floor word on either side.
-  const SEP = '(?:\\/|из|iz|of)';
-  let m =
-    t.match(new RegExp(`${FLOOR}\\D{0,4}(\\d{1,2})\\s*${SEP}\\s*(\\d{1,2})`)) ||
-    t.match(new RegExp(`(\\d{1,2})\\s*${SEP}\\s*(\\d{1,2})\\s*${FLOOR}`));
-  if (m) {
-    const floor = Number(m[1]);
-    const total = Number(m[2]);
-    if (ok(floor, total)) return { floor, totalFloors: total };
-  }
-
-  // Single floor: "X этаж", "X-й этаж", "floor X", "этаж: X". A JS `\b` after a
-  // Cyrillic letter is unreliable (Cyrillic isn't `\w`), so we use an explicit
-  // "not followed by another letter" lookahead instead. This both fixes "2 этаж"
-  // (which `\b` failed to match) and still rejects "5-этажный дом" (5-storey).
-  // Reject only the suffixes that change the meaning, not every letter: a bare
-  // "(?![a-zа-яёіїґ])" also killed the valid prepositional/genitive forms, so
-  // "на 3 этаже" parsed as no floor at all. Blocked: этажный/этажная (a
-  // 5-storey BUILDING), этажей/этажність (total floors), этажка, floors.
-  const NOT_LETTER = '(?!н|ей|ів|ност|ка|ки|s)';
-  // The number-before-floor form uses horizontal whitespace only, so a count on
-  // the previous line ("Комнат: 4⏎Этаж:") can't be grabbed as the floor.
-  let s =
-    // Ordinal endings: RU short forms decline ("на 5-м/5-ом/2-го этаже"), so the
-    // list needs more than "й" — without "м" the most common spoken form,
-    // "на 5-м этаже", parsed as no floor at all. Longest alternatives first.
-    t.match(new RegExp(`(\\d{1,2})[^\\S\\r\\n]*-?[^\\S\\r\\n]*(?:го|ом|ым|ой|ий|nd|rd|th|st|й|м|е)?[^\\S\\r\\n]*${FLOOR}${NOT_LETTER}`)) ||
-    t.match(new RegExp(`${FLOOR}\\s*[:№#]?\\s*(\\d{1,2})\\b`));
-  if (s) {
-    const floor = Number(s[1]);
-    if (ok(floor, null)) {
-      // Building height stated on its own line ("Этажность: 4",
-      // "qavatlar soni: 9", "этажей 12") fills totalFloors when present.
-      const tm = t.match(
-        /(?:этажность|этажей|поверхови|поверховість|qavatlar(?:\s*soni)?|qavatli|қабатты?)\D{0,6}(\d{1,2})/,
-      );
-      const leadingTotal = t.match(
-        /([1-9]\d?)\s*-?\s*(?:этажн[а-яё]*|поверхов[а-яіїґ]*|qavatli|қабатты?)\s*(?:дом|здани|будин|uy|bino)?/i,
-      );
-      const total = tm ? Number(tm[1]) : leadingTotal ? Number(leadingTotal[1]) : null;
-      return { floor, totalFloors: total && total >= floor && total <= 200 ? total : null };
-    }
-  }
-
-  // Last resort: a bare "N/M" with no floor word, the compact form Telegram
-  // posts favour ("вул. ... 193-А. 1/9 23м"). Heavily guarded to avoid dates and
-  // fractions: both sides must be plausible floors (1–40), floor ≤ total, total
-  // ≥ 2, and the pair must not be part of a longer number/date sequence
-  // ("01/09/2025" is excluded by the trailing lookahead).
-  const bare = t.match(/(?<![\d/])([1-9]\d?)\s*\/\s*([1-9]\d?)(?![\d/])/);
-  if (bare) {
-    const floor = Number(bare[1]);
-    const total = Number(bare[2]);
-    if (floor >= 1 && floor <= 40 && total >= 2 && total <= 40 && floor <= total) {
-      return { floor, totalFloors: total };
-    }
-  }
-  return { floor: null, totalFloors: null };
-}
-
 // Construction year. Requires a build-related keyword nearby (or a year followed
 // by a year-unit) to avoid matching random 4-digit numbers.
 export function parseYear(text) {
