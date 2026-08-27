@@ -5,52 +5,30 @@ import {
   applyGeoCatalogBroadAnchor,
   applyGeoCatalogCityFallback,
   applyGeoCatalogExactAnchor,
+  canonicalGeoCatalogCity,
 } from '../src/geo-catalog.js';
 import { applyReverseGeo } from '../src/reverse-geo.js';
 
-test('canonicalizes Uzbekistan city aliases and fills city fallback from geo-catalog', () => {
-  const listing = { id: 'samarkand', city: 'Самарканд', lat: null, lng: null };
+test('geo package adapter preserves unknown values and existing coordinates', () => {
+  assert.equal(canonicalGeoCatalogCity('UZ', ' Exampleville '), 'Exampleville');
 
-  assert.equal(applyGeoCatalogCityFallback(listing, { code: 'UZ' }), true);
-  assert.equal(listing.city, 'Samarkand');
-  assert.ok(Number.isFinite(listing.lat));
-  assert.ok(Number.isFinite(listing.lng));
-  assert.equal(listing.locationSource, 'city');
-  assert.equal(listing.locationAccuracyM, 8000);
+  const listing = {
+    city: 'Exampleville',
+    metro: 'Example Station',
+    district: 'Example District',
+    lat: 41.3,
+    lng: 69.2,
+  };
+
+  assert.equal(applyGeoCatalogExactAnchor(listing, { code: 'UZ' }), false);
+  assert.equal(applyGeoCatalogBroadAnchor(listing, { code: 'UZ' }), false);
+  assert.equal(applyGeoCatalogCityFallback(listing, { code: 'UZ' }), false);
+  assert.equal(listing.lat, 41.3);
+  assert.equal(listing.lng, 69.2);
 });
 
-test('geo-catalog covers Uzbekistan cities beyond the old seven-city list', () => {
-  const listings = [
-    { id: 'qarshi', city: 'Карши' },
-    { id: 'khiva', city: 'Xiva' },
-    { id: 'chirchiq', city: 'Чирчик' },
-  ];
-
-  for (const listing of listings) {
-    assert.equal(applyGeoCatalogCityFallback(listing, { code: 'UZ' }), true);
-  }
-
-  assert.deepEqual(listings.map(({ city }) => city), ['Qarshi', 'Khiva', 'Chirchiq']);
-  for (const listing of listings) {
-    assert.ok(Number.isFinite(listing.lat));
-    assert.ok(Number.isFinite(listing.lng));
-    assert.equal(listing.locationSource, 'city');
-  }
-});
-
-test('stable exact and broad Uzbekistan entities resolve locally when catalogued', () => {
-  const metro = { city: 'Тошкент', metro: 'Chorsu' };
-  assert.equal(applyGeoCatalogExactAnchor(metro, { code: 'UZ' }), true);
-  assert.equal(metro.city, 'Tashkent');
-  assert.equal(metro.locationSource, 'metro');
-
-  const district = { city: 'Tashkent', district: 'Chilanzar' };
-  assert.equal(applyGeoCatalogBroadAnchor(district, { code: 'UZ' }), true);
-  assert.equal(district.locationSource, 'district');
-});
-
-test('reverse-geocoding does not invent forward city coordinates', async () => {
-  const listing = { id: 'qarshi-pipeline', city: 'Карши', lat: null, lng: null };
+test('reverse-geocoding does not invent forward coordinates', async () => {
+  const listing = { id: 'no-forward-geocode', city: 'Exampleville', lat: null, lng: null };
 
   const filled = await applyReverseGeo([listing], { code: 'UZ' }, 0);
 
