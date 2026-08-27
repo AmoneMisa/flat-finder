@@ -1,5 +1,10 @@
 import {pool} from './db.js';
-import {searchPostgresListings as searchPostgresListingsLegacy} from './postgres-search.js';
+// Not "legacy" in the deprecated sense: this is the only implementation for
+// single-source filters, secondary filters (price/rooms/area/etc.), text
+// search, and stats requests, and map-feed.js still calls it directly. The
+// two fast paths above only shortcut the narrow no-filter and exact-listing
+// cases; everything else depends on this query.
+import {searchPostgresListings as searchPostgresListingsGeneral} from './postgres-search.js';
 
 const MAX_AGE_DAYS = 14;
 const CURSOR_VERSION = 1;
@@ -228,5 +233,5 @@ export async function searchPostgresListings(args) {
   if (canUseFastFeedPath(args.filters, args.searchMatches)) {
     return searchDefaultFeed(args);
   }
-  return searchPostgresListingsLegacy(args);
+  return searchPostgresListingsGeneral(args);
 }

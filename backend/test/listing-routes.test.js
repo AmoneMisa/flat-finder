@@ -98,7 +98,8 @@ test('listing filters preserve the existing public query contract', () => {
 });
 
 test('analytics reuse the filtered deduplicated PostgreSQL dataset', () => {
-  assert.match(postgresSearchSource, /filters\.includeStats \? pool\.query\(statsSql, baseParams\)/);
+  assert.match(postgresSearchSource, /pool\.query\(statsSql, baseParams\)/);
+  assert.match(postgresSearchSource, /else if \(filters\.includeStats\)/);
   assert.match(postgresSearchSource, /duplicatesRejected/);
   assert.match(postgresSearchSource, /suspectedFake/);
   assert.match(postgresSearchSource, /'microdistrict'/);

@@ -387,12 +387,39 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     OFFSET ${offsetParam}
   `;
 
+  // Without a cursor, pageWhere is exactly countSql's `dedupe_rank = 1` predicate,
+  // so a window COUNT(*) OVER() over that same filtered set gives the identical
+  // total countSql would, in the one scan the page fetch already has to do.
+  // With a cursor, pageWhere also excludes already-seen rows, so the window
+  // total would undercount — that case keeps the separate countSql query.
+  const combinedPageSql = useCursor ? null : `
+    SELECT l.id AS db_id, l.created_at, l.price, l.currency, l.title, l.data, l.search_rank,
+      COUNT(*) OVER()::int AS total_count
+    FROM (${rankedSql}) l
+    WHERE ${pageWhere.join('\n      AND ')}
+    ORDER BY ${orderBy}
+    LIMIT ${limitParam}
+    OFFSET ${offsetParam}
+  `;
+
   let countOrStatsResult;
   let pageResult = {rows: []};
   if (filters.includeStats && filters.statsOnly) countOrStatsResult = await pool.query(statsSql, baseParams);
-  else {
+  else if (filters.includeStats) {
     [countOrStatsResult, pageResult] = await Promise.all([
-      filters.includeStats ? pool.query(statsSql, baseParams) : pool.query(countSql, baseParams),
+      pool.query(statsSql, baseParams),
+      pool.query(pageSql, pageParams),
+    ]);
+  } else if (combinedPageSql) {
+    pageResult = await pool.query(combinedPageSql, pageParams);
+    // An offset past the last matching row returns zero rows, so the window
+    // total isn't in the result set either — fall back to the direct count.
+    countOrStatsResult = pageResult.rows.length
+      ? { rows: [{ count: pageResult.rows[0].total_count }] }
+      : await pool.query(countSql, baseParams);
+  } else {
+    [countOrStatsResult, pageResult] = await Promise.all([
+      pool.query(countSql, baseParams),
       pool.query(pageSql, pageParams),
     ]);
   }
