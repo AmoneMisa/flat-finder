@@ -34,37 +34,61 @@ async function insertListing(client, row) {
   ]);
 }
 
-test('cross-source dedupe migration keeps strong matches source-independent', {skip: !connectionString}, async () => {
+async function bootstrap(client) {
+  await client.query('DROP TABLE IF EXISTS listing_property_clusters CASCADE');
+  await client.query('DROP TABLE IF EXISTS listing_photo_hashes CASCADE');
+  await client.query('DROP TABLE IF EXISTS listing_public_feed_members CASCADE');
+  await client.query('DROP TABLE IF EXISTS listings CASCADE');
+  await client.query(await migration('001_baseline_listings.sql'));
+  await client.query(await migration('010_persisted_dedupe_key.sql'));
+  await client.query(await migration('014_public_feed_members.sql'));
+  await client.query(await migration('019_cross_source_dedupe.sql'));
+  await client.query(await migration('020_property_identity_unification.sql'));
+}
+
+test('property clusters are the authoritative strong cross-source identity', {skip: !connectionString}, async () => {
   const client = new Client({connectionString});
   await client.connect();
   try {
-    await client.query('DROP TABLE IF EXISTS listing_public_feed_members CASCADE');
-    await client.query('DROP TABLE IF EXISTS listings CASCADE');
-    await client.query(await migration('001_baseline_listings.sql'));
-    await client.query(await migration('010_persisted_dedupe_key.sql'));
-    await client.query(await migration('014_public_feed_members.sql'));
-    await client.query(await migration('019_cross_source_dedupe.sql'));
+    await bootstrap(client);
 
-    const fingerprints = ['a'.repeat(64), 'b'.repeat(64)];
     await insertListing(client, {
       source: 'olx', country: 'UA', source_id: 'olx-photo', title: 'Квартира у моря', description: 'OLX copy',
       property_type: 'flat', deal_type: 'longRent', city: 'Odesa', price: 600, currency: 'USD', rooms: 2, area_sqm: 55,
-      data: {photoFingerprints: fingerprints},
+      data: {},
     });
     await insertListing(client, {
       source: 'custom', country: 'UA', source_id: 'agency-photo', title: 'Двухкомнатная аренда', description: 'Agency copy with different text',
       property_type: 'flat', deal_type: 'longRent', city: 'Odesa', price: 650, currency: 'USD', rooms: 2, area_sqm: 55,
-      data: {photoFingerprints: [...fingerprints].reverse()},
+      data: {},
     });
 
-    const photoRows = await client.query(`
-      SELECT source, dedupe_key FROM listings
+    const beforeCluster = await client.query(`
+      SELECT source_id, dedupe_key FROM listings
       WHERE source_id IN ('olx-photo', 'agency-photo')
-      ORDER BY source
+      ORDER BY source_id
     `);
-    assert.equal(photoRows.rows.length, 2);
-    assert.equal(photoRows.rows[0].dedupe_key, photoRows.rows[1].dedupe_key);
-    assert.match(photoRows.rows[0].dedupe_key, /^cross:photos:/);
+    assert.notEqual(beforeCluster.rows[0].dedupe_key, beforeCluster.rows[1].dedupe_key,
+      'unproven photo identity must stay separate before anti-fake clustering');
+
+    for (const [source, sourceId] of [['olx', 'olx-photo'], ['custom', 'agency-photo']]) {
+      await client.query(`
+        INSERT INTO listing_property_clusters(source, country, source_id, cluster_id)
+        VALUES ($1, 'UA', $2, 'property:test-shared-home')
+      `, [source, sourceId]);
+    }
+
+    const clustered = await client.query(`
+      SELECT source_id, data->>'propertyClusterId' AS cluster_id, dedupe_key
+      FROM listings
+      WHERE source_id IN ('olx-photo', 'agency-photo')
+      ORDER BY source_id
+    `);
+    assert.equal(clustered.rows.length, 2);
+    assert.equal(clustered.rows[0].cluster_id, 'property:test-shared-home');
+    assert.equal(clustered.rows[1].cluster_id, 'property:test-shared-home');
+    assert.equal(clustered.rows[0].dedupe_key, 'cluster:property:test-shared-home');
+    assert.equal(clustered.rows[0].dedupe_key, clustered.rows[1].dedupe_key);
 
     const sharedContact = {phone: '+380 95 123 45 67'};
     await insertListing(client, {
@@ -125,15 +149,16 @@ test('cross-source dedupe migration keeps strong matches source-independent', {s
   }
 });
 
-test('cross-source dedupe stays on the persisted indexed read path', async () => {
-  const sql = await migration('019_cross_source_dedupe.sql');
+test('property identity stays on the persisted indexed read path', async () => {
+  const sql = await migration('020_property_identity_unification.sql');
   const search = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
   const fastSearch = await readFile(new URL('../src/postgres-search-fast.js', import.meta.url), 'utf8');
 
-  assert.match(sql, /cross:photos:/);
+  assert.match(sql, /propertyClusterId/);
+  assert.match(sql, /THEN 'cluster:' \|\| property_cluster_id/);
   assert.match(sql, /cross:contact-address:/);
   assert.match(sql, /cross:content:/);
-  assert.match(sql, /UPDATE listings\s+SET data = data\s+WHERE active = TRUE;/m);
+  assert.doesNotMatch(sql, /cross:photos:/);
   assert.match(search, /PARTITION BY filtered\.dedupe_key/);
   assert.match(fastSearch, /GROUP BY m\.dedupe_key/);
   assert.doesNotMatch(search, /listing_property_clusters/);
