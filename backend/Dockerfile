@@ -1,8 +1,7 @@
 FROM node:24-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
-  && npm run install:internal
+RUN npm ci --omit=dev --no-audit --no-fund
 
 FROM node:24-slim AS runner
 WORKDIR /app
