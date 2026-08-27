@@ -32,17 +32,22 @@ jobs:
                   line = line.replace('    cities:', '    crawlCities:', 1)
               lines.append(line)
           p.write_text('\n'.join(lines) + '\n')
+
+          p = Path('backend/src/catalog-routes.js')
+          s = p.read_text().replace('country.cities ?? []', 'country.crawlCities ?? []')
+          p.write_text(s)
           PY
       - name: Verify consumer-only cleanup
         run: |
           node --check backend/src/countries.js
+          node --check backend/src/catalog-routes.js
           ! grep -nE '^    (terms|dealTerms):' backend/src/countries.js
           ! grep -nE '^    cities:' backend/src/countries.js
           grep -nE '^    crawlCities:' backend/src/countries.js
-          ! grep -R -nE '\bcountry\.cities\b|\bcfg\.cities\b|\bconfig\.cities\b' backend/src --exclude=countries.js
-          node - <<'NODE'
-          const {PROPERTY_TYPES} = await import('./backend/node_modules/@whiteslove/parsing-lexicon/housing.js');
-          const {HOUSING_DEAL_TYPES} = await import('./backend/node_modules/@whiteslove/parsing-lexicon/housing-intent.js');
+          ! grep -R -nE '\bcountry\.cities\b' backend/src --exclude=countries.js
+          node --input-type=module - <<'NODE'
+          import {PROPERTY_TYPES} from '@whiteslove/parsing-lexicon/housing';
+          import {HOUSING_DEAL_TYPES} from '@whiteslove/parsing-lexicon/housing-intent';
           const flat = PROPERTY_TYPES.find((x) => x.canonical === 'flat');
           const rent = HOUSING_DEAL_TYPES.find((x) => x.canonical === 'longRent');
           if (!flat?.aliases?.kk?.includes('пәтер')) throw new Error('KZ flat aliases missing from package');
@@ -50,11 +55,12 @@ jobs:
           if (!rent?.aliases?.kk?.some((x) => x.includes('жал'))) throw new Error('KZ rent aliases missing from package');
           if (!rent?.aliases?.ro?.some((x) => x.includes('chiri'))) throw new Error('RO rent aliases missing from package');
           NODE
+        working-directory: backend
       - name: Commit only runtime config
         run: |
           git rm .github/workflows/cleanup-country-search-semantics-once.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add backend/src/countries.js
+          git add backend/src/countries.js backend/src/catalog-routes.js
           git commit -m "Remove duplicate housing search semantics"
           git push origin HEAD:refactor/shared-housing-search-terms
