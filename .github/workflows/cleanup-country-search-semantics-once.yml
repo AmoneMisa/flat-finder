@@ -1,0 +1,60 @@
+name: Cleanup country search semantics once
+on:
+  push:
+    branches: [refactor/shared-housing-search-terms]
+    paths: [.github/workflows/cleanup-country-search-semantics-once.yml]
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/shared-housing-search-terms
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --prefix backend --no-audit --no-fund
+      - name: Remove package-owned semantics and clarify crawl scope
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('backend/src/countries.js')
+          s = p.read_text()
+          lines = []
+          for line in s.splitlines():
+              if line.lstrip().startswith('terms: {') or line.lstrip().startswith('dealTerms: {'):
+                  continue
+              if line.startswith('    cities:'):
+                  line = line.replace('    cities:', '    crawlCities:', 1)
+              lines.append(line)
+          p.write_text('\n'.join(lines) + '\n')
+          PY
+      - name: Verify consumer-only cleanup
+        run: |
+          node --check backend/src/countries.js
+          ! grep -nE '^    (terms|dealTerms):' backend/src/countries.js
+          ! grep -nE '^    cities:' backend/src/countries.js
+          grep -nE '^    crawlCities:' backend/src/countries.js
+          ! grep -R -nE '\bcountry\.cities\b|\bcfg\.cities\b|\bconfig\.cities\b' backend/src --exclude=countries.js
+          node - <<'NODE'
+          const {PROPERTY_TYPES} = await import('./backend/node_modules/@whiteslove/parsing-lexicon/housing.js');
+          const {HOUSING_DEAL_TYPES} = await import('./backend/node_modules/@whiteslove/parsing-lexicon/housing-intent.js');
+          const flat = PROPERTY_TYPES.find((x) => x.canonical === 'flat');
+          const rent = HOUSING_DEAL_TYPES.find((x) => x.canonical === 'longRent');
+          if (!flat?.aliases?.kk?.includes('пәтер')) throw new Error('KZ flat aliases missing from package');
+          if (!flat?.aliases?.uzLatn?.includes('kvartira')) throw new Error('UZ flat aliases missing from package');
+          if (!rent?.aliases?.kk?.some((x) => x.includes('жал'))) throw new Error('KZ rent aliases missing from package');
+          if (!rent?.aliases?.ro?.some((x) => x.includes('chiri'))) throw new Error('RO rent aliases missing from package');
+          NODE
+      - name: Commit only runtime config
+        run: |
+          git rm .github/workflows/cleanup-country-search-semantics-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/countries.js
+          git commit -m "Remove duplicate housing search semantics"
+          git push origin HEAD:refactor/shared-housing-search-terms
