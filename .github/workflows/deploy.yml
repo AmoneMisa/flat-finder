@@ -246,9 +246,8 @@ jobs:
             DEPLOY_SOURCE=github \
             UPDATE_ELASTICSEARCH="${{ needs.verify.outputs.elasticsearch_changed }}" \
               flock -w 1800 /tmp/flat-finder-deploy.lock bash -c '
-                git restore --source=HEAD --staged --worktree -- \
-                  docker-compose.yml deploy.sh olx-router/nginx.conf scripts/upgrade-postgres-18.sh || true
-                git pull --ff-only
+                git fetch --quiet origin master
+                git reset --hard "$DEPLOY_SHA"
                 bash ./scripts/upgrade-postgres-18.sh
                 bash ./deploy.sh "$DEPLOY_SHA" "$UPDATE_ELASTICSEARCH"
               '
