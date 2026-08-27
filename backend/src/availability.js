@@ -4,7 +4,7 @@ import {COUNTRIES} from './countries.js';
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
 const ACTIVE_TTL_MS = Math.max(
   60_000,
-  Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 30 * 60_000,
+  Number(process.env.LISTING_AVAILABILITY_TTL_MS) || 60 * 60_000,
 );
 const UNKNOWN_TTL_MS = Math.max(
   30_000,
@@ -12,7 +12,7 @@ const UNKNOWN_TTL_MS = Math.max(
 );
 const REQUEST_TIMEOUT_MS = Math.max(
   3_000,
-  Number(process.env.LISTING_AVAILABILITY_REQUEST_TIMEOUT_MS) || 18_000,
+  Number(process.env.LISTING_AVAILABILITY_REQUEST_TIMEOUT_MS) || 5_000,
 );
 const CONCURRENCY = Math.max(
   1,
