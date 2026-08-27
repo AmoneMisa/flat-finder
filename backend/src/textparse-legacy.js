@@ -30,38 +30,6 @@ export function classifyDealType(text) {
   return null;
 }
 
-// Floor and total floors, e.g. "5/9", "этаж 5 из 9", "3-й этаж", "5-qavat",
-// "floor 5". Returns { floor, totalFloors } with nulls when not found.
-// Construction year. Requires a build-related keyword nearby (or a year followed
-// by a year-unit) to avoid matching random 4-digit numbers.
-export function parseYear(text) {
-  if (!text) return null;
-  const t = text.toLowerCase();
-  const YEAR = '(19\\d{2}|20[0-3]\\d)';
-  const KW =
-    '(?:год(?:а)? постройк|построен|сдача|рік побудов|побудован|введен в експлуат|' +
-    'built|year built|construc[cțt]ie|an construc|qurilgan|qurilish yil|salingan|' +
-    'жыл(?:ы)? салынған)';
-  let m =
-    t.match(new RegExp(`${KW}\\D{0,12}${YEAR}`)) ||
-    t.match(new RegExp(`${YEAR}\\s*(?:г\\.?|года|й\\.?|йил|жыл|year)\\b`));
-  if (m) {
-    const y = Number(m[1]);
-    const max = new Date().getFullYear() + 3;
-    if (y >= 1900 && y <= max) return y;
-  }
-  return null;
-}
-
-// Number of sleeping rooms / bedrooms (distinct from total rooms).
-export function parseBedrooms(text) {
-  if (!text) return null;
-  const m = text.match(
-    /(\d+)\s*-?\s*(?:bedroom|спальн|спалень|dormitoare|dormitor|yotoq(?:xona)?|жатын)/i,
-  );
-  return m ? Number(m[1]) : null;
-}
-
 // Target-audience restriction stated in the post, or null. Family is checked
 // first so "for a family with girls" resolves to family.
 export function classifyAudience(text) {
@@ -111,29 +79,6 @@ export function parseContact(text) {
   const handle = text.match(/@[A-Za-z0-9_]{4,32}/);
   if (handle) return handle[0];
 
-  return null;
-}
-
-// Whether pets are explicitly allowed. Returns true / false / null (unstated).
-// We only return false on an explicit ban so "unknown" stays lenient.
-export function classifyPets(text) {
-  if (!text) return null;
-  const t = text.toLowerCase();
-  if (/(без ?животн|нельзя с животными|без[^.\n]{0,20}тварин|no pets|pets not allowed|fara animale|hayvon.*mumkin emas|үй жануар.*болмайды)/i.test(t))
-    return false;
-  if (/(можно с животными|можно с питомц|з тваринами можна|з тваринами дозвол|pets? ?(allowed|ok|friendly)|se accepta animale|animale acceptate|uy hayvon.*mumkin|үй жануар.*болады)/i.test(t))
-    return true;
-  return null;
-}
-
-// Whether children are explicitly allowed. Same true/false/null convention.
-export function classifyChildren(text) {
-  if (!text) return null;
-  const t = text.toLowerCase();
-  if (/(без ?детей|нельзя с детьми|без[^.\n]{0,20}дітей|no (kids|children)|children not allowed|fara copii|bolalar.*mumkin emas|балалар.*болмайды)/i.test(t))
-    return false;
-  if (/(можно с детьми|можно с ребен|з дітьми можна|з дітьми дозвол|children ?(allowed|ok|welcome)|kids ?(ok|welcome)|se accepta copii|copii acceptati|bolalar.*mumkin|балалар.*болады)/i.test(t))
-    return true;
   return null;
 }
 
@@ -305,77 +250,6 @@ export function guessPropertyType(text) {
     : 'flat';
 }
 
-// --- Amenities & structured extras (spec table) -----------------------------
-// Positive-only signals unless noted: `true` when the post mentions the feature,
-// `null` when it doesn't (free text can rarely prove absence). EN/RU/UA/UZ/KZ/RO.
-
-// Balcony or loggia present.
-export function parseBalcony(text) {
-  if (!text) return null;
-  return /(балкон|лоджи|balkon|ayvon|balcon|loggia|balcony)/i.test(text) ? true : null;
-}
-
-// Air-conditioner / split system present.
-export function parseAirConditioner(text) {
-  if (!text) return null;
-  return /([кk]ондицион|сплит[- ]?систем|konditsioner|kondisaner|kansaner|klimat|air ?con|\bA\/?C\b|aer condi[țt]ionat)/i.test(text)
-    ? true
-    : null;
-}
-
-// Furnishing is tri-state. Only explicit furniture words produce true/false;
-// appliances alone are not enough to claim that a property is furnished.
-export function parseFurnished(text) {
-  if (!text) return null;
-  if (/(без\s+мебел|пустая\s+квартир|unfurnished|nemobilat|mebelsiz|jihozlanmagan)/i.test(text)) return false;
-  return /(с\s+мебел|меблирован|мебел|furnished|mobilat|mebelli|jihozlangan|spalni|spaln[iy]\s+garnitur|yotoq\s+mebel)/i.test(text)
-    ? true
-    : null;
-}
-
-// Natural-gas supply to the flat (NOT a nearby filling station). Guards against
-// "газон" (lawn). Returns true / false (explicit "no gas") / null.
-export function parseGasSupply(text) {
-  if (!text) return null;
-  const t = text.toLowerCase();
-  if (/(без ?газа|нет ?газа|no gas|gaz ?yo['’]?q)/i.test(t)) return false;
-  return /(?:^|[^а-яё])газ(?!он)|метан|\bgaz\b|\bgas\b(?! ?stat)|aragaz|gaz ta['’]?min/i.test(t) ? true : null;
-}
-
-// New-build / novostroyka flag from text (buildingYear recency is added in
-// makeListing). Returns true / null.
-export function parseNewBuilding(text) {
-  if (!text) return null;
-  return /(новостро|новобуд|новый ?дом|new ?buil|newly ?built|yangi ?(bino|qurilgan|uy)|n[oa]v[oa]sti?roy|novostroy|bloc ?nou)/i.test(text)
-    ? true
-    : null;
-}
-
-// Number of bathrooms / санузлы. "2 санузла", "sanuzel 2", "2 bathrooms".
-export function parseBathrooms(text) {
-  if (!text) return null;
-  // "сан узел" is often written with a space, so the stem allows one.
-  const m =
-    text.match(/(\d)\s*(?:сан\s?узл|с\/?у\b|ванн[аы]|bathroom|sanuzel|hammom)/i) ||
-    text.match(/(?:сан\s?узл[а-яё]*|bathrooms?|sanuzel|hammom)\D{0,4}(\d)/i);
-  const n = m ? Number(m[1]) : null;
-  return n != null && n >= 1 && n <= 5 ? n : null;
-}
-
-// Whether communal/utility payments are billed separately from rent (UZ note:
-// when nothing is stated, utilities are usually *included* — the UI renders
-// null accordingly). Returns true (separate) / false (included) / null.
-export function parseCommunalSeparated(text) {
-  if (!text) return null;
-  const t = text.toLowerCase();
-  // NB: \w does not match Cyrillic in JS regex, so stems use [а-яё]*.
-  if (/(коммунал[а-яё]*(?:\s+услуг[а-яё]*)?\s*(?:отдельно|сверху|плюс|оплачива[а-яё]*\s*отдельно)|свет\s*вода\s*газ\s*отдельно|kommunal\w*\s*(?:alohida|ustiga)|utilities?\s*(?:separate|extra|not included))/i.test(t))
-    return true;
-  if (/(коммунал[а-яё]*(?:\s+услуг[а-яё]*)?\s*(?:включ|входит|в ?стоимост)|вс[её] ?включ|all ?inclusive|kommunal\w*\s*(?:kiritilgan|ichida)|ком+унал(?:каси)?\s+ичида|utilities?\s*included)/i.test(t))
-    return false;
-  return null;
-}
-
 // UZ/Central-Asian "kvartal" / massiv / micro-district, e.g. "Chilonzor 8
 // kvartal", "Юнусабад 19 квартал", "мкр 4". Returns a short "N kvartal" label
 // (used later to place the map pin more precisely), or null.
@@ -525,41 +399,4 @@ export function parseNearbyShops(text) {
   const trc = text.match(/(?:трц|тц)\s+([A-Za-z0-9'’.-]{2,25}|[А-Яа-яЁё0-9'’.-]{2,25})/i);
   if (trc) { const n = 'ТРЦ ' + trc[1].trim(); if (!out.includes(n)) out.push(n); }
   return out;
-}
-
-// --- More amenities / conditions (positive-only unless a negation is stated) ---
-export function parseParking(text) {
-  if (!text) return null;
-  // "парков" stem covers парковка / парковочное место / парковки — the narrower
-  // "парковк" missed "своё личное парковочное место".
-  return /паркинг|парков|машино[- ]?мест|parking|avtoturargoh|mashina\s*joyi/i.test(text) ? true : null;
-}
-export function parseElevator(text) {
-  if (!text) return null;
-  if (/без\s*лифт|no\s*elevator|lift\s*yo['’]?q/i.test(text)) return false;
-  return /лифт|elevator|\blift\b/i.test(text) ? true : null;
-}
-export function parseHeating(text) {
-  if (!text) return null;
-  return /отоплени|heating|otoplenie|isitish|markaziy\s*issiq/i.test(text) ? true : null;
-}
-export function parseHotWater(text) {
-  if (!text) return null;
-  return /горяч[а-яё]*\s*вод|hot\s*water|issiq\s*suv/i.test(text) ? true : null;
-}
-export function parseInternet(text) {
-  if (!text) return null;
-  return /интернет|wi[- ]?fi|wifi|\binternet\b/i.test(text) ? true : null;
-}
-export function parseSmoking(text) {
-  if (!text) return null;
-  if (/нельзя\s*курить|курить\s*нельзя|без\s*курени|не\s*курить|курить\s*запрещ|курение\s*запрещ|no\s*smoking/i.test(text)) return false;
-  if (/можно\s*курить|курить\s*можно|smoking\s*allowed/i.test(text)) return true;
-  return null;
-}
-export function parseNegotiable(text) {
-  if (!text) return null;
-  if (/без\s*торга|торг\s*не\s*уместен|цена\s*фиксир|fixed\s*price|торга\s*нет/i.test(text)) return false;
-  if (/возможен\s*торг|торг\s*уместен|торг\s*есть|торгу[еюё]|договорн(?:ая|ой)|kelishamiz|kelishilg|price\s*negotiable/i.test(text)) return true;
-  return null;
 }
