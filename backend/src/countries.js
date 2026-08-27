@@ -25,8 +25,6 @@ const SOURCE_COUNTRIES = {
     terms: { flat: 'apartament', house: 'casa' },
     dealTerms: { sale: 'de vanzare', longRent: 'de inchiriat', shortRent: 'regim hotelier' },
     cities: ['Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta', 'Oradea'],
-    // Localized forms OLX/posts actually use, so the city filter matches. The
-    // canonical (English) name is always accepted too; diacritics are ignored.
     telegramChannels: [
       'rent_bucharest', 'arenda_kvartir_bucharest', 'QwertyrRomania', 'arendavbuchareste',
       'apartaments_bucharest', 'rent_ro', 'armonie_agentie_imobiliare_ro',
