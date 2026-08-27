@@ -1,0 +1,58 @@
+name: Migrate commercial housing semantics once
+on:
+  push:
+    branches: [refactor/shared-commercial-housing]
+    paths: [.github/workflows/migrate-commercial-housing-once.yml]
+permissions:
+  contents: write
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/shared-commercial-housing
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Update published parsing package and consumer
+        run: |
+          npm install --prefix backend @whiteslove/parsing-lexicon@^0.2.2 --save --no-audit --no-fund
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('backend/src/textparse-legacy.js')
+          text = path.read_text()
+          pattern = re.compile(r'''\n// Non-residential / commercial listings.*?\nexport function looksCommercial\(text\) \{\n  return text \? COMMERCIAL_RE\.test\(text\) : false;\n\}\n''', re.S)
+          text, count = pattern.subn('\n', text, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one commercial block, removed {count}')
+          path.write_text(text)
+
+          facade = Path('backend/src/textparse.js')
+          text = facade.read_text()
+          marker = "export * from './textparse-legacy.js';\n"
+          addition = "export { looksCommercialHousing as looksCommercial } from '@whiteslove/parsing-lexicon/housing-commercial';\n"
+          if addition not in text:
+              if marker not in text:
+                  raise SystemExit('textparse facade marker missing')
+              text = text.replace(marker, marker + addition, 1)
+          facade.write_text(text)
+          PY
+      - name: Validate package-backed commercial semantics
+        working-directory: backend
+        run: |
+          node --check src/textparse.js
+          node --check src/textparse-legacy.js
+          node --test test/no-makler.test.js test/listing-semantics.test.js test/uzbek-listing.test.js test/social-housing-coverage.test.js
+      - name: Commit consumer migration
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/package.json backend/package-lock.json backend/src/textparse.js backend/src/textparse-legacy.js
+          git commit -m "Delegate commercial housing semantics to parsing package"
+          git rm .github/workflows/migrate-commercial-housing-once.yml
+          git commit -m "Remove one-time commercial migration workflow"
+          git push origin HEAD:refactor/shared-commercial-housing
