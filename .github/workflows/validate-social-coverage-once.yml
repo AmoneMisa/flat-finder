@@ -1,0 +1,32 @@
+name: Validate social coverage once
+on:
+  push:
+    branches: [refactor/shared-social-search-coverage]
+    paths: [.github/workflows/validate-social-coverage-once.yml]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/shared-social-search-coverage
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --prefix backend --no-audit --no-fund
+      - name: Validate social coverage
+        working-directory: backend
+        run: |
+          node --check src/social-search-coverage.js
+          node --test test/social-housing-coverage.test.js test/social-housing-lifecycle.test.js test/social-fetch-contracts.test.js
+      - name: Remove one-time workflow
+        run: |
+          git rm .github/workflows/validate-social-coverage-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "Remove one-time social coverage validation"
+          git push origin HEAD:refactor/shared-social-search-coverage
