@@ -22,8 +22,8 @@ test('housing coverage includes package-backed searches in local languages', () 
     'квартира Ташкент',
     'ijara Toshkent',
     'аренда Алматы',
-    'жалға Алматы',
-    'chirie București',
+    'жалдау Алматы',
+    'închiriere București',
     'оренда Україна',
   ]) {
     assert.ok(coverage.some((target) => target.target.toLocaleLowerCase() === query.toLocaleLowerCase()), `missing ${query}`);
