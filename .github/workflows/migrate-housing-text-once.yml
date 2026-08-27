@@ -29,13 +29,12 @@ jobs:
           s = p.read_text()
           start = s.index('const ok10 =')
           end = s.index('export function parseAreaFromText')
-          s = s[:start] + s[end:]
-          p.write_text(s)
+          p.write_text(s[:start] + s[end:])
 
           p = Path('src/textparse.js')
           s = p.read_text()
           needle = "export { looksCommercialHousing as looksCommercial } from '@whiteslove/parsing-lexicon/housing-commercial';\n"
-          insert = needle + "export {\n  parseHousingRoomCount as parseRoomsFromText,\n  parseHousingResidentialComplex as parseResidentialComplex,\n} from '@whiteslove/parsing-lexicon/housing-text';\n"
+          insert = needle + "export {\n  parseHousingRoomsFromText as parseRoomsFromText,\n  parseHousingResidentialComplex as parseResidentialComplex,\n} from '@whiteslove/parsing-lexicon/housing-text';\n"
           if needle not in s:
               raise SystemExit('textparse facade anchor not found')
           p.write_text(s.replace(needle, insert, 1))
