@@ -25,6 +25,10 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
+      - name: Drop stale GitHub package lock entries
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package-lock.json','utf8'));delete p.packages['node_modules/@whiteslove/parsing-lexicon'];delete p.packages['node_modules/@whiteslove/geo-catalog'];fs.writeFileSync('package-lock.json',JSON.stringify(p,null,2)+'\n')"
+
       - run: npm install --package-lock-only --ignore-scripts
 
       - name: Commit refreshed lockfile
