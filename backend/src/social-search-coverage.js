@@ -61,9 +61,7 @@ const SEARCH_TOPIC_ENTITIES = Object.freeze([
 ].filter(Boolean));
 
 function preferredAlias(entity, language) {
-  const aliases = entity?.aliases?.[language] || [];
-  if (!aliases.length) return entity?.canonical || null;
-  return [...aliases].sort((a, b) => a.length - b.length)[0] || entity?.canonical || null;
+  return entity?.aliases?.[language]?.[0] || entity?.canonical || null;
 }
 
 function cityByCanonical(country, canonical) {
