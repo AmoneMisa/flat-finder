@@ -22,9 +22,7 @@ const SOURCE_COUNTRIES = {
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.ro',
     realEstateRoot: 3,
-    terms: { flat: 'apartament', house: 'casa' },
-    dealTerms: { sale: 'de vanzare', longRent: 'de inchiriat', shortRent: 'regim hotelier' },
-    cities: ['Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta', 'Oradea'],
+    crawlCities: ['Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta', 'Oradea'],
     telegramChannels: [
       'rent_bucharest', 'arenda_kvartir_bucharest', 'QwertyrRomania', 'arendavbuchareste',
       'apartaments_bucharest', 'rent_ro', 'armonie_agentie_imobiliare_ro',
@@ -36,9 +34,7 @@ const SOURCE_COUNTRIES = {
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.ua',
     realEstateRoot: 1,
-    terms: { flat: 'квартира', house: 'будинок' },
-    dealTerms: { sale: 'продаж', longRent: 'оренда', shortRent: 'подобово' },
-    cities: [
+    crawlCities: [
       'Kyiv',
       'Kharkiv',
       'Odesa',
@@ -203,9 +199,7 @@ const SOURCE_COUNTRIES = {
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.kz',
     realEstateRoot: 1,
-    terms: { flat: 'квартира', house: 'дом' },
-    dealTerms: { sale: 'продажа', longRent: 'аренда', shortRent: 'посуточно' },
-    cities: ['Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau', 'Oral'],
+    crawlCities: ['Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau', 'Oral'],
     // NOTE: KZ is thin after pruning dead channels — needs fresh replacements.
     telegramChannels: [
       'kvartiry2', 'arendakvartirastana2022', 'arendam0',
@@ -217,9 +211,7 @@ const SOURCE_COUNTRIES = {
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.uz',
     realEstateRoot: 1,
-    terms: { flat: 'квартира', house: 'дом' },
-    dealTerms: { sale: 'продажа', longRent: 'аренда', shortRent: 'посуточно' },
-    cities: ['Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana', 'Nukus'],
+    crawlCities: ['Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana', 'Nukus'],
     telegramChannels: [
       'nedvizhimost_tashkent', 'arentash', 'kvartira_dom_arenda', 'arendatashkent_uz',
       'bez_makler_kvartira_arenda_ijara', 'TOSHKENT_IJARAGA_UYLAR_SERGELI',

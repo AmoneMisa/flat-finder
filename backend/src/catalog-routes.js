@@ -10,7 +10,7 @@ export function installCatalogRoutes(app) {
         COUNTRY_CODES.map(async (code) => {
           const country = COUNTRIES[code];
           const locations = cityLocations(code);
-          const cities = new Set(country.cities ?? []);
+          const cities = new Set(country.crawlCities ?? []);
 
           if (code === 'UA') {
             try {
