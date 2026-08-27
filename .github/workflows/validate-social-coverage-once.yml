@@ -1,4 +1,4 @@
-name: Validate social coverage once
+name: Validate package-backed social coverage once
 on:
   push:
     branches: [refactor/shared-social-search-coverage]
