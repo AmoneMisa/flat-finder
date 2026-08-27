@@ -7,7 +7,6 @@ import {
   parseAreaFromText,
   guessPropertyType,
   classifyAgency,
-  looksHousingWanted,
 } from '../textparse.js';
 
 const SOCIAL_FETCHER_URL = String(process.env.SOCIAL_FETCHER_URL || '').replace(/\/$/, '');
@@ -18,8 +17,8 @@ function housingIntent(value) {
   return resolveHousingIntent(String(value || '').replace(/[ \t]+/g, ' ').trim());
 }
 
-function isHousingWanted(value, intent = housingIntent(value)) {
-  return intent?.listingKind === 'propertyWanted' || looksHousingWanted(value);
+function isHousingWanted(intent) {
+  return intent?.listingKind === 'propertyWanted';
 }
 
 function socialTarget(value) {
@@ -39,7 +38,7 @@ export function classifyHousingOffer(text, forced = null) {
   if (value.length < 12) return null;
 
   const intent = housingIntent(value);
-  if (isHousingWanted(value, intent)) return null;
+  if (isHousingWanted(intent)) return null;
   if (!intent?.dealType) return null;
   return forced || intent.dealType;
 }
@@ -113,7 +112,7 @@ async function scrapeTargets(country, source, values) {
       rawItems += items.length;
       for (const item of items) {
         const text = String(item?.text || '');
-        if (isHousingWanted(text)) rejectedDemand += 1;
+        if (isHousingWanted(housingIntent(text))) rejectedDemand += 1;
         const ts = item?.createdAt ? Date.parse(item.createdAt) : NaN;
         if (!Number.isFinite(ts) || Date.now() - ts <= MAX_AGE_MS) recentItems += 1;
         const listing = itemToListing(item, source, config, country);
