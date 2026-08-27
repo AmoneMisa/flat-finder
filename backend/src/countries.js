@@ -1,3 +1,6 @@
+import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
+import {countryByCode} from '@whiteslove/parsing-lexicon/countries';
+
 // Per-country configuration.
 //
 // Each country aggregates independently crawled sources. Runtime ingestion is
@@ -12,11 +15,9 @@
 // below are starting points — verify/replace them for your use case.
 // Kyrgyzstan is intentionally omitted for now.
 
-export const COUNTRIES = {
+const SOURCE_COUNTRIES = {
   RO: {
     code: 'RO',
-    name: 'Romania',
-    currency: 'RON',
     center: { lat: 44.4268, lng: 26.1025 }, // Bucharest
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.ro',
@@ -26,15 +27,6 @@ export const COUNTRIES = {
     cities: ['Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta', 'Oradea'],
     // Localized forms OLX/posts actually use, so the city filter matches. The
     // canonical (English) name is always accepted too; diacritics are ignored.
-    cityAliases: {
-      Bucharest: ['bucuresti', 'bucurești', 'бухарест'],
-      'Cluj-Napoca': ['cluj', 'cluj-napoca'],
-      Timisoara: ['timisoara', 'timișoara'],
-      Iasi: ['iasi', 'iași'],
-      Brasov: ['brasov', 'brașov'],
-      Constanta: ['constanta', 'constanța'],
-      Oradea: ['oradea'],
-    },
     telegramChannels: [
       'rent_bucharest', 'arenda_kvartir_bucharest', 'QwertyrRomania', 'arendavbuchareste',
       'apartaments_bucharest', 'rent_ro', 'armonie_agentie_imobiliare_ro',
@@ -42,8 +34,6 @@ export const COUNTRIES = {
   },
   UA: {
     code: 'UA',
-    name: 'Ukraine',
-    currency: 'UAH',
     center: { lat: 50.4501, lng: 30.5234 }, // Kyiv
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.ua',
@@ -77,177 +67,6 @@ export const COUNTRIES = {
       'Luhansk',
       'Kropyvnytskyi',
     ],
-    cityAliases: {
-      Kyiv: [
-        'київ',
-        'киев',
-        'kyiv',
-        'kiev',
-      ],
-
-      Kharkiv: [
-        'харків',
-        'харьков',
-        'kharkiv',
-        'kharkov',
-      ],
-
-      Odesa: [
-        'одеса',
-        'одесса',
-        'odesa',
-        'odessa',
-      ],
-
-      Dnipro: [
-        'дніпро',
-        'днепр',
-        'dnipro',
-        'dnepr',
-      ],
-
-      Lviv: [
-        'львів',
-        'львов',
-        'lviv',
-        'lvov',
-      ],
-
-      Zaporizhzhia: [
-        'запоріжжя',
-        'запорожье',
-        'zaporizhzhia',
-        'zaporozhye',
-      ],
-
-      Vinnytsia: [
-        'вінниця',
-        'винница',
-        'vinnytsia',
-        'vinnitsa',
-      ],
-
-      'Ivano-Frankivsk': [
-        'івано-франківськ',
-        'ивано-франковск',
-        'ivano-frankivsk',
-        'frankivsk',
-      ],
-
-      Chernivtsi: [
-        'чернівці',
-        'черновцы',
-        'chernivtsi',
-        'chernovtsy',
-        'chernovcy',
-      ],
-
-      Uzhhorod: [
-        'ужгород',
-        'uzhhorod',
-        'uzhgorod',
-      ],
-
-      Mukachevo: [
-        'мукачево',
-        'мукачеве',
-        'mukachevo',
-        'mukacheve',
-        'munkacs',
-      ],
-
-      Lutsk: [
-        'луцьк',
-        'луцк',
-        'lutsk',
-      ],
-
-      Rivne: [
-        'рівне',
-        'ровно',
-        'rivne',
-        'rovno',
-      ],
-
-      Ternopil: [
-        'тернопіль',
-        'тернополь',
-        'ternopil',
-        'ternopol',
-      ],
-
-      Khmelnytskyi: [
-        'хмельницький',
-        'хмельницкий',
-        'khmelnytskyi',
-        'khmelnitsky',
-      ],
-
-      Zhytomyr: [
-        'житомир',
-        'zhytomyr',
-        'zhitomir',
-      ],
-
-      Cherkasy: [
-        'черкаси',
-        'черкассы',
-        'cherkasy',
-        'cherkassy',
-      ],
-
-      Poltava: [
-        'полтава',
-        'poltava',
-      ],
-
-      Chernihiv: [
-        'чернігів',
-        'чернигов',
-        'chernihiv',
-        'chernigov',
-      ],
-
-      Sumy: [
-        'суми',
-        'сумы',
-        'sumy',
-      ],
-
-      Mykolaiv: [
-        'миколаїв',
-        'николаев',
-        'mykolaiv',
-        'nikolaev',
-      ],
-
-      Kherson: [
-        'херсон',
-        'kherson',
-      ],
-
-      Donetsk: [
-        'донецьк',
-        'донецк',
-        'donetsk',
-      ],
-
-      Luhansk: [
-        'луганськ',
-        'луганск',
-        'luhansk',
-        'lugansk',
-      ],
-
-      Kropyvnytskyi: [
-        'кропивницький',
-        'кропивницкий',
-        'кіровоград',
-        'кировоград',
-        'kropyvnytskyi',
-        'kirovohrad',
-      ],
-    },
     olxCities: [
       // Every oblast centre is deliberately listed: compose makes this whole
       // breadth set run every refresh, one recent page per deal segment.
@@ -382,8 +201,6 @@ export const COUNTRIES = {
   },
   KZ: {
     code: 'KZ',
-    name: 'Kazakhstan',
-    currency: 'KZT',
     center: { lat: 43.222, lng: 76.8512 }, // Almaty
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.kz',
@@ -391,15 +208,6 @@ export const COUNTRIES = {
     terms: { flat: 'квартира', house: 'дом' },
     dealTerms: { sale: 'продажа', longRent: 'аренда', shortRent: 'посуточно' },
     cities: ['Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau', 'Oral'],
-    cityAliases: {
-      Almaty: ['алматы', 'алмата', 'almaty'],
-      Astana: ['астана', 'нур-султан', 'astana', 'nur-sultan'],
-      Shymkent: ['шымкент', 'shymkent'],
-      Karaganda: ['караганда', 'қарағанды', 'karaganda'],
-      Aktobe: ['актобе', 'ақтөбе', 'aktobe'],
-      Atyrau: ['атырау', 'atyrau'],
-      Oral: ['уральск', 'орал', 'oral'],
-    },
     // NOTE: KZ is thin after pruning dead channels — needs fresh replacements.
     telegramChannels: [
       'kvartiry2', 'arendakvartirastana2022', 'arendam0',
@@ -407,8 +215,6 @@ export const COUNTRIES = {
   },
   UZ: {
     code: 'UZ',
-    name: 'Uzbekistan',
-    currency: 'UZS',
     center: { lat: 41.2995, lng: 69.2401 }, // Tashkent
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.uz',
@@ -416,15 +222,6 @@ export const COUNTRIES = {
     terms: { flat: 'квартира', house: 'дом' },
     dealTerms: { sale: 'продажа', longRent: 'аренда', shortRent: 'посуточно' },
     cities: ['Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana', 'Nukus'],
-    cityAliases: {
-      Tashkent: ['ташкент', 'toshkent', 'tashkent'],
-      Samarkand: ['самарканд', 'samarqand', 'samarkand'],
-      Bukhara: ['бухара', 'buxoro', 'bukhara'],
-      Namangan: ['наманган', 'namangan'],
-      Andijan: ['андижан', 'andijon', 'andijan'],
-      Fergana: ['фергана', "farg'ona", 'fargona', 'fergana'],
-      Nukus: ['нукус', 'nukus'],
-    },
     telegramChannels: [
       'nedvizhimost_tashkent', 'arentash', 'kvartira_dom_arenda', 'arendatashkent_uz',
       'bez_makler_kvartira_arenda_ijara', 'TOSHKENT_IJARAGA_UYLAR_SERGELI',
@@ -434,64 +231,25 @@ export const COUNTRIES = {
   },
 };
 
-function normalizeCityName(value) {
-  return String(value ?? '')
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-}
 
-export function canonicalCityName(
-    countryCode,
-    value,
-) {
-  const raw =
-      String(value ?? '')
-          .trim();
-
-  if (!raw) {
-    return '';
-  }
-
-  const country =
-      COUNTRIES[countryCode];
-
-  if (!country) {
-    return raw;
-  }
-
-  const normalized =
-      normalizeCityName(raw);
-
-  for (
-      const city
-      of country.cities ?? []
-      ) {
-    const forms = [
-      city,
-      ...(country.cityAliases?.[city] ?? []),
+export const COUNTRIES = Object.freeze(Object.fromEntries(
+  Object.entries(SOURCE_COUNTRIES).map(([code, config]) => {
+    const shared = countryByCode(code);
+    return [
+      code,
+      Object.freeze({
+        ...config,
+        name: shared?.canonical ?? code,
+        currency: shared?.currency ?? null,
+      }),
     ];
+  }),
+));
 
-    if (
-        forms.some(
-            (form) =>
-                normalizeCityName(form) ===
-                normalized,
-        )
-    ) {
-      return city;
-    }
-  }
-
-  /*
-   * Неизвестный нам город сохраняем
-   * как его вернул источник.
-   *
-   * Таким образом новые города OLX
-   * автоматически появляются в UI.
-   */
-  return raw;
+export function canonicalCityName(countryCode, value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return canonicalCity(raw, countryCode) || raw;
 }
 
 export const COUNTRY_CODES = Object.keys(COUNTRIES);
