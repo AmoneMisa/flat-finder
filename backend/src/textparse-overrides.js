@@ -36,6 +36,24 @@ function validResidentialComplexCandidate(value) {
   return cleaned;
 }
 
+function parseUzbekColloquialRooms(text) {
+  const match = String(text || '').match(/(?:^|[^\p{L}\p{N}_])([1-9])\s*(?:x|h)onali(?=$|[^\p{L}\p{N}_])/iu);
+  return match ? Number(match[1]) : null;
+}
+
+function parseUzbekColloquialFloor(text) {
+  const value = String(text || '');
+  const floorMatch = value.match(/(?:^|[^\d])([1-9]\d?)\s*(?:etaj|etazh|этаж)(?:da|да)?(?=$|[^\p{L}\p{N}_])/iu);
+  const totalMatch = value.match(/(?:^|[^\d])([1-9]\d?)\s*(?:etashka|etajka|etazhka|этажка)(?=$|[^\p{L}\p{N}_])/iu);
+  const floor = Number(floorMatch?.[1]);
+  const totalFloors = Number(totalMatch?.[1]);
+  if (!Number.isInteger(floor) || floor < 1 || floor > 40) return null;
+  if (!Number.isInteger(totalFloors) || totalFloors < floor || totalFloors > 40) {
+    return {floor, totalFloors: null};
+  }
+  return {floor, totalFloors};
+}
+
 export function parseCommission(text) {
   if (!text) return { has: null, percent: null };
   if (hasZeroCommissionSignal(text)) return { has: false, percent: 0 };
@@ -61,7 +79,7 @@ function structuredLayout(text) {
   if (labelled) return validLayout(Number(labelled[2] || labelled[1]), Number(labelled[3]), Number(labelled[4]));
   const converted = text.match(/(?:^|[^\d])([1-9])\s*[вv>]\s*([1-9])\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?!\d)/iu);
   if (converted) return validLayout(Number(converted[2]), Number(converted[3]), Number(converted[4]));
-  const withArea = text.match(/(?:^|[^\d])([1-9])\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?=\s+\d{1,4}\s*(?:кв(?:\.?\s*м)?|м²|m²|m2|sqm)(?=$|[^\p{L}\p{N}_]))/iu);
+  const withArea = text.match(/(?:^|[^\d])([1-9])\s*\/\s*([0-9]{1,2})\s*\/\s*([0-9]{1,2})(?=\s+\d{1,4}\s*(?:кв(?:\.?\s*м)?|м²|m²|sqm)(?=$|[^\p{L}\p{N}_]))/iu);
   if (withArea) return validLayout(Number(withArea[1]), Number(withArea[2]), Number(withArea[3]));
   return null;
 }
@@ -87,6 +105,8 @@ function hasExplicitRoomCount(text) {
 export function parseRoomsFromText(text) {
   const structured = structuredLayout(text)?.rooms;
   if (structured != null) return structured;
+  const uzbekColloquial = parseUzbekColloquialRooms(text);
+  if (uzbekColloquial != null) return uzbekColloquial;
   if (EURO_ONE_ROOM_RE.test(String(text || '')) && !hasExplicitRoomCount(text)) return 1;
   return baseParseRoomsFromText(text);
 }
@@ -95,7 +115,9 @@ export function parseFloor(text) {
   const explicitUkrainian = ukrainianFloorPair(text);
   if (explicitUkrainian) return explicitUkrainian;
   const structured = structuredLayout(text);
-  return structured ? { floor: structured.floor, totalFloors: structured.totalFloors } : baseParseFloor(text);
+  if (structured) return { floor: structured.floor, totalFloors: structured.totalFloors };
+  const uzbekColloquial = parseUzbekColloquialFloor(text);
+  return uzbekColloquial ?? baseParseFloor(text);
 }
 
 export function classifyAudience(text) {
