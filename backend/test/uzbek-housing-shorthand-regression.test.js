@@ -18,5 +18,9 @@ test('parses colloquial Tashkent OLX layout and address', () => {
 
 test('does not promote venue and road labels into residential complexes', () => {
   assert.equal(parseResidentialComplex('PUB'), null);
+  assert.equal(parseResidentialComplex('Gentelmens Pub'), null);
+  assert.equal(parseResidentialComplex("Gentlemen's Pub"), null);
+  assert.equal(parseResidentialComplex('Minor Restaurant'), null);
+  assert.equal(parseResidentialComplex('City Hotel'), null);
   assert.equal(parseResidentialComplex("Kichik Halqa Yo'li"), null);
 });
