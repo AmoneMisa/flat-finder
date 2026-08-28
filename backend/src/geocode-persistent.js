@@ -16,9 +16,14 @@ const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const EXACT_SOURCES = new Set(['address', 'street']);
 const ENTITY_EXACT_SOURCES = new Set(['residentialComplex', 'metro']);
 const LEARNABLE_SOURCES = new Set([...EXACT_SOURCES, ...ENTITY_EXACT_SOURCES]);
+const EARTH_RADIUS_M = 6_371_000;
 const EXACT_LOOKUP_BUDGET = Math.max(
   0,
   Number(process.env.PERSISTENT_EXACT_GEOCODE_BUDGET ?? 30) || 0,
+);
+const SOURCE_COORD_EXACT_MAX_DISTANCE_M = Math.max(
+  0,
+  Number(process.env.SOURCE_COORD_EXACT_MAX_DISTANCE_M ?? 150) || 0,
 );
 
 function hasCoordinates(listing) {
@@ -26,6 +31,17 @@ function hasCoordinates(listing) {
     && listing?.lng != null
     && Number.isFinite(Number(listing.lat))
     && Number.isFinite(Number(listing.lng));
+}
+
+function distanceM(a, b) {
+  const toRad = (value) => (Number(value) * Math.PI) / 180;
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const dLat = lat2 - lat1;
+  const dLng = toRad(b.lng) - toRad(a.lng);
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 function cacheKey(query) {
@@ -95,6 +111,37 @@ async function tryExactCandidate(listing, country, candidate, budget) {
   return { placed: true, usedBudget: true, deferred: false };
 }
 
+async function refineSourceCoordinateFromExactAddress(listing, country, candidates, budget) {
+  // A street centroid is not sufficient evidence to move a marketplace pin. Only
+  // refine existing coordinates when parsing-lexicon resolved a concrete house.
+  if (!listing?.street || !listing?.houseNumber) return false;
+
+  const original = { lat: Number(listing.lat), lng: Number(listing.lng) };
+  const exactCandidates = candidates.filter((item) => item.source === 'address');
+  for (const candidate of exactCandidates) {
+    const probe = { ...listing, lat: null, lng: null, locationSource: null, locationAccuracyM: null };
+    const result = await tryExactCandidate(probe, country, candidate, budget);
+    if (!result.placed) continue;
+
+    const discrepancyM = distanceM(original, probe);
+    if (!Number.isFinite(discrepancyM)) return false;
+
+    if (discrepancyM > SOURCE_COORD_EXACT_MAX_DISTANCE_M) {
+      applyCandidate(listing, candidate, probe, probe.locationSource || candidate.source);
+      listing.sourceCoordinateRefined = true;
+      listing.sourceCoordinateDistanceM = Math.round(discrepancyM);
+      return true;
+    }
+
+    // The source point agrees with the exact address. Preserve it, but record a
+    // realistic validated accuracy instead of blindly labelling every source pin 25 m.
+    listing.locationSource ??= 'coordinates-validated';
+    listing.locationAccuracyM ??= Math.max(25, Math.ceil(discrepancyM));
+    return false;
+  }
+  return false;
+}
+
 /**
  * Persistent geocoding orchestration.
  *
@@ -110,9 +157,14 @@ export async function geocodeListingsPersistent(listings, country) {
   const budget = { value: EXACT_LOOKUP_BUDGET };
 
   for (const listing of listings) {
-    if (!listing || hasCoordinates(listing)) continue;
+    if (!listing) continue;
 
     const candidates = geocodeCandidates(listing, country);
+    if (hasCoordinates(listing)) {
+      await refineSourceCoordinateFromExactAddress(listing, country, candidates, budget);
+      continue;
+    }
+
     let placed = false;
     let exactDeferred = false;
 
