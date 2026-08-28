@@ -51,6 +51,15 @@ function plausibleAddress(value) {
   return cleaned;
 }
 
+function parseUzbekMassifHouse(text) {
+  const match = String(text || '').match(
+    /(?:^|[^\p{L}\p{N}_])([\p{L}'’‘`ʻʼ.-]{3,32})\s+(\d{1,2})\s+(?:mavze|мавзе|massiv(?:i)?|массив(?:и)?)\s+(\d{1,4})\s*([\p{L}])?\s*(?:dom|дом|uy|уй)(?=$|[^\p{L}\p{N}_])/iu,
+  );
+  if (!match) return null;
+  const suffix = match[4] ? String(match[4]).toUpperCase() : '';
+  return `${match[1]} ${Number(match[2])} mavze, ${Number(match[3])}${suffix}`;
+}
+
 export function parseCanonicalCountryCode(value) {
   return canonicalCountryCode(value) || String(value || '').trim().toUpperCase() || null;
 }
@@ -118,6 +127,9 @@ export function parseLexiconAddress(text, canonicalStreet = null) {
 
   const fountainStation = parseOdesaFontanStation(text);
   if (fountainStation) return fountainStation;
+
+  const uzbekMassifHouse = parseUzbekMassifHouse(text);
+  if (uzbekMassifHouse) return uzbekMassifHouse;
 
   const labeled = String(text).match(addressLabelRe);
   const labeledAddress = labeled ? plausibleAddress(labeled[1]) : null;
