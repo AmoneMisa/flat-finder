@@ -19,6 +19,28 @@ function jsonNumber(column, key) {
   return `CASE WHEN jsonb_typeof(${column}->'${key}') = 'number' THEN (${column}->>'${key}')::double precision ELSE NULL END`;
 }
 
+function jsonTextArrayContains(column, key, param) {
+  return `EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(${column}->'${key}') = 'array' THEN ${column}->'${key}' ELSE '[]'::jsonb END
+    ) AS value
+    WHERE LOWER(value) = ${param}
+  )`;
+}
+
+function locationEntityMatches(column, param, types) {
+  const allowed = types.map((type) => `'${String(type).replaceAll("'", "''")}'`).join(', ');
+  return `EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(
+      CASE WHEN jsonb_typeof(${column}->'locationEntities') = 'array' THEN ${column}->'locationEntities' ELSE '[]'::jsonb END
+    ) AS entity
+    WHERE LOWER(COALESCE(entity->>'name', '')) = ${param}
+      AND LOWER(COALESCE(entity->>'type', '')) IN (${allowed})
+  )`;
+}
+
 function encodeCursor(value) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 }
@@ -175,6 +197,31 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
 
   if (filters.city) where.push(`l.city = ${add(String(filters.city))}`);
   if (filters.district) where.push(`LOWER(l.district) = ${add(String(filters.district).toLowerCase())}`);
+  if (filters.microdistrict) {
+    const p = add(String(filters.microdistrict).toLowerCase());
+    where.push(`(
+      LOWER(COALESCE(l.data->>'microdistrict', '')) = ${p}
+      OR ${locationEntityMatches('l.data', p, ['microdistrict'])}
+    )`);
+  }
+  if (filters.quartal) {
+    const p = add(String(filters.quartal).toLowerCase());
+    where.push(`(
+      LOWER(COALESCE(l.data->>'kvartal', '')) = ${p}
+      OR ${jsonTextArrayContains('l.data', 'localAreas', p)}
+      OR ${locationEntityMatches('l.data', p, ['mahalla'])}
+    )`);
+  }
+  if (filters.area) {
+    const p = add(String(filters.area).toLowerCase());
+    where.push(`(
+      LOWER(COALESCE(l.data->>'area', '')) = ${p}
+      OR ${jsonTextArrayContains('l.data', 'localAreas', p)}
+      OR ${jsonTextArrayContains('l.data', 'developmentAreas', p)}
+      OR ${jsonTextArrayContains('l.data', 'informalAreas', p)}
+      OR ${locationEntityMatches('l.data', p, ['local_area', 'development_area', 'informal_area'])}
+    )`);
+  }
   if (filters.metro) where.push(`LOWER(l.metro) = ${add(String(filters.metro).toLowerCase())}`);
 
   if (filters.metroMaxM != null) {
@@ -191,7 +238,7 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
 
   if (filters.query && !elasticsearchAuthoritative) {
     const p = add(`%${String(filters.query).toLowerCase()}%`);
-    where.push(`LOWER(CONCAT_WS(' ', l.title, l.description, l.city, l.district, l.metro, l.data->>'region', l.data->>'microdistrict', l.data->>'residenceComplex', l.data->>'tags')) LIKE ${p}`);
+    where.push(`LOWER(CONCAT_WS(' ', l.title, l.description, l.city, l.district, l.metro, l.data->>'region', l.data->>'microdistrict', l.data->>'area', l.data->>'kvartal', l.data->>'residenceComplex', l.data->>'tags')) LIKE ${p}`);
   }
 
   let orderBy;
@@ -357,7 +404,6 @@ export async function searchPostgresListings({ filters, countries, rates = null,
 
   const pageParams = [...baseParams];
   const addPage = (value) => { pageParams.push(value); return `$${pageParams.length}`; };
-
   const cursor = decodeCursor(filters.cursor);
   const pageWhere = ['l.dedupe_rank = 1'];
   let useCursor = false;
