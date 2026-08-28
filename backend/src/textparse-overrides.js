@@ -22,11 +22,7 @@ const RC_QUOTED_NAME_RE = /(?:жк|жм|ж\/к|residential complex|ansamblu(?: r
 const RC_TRAILING_ACTION_RE = /\s+(?:вільн[а-яіїґ]*|оренд[а-яіїґ]*|здач[а-яіїґ]*|зда[єе]ться|здам|продаж[а-яіїґ]*|прода[єе]ться|продам|аренд[а-яё]*|сдач[а-яё]*|сда[её]тся|сдам|продаж[а-яё]*|прода[её]тся)(?=$|[^\p{L}\p{N}_])[\s\S]*$/iu;
 const EURO_ONE_ROOM_RE = /(?:^|[^\p{L}\p{N}_])(?:евро|євро)[-\s]?(?:двушк[а-яёіїґ]*|двокімнатн[а-яіїґ]*|2[-\s]?к(?:омн(?:атн[а-яё]*)?)?)(?=$|[^\p{L}\p{N}_])/iu;
 
-// A residential-complex parser consumes open-ended source text, so it needs a
-// semantic sanity check after extraction. Venue categories and street/road names
-// are common Tashkent landmarks; treating a bare "PUB" or "Kichik Halqa Yo'li"
-// as an ЖК pollutes both the detail view and the residence-complex filters.
-const NON_RESIDENTIAL_COMPLEX_RE = /^(?:pub|bar|cafe|café|coffee\s*shop|restaurant|restoran|hotel|hostel|market|bozor|bazaar|mall|shop|store|school|maktab|clinic|hospital|pharmacy|apteka)$/iu;
+const NON_RESIDENTIAL_COMPLEX_RE = /(?:^|\s)(?:pub|bar|cafe|café|coffee\s*shop|restaurant|restoran|hotel|hostel|market|bozor|bazaar|mall|shop|store|school|maktab|clinic|hospital|pharmacy|apteka)$/iu;
 const STREET_LIKE_PLACE_RE = /(?:^|[^\p{L}\p{N}_])(?:ko['’`ʼʻ]?cha(?:si)?|кўча(?:си)?|yo['’`ʼʻ]?l(?:i)?|yoli|street|road|avenue|улица|вулиця|дорога|шоссе|проспект)(?=$|[^\p{L}\p{N}_])/iu;
 
 function validResidentialComplexCandidate(value) {
@@ -152,7 +148,7 @@ export function parseCondition(text) {
 
 const PEARL_NUMERIC_RE = /(?:^|[^\p{L}\p{N}_])([1-9]\d?)\s*(?:[-–—]?\s*(?:я|ая|а|й|st|nd|rd|th))?\s*(?:жемчужин[а-яё]*|перлин[а-яіїґ]*)(?=$|[^\p{L}\p{N}_])/iu;
 const PEARL_TENS = new Map([['двадцять',20],['тридцять',30],['сорок',40],['двадцать',20],['тридцать',30]]);
-const PEARL_ONES = new Map([['перша',1],['друга',2],['третя',3],['четверта',4],["п'ята",5],['шоста',6],['сьома',7],['восьма',8],["дев'ята",9],['первая',1],['вторая',2],['третья',3],['четвертая',4],['пятая',5],['шестая',6],['седьмая',7],['восьмая',8],['девятая',9]]);
+const PEARL_ONES = new Map([['перша',1],['друга',2],['третя',3],['четверта',4],["p'ята",5],['шоста',6],['сьома',7],['восьма',8],["дев'ята",9],['первая',1],['вторая',2],['третья',3],['четвертая',4],['пятая',5],['шестая',6],['седьмая',7],['восьмая',8],['девятая',9]]);
 function normalizePearlToken(value){return String(value||'').toLowerCase().replace(/[’`ʼ]/g,"'").replace(/ё/g,'е');}
 function parsePearlComplex(text){
   if(!text)return null;
