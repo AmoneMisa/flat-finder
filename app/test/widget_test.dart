@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flat_finder/models/filters.dart';
+import 'package:flat_finder/models/listing.dart';
 
 void main() {
   test('filters preserve user selections across JSON round-trip', () {
@@ -63,5 +64,14 @@ void main() {
     expect(params['city'], 'Tashkent');
     expect(params['pets'], 'true');
     expect(params.containsKey('sort'), isFalse);
+  });
+
+  test('nearby labels capitalize the first letter on the frontend', () {
+    final listing = Listing.fromJson({
+      'id': '1',
+      'nearby': ['рынок', 'больница', '#юнусабад -19', 'Vosiq School'],
+    });
+
+    expect(listing.nearby, ['Рынок', 'Больница', '#Юнусабад -19', 'Vosiq School']);
   });
 }
