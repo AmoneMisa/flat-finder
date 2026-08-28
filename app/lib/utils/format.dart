@@ -119,39 +119,6 @@ String? postedLabel(DateTime? createdAt, [AppStrings? s]) {
   return s?.t('justNow') ?? 'Just now';
 }
 
-/// Localizes finite semantic labels produced by parsers/AI while deliberately
-/// leaving proper names untouched. Backend enrichment is shared by all clients,
-/// so locale-specific strings belong at render time rather than in persisted
-/// listing data.
-String semanticLabel(String value, [AppStrings? s]) {
-  if (s == null) return value;
-  final normalized = value
-      .trim()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[_-]+'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ');
-  final translations = _semanticLabels[normalized];
-  if (translations == null) return value;
-  return translations[s.lang] ?? translations['en'] ?? value;
-}
-
-const _semanticLabels = <String, Map<String, String>>{
-  'railway station': {'en': 'Railway station', 'ru': 'Железнодорожный вокзал'},
-  'train station': {'en': 'Railway station', 'ru': 'Железнодорожный вокзал'},
-  'railroad station': {'en': 'Railway station', 'ru': 'Железнодорожный вокзал'},
-  'bus station': {'en': 'Bus station', 'ru': 'Автовокзал'},
-  'metro station': {'en': 'Metro station', 'ru': 'Станция метро'},
-  'subway station': {'en': 'Metro station', 'ru': 'Станция метро'},
-  'airport': {'en': 'Airport', 'ru': 'Аэропорт'},
-  'school': {'en': 'School', 'ru': 'Школа'},
-  'kindergarten': {'en': 'Kindergarten', 'ru': 'Детский сад'},
-  'market': {'en': 'Market', 'ru': 'Рынок'},
-  'supermarket': {'en': 'Supermarket', 'ru': 'Супермаркет'},
-  'park': {'en': 'Park', 'ru': 'Парк'},
-  'hospital': {'en': 'Hospital', 'ru': 'Больница'},
-  'clinic': {'en': 'Clinic', 'ru': 'Клиника'},
-};
-
 /// Translate a backend-derived tag. The backend emits a fixed English
 /// vocabulary (furnished, parking, for rent, owner, …) plus dynamic tags
 /// (district names, "3 rooms", "commission 50%"). Known tags are localized via
