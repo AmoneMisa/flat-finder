@@ -45,7 +45,7 @@ export function guessTelegramPropertyType(text) {
 export function parseTelegramPrice(text, country, dealType = null) {
   const fallbackCurrency = country?.currency || '';
   const parsed = parsePriceFromText(text, fallbackCurrency);
-  if (parsed.price != null) return parsed;
+  if (parsed.amount != null) return parsed;
 
   const value = String(text || '');
   const isUzbek = String(country?.code || '').toUpperCase() === 'UZ';
@@ -61,10 +61,10 @@ export function parseTelegramPrice(text, country, dealType = null) {
   const match = head.match(TELEGRAM_BARE_USD_RE);
   if (!match) return parsed;
 
-  const price = Number(match[1]);
-  if (!Number.isFinite(price) || price < 100 || price > 9999) return parsed;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount < 100 || amount > 9999) return parsed;
 
-  return {price, currency: 'USD'};
+  return {amount, currency: 'USD', approximate: false};
 }
 
 function messageToListing(msg, channelConfig, country) {
@@ -75,7 +75,7 @@ function messageToListing(msg, channelConfig, country) {
   if (text.length < 10) return null;
   if (!HOUSING_RE.test(text)) return null;
 
-  const {price, currency} = parseTelegramPrice(text, country, channelConfig.dealType);
+  const {amount: price, currency} = parseTelegramPrice(text, country, channelConfig.dealType);
   const type = guessTelegramPropertyType(text);
   const byAgency = classifyTelegramAgency(text);
   const title = text.split('\n')[0].slice(0, 90);

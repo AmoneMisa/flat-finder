@@ -135,7 +135,7 @@ test('parses a basement rental and keeps its labelled base price', () => {
     country: 'UZ',
     title: '🔥 СРОЧНО! АРЕНДА КВАРТИРЫ 🔥',
     description: text,
-    price: parsedPrice.price,
+    price: parsedPrice.amount,
     currency: parsedPrice.currency,
   });
 
@@ -174,7 +174,7 @@ test('parses hashtag complex, utilities and transit from a Yashnobod post', () =
     country: 'UZ',
     title: '😉😉😚😉😚',
     description: text,
-    price: parsedPrice.price,
+    price: parsedPrice.amount,
     currency: parsedPrice.currency,
   });
 
@@ -212,7 +212,7 @@ test('infers Tashkent from Alay and puts dishwasher into other amenities', () =>
     country: 'UZ',
     title: '#4комнатная #Ц2 #Алайский #Центр',
     description: text,
-    price: parsedPrice.price,
+    price: parsedPrice.amount,
     currency: parsedPrice.currency,
   });
 
@@ -255,7 +255,7 @@ test('parses Uzbek Cyrillic rooms, locative floor and implicit monthly rent', ()
     country: 'UZ',
     title: text,
     description: text,
-    price: parsedPrice.price,
+    price: parsedPrice.amount,
     currency: parsedPrice.currency,
   });
 
@@ -287,7 +287,7 @@ test('infers Tashkent from Darkhan and Novomoskovskaya landmarks', () => {
     country: 'UZ',
     title: '#2комнатная #Новомосковская',
     description: text,
-    price: parsedPrice.price,
+    price: parsedPrice.amount,
     currency: parsedPrice.currency,
   });
 
@@ -333,7 +333,7 @@ Kunlik narx: 200 000 so‘mdan – 250 000 so‘mgacha`;
   const parsedPrice = parsePriceFromText(text, 'UZS');
   const listing = makeListing({
     id: 'daily-chilanzar-test', source: 'telegram', country: 'UZ', title: 'KUNLIK IJARA',
-    description: text, price: parsedPrice.price, currency: parsedPrice.currency,
+    description: text, price: parsedPrice.amount, currency: parsedPrice.currency,
   });
 
   assert.equal(listing.price, 200_000);
@@ -380,7 +380,7 @@ test('parses Cyrillic Uzbek shared rent, included utilities and local price', ()
   const parsedPrice = parsePriceFromText(text, 'UZS');
   const listing = makeListing({
     id: 'sergeli-shared-test', source: 'telegram', country: 'UZ', title: 'КВАРТИРА БОР ХАЗАЙКАЛИ',
-    description: text, price: parsedPrice.price, currency: parsedPrice.currency, byAgency: classifyAgency(text),
+    description: text, price: parsedPrice.amount, currency: parsedPrice.currency, byAgency: classifyAgency(text),
   });
 
   assert.equal(listing.price, 1_000_000);
@@ -410,7 +410,7 @@ test('parses Sergeli hudud, realtor shorthand and bare daily UZS', () => {
   const commissionPrice = parsePriceFromText(commissionText, 'UZS');
   const listing = makeListing({
     id: 'sergeli-commission-test', source: 'telegram', country: 'UZ', title: 'Сергели 10 худуд',
-    description: commissionText, price: commissionPrice.price, currency: commissionPrice.currency,
+    description: commissionText, price: commissionPrice.amount, currency: commissionPrice.currency,
     byAgency: classifyAgency(commissionText),
   });
   assert.equal(listing.kvartal, 'Sergeli-10');
@@ -431,7 +431,7 @@ Narxi 200 000 kunlik`;
   const dailyPrice = parsePriceFromText(dailyText, 'UZS');
   const daily = makeListing({
     id: 'sergeli-daily-test', source: 'telegram', country: 'UZ', title: 'Kunlik kvartira',
-    description: dailyText, price: dailyPrice.price, currency: dailyPrice.currency,
+    description: dailyText, price: dailyPrice.amount, currency: dailyPrice.currency,
   });
   assert.equal(daily.price, 200_000);
   assert.equal(daily.currency, 'UZS');
@@ -454,7 +454,7 @@ Makler 50%`;
   const parsedPrice = parsePriceFromText(text, 'UZS');
   const listing = makeListing({
     id: 'sergeli-compact-test', source: 'telegram', country: 'UZ', title: 'ARENDA',
-    description: text, price: parsedPrice.price, currency: parsedPrice.currency,
+    description: text, price: parsedPrice.amount, currency: parsedPrice.currency,
     byAgency: classifyAgency(text),
   });
 

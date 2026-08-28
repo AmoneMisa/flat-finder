@@ -14,8 +14,9 @@ const wantedChernivtsi = `Добрий день! Шукаю 1-к. кв. або �
 test('phone-like digit groups cannot become housing prices', () => {
   assert.doesNotMatch(maskPhoneLikeSpans(wantedChernivtsi), /095\s+082\s+01\s+03/);
   assert.deepEqual(parseHousingPrice(wantedChernivtsi, 'UAH'), {
-    price: 10000,
+    amount: 10000,
     currency: 'UAH',
+    approximate: false,
   });
 });
 

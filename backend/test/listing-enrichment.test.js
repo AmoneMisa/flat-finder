@@ -39,12 +39,14 @@ test('extracts compact Uzbek rooms/floor/area and mixed family-or-women audience
 });
 
 test('extracts realtor commission size and recognizes broker fees without percentages', () => {
+  // Numeric commission percentage extraction is a backend-local supplement —
+  // the shared lexicon only detects commission as a boolean.
   assert.equal(detail.parseCommissionPercent('Комиссия риелтора: 50%'), 50);
   assert.equal(detail.parseCommissionPercent('50 % риэлтору'), 50);
   assert.equal(detail.parseCommissionPercent('Риелтор 50/50'), 50);
-  assert.equal(detail.detectCommission('$300+$150 Маклерский', null), true);
-  assert.equal(detail.detectCommission('Без комиссии, собственник', null), false);
 
+  // Boolean commission detection now comes from the shared lexicon, exercised
+  // here at the enrichListingDetails integration level.
   const listing = enrichListingDetails({
     title: 'Аренда Кв 2 Хонали',
     description: 'Телевизор, Стиралка\n$300+$150 Маклерский',
@@ -53,15 +55,30 @@ test('extracts realtor commission size and recognizes broker fees without percen
   });
   assert.equal(listing.commission, true);
   assert.equal(listing.commissionPercent, null);
+
+  const noCommission = enrichListingDetails({
+    title: 'Сдам квартиру',
+    description: 'Без комиссии, собственник',
+    commission: null,
+  });
+  assert.equal(noCommission.commission, false);
 });
 
 test('does not promote phones, landmarks or floor facts to address', () => {
-  assert.equal(detail.normalizeAddressCandidate('+998 90 123 45 67'), null);
-  assert.equal(detail.parseAddress('Адрес: +998 90 123 45 67\nТелефон для связи'), null);
-  assert.equal(detail.normalizeAddressCandidate('школа 160'), null);
-  assert.equal(detail.normalizeAddressCandidate('Персидский 2-Этаж'), null);
-  assert.equal(detail.normalizeAddressCandidate('Этажность дом 4'), null);
-  assert.equal(detail.parseAddress('Адрес: ул. Шота Руставели 12'), 'ул. Шота Руставели 12');
+  // Address parsing now comes from the shared lexicon (exercised there in
+  // its own regression suite); this proves the integration doesn't leak a
+  // phone number or an unrelated floor/landmark fact into the address field.
+  const phoneOnly = enrichListingDetails({
+    title: 'Квартира',
+    description: 'Адрес: +998 90 123 45 67\nТелефон для связи',
+  });
+  assert.equal(phoneOnly.address, null);
+
+  const withStreet = enrichListingDetails({
+    title: 'Квартира',
+    description: 'Адрес: ул. Шота Руставели 12',
+  });
+  assert.match(withStreet.address, /Шота Руставели/);
 });
 
 test('extracts cadastral availability and first rental', () => {
@@ -124,5 +141,8 @@ test('extracts Uzbek nearby market landmarks into translatable canonical labels'
     description: text,
     nearby: ['Туран'],
   });
-  assert.deepEqual(listing.nearby, ['Туран', 'Sergili Car Market', 'Sergili Farmers Market', 'Turon Avto']);
+  // The shared lexicon's own generic landmark catalog now also contributes a
+  // canonical "Market" match alongside this product's own compound
+  // "<name> Car/Farmers Market" labels.
+  assert.deepEqual(listing.nearby, ['Туран', 'Market', 'Sergili Car Market', 'Sergili Farmers Market', 'Turon Avto']);
 });

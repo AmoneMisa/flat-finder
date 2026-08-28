@@ -40,7 +40,7 @@ export function makeListing(partial) {
   return {
     ...listing,
     address,
-    price: partial?.price != null ? listing.price : (parsedPrice.price ?? listing.price),
+    price: partial?.price != null ? listing.price : (parsedPrice.amount ?? listing.price),
     currency: partial?.price != null && partial?.currency
       ? listing.currency
       : (parsedPrice.currency || listing.currency),

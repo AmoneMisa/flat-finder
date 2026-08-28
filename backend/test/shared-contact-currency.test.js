@@ -16,7 +16,8 @@ test('backend consumes shared country-aware contact parsing', () => {
 test('backend consumes expanded shared currency parsing through housing parser', () => {
   assert.equal(moneyCurrencyFromText('Rent 1200 CAD', 'USD'), 'CAD');
   assert.deepEqual(parsePriceFromText('Аренда 950 CHF в месяц', 'EUR'), {
-    price: 950,
+    amount: 950,
     currency: 'CHF',
+    approximate: false,
   });
 });

@@ -54,7 +54,7 @@ function itemToListing(item, source, targetConfig, country) {
     if (Number.isFinite(ts) && Date.now() - ts > MAX_AGE_MS) return null;
   }
 
-  const { price, currency } = parsePriceFromText(text, country.currency);
+  const { amount: price, currency } = parsePriceFromText(text, country.currency);
   const id = String(item?.id || item?.url || '').trim();
   if (!id) return null;
 
