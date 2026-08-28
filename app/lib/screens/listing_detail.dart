@@ -325,7 +325,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                             if (listing.district != null)
                               _chip(Icons.map_outlined, listing.district!),
                             if (listing.metro != null)
-                              _chip(Icons.subway_outlined, semanticLabel(listing.metro!, s)),
+                              _chip(Icons.subway_outlined, listing.metro!),
                             _chip(Icons.source_outlined, sourceLabel(listing.source, s)),
                           ],
                         ),
@@ -355,7 +355,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     children: listing.nearby
                         .map((n) => Chip(
                               avatar: const Icon(Icons.place_outlined, size: 18),
-                              label: Text(semanticLabel(n, s)),
+                              label: Text(n),
                               visualDensity: VisualDensity.compact,
                               backgroundColor: theme.colorScheme.secondaryContainer,
                             ))
