@@ -22,6 +22,20 @@ const RC_QUOTED_NAME_RE = /(?:жк|жм|ж\/к|residential complex|ansamblu(?: r
 const RC_TRAILING_ACTION_RE = /\s+(?:вільн[а-яіїґ]*|оренд[а-яіїґ]*|здач[а-яіїґ]*|зда[єе]ться|здам|продаж[а-яіїґ]*|прода[єе]ться|продам|аренд[а-яё]*|сдач[а-яё]*|сда[её]тся|сдам|продаж[а-яё]*|прода[её]тся)(?=$|[^\p{L}\p{N}_])[\s\S]*$/iu;
 const EURO_ONE_ROOM_RE = /(?:^|[^\p{L}\p{N}_])(?:евро|євро)[-\s]?(?:двушк[а-яёіїґ]*|двокімнатн[а-яіїґ]*|2[-\s]?к(?:омн(?:атн[а-яё]*)?)?)(?=$|[^\p{L}\p{N}_])/iu;
 
+// A residential-complex parser consumes open-ended source text, so it needs a
+// semantic sanity check after extraction. Venue categories and street/road names
+// are common Tashkent landmarks; treating a bare "PUB" or "Kichik Halqa Yo'li"
+// as an ЖК pollutes both the detail view and the residence-complex filters.
+const NON_RESIDENTIAL_COMPLEX_RE = /^(?:pub|bar|cafe|café|coffee\s*shop|restaurant|restoran|hotel|hostel|market|bozor|bazaar|mall|shop|store|school|maktab|clinic|hospital|pharmacy|apteka)$/iu;
+const STREET_LIKE_PLACE_RE = /(?:^|[^\p{L}\p{N}_])(?:ko['’`ʼʻ]?cha(?:si)?|кўча(?:си)?|yo['’`ʼʻ]?l(?:i)?|yoli|street|road|avenue|улица|вулиця|дорога|шоссе|проспект)(?=$|[^\p{L}\p{N}_])/iu;
+
+function validResidentialComplexCandidate(value) {
+  const cleaned = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned || !/[a-zA-Zа-яёіїґ]{2,}/i.test(cleaned)) return null;
+  if (NON_RESIDENTIAL_COMPLEX_RE.test(cleaned) || STREET_LIKE_PLACE_RE.test(cleaned)) return null;
+  return cleaned;
+}
+
 export function parseCommission(text) {
   if (!text) return { has: null, percent: null };
   if (hasZeroCommissionSignal(text)) return { has: false, percent: 0 };
@@ -101,7 +115,8 @@ export function classifyChildren(text) {
 
 export function parseKvartal(text) {
   const parsed = baseParseKvartal(text);
-  if (parsed || !text) return parsed;
+  if (parsed && !STREET_LIKE_PLACE_RE.test(parsed)) return parsed;
+  if (!text) return null;
   const match = String(text).match(/(?:^|[^\d])([1-9]\d?)\s*(?:квартил|kvartil)(?=$|[^\p{L}\p{N}_])/iu);
   return match ? `${Number(match[1])} kvartal` : null;
 }
@@ -115,7 +130,7 @@ export function parseCondition(text) {
 
 const PEARL_NUMERIC_RE = /(?:^|[^\p{L}\p{N}_])([1-9]\d?)\s*(?:[-–—]?\s*(?:я|ая|а|й|st|nd|rd|th))?\s*(?:жемчужин[а-яё]*|перлин[а-яіїґ]*)(?=$|[^\p{L}\p{N}_])/iu;
 const PEARL_TENS = new Map([['двадцять',20],['тридцять',30],['сорок',40],['двадцать',20],['тридцать',30]]);
-const PEARL_ONES = new Map([['перша',1],['друга',2],['третя',3],['четверта',4],["п'ята",5],['шоста',6],['сьома',7],['восьма',8],["дев'ята",9],['первая',1],['вторая',2],['третья',3],['четвертая',4],['пятая',5],['шестая',6],['седьмая',7],['восьмая',8],['девятая',9]]);
+const PEARL_ONES = new Map([['перша',1],['друга',2],['третя',3],['четверта',4],["p'ята",5],['шоста',6],['сьома',7],['восьма',8],["дев'ята",9],['первая',1],['вторая',2],['третья',3],['четвертая',4],['пятая',5],['шестая',6],['седьмая',7],['восьмая',8],['девятая',9]]);
 function normalizePearlToken(value){return String(value||'').toLowerCase().replace(/[’`ʼ]/g,"'").replace(/ё/g,'е');}
 function parsePearlComplex(text){
   if(!text)return null;
@@ -130,8 +145,8 @@ function parsePearlComplex(text){
 export function parseResidentialComplex(text) {
   const pearl = parsePearlComplex(text);
   if (pearl) return pearl;
-  const quoted = String(text || '').match(RC_QUOTED_NAME_RE)?.[1]?.trim();
-  if (quoted && /[a-zA-Zа-яёіїґ]{2,}/i.test(quoted)) return quoted;
+  const quoted = validResidentialComplexCandidate(String(text || '').match(RC_QUOTED_NAME_RE)?.[1]);
+  if (quoted) return quoted;
   const raw = baseParseResidentialComplex(text);
   if (!raw) return null;
   const cleaned = raw
@@ -141,7 +156,7 @@ export function parseResidentialComplex(text) {
     .replace(/\s+(?:глинка|glinka)\s*$/iu, '')
     .replace(/\s*[!|]+\s*$/g, '')
     .trim();
-  return /[a-zA-Zа-яёіїґ]{2,}/i.test(cleaned) ? cleaned : null;
+  return validResidentialComplexCandidate(cleaned);
 }
 
 const UZ_EXPLICIT_DISTRICTS = [
