@@ -1,5 +1,6 @@
 import { canonicalCityName } from './countries.js';
 import { geocodeBbox, geocodeQuery } from './geocode.js';
+import { applyStructuredAddressFields } from './structured-address.js';
 
 const DEFAULT_PADDING_DEG = 0.02;
 const DEFAULT_EXACT_ADDRESS_MAX_DISTANCE_M = 150;
@@ -41,13 +42,14 @@ async function bboxFor(country, area) {
 }
 
 function exactAddressQuery(listing, country, city) {
-  // Only cross-check source coordinates when the parser found an actual house
-  // number. A bare street geocodes to a street centroid and must not be allowed to
-  // "correct" a valid source pin elsewhere on the same street.
-  if (!listing?.addressStreet || !listing?.addressHouseNumber) return '';
-  const address = [listing.addressStreet, listing.addressHouseNumber, listing.addressBuilding]
-    .filter(Boolean)
-    .join(' ');
+  // The structured-address adapter delegates the actual prose interpretation to
+  // parsing-lexicon. Cross-check only when it resolved a house number; a bare
+  // street would geocode to a centroid and is not strong enough to move a pin.
+  const street = listing?.street || listing?.addressStreet;
+  const houseNumber = listing?.houseNumber || listing?.addressHouseNumber;
+  const building = listing?.building || listing?.addressBuilding;
+  if (!street || !houseNumber) return '';
+  const address = [street, houseNumber, building].filter(Boolean).join(' ');
   return [address, listing.district, city, country?.name].filter(Boolean).join(', ');
 }
 
@@ -62,12 +64,11 @@ async function exactAddressCoordinate(listing, country, city) {
 }
 
 /**
- * OLX and other source feeds can expose deliberately rough or simply bad
- * coordinates. First keep the existing city-bbox guard for obvious outliers.
- * Then, when the shared parser extracted an exact street + house number, compare
- * the source pin with Nominatim's exact-address result. A materially different
- * exact address is stronger evidence than a marketplace's approximate pin, so
- * replace the source point directly instead of leaving the card on the wrong block.
+ * Marketplace coordinates can be deliberately rough or simply wrong. Keep the
+ * city-bbox guard for obvious outliers, then cross-check an existing source pin
+ * against an exact street + house number parsed by the shared lexicon. When the
+ * exact address disagrees materially, the address wins and is persisted as the
+ * map point instead of treating every source coordinate as 25 m accurate.
  */
 export async function rejectOutOfAreaCoordinates(
   listings,
@@ -87,6 +88,10 @@ export async function rejectOutOfAreaCoordinates(
   const rejected = [];
 
   for (const listing of listings) {
+    // Run the shared address parser before coordinate validation. The persistent
+    // geocoder also does this later, but OLX validation intentionally happens first.
+    applyStructuredAddressFields(listing);
+
     // makeListing has a cheap synchronous Odesa guard for the legacy cache path.
     // Keep those rows in this return set even though their bad coordinates have
     // already been cleared, so the durable queue immediately repairs them too.
@@ -127,9 +132,8 @@ export async function rejectOutOfAreaCoordinates(
     );
     if (!Number.isFinite(discrepancyM) || discrepancyM <= exactAddressMaxDistanceM) continue;
 
-    // Keep the listing's structured location fields: unlike a city-bbox outlier,
-    // this correction is derived from those fields themselves. Reverse-geocoding
-    // later in the enrichment pipeline can still normalize district/microdistrict.
+    // This is a repair rather than an outlier rejection, so keep structured admin
+    // fields and let the normal reverse-geo pass normalize them later.
     listing.sourceCoordinateRejected = true;
     listing.sourceCoordinateDistanceM = Math.round(discrepancyM);
     listing.lat = exact.lat;
