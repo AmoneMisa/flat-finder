@@ -40,7 +40,10 @@ const BOOLEAN_FILTERS = [
 ];
 
 function hasSecondaryFilters(filters) {
-  if (filters.customSources?.length || filters.query || filters.city || filters.district || filters.metro) return true;
+  if (
+    filters.customSources?.length || filters.query || filters.city || filters.district ||
+    filters.microdistrict || filters.quartal || filters.area || filters.metro
+  ) return true;
   if (filters.propertyType && filters.propertyType !== 'any') return true;
   if (filters.dealType && filters.dealType !== 'any') return true;
   if (filters.agency && filters.agency !== 'any') return true;
