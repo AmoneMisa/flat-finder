@@ -39,8 +39,18 @@ function parseUzbekColloquialRooms(text) {
 
 function parseUzbekColloquialFloor(text) {
   const value = String(text || '');
-  const floorMatch = value.match(/(?:^|[^\d])([1-9]\d?)\s*(?:etaj|etazh|этаж)(?:da|да)?(?=$|[^\p{L}\p{N}_])/iu);
-  const totalMatch = value.match(/(?:^|[^\d])([1-9]\d?)\s*(?:etashka|etajka|etazhka|этажка)(?=$|[^\p{L}\p{N}_])/iu);
+
+  // A basement floor is written with an explicit minus sign ("-1 этаж
+  // (подвал)"), which the plain positive-floor regex below would otherwise
+  // swallow as its own "non-digit boundary" character and misread as floor 1.
+  const basementMatch = value.match(/(-[1-9]\d?)[ \t]*(?:etaj|etazh|этаж)(?:da|да)?(?=$|[^\p{L}\p{N}_])/iu);
+  if (basementMatch) return {floor: Number(basementMatch[1]), totalFloors: null};
+
+  // [ \t]* (not \s*) so a number at the end of one line can't pair with an
+  // unrelated "этаж"/"этажность" label that happens to start the next line
+  // (e.g. "Комнат 2\nЭтаж 6" must not read floor as 2).
+  const floorMatch = value.match(/(?:^|[^\d])([1-9]\d?)[ \t]*(?:etaj|etazh|этаж)(?:da|да)?(?=$|[^\p{L}\p{N}_])/iu);
+  const totalMatch = value.match(/(?:^|[^\d])([1-9]\d?)[ \t]*(?:etashka|etajka|etazhka|этажка)(?=$|[^\p{L}\p{N}_])/iu);
   const floor = Number(floorMatch?.[1]);
   const totalFloors = Number(totalMatch?.[1]);
   if (!Number.isInteger(floor) || floor < 1 || floor > 40) return null;
@@ -148,7 +158,7 @@ export function parseCondition(text) {
 
 const PEARL_NUMERIC_RE = /(?:^|[^\p{L}\p{N}_])([1-9]\d?)\s*(?:[-–—]?\s*(?:я|ая|а|й|st|nd|rd|th))?\s*(?:жемчужин[а-яё]*|перлин[а-яіїґ]*)(?=$|[^\p{L}\p{N}_])/iu;
 const PEARL_TENS = new Map([['двадцять',20],['тридцять',30],['сорок',40],['двадцать',20],['тридцать',30]]);
-const PEARL_ONES = new Map([['перша',1],['друга',2],['третя',3],['четверта',4],["p'ята",5],['шоста',6],['сьома',7],['восьма',8],["дев'ята",9],['первая',1],['вторая',2],['третья',3],['четвертая',4],['пятая',5],['шестая',6],['седьмая',7],['восьмая',8],['девятая',9]]);
+const PEARL_ONES = new Map([['перша',1],['друга',2],['третя',3],['четверта',4],["п'ята",5],['шоста',6],['сьома',7],['восьма',8],["дев'ята",9],['первая',1],['вторая',2],['третья',3],['четвертая',4],['пятая',5],['шестая',6],['седьмая',7],['восьмая',8],['девятая',9]]);
 function normalizePearlToken(value){return String(value||'').toLowerCase().replace(/[’`ʼ]/g,"'").replace(/ё/g,'е');}
 function parsePearlComplex(text){
   if(!text)return null;
