@@ -23,6 +23,19 @@ class MarketComparison {
       };
 }
 
+String _capitalizeFirstLetter(String value) {
+  if (value.isEmpty) return value;
+  final runes = value.runes.toList();
+  for (var i = 0; i < runes.length; i++) {
+    final char = String.fromCharCodes([runes[i]]);
+    final upper = char.toUpperCase();
+    if (upper == char.toLowerCase()) continue;
+    if (upper == char) return value;
+    return '${String.fromCharCodes(runes.take(i))}$upper${String.fromCharCodes(runes.skip(i + 1))}';
+  }
+  return value;
+}
+
 /// A normalized listing as returned by the backend `/api/listings` endpoint.
 class Listing {
   final String id;
@@ -128,7 +141,10 @@ class Listing {
       contact: j['contact'] as String?,
       district: j['district'] as String?,
       metro: j['metro'] as String?,
-      nearby: (j['nearby'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      nearby: (j['nearby'] as List?)
+              ?.map((e) => _capitalizeFirstLetter(e.toString()))
+              .toList() ??
+          const [],
       petsAllowed: j['petsAllowed'] as bool?,
       childrenAllowed: j['childrenAllowed'] as bool?,
       roomOnly: j['roomOnly'] == true,
