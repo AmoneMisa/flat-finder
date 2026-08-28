@@ -6,8 +6,44 @@ import {
 import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateCustomSource} from './custom-source-queue.js';
 import {checkRate} from './request-rate-limit.js';
+import {pool} from './db.js';
 
 export function installListingItemRoutes(app) {
+  // The listings.id BIGSERIAL is stamped onto every row's data->>'publicId' by
+  // the listings_sync_public_id trigger (migration 018), so it is a stable,
+  // source-independent way to look an advert back up from a short shared link
+  // without needing its source/country/source_id triple.
+  app.get('/api/listing/by-public-id/:publicId', async (req, res) => {
+    const publicId = Number(req.params.publicId);
+    if (!Number.isInteger(publicId) || publicId <= 0) {
+      return res.status(400).json({error: 'Invalid public id'});
+    }
+
+    try {
+      const result = await pool.query(`
+        SELECT id, source, country, source_id, data
+        FROM listings
+        WHERE id = $1 AND active = TRUE
+        LIMIT 1
+      `, [publicId]);
+
+      const row = result.rows[0];
+      if (!row) return res.status(404).json({error: 'Listing not found'});
+
+      return res.json({
+        listing: {
+          ...(row.data || {}),
+          publicId: Number(row.id),
+        },
+        source: row.source,
+        country: row.country,
+        sourceId: row.source_id,
+      });
+    } catch (err) {
+      return res.status(502).json({error: err.message});
+    }
+  });
+
   app.get('/api/listing/:source/:id', async (req, res) => {
     if (!checkRate(req, res, 'reloadOne', 1500)) return;
 
