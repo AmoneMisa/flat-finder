@@ -117,7 +117,7 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
   if (!listing?.street || !listing?.houseNumber) return false;
 
   const original = { lat: Number(listing.lat), lng: Number(listing.lng) };
-  const exactCandidates = candidates.filter((item) => EXACT_SOURCES.has(item.source));
+  const exactCandidates = candidates.filter((item) => item.source === 'address');
   for (const candidate of exactCandidates) {
     const probe = { ...listing, lat: null, lng: null, locationSource: null, locationAccuracyM: null };
     const result = await tryExactCandidate(probe, country, candidate, budget);
