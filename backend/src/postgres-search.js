@@ -195,6 +195,26 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   ];
   for (const [filterName, dataName] of booleanFilters) if (filters[filterName] === true) where.push(`l.data @> '{"${dataName}":true}'::jsonb`);
 
+  // These fields are tri-state (true/false/unknown), so the filter must match
+  // an explicit "false" -- not just "not true" -- to mean what its label says
+  // (e.g. "no elevator" excludes listings where elevator presence is simply
+  // unparsed, same as it excludes ones that do have one).
+  if (filters.noElevator === true) where.push(`l.data @> '{"elevator":false}'::jsonb`);
+  if (filters.noDeposit === true) where.push(`l.data @> '{"deposit":false}'::jsonb`);
+  if (filters.communalIncluded === true) where.push(`l.data @> '{"communalSeparated":false}'::jsonb`);
+  if (filters.noCommission === true) {
+    where.push(`(
+      l.data @> '{"commission":false}'::jsonb
+      OR (jsonb_typeof(l.data->'commissionPercent') = 'number' AND (l.data->>'commissionPercent')::numeric = 0)
+    )`);
+  }
+  if (filters.commissionPercentMin != null || filters.commissionPercentMax != null) {
+    const pct = `(l.data->>'commissionPercent')::numeric`;
+    where.push(`jsonb_typeof(l.data->'commissionPercent') = 'number'`);
+    if (filters.commissionPercentMin != null) where.push(`${pct} >= ${add(Number(filters.commissionPercentMin))}`);
+    if (filters.commissionPercentMax != null) where.push(`${pct} <= ${add(Number(filters.commissionPercentMax))}`);
+  }
+
   if (filters.city) where.push(`l.city = ${add(String(filters.city))}`);
   if (filters.district) where.push(`LOWER(l.district) = ${add(String(filters.district).toLowerCase())}`);
   if (filters.microdistrict) {

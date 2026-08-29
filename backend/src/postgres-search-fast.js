@@ -32,11 +32,13 @@ const NUMERIC_FILTERS = [
   'bedroomsMin', 'bedroomsMax', 'areaMin', 'areaMax', 'metroMaxM',
   'nearbyMaxM', 'pricePerSqmMin', 'pricePerSqmMax', 'floorMin', 'floorMax',
   'totalFloorsMin', 'totalFloorsMax', 'yearMin', 'yearMax',
+  'commissionPercentMin', 'commissionPercentMax',
 ];
 
 const BOOLEAN_FILTERS = [
   'newBuilding', 'dishwasher', 'airConditioner', 'parking', 'internet', 'gas',
   'balcony', 'terrace', 'privateYard', 'pets', 'children', 'roomOnly', 'withPhotos',
+  'noElevator', 'noDeposit', 'communalIncluded', 'noCommission',
 ];
 
 function hasSecondaryFilters(filters) {

@@ -54,6 +54,12 @@ export function applyListingFilters(listings, filters, rates = null) {
     balcony,
     terrace,
     privateYard,
+    noElevator,
+    noDeposit,
+    communalIncluded,
+    noCommission,
+    commissionPercentMin,
+    commissionPercentMax,
     maxAgeDays,
     sources,
   } = filters;
@@ -211,6 +217,18 @@ export function applyListingFilters(listings, filters, rates = null) {
     if (pets === true && listing.petsAllowed !== true) return false;
     if (children === true && listing.childrenAllowed === false) return false;
     if (roomOnly === true && !listing.roomOnly) return false;
+
+    // Tri-state fields: an explicit "false" is required to match, not merely
+    // "not true" -- unparsed listings shouldn't count as a match either way.
+    if (noElevator === true && listing.elevator !== false) return false;
+    if (noDeposit === true && listing.deposit !== false) return false;
+    if (communalIncluded === true && listing.communalSeparated !== false) return false;
+    if (noCommission === true && listing.commission !== false && listing.commissionPercent !== 0) return false;
+    if (commissionPercentMin != null || commissionPercentMax != null) {
+      if (typeof listing.commissionPercent !== 'number') return false;
+      if (commissionPercentMin != null && listing.commissionPercent < commissionPercentMin) return false;
+      if (commissionPercentMax != null && listing.commissionPercent > commissionPercentMax) return false;
+    }
 
     const requiredAmenities = [
       ['dishwasher', dishwasher],
