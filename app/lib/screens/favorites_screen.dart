@@ -13,9 +13,9 @@ class FavoritesScreen extends StatelessWidget {
   const FavoritesScreen({super.key});
 
   void _open(BuildContext context, Listing l) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)));
   }
 
   @override
@@ -76,8 +76,10 @@ class _CountryFolder extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ExpansionTile(
         initiallyExpanded: true,
-        leading: Text(countryFlags[country] ?? '📁',
-            style: const TextStyle(fontSize: 22)),
+        leading: Text(
+          countryFlags[country] ?? '📁',
+          style: const TextStyle(fontSize: 22),
+        ),
         title: Text(country),
         subtitle: Text('$total'),
         children: [

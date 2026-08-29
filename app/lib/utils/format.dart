@@ -19,7 +19,8 @@ String formatPrice(
 
   final from = rates?[l.currency];
   final to = displayCurrency == null ? null : rates?[displayCurrency];
-  final canConvert = displayCurrency != null &&
+  final canConvert =
+      displayCurrency != null &&
       displayCurrency != l.currency &&
       from != null &&
       to != null &&
@@ -34,19 +35,23 @@ String formatPrice(
 /// Short currency symbol for a code, falling back to the code itself
 /// (e.g. UZS/KZT have no widely-recognised single glyph).
 String currencySymbol(String code) => switch (code.toUpperCase()) {
-      'USD' => '\$',
-      'EUR' => '€',
-      'UAH' => '₴',
-      'RON' => 'lei',
-      'RUB' => '₽',
-      'GBP' => '£',
-      _ => code,
-    };
+  'USD' => '\$',
+  'EUR' => '€',
+  'UAH' => '₴',
+  'RON' => 'lei',
+  'RUB' => '₽',
+  'GBP' => '£',
+  _ => code,
+};
 
 /// Compact price for a map pin: converts into [displayCurrency] when possible,
 /// then renders "<symbol><short number>" (e.g. "$45K", "1.2M сум"). Returns "—"
 /// when the price is unknown.
-String pinPriceLabel(Listing l, {Map<String, double>? rates, String? displayCurrency}) {
+String pinPriceLabel(
+  Listing l, {
+  Map<String, double>? rates,
+  String? displayCurrency,
+}) {
   if (l.price == null) return '—';
   var value = l.price!;
   var code = l.currency;
@@ -68,12 +73,19 @@ String pinPriceLabel(Listing l, {Map<String, double>? rates, String? displayCurr
 
 String _shortNum(num v) {
   if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
-  if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}K';
+  if (v >= 1000) {
+    final thousands = v / 1000;
+    // Do not turn 2,500 into 3K. Keep one decimal below 10K and remove a
+    // redundant trailing .0 (2,000 -> 2K, 2,500 -> 2.5K).
+    final digits = thousands < 10 ? 1 : 0;
+    return '${thousands.toStringAsFixed(digits).replaceFirst(RegExp(r'\.0$'), '')}K';
+  }
   return v.round().toString();
 }
 
-String propertyLabel(String type, [AppStrings? s]) =>
-    type == 'house' ? (s?.t('house') ?? 'House') : (s?.t('apartment') ?? 'Apartment');
+String propertyLabel(String type, [AppStrings? s]) => type == 'house'
+    ? (s?.t('house') ?? 'House')
+    : (s?.t('apartment') ?? 'Apartment');
 
 String subtitleFor(Listing l, [AppStrings? s]) {
   final parts = <String>[];
@@ -104,18 +116,20 @@ String? floorLabel(Listing l, [AppStrings? s]) {
 
 /// Human label for a listing's stated tenant restriction, or null.
 String? audienceLabel(String? audience, [AppStrings? s]) => switch (audience) {
-      'women' => s?.t('women') ?? 'Girls only',
-      'men' => s?.t('men') ?? 'Men only',
-      'family' => s?.t('family') ?? 'Family',
-      _ => null,
-    };
+  'women' => s?.t('women') ?? 'Girls only',
+  'men' => s?.t('men') ?? 'Men only',
+  'family' => s?.t('family') ?? 'Family',
+  _ => null,
+};
 
 /// Relative "posted N ago" label from a listing's createdAt, or null.
 String? postedLabel(DateTime? createdAt, [AppStrings? s]) {
   if (createdAt == null) return null;
   final d = DateTime.now().difference(createdAt);
-  if (d.inDays >= 1) return s?.t('daysAgo', {'n': '${d.inDays}'}) ?? '${d.inDays}d ago';
-  if (d.inHours >= 1) return s?.t('hoursAgo', {'n': '${d.inHours}'}) ?? '${d.inHours}h ago';
+  if (d.inDays >= 1)
+    return s?.t('daysAgo', {'n': '${d.inDays}'}) ?? '${d.inDays}d ago';
+  if (d.inHours >= 1)
+    return s?.t('hoursAgo', {'n': '${d.inHours}'}) ?? '${d.inHours}h ago';
   return s?.t('justNow') ?? 'Just now';
 }
 
@@ -171,26 +185,21 @@ const _tagKeys = <String, String>{
   'no commission': 'tag_noCommission',
 };
 
-const countryFlags = {
-  'RO': '🇷🇴',
-  'UA': '🇺🇦',
-  'KZ': '🇰🇿',
-  'UZ': '🇺🇿',
-};
+const countryFlags = {'RO': '🇷🇴', 'UA': '🇺🇦', 'KZ': '🇰🇿', 'UZ': '🇺🇿'};
 
 String sourceLabel(String source, [AppStrings? s]) => switch (source) {
-      'olx' => 'OLX',
-      'reddit' => 'Reddit',
-      'telegram' => 'Telegram',
-      'threads' => 'Threads',
-      'mock' => s?.t('demo') ?? 'Demo',
-      _ => source,
-    };
+  'olx' => 'OLX',
+  'reddit' => 'Reddit',
+  'telegram' => 'Telegram',
+  'threads' => 'Threads',
+  'mock' => s?.t('demo') ?? 'Demo',
+  _ => source,
+};
 
 /// Short human label for a listing's deal type, or null when unknown.
 String? dealTypeLabel(String? dealType, [AppStrings? s]) => switch (dealType) {
-      'sale' => s?.t('saleLong') ?? 'Sale',
-      'longRent' => s?.t('longRentLong') ?? 'Long-term rent',
-      'shortRent' => s?.t('shortRentLong') ?? 'Short-term rent',
-      _ => null,
-    };
+  'sale' => s?.t('saleLong') ?? 'Sale',
+  'longRent' => s?.t('longRentLong') ?? 'Long-term rent',
+  'shortRent' => s?.t('shortRentLong') ?? 'Short-term rent',
+  _ => null,
+};

@@ -50,25 +50,23 @@ class SettingsScreen extends StatelessWidget {
   }
 
   String _themeLabelKey(String name) => switch (name) {
-        'dark' => 'themeDark',
-        'darkBlue' => 'themeDarkBlue',
-        _ => 'themeLight',
-      };
+    'dark' => 'themeDark',
+    'darkBlue' => 'themeDarkBlue',
+    _ => 'themeLight',
+  };
 
   IconData _themeIcon(String name) => switch (name) {
-        'dark' => Icons.dark_mode_outlined,
-        'darkBlue' => Icons.nightlight_outlined,
-        _ => Icons.light_mode_outlined,
-      };
+    'dark' => Icons.dark_mode_outlined,
+    'darkBlue' => Icons.nightlight_outlined,
+    _ => Icons.light_mode_outlined,
+  };
 
   Widget _sectionTitle(BuildContext context, String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        child: Text(
-          text,
-          style: Theme.of(context)
-              .textTheme
-              .titleSmall
-              ?.copyWith(color: Theme.of(context).colorScheme.primary),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(color: Theme.of(context).colorScheme.primary),
+    ),
+  );
 }

@@ -105,9 +105,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     setState(() => _translating = true);
     try {
       final translated = await context.read<AppState>().translateText(
-            sourceText,
-            targetLanguage: lang,
-          );
+        sourceText,
+        targetLanguage: lang,
+      );
       if (!mounted) return;
       setState(() {
         _translatedText = translated;
@@ -115,11 +115,13 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
         _showTranslated = true;
       });
     } catch (_) {
-      _snack(_localized(
-        settings,
-        'Could not translate the listing. Try again.',
-        'Не удалось перевести объявление. Попробуйте ещё раз.',
-      ));
+      _snack(
+        _localized(
+          settings,
+          'Could not translate the listing. Try again.',
+          'Не удалось перевести объявление. Попробуйте ещё раз.',
+        ),
+      );
     } finally {
       if (mounted) setState(() => _translating = false);
     }
@@ -130,15 +132,28 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  bool get _isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  bool get _isDesktop =>
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
   /// Compose the parsed-info text shared alongside the screenshot + link.
-  String _shareText(AppStrings s, Map<String, double> rates, String? displayCurrency) {
+  String _shareText(
+    AppStrings s,
+    Map<String, double> rates,
+    String? displayCurrency,
+  ) {
     final b = StringBuffer()
       ..writeln(listing.title)
-      ..writeln(formatPrice(listing, rates: rates, displayCurrency: displayCurrency, s: s));
+      ..writeln(
+        formatPrice(
+          listing,
+          rates: rates,
+          displayCurrency: displayCurrency,
+          s: s,
+        ),
+      );
     final info = <String>[];
-    if (listing.rooms != null) info.add(s.t('roomsN', {'n': '${listing.rooms}'}));
+    if (listing.rooms != null)
+      info.add(s.t('roomsN', {'n': '${listing.rooms}'}));
     if (listing.areaSqm != null) info.add('${listing.areaSqm} m²');
     final fl = floorLabel(listing, s);
     if (fl != null) info.add(fl);
@@ -147,7 +162,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     if (info.isNotEmpty) b.writeln(info.join(' · '));
     if (listing.contact != null) b.writeln(listing.contact!);
     if (listing.url.isNotEmpty) b.writeln(listing.url);
-    if (listing.publicId != null) b.writeln(buildListingWebShareUrl(listing.publicId!));
+    if (listing.publicId != null)
+      b.writeln(buildListingWebShareUrl(listing.publicId!));
     return b.toString().trim();
   }
 
@@ -156,12 +172,16 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   /// priority as the site's own share button: the app's own stable link
   /// (opens straight to this listing) over the original ad, over the full
   /// details as a last resort.
-  Future<void> _shareLink(AppStrings s, Map<String, double> rates, String? displayCurrency) async {
+  Future<void> _shareLink(
+    AppStrings s,
+    Map<String, double> rates,
+    String? displayCurrency,
+  ) async {
     final link = listing.publicId != null
         ? buildListingWebShareUrl(listing.publicId!)
         : listing.url.isNotEmpty
-            ? listing.url
-            : _shareText(s, rates, displayCurrency);
+        ? listing.url
+        : _shareText(s, rates, displayCurrency);
     await Clipboard.setData(ClipboardData(text: link));
     if (mounted) {
       ScaffoldMessenger.of(context)
@@ -169,7 +189,11 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     }
   }
 
-  Future<void> _share(AppStrings s, Map<String, double> rates, String? displayCurrency) async {
+  Future<void> _share(
+    AppStrings s,
+    Map<String, double> rates,
+    String? displayCurrency,
+  ) async {
     final text = _shareText(s, rates, displayCurrency);
     // Desktop OS share sheets (esp. Windows) are unreliable, so copy the listing
     // details to the clipboard and confirm with a SnackBar instead.
@@ -183,7 +207,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     }
     try {
       final boundary =
-          _shareKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+          _shareKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary != null) {
         final image = await boundary.toImage(pixelRatio: 2);
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -213,7 +238,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
         _translatedText != null && _translatedLang == settings.lang;
     final showTranslated = hasTranslation && _showTranslated;
     final hasTranslatableText =
-        listing.description.trim().isNotEmpty || listing.title.trim().isNotEmpty;
+        listing.description.trim().isNotEmpty ||
+        listing.title.trim().isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -233,8 +259,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
             ),
           IconButton(
             tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
-            icon: Icon(isFav ? Icons.favorite : Icons.favorite_border,
-                color: isFav ? Colors.red : null),
+            icon: Icon(
+              isFav ? Icons.favorite : Icons.favorite_border,
+              color: isFav ? Colors.red : null,
+            ),
             onPressed: () => favorites.toggle(listing),
           ),
           if (_isDesktop)
@@ -269,8 +297,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                       height: 200,
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          const SizedBox(height: 200, child: Icon(Icons.home, size: 80)),
+                      errorWidget: (_, __, ___) => const SizedBox(
+                        height: 200,
+                        child: Icon(Icons.home, size: 80),
+                      ),
                     ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -278,47 +308,126 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                            formatPrice(listing,
-                                rates: rates,
-                                displayCurrency: settings.displayCurrency,
-                                s: s),
-                            style: theme.textTheme.headlineSmall
-                                ?.copyWith(fontWeight: FontWeight.bold)),
+                          formatPrice(
+                            listing,
+                            rates: rates,
+                            displayCurrency: settings.displayCurrency,
+                            s: s,
+                          ),
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (listing.marketComparison?.goodPrice == true) ...[
+                          const SizedBox(height: 8),
+                          Tooltip(
+                            message: _goodPriceExplanation(listing, s),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: BrandColors.toneGreen.withValues(
+                                  alpha: .16,
+                                ),
+                                border: Border.all(
+                                  color: BrandColors.toneGreen.withValues(
+                                    alpha: .7,
+                                  ),
+                                ),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.trending_down,
+                                    color: BrandColors.toneGreen,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    s.t('goodPrice'),
+                                    style: const TextStyle(
+                                      color: BrandColors.toneGreen,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            _goodPriceExplanation(listing, s),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.hintColor,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 4),
                         if (postedLabel(listing.createdAt, s) != null)
-                          Text(postedLabel(listing.createdAt, s)!,
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: theme.hintColor)),
+                          Text(
+                            postedLabel(listing.createdAt, s)!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.hintColor,
+                            ),
+                          ),
                         const SizedBox(height: 8),
-                        SelectableText(listing.title, style: theme.textTheme.titleMedium),
+                        SelectableText(
+                          listing.title,
+                          style: theme.textTheme.titleMedium,
+                        ),
                         const SizedBox(height: 12),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            _chip(Icons.home_work_outlined,
-                                propertyLabel(listing.propertyType, s)),
+                            _chip(
+                              Icons.home_work_outlined,
+                              propertyLabel(listing.propertyType, s),
+                            ),
                             if (dealTypeLabel(listing.dealType, s) != null)
-                              _chip(Icons.sell_outlined, dealTypeLabel(listing.dealType, s)!),
+                              _chip(
+                                Icons.sell_outlined,
+                                dealTypeLabel(listing.dealType, s)!,
+                              ),
                             _chip(
                               listing.byAgency ? Icons.business : Icons.person,
-                              listing.byAgency ? s.t('agency') : s.t('privateOwner'),
+                              listing.byAgency
+                                  ? s.t('agency')
+                                  : s.t('privateOwner'),
                             ),
                             if (listing.rooms != null)
-                              _chip(Icons.meeting_room_outlined,
-                                  s.t('roomsN', {'n': '${listing.rooms}'})),
+                              _chip(
+                                Icons.meeting_room_outlined,
+                                s.t('roomsN', {'n': '${listing.rooms}'}),
+                              ),
                             if (listing.bedrooms != null)
-                              _chip(Icons.bed_outlined,
-                                  s.t('bedroomsN', {'n': '${listing.bedrooms}'})),
+                              _chip(
+                                Icons.bed_outlined,
+                                s.t('bedroomsN', {'n': '${listing.bedrooms}'}),
+                              ),
                             if (listing.areaSqm != null)
                               _chip(Icons.square_foot, '${listing.areaSqm} m²'),
                             if (floorLabel(listing, s) != null)
-                              _chip(Icons.stairs_outlined, floorLabel(listing, s)!),
+                              _chip(
+                                Icons.stairs_outlined,
+                                floorLabel(listing, s)!,
+                              ),
                             if (listing.buildingYear != null)
-                              _chip(Icons.calendar_today_outlined,
-                                  s.t('yearBuiltN', {'n': '${listing.buildingYear}'})),
+                              _chip(
+                                Icons.calendar_today_outlined,
+                                s.t('yearBuiltN', {
+                                  'n': '${listing.buildingYear}',
+                                }),
+                              ),
                             if (audienceLabel(listing.audience, s) != null)
-                              _chip(Icons.groups_outlined, audienceLabel(listing.audience, s)!),
+                              _chip(
+                                Icons.groups_outlined,
+                                audienceLabel(listing.audience, s)!,
+                              ),
                             if (listing.roomOnly)
                               _chip(Icons.single_bed_outlined, s.t('roomOnly')),
                             if (listing.petsAllowed == true)
@@ -326,16 +435,33 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                             if (listing.childrenAllowed == true)
                               _chip(Icons.child_care, s.t('childrenAllowed')),
                             if (listing.deposit == true)
-                              _chip(Icons.savings_outlined,
-                                  _costLabel(s, s.t('deposit'), listing.depositAmount, null)),
+                              _chip(
+                                Icons.savings_outlined,
+                                _costLabel(
+                                  s,
+                                  s.t('deposit'),
+                                  listing.depositAmount,
+                                  null,
+                                ),
+                              ),
                             if (listing.commission == true)
-                              _chip(Icons.percent,
-                                  _costLabel(s, s.t('commission'), null, listing.commissionPercent)),
+                              _chip(
+                                Icons.percent,
+                                _costLabel(
+                                  s,
+                                  s.t('commission'),
+                                  null,
+                                  listing.commissionPercent,
+                                ),
+                              ),
                             if (listing.district != null)
                               _chip(Icons.map_outlined, listing.district!),
                             if (listing.metro != null)
                               _chip(Icons.subway_outlined, listing.metro!),
-                            _chip(Icons.source_outlined, sourceLabel(listing.source, s)),
+                            _chip(
+                              Icons.source_outlined,
+                              sourceLabel(listing.source, s),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -364,12 +490,15 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     spacing: 6,
                     runSpacing: 6,
                     children: listing.nearby
-                        .map((n) => Chip(
-                              avatar: const Icon(Icons.place_outlined, size: 18),
-                              label: Text(s.nearbyLabel(n)),
-                              visualDensity: VisualDensity.compact,
-                              backgroundColor: theme.colorScheme.secondaryContainer,
-                            ))
+                        .map(
+                          (n) => Chip(
+                            avatar: const Icon(Icons.place_outlined, size: 18),
+                            label: Text(s.nearbyLabel(n)),
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor:
+                                theme.colorScheme.secondaryContainer,
+                          ),
+                        )
                         .toList(),
                   ),
                 ],
@@ -381,11 +510,13 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     spacing: 6,
                     runSpacing: 6,
                     children: listing.tags
-                        .map((t) => Chip(
-                              label: Text(tagLabel(t, s)),
-                              visualDensity: VisualDensity.compact,
-                              backgroundColor: theme.colorScheme.primaryContainer,
-                            ))
+                        .map(
+                          (t) => Chip(
+                            label: Text(tagLabel(t, s)),
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                          ),
+                        )
                         .toList(),
                   ),
                 ],
@@ -394,22 +525,32 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   Row(
                     children: [
                       OutlinedButton.icon(
-                        onPressed: _translating ? null : () => _translate(settings),
+                        onPressed: _translating
+                            ? null
+                            : () => _translate(settings),
                         icon: _translating
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
-                            : Icon(showTranslated
-                                ? Icons.article_outlined
-                                : Icons.translate),
+                            : Icon(
+                                showTranslated
+                                    ? Icons.article_outlined
+                                    : Icons.translate,
+                              ),
                         label: Text(
                           _translating
                               ? _localized(settings, 'Translating…', 'Перевод…')
                               : showTranslated
-                                  ? _localized(settings, 'Show original', 'Показать оригинал')
-                                  : _localized(settings, 'Translate', 'Перевести'),
+                              ? _localized(
+                                  settings,
+                                  'Show original',
+                                  'Показать оригинал',
+                                )
+                              : _localized(settings, 'Translate', 'Перевести'),
                         ),
                       ),
                     ],
@@ -430,14 +571,19 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   const SizedBox(height: 20),
                   Text(s.t('description'), style: theme.textTheme.titleSmall),
                   const SizedBox(height: 8),
-                  SelectableText(listing.description, style: theme.textTheme.bodyMedium),
+                  SelectableText(
+                    listing.description,
+                    style: theme.textTheme.bodyMedium,
+                  ),
                 ],
                 const SizedBox(height: 24),
                 FilledButton.icon(
                   onPressed: listing.url.isEmpty
                       ? null
-                      : () => launchUrl(Uri.parse(listing.url),
-                          mode: LaunchMode.externalApplication),
+                      : () => launchUrl(
+                          Uri.parse(listing.url),
+                          mode: LaunchMode.externalApplication,
+                        ),
                   icon: const Icon(Icons.open_in_new),
                   label: Text(s.t('openOriginal')),
                 ),
@@ -449,15 +595,15 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     );
   }
 
-  Widget _chip(IconData icon, String label) => Chip(
-        avatar: Icon(icon, size: 18),
-        label: Text(label),
-      );
+  Widget _chip(IconData icon, String label) =>
+      Chip(avatar: Icon(icon, size: 18), label: Text(label));
 
   /// "Deposit 500" / "Commission 50%" / just the base word when no figure known.
   String _costLabel(AppStrings s, String base, num? amount, num? percent) {
     if (percent != null) {
-      final p = percent % 1 == 0 ? percent.toInt().toString() : percent.toString();
+      final p = percent % 1 == 0
+          ? percent.toInt().toString()
+          : percent.toString();
       return '$base $p%';
     }
     if (amount != null) return '$base ${amount.round()}';
@@ -470,7 +616,11 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
 /// (falling back to pink when there's no market comparison, matching
 /// useFlatDetailsTitle.ts's `?? "pink"`), followed by a deal/city summary.
 class _DetailTitle extends StatelessWidget {
-  const _DetailTitle({required this.listing, required this.rates, required this.s});
+  const _DetailTitle({
+    required this.listing,
+    required this.rates,
+    required this.s,
+  });
 
   final Listing listing;
   final Map<String, double> rates;
@@ -490,7 +640,10 @@ class _DetailTitle extends StatelessWidget {
       return Text('${countryFlags[listing.country] ?? ''} ${listing.city}');
     }
     final color = priceToneColor(listingPriceTone(listing, rates));
-    final subtitle = [_dealText, listing.city].where((e) => e.isNotEmpty).join(', ');
+    final subtitle = [
+      _dealText,
+      listing.city,
+    ].where((e) => e.isNotEmpty).join(', ');
     return RichText(
       overflow: TextOverflow.ellipsis,
       text: TextSpan(
@@ -526,7 +679,9 @@ class _SpecTable extends StatelessWidget {
   /// "Yes 500" / "Yes 50%" / just "Yes"/"No" when no figure known.
   String _costLabel(String base, num? amount, num? percent) {
     if (percent != null) {
-      final p = percent % 1 == 0 ? percent.toInt().toString() : percent.toString();
+      final p = percent % 1 == 0
+          ? percent.toInt().toString()
+          : percent.toString();
       return '$base $p%';
     }
     if (amount != null) return '$base ${amount.round()}';
@@ -534,13 +689,22 @@ class _SpecTable extends StatelessWidget {
   }
 
   String? _conditionLabel(String? condition) => switch (condition) {
-        'needs_renovation' => s.t('condNeeds'),
-        'basic' => s.t('condBasic'),
-        'good' => s.t('condGood'),
-        'modern' => s.t('condModern'),
-        'luxury' => s.t('condLuxury'),
-        _ => null,
-      };
+    'needs_renovation' => s.t('condNeeds'),
+    'basic' => s.t('condBasic'),
+    'good' => s.t('condGood'),
+    'modern' => s.t('condModern'),
+    'luxury' => s.t('condLuxury'),
+    _ => null,
+  };
+
+  String? _money(MoneyAmount? value) {
+    if (value == null) return null;
+    final amount = value.amount % 1 == 0
+        ? value.amount.toInt().toString()
+        : value.amount.toString();
+    return '${value.approximate ? '≈ ' : ''}$amount ${value.currency ?? listing.currency}'
+        .trim();
+  }
 
   List<(String, String)> _rows() {
     final l = listing;
@@ -563,7 +727,10 @@ class _SpecTable extends StatelessWidget {
       (s.t('specKvartal'), l.kvartal),
       (s.t('specMetro'), l.metro),
       (s.t('specAddress'), l.address),
-      (s.t('specShops'), l.nearbyShops.isNotEmpty ? l.nearbyShops.join(', ') : null),
+      (
+        s.t('specShops'),
+        l.nearbyShops.isNotEmpty ? l.nearbyShops.join(', ') : null,
+      ),
       (s.t('specNearby'), l.nearby.isNotEmpty ? l.nearby.join(', ') : null),
       (s.t('specParking'), _yesNo(l.parking)),
       (s.t('specElevator'), _yesNo(l.elevator)),
@@ -577,21 +744,52 @@ class _SpecTable extends StatelessWidget {
       (s.t('specHeating'), _yesNo(l.heating)),
       (s.t('specHotWater'), _yesNo(l.hotWater)),
       (s.t('specInternet'), _yesNo(l.internet)),
+      (s.t('specTV'), _yesNo(l.tv)),
+      (s.t('specMicrowave'), _yesNo(l.microwave)),
+      (s.t('specOven'), _yesNo(l.oven)),
+      (s.t('specBidet'), _yesNo(l.bidet)),
+      (s.t('specWalkInCloset'), _yesNo(l.walkInCloset)),
+      (s.t('specBathtub'), _yesNo(l.bathtub)),
+      (s.t('specShower'), _yesNo(l.shower)),
+      (s.t('specEuroLayout'), _yesNo(l.euroLayout)),
+      (s.t('specCadastral'), _yesNo(l.cadastral)),
+      (s.t('specFirstRental'), _yesNo(l.firstRental)),
       (s.t('specPets'), _yesNo(l.petsAllowed)),
       (s.t('specChildren'), _yesNo(l.childrenAllowed)),
       (s.t('specSmoking'), _yesNo(l.smokingAllowed)),
       (s.t('specAudience'), audienceLabel(l.audience, s)),
       (s.t('specRoomShare'), l.roomOnly ? s.t('yes') : null),
       (s.t('specNegotiable'), _yesNo(l.negotiable)),
-      (s.t('specDeposit'), l.deposit == null
-          ? null
-          : _costLabel(_yesNo(l.deposit)!, l.depositAmount, null)),
-      (s.t('specCommission'), l.commission == null
-          ? null
-          : _costLabel(_yesNo(l.commission)!, null, l.commissionPercent)),
+      (
+        s.t('specDeposit'),
+        l.deposit == null
+            ? null
+            : _costLabel(_yesNo(l.deposit)!, l.depositAmount, null),
+      ),
+      (
+        s.t('specCommission'),
+        l.commission == null && l.commissionAmount == null
+            ? null
+            : l.commissionAmount != null
+            ? '${_yesNo(l.commission ?? true)} ${_money(l.commissionAmount)}'
+            : _costLabel(_yesNo(l.commission)!, null, l.commissionPercent),
+      ),
       (s.t('specCommunal'), _yesNo(l.communalSeparated)),
+      (s.t('specUtilAmount'), _money(l.utilitiesAmount)),
+      (s.t('specPerPersonPrice'), _money(l.perPersonPrice)),
+      (s.t('specStudentTarget'), _yesNo(l.studentTarget)),
+      (s.t('specLandlordPresent'), _yesNo(l.landlordPresent)),
+      (s.t('specMinLease'), l.minLeaseTerm),
+      (s.t('specAvailable'), l.availableFrom),
+      (
+        s.t('specTransitRoutes'),
+        l.transitRoutes.isEmpty ? null : l.transitRoutes.join(', '),
+      ),
     ];
-    return [for (final (label, value) in rows) if (value != null && value.isNotEmpty) (label, value)];
+    return [
+      for (final (label, value) in rows)
+        if (value != null && value.isNotEmpty) (label, value),
+    ];
   }
 
   @override
@@ -608,17 +806,29 @@ class _SpecTable extends StatelessWidget {
           columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()},
           children: [
             for (final (label, value) in rows)
-              TableRow(children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                  child: Text(label,
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                  child: Text(value, style: theme.textTheme.bodyMedium),
-                ),
-              ]),
+              TableRow(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 4,
+                    ),
+                    child: Text(
+                      label,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.hintColor,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 4,
+                    ),
+                    child: Text(value, style: theme.textTheme.bodyMedium),
+                  ),
+                ],
+              ),
           ],
         ),
       ],
@@ -659,27 +869,36 @@ class _ContactCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              Icon(_isHandle ? Icons.alternate_email : Icons.call,
-                  color: theme.colorScheme.onPrimaryContainer),
+              Icon(
+                _isHandle ? Icons.alternate_email : Icons.call,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(s.t('contact'),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onPrimaryContainer)),
-                    Text(contact,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                            color: theme.colorScheme.onPrimaryContainer,
-                            fontWeight: FontWeight.bold)),
+                    Text(
+                      s.t('contact'),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    Text(
+                      contact,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               ),
               FilledButton.icon(
                 onPressed: uri == null
                     ? null
-                    : () => launchUrl(uri, mode: LaunchMode.externalApplication),
+                    : () =>
+                          launchUrl(uri, mode: LaunchMode.externalApplication),
                 icon: Icon(_isHandle ? Icons.send : Icons.call, size: 18),
                 label: Text(_isHandle ? s.t('message') : s.t('call')),
               ),
@@ -715,16 +934,21 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
 
   void _go(int to) {
     if (to < 0 || to >= widget.photos.length) return;
-    _controller.animateToPage(to,
-        duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    _controller.animateToPage(
+      to,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 
   void _openFullscreen() {
-    Navigator.of(context).push(MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) =>
-          _FullscreenGallery(photos: widget.photos, initialIndex: _index),
-    ));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) =>
+            _FullscreenGallery(photos: widget.photos, initialIndex: _index),
+      ),
+    );
   }
 
   @override
@@ -757,17 +981,26 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
           Positioned(
             left: 12,
             bottom: 12,
-            child: _pill(const Icon(Icons.zoom_out_map, color: Colors.white, size: 16)),
+            child: _pill(
+              const Icon(Icons.zoom_out_map, color: Colors.white, size: 16),
+            ),
           ),
           if (multi) ...[
             Positioned(
               left: 4,
-              child: _navButton(Icons.chevron_left, _index > 0, () => _go(_index - 1)),
+              child: _navButton(
+                Icons.chevron_left,
+                _index > 0,
+                () => _go(_index - 1),
+              ),
             ),
             Positioned(
               right: 4,
-              child: _navButton(Icons.chevron_right,
-                  _index < widget.photos.length - 1, () => _go(_index + 1)),
+              child: _navButton(
+                Icons.chevron_right,
+                _index < widget.photos.length - 1,
+                () => _go(_index + 1),
+              ),
             ),
           ],
           // Photo counter (when there's more than one) with the favorite toggle
@@ -780,10 +1013,12 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (multi) ...[
-                  _pill(Text(
-                    '${_index + 1} / ${widget.photos.length}',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  )),
+                  _pill(
+                    Text(
+                      '${_index + 1} / ${widget.photos.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
                   const SizedBox(height: 6),
                 ],
                 _favButton(isFav, () => favorites.toggle(widget.listing)),
@@ -796,49 +1031,62 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
   }
 
   Widget _favButton(bool isFav, VoidCallback onTap) => Material(
-        color: Colors.black54,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Icon(
-              isFav ? Icons.favorite : Icons.favorite_border,
-              color: isFav ? Colors.red : Colors.white,
-              size: 20,
-            ),
-          ),
+    color: Colors.black54,
+    shape: const CircleBorder(),
+    child: InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(
+          isFav ? Icons.favorite : Icons.favorite_border,
+          color: isFav ? Colors.red : Colors.white,
+          size: 20,
         ),
-      );
+      ),
+    ),
+  );
 
   Widget _pill(Widget child) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.black54,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: child,
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: child,
+  );
 
   Widget _navButton(IconData icon, bool enabled, VoidCallback onTap) => Opacity(
-        opacity: enabled ? 1 : 0.3,
-        child: Material(
-          color: Colors.black38,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: enabled ? onTap : null,
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Icon(icon, color: Colors.white, size: 28),
-            ),
-          ),
+    opacity: enabled ? 1 : 0.3,
+    child: Material(
+      color: Colors.black38,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? onTap : null,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(icon, color: Colors.white, size: 28),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 /// Fullscreen, pinch/scroll-zoomable photo viewer with page navigation.
+String _goodPriceExplanation(Listing listing, AppStrings s) {
+  final comparison = listing.marketComparison;
+  final median = comparison?.medianUsd;
+  if (median == null) return s.t('goodPrice');
+  final medianLabel = median == median.roundToDouble()
+      ? median.toInt().toString()
+      : median.toStringAsFixed(2);
+  return s.t('goodPriceCompared', {
+    'count': '${comparison?.comparableCount ?? 0}',
+    'median': medianLabel,
+  });
+}
+
 class _FullscreenGallery extends StatefulWidget {
   const _FullscreenGallery({required this.photos, required this.initialIndex});
   final List<String> photos;
@@ -849,20 +1097,32 @@ class _FullscreenGallery extends StatefulWidget {
 }
 
 class _FullscreenGalleryState extends State<_FullscreenGallery> {
-  late final PageController _controller =
-      PageController(initialPage: widget.initialIndex);
   late int _index = widget.initialIndex;
+  final TransformationController _transform = TransformationController();
 
   @override
   void dispose() {
-    _controller.dispose();
+    _transform.dispose();
     super.dispose();
   }
 
   void _go(int to) {
     if (to < 0 || to >= widget.photos.length) return;
-    _controller.animateToPage(to,
-        duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    setState(() {
+      _index = to;
+      _transform.value = Matrix4.identity();
+    });
+  }
+
+  void _toggleZoom(TapDownDetails details) {
+    if (_transform.value.getMaxScaleOnAxis() > 1.05) {
+      _transform.value = Matrix4.identity();
+      return;
+    }
+    final p = details.localPosition;
+    _transform.value = Matrix4.identity()
+      ..translate(-p.dx * 1.5, -p.dy * 1.5)
+      ..scale(2.5);
   }
 
   @override
@@ -873,27 +1133,41 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text('${_index + 1} / ${widget.photos.length}',
-            style: const TextStyle(fontSize: 14)),
+        title: Text(
+          '${_index + 1} / ${widget.photos.length}',
+          style: const TextStyle(fontSize: 14),
+        ),
       ),
       body: Stack(
         alignment: Alignment.center,
         children: [
-          PageView.builder(
-            controller: _controller,
-            itemCount: widget.photos.length,
-            onPageChanged: (i) => setState(() => _index = i),
-            itemBuilder: (_, i) => InteractiveViewer(
+          GestureDetector(
+            onDoubleTapDown: _toggleZoom,
+            onHorizontalDragEnd: (details) {
+              if (_transform.value.getMaxScaleOnAxis() > 1.05) return;
+              final velocity = details.primaryVelocity ?? 0;
+              if (velocity < -250) _go(_index + 1);
+              if (velocity > 250) _go(_index - 1);
+            },
+            child: InteractiveViewer(
+              transformationController: _transform,
               minScale: 1,
-              maxScale: 5,
-              child: Center(
+              maxScale: 6,
+              panEnabled: true,
+              scaleEnabled: true,
+              clipBehavior: Clip.none,
+              boundaryMargin: const EdgeInsets.all(80),
+              child: SizedBox.expand(
                 child: CachedNetworkImage(
-                  imageUrl: widget.photos[i],
+                  imageUrl: widget.photos[_index],
                   fit: BoxFit.contain,
                   placeholder: (_, __) =>
                       const Center(child: CircularProgressIndicator()),
-                  errorWidget: (_, __, ___) =>
-                      const Icon(Icons.broken_image, color: Colors.white54, size: 80),
+                  errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image,
+                    color: Colors.white54,
+                    size: 80,
+                  ),
                 ),
               ),
             ),
@@ -901,12 +1175,19 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
           if (multi) ...[
             Positioned(
               left: 8,
-              child: _navButton(Icons.chevron_left, _index > 0, () => _go(_index - 1)),
+              child: _navButton(
+                Icons.chevron_left,
+                _index > 0,
+                () => _go(_index - 1),
+              ),
             ),
             Positioned(
               right: 8,
-              child: _navButton(Icons.chevron_right,
-                  _index < widget.photos.length - 1, () => _go(_index + 1)),
+              child: _navButton(
+                Icons.chevron_right,
+                _index < widget.photos.length - 1,
+                () => _go(_index + 1),
+              ),
             ),
           ],
         ],
@@ -915,18 +1196,18 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
   }
 
   Widget _navButton(IconData icon, bool enabled, VoidCallback onTap) => Opacity(
-        opacity: enabled ? 1 : 0.25,
-        child: Material(
-          color: Colors.white24,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: enabled ? onTap : null,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Icon(icon, color: Colors.white, size: 32),
-            ),
-          ),
+    opacity: enabled ? 1 : 0.25,
+    child: Material(
+      color: Colors.white24,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? onTap : null,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, color: Colors.white, size: 32),
         ),
-      );
+      ),
+    ),
+  );
 }

@@ -10,13 +10,13 @@ import '../state/settings.dart';
 enum PriceTone { green, blue, pink, orange, yellow, red }
 
 Color priceToneColor(PriceTone tone) => switch (tone) {
-      PriceTone.green => BrandColors.toneGreen,
-      PriceTone.blue => BrandColors.toneBlue,
-      PriceTone.pink => BrandColors.tonePink,
-      PriceTone.orange => BrandColors.toneOrange,
-      PriceTone.yellow => BrandColors.toneYellow,
-      PriceTone.red => BrandColors.toneRed,
-    };
+  PriceTone.green => BrandColors.toneGreen,
+  PriceTone.blue => BrandColors.toneBlue,
+  PriceTone.pink => BrandColors.tonePink,
+  PriceTone.orange => BrandColors.toneOrange,
+  PriceTone.yellow => BrandColors.toneYellow,
+  PriceTone.red => BrandColors.toneRed,
+};
 
 /// Same bands as `priceToneFromRatio` in priceTone.ts.
 PriceTone priceToneFromRatio(double ratio) {
@@ -33,7 +33,8 @@ PriceTone priceToneFromRatio(double ratio) {
 /// (e.g. the popup ID) fall back to [PriceTone.pink] themselves, same as
 /// `useFlatDetailsTitle.ts`'s `?? "pink"`.
 PriceTone? flatPriceTone(double? priceUsd, double? medianUsd) {
-  if (medianUsd == null || medianUsd <= 0 || priceUsd == null || priceUsd <= 0) return null;
+  if (medianUsd == null || medianUsd <= 0 || priceUsd == null || priceUsd <= 0)
+    return null;
   return priceToneFromRatio(priceUsd / medianUsd);
 }
 

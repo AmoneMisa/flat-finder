@@ -11,16 +11,40 @@ class MarketComparison {
   });
 
   factory MarketComparison.fromJson(Map<String, dynamic> j) => MarketComparison(
-        goodPrice: j['goodPrice'] == true,
-        medianUsd: j['medianUsd'] as num?,
-        comparableCount: (j['comparableCount'] as num?)?.toInt() ?? 0,
-      );
+    goodPrice: j['goodPrice'] == true,
+    medianUsd: j['medianUsd'] as num?,
+    comparableCount: (j['comparableCount'] as num?)?.toInt() ?? 0,
+  );
 
   Map<String, dynamic> toJson() => {
-        'goodPrice': goodPrice,
-        'medianUsd': medianUsd,
-        'comparableCount': comparableCount,
-      };
+    'goodPrice': goodPrice,
+    'medianUsd': medianUsd,
+    'comparableCount': comparableCount,
+  };
+}
+
+class MoneyAmount {
+  final num amount;
+  final String? currency;
+  final bool approximate;
+
+  const MoneyAmount({
+    required this.amount,
+    this.currency,
+    this.approximate = false,
+  });
+
+  factory MoneyAmount.fromJson(Map<String, dynamic> j) => MoneyAmount(
+    amount: j['amount'] as num? ?? 0,
+    currency: j['currency']?.toString(),
+    approximate: j['approximate'] == true,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'amount': amount,
+    'currency': currency,
+    if (approximate) 'approximate': true,
+  };
 }
 
 String _capitalizeFirstLetter(String value) {
@@ -89,6 +113,25 @@ class Listing {
   final bool? heating;
   final bool? hotWater;
   final bool? internet;
+  final bool? tv;
+  final bool? microwave;
+  final bool? oven;
+  final bool? bidet;
+  final bool? walkInCloset;
+  final bool? bathtub;
+  final bool? shower;
+  final bool? euroLayout;
+  final bool? cadastral;
+  final bool? firstRental;
+  final bool potentiallyUnsafe;
+  final bool? studentTarget;
+  final bool? landlordPresent;
+  final String? minLeaseTerm;
+  final String? availableFrom;
+  final MoneyAmount? utilitiesAmount;
+  final MoneyAmount? commissionAmount;
+  final MoneyAmount? perPersonPrice;
+  final List<String> transitRoutes;
   final String city;
   final double? lat;
   final double? lng;
@@ -99,6 +142,7 @@ class Listing {
   final String description;
   final List<String> tags;
   final MarketComparison? marketComparison;
+
   /// Stable, source-independent id (the listings table's BIGSERIAL, stamped
   /// onto every row by a DB trigger) used for single-listing share links —
   /// `source`+`id` alone isn't enough since `id` is source-specific.
@@ -154,6 +198,25 @@ class Listing {
     this.heating,
     this.hotWater,
     this.internet,
+    this.tv,
+    this.microwave,
+    this.oven,
+    this.bidet,
+    this.walkInCloset,
+    this.bathtub,
+    this.shower,
+    this.euroLayout,
+    this.cadastral,
+    this.firstRental,
+    this.potentiallyUnsafe = false,
+    this.studentTarget,
+    this.landlordPresent,
+    this.minLeaseTerm,
+    this.availableFrom,
+    this.utilitiesAmount,
+    this.commissionAmount,
+    this.perPersonPrice,
+    this.transitRoutes = const [],
     required this.city,
     required this.lat,
     required this.lng,
@@ -192,11 +255,14 @@ class Listing {
       contact: j['contact'] as String?,
       district: j['district'] as String?,
       metro: j['metro'] as String?,
-      nearby: (j['nearby'] as List?)
+      nearby:
+          (j['nearby'] as List?)
               ?.map((e) => _capitalizeFirstLetter(e.toString()))
               .toList() ??
           const [],
-      nearbyShops: (j['nearbyShops'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      nearbyShops:
+          (j['nearbyShops'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
       petsAllowed: j['petsAllowed'] as bool?,
       childrenAllowed: j['childrenAllowed'] as bool?,
       roomOnly: j['roomOnly'] == true,
@@ -225,14 +291,50 @@ class Listing {
       heating: j['heating'] as bool?,
       hotWater: j['hotWater'] as bool?,
       internet: j['internet'] as bool?,
+      tv: j['tv'] as bool?,
+      microwave: j['microwave'] as bool?,
+      oven: j['oven'] as bool?,
+      bidet: j['bidet'] as bool?,
+      walkInCloset: j['walkInCloset'] as bool?,
+      bathtub: j['bathtub'] as bool?,
+      shower: j['shower'] as bool?,
+      euroLayout: j['euroLayout'] as bool?,
+      cadastral: j['cadastral'] as bool?,
+      firstRental: j['firstRental'] as bool?,
+      potentiallyUnsafe: j['potentiallyUnsafe'] == true,
+      studentTarget: j['studentTarget'] as bool?,
+      landlordPresent: j['landlordPresent'] as bool?,
+      minLeaseTerm: j['minLeaseTerm']?.toString(),
+      availableFrom: j['availableFrom']?.toString(),
+      utilitiesAmount: j['utilitiesAmount'] is Map
+          ? MoneyAmount.fromJson(
+              Map<String, dynamic>.from(j['utilitiesAmount'] as Map),
+            )
+          : null,
+      commissionAmount: j['commissionAmount'] is Map
+          ? MoneyAmount.fromJson(
+              Map<String, dynamic>.from(j['commissionAmount'] as Map),
+            )
+          : null,
+      perPersonPrice: j['perPersonPrice'] is Map
+          ? MoneyAmount.fromJson(
+              Map<String, dynamic>.from(j['perPersonPrice'] as Map),
+            )
+          : null,
+      transitRoutes:
+          (j['transitRoutes'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
       city: j['city'] ?? '',
       lat: toD(j['lat']),
       lng: toD(j['lng']),
       photo: j['photo'],
-      photos: (j['photos'] as List?)?.map((e) => e.toString()).toList() ??
+      photos:
+          (j['photos'] as List?)?.map((e) => e.toString()).toList() ??
           (j['photo'] != null ? [j['photo'].toString()] : const []),
       url: j['url'] ?? '',
-      createdAt: j['createdAt'] != null ? DateTime.tryParse(j['createdAt']) : null,
+      createdAt: j['createdAt'] != null
+          ? DateTime.tryParse(j['createdAt'])
+          : null,
       description: j['description'] ?? '',
       tags: (j['tags'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       marketComparison: market is Map
@@ -244,65 +346,86 @@ class Listing {
 
   /// Round-trips through [Listing.fromJson]; used to persist favorites locally.
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'source': source,
-        'country': country,
-        'title': title,
-        'propertyType': propertyType,
-        'dealType': dealType,
-        'byAgency': byAgency,
-        'price': price,
-        'currency': currency,
-        'rooms': rooms,
-        'areaSqm': areaSqm,
-        'floor': floor,
-        'totalFloors': totalFloors,
-        'buildingYear': buildingYear,
-        'bedrooms': bedrooms,
-        'audience': audience,
-        'contact': contact,
-        'district': district,
-        'metro': metro,
-        'nearby': nearby,
-        'nearbyShops': nearbyShops,
-        'petsAllowed': petsAllowed,
-        'childrenAllowed': childrenAllowed,
-        'roomOnly': roomOnly,
-        'deposit': deposit,
-        'depositAmount': depositAmount,
-        'commission': commission,
-        'commissionPercent': commissionPercent,
-        'negotiable': negotiable,
-        'smokingAllowed': smokingAllowed,
-        'newBuilding': newBuilding,
-        'communalSeparated': communalSeparated,
-        'condition': condition,
-        'bathrooms': bathrooms,
-        'address': address,
-        'residenceComplex': residenceComplex,
-        'kvartal': kvartal,
-        'parking': parking,
-        'elevator': elevator,
-        'furnished': furnished,
-        'balcony': balcony,
-        'terrace': terrace,
-        'privateYard': privateYard,
-        'dishwasher': dishwasher,
-        'airConditioner': airConditioner,
-        'gas': gas,
-        'heating': heating,
-        'hotWater': hotWater,
-        'internet': internet,
-        'city': city,
-        'lat': lat,
-        'lng': lng,
-        'photo': photo,
-        'photos': photos,
-        'url': url,
-        'createdAt': createdAt?.toIso8601String(),
-        'description': description,
-        'tags': tags,
-        if (marketComparison != null) 'marketComparison': marketComparison!.toJson(),
-        if (publicId != null) 'publicId': publicId,
-      };
+    'id': id,
+    'source': source,
+    'country': country,
+    'title': title,
+    'propertyType': propertyType,
+    'dealType': dealType,
+    'byAgency': byAgency,
+    'price': price,
+    'currency': currency,
+    'rooms': rooms,
+    'areaSqm': areaSqm,
+    'floor': floor,
+    'totalFloors': totalFloors,
+    'buildingYear': buildingYear,
+    'bedrooms': bedrooms,
+    'audience': audience,
+    'contact': contact,
+    'district': district,
+    'metro': metro,
+    'nearby': nearby,
+    'nearbyShops': nearbyShops,
+    'petsAllowed': petsAllowed,
+    'childrenAllowed': childrenAllowed,
+    'roomOnly': roomOnly,
+    'deposit': deposit,
+    'depositAmount': depositAmount,
+    'commission': commission,
+    'commissionPercent': commissionPercent,
+    'negotiable': negotiable,
+    'smokingAllowed': smokingAllowed,
+    'newBuilding': newBuilding,
+    'communalSeparated': communalSeparated,
+    'condition': condition,
+    'bathrooms': bathrooms,
+    'address': address,
+    'residenceComplex': residenceComplex,
+    'kvartal': kvartal,
+    'parking': parking,
+    'elevator': elevator,
+    'furnished': furnished,
+    'balcony': balcony,
+    'terrace': terrace,
+    'privateYard': privateYard,
+    'dishwasher': dishwasher,
+    'airConditioner': airConditioner,
+    'gas': gas,
+    'heating': heating,
+    'hotWater': hotWater,
+    'internet': internet,
+    'tv': tv,
+    'microwave': microwave,
+    'oven': oven,
+    'bidet': bidet,
+    'walkInCloset': walkInCloset,
+    'bathtub': bathtub,
+    'shower': shower,
+    'euroLayout': euroLayout,
+    'cadastral': cadastral,
+    'firstRental': firstRental,
+    'potentiallyUnsafe': potentiallyUnsafe,
+    'studentTarget': studentTarget,
+    'landlordPresent': landlordPresent,
+    'minLeaseTerm': minLeaseTerm,
+    'availableFrom': availableFrom,
+    if (utilitiesAmount != null) 'utilitiesAmount': utilitiesAmount!.toJson(),
+    if (commissionAmount != null)
+      'commissionAmount': commissionAmount!.toJson(),
+    if (perPersonPrice != null) 'perPersonPrice': perPersonPrice!.toJson(),
+    'transitRoutes': transitRoutes,
+    'city': city,
+    'lat': lat,
+    'lng': lng,
+    'photo': photo,
+    'photos': photos,
+    'url': url,
+    'createdAt': createdAt?.toIso8601String(),
+    'description': description,
+    'tags': tags,
+    if (marketComparison != null)
+      'marketComparison': marketComparison!.toJson(),
+    if (publicId != null) 'publicId': publicId,
+  };
 }

@@ -18,12 +18,19 @@ class AppState extends ChangeNotifier {
   List<Country> countries = [];
   Filters filters = Filters();
   List<Listing> listings = [];
+  List<Listing> mapListings = [];
   List<String> degradedCountries = [];
-  List<SourceError> sourceErrors = []; // per-source failures from the last search
+  List<SourceError> sourceErrors =
+      []; // per-source failures from the last search
   Map<String, double> rates = {}; // currency -> units per 1 USD
 
   bool loading = false;
+  bool loadingMore = false;
+  bool mapLoading = false;
   String? error;
+  String? nextCursor;
+  int total = 0;
+  int _searchGeneration = 0;
 
   // Client-side cooldown for the manual "Reload all" button, matching the
   // server's flood protection so the button greys out instead of hitting a 429.
@@ -44,10 +51,13 @@ class AppState extends ChangeNotifier {
     await _loadFilters();
 
     // Rates are non-critical: fetch best-effort so a failure never blocks search.
-    _api.fetchRates().then((r) {
-      rates = r;
-      notifyListeners();
-    }).catchError((_) {});
+    _api
+        .fetchRates()
+        .then((r) {
+          rates = r;
+          notifyListeners();
+        })
+        .catchError((_) {});
     try {
       countries = await _api.fetchCountries();
       if (countries.isNotEmpty && filters.countries.isEmpty) {
@@ -96,44 +106,104 @@ class AppState extends ChangeNotifier {
   /// Validate a candidate custom-source URL against the backend (uses the first
   /// selected country for currency/context).
   Future<SourceValidation> validateSource(String url) {
-    final country = filters.countries.isNotEmpty ? filters.countries.first : null;
+    final country = filters.countries.isNotEmpty
+        ? filters.countries.first
+        : null;
     return _api.validateSource(url, country: country);
   }
 
   void addCustomSource(String url) {
     final u = url.trim();
     if (u.isEmpty || filters.customSources.contains(u)) return;
-    updateFilters(filters.copyWith(customSources: [...filters.customSources, u]));
+    updateFilters(
+      filters.copyWith(customSources: [...filters.customSources, u]),
+    );
   }
 
   void removeCustomSource(String url) {
-    updateFilters(filters.copyWith(
-      customSources: filters.customSources.where((s) => s != url).toList(),
-    ));
+    updateFilters(
+      filters.copyWith(
+        customSources: filters.customSources.where((s) => s != url).toList(),
+      ),
+    );
   }
 
   Future<void> search() async {
+    final generation = ++_searchGeneration;
     if (filters.countries.isEmpty) {
       listings = [];
+      nextCursor = null;
+      total = 0;
       error = 'Select at least one country';
       notifyListeners();
       return;
     }
     loading = true;
+    mapListings = [];
     error = null;
     notifyListeners();
     try {
       final res = await _api.fetchListings(filters);
+      if (generation != _searchGeneration) return;
       listings = res.listings;
+      nextCursor = res.nextCursor;
+      total = res.total;
       degradedCountries = res.degradedCountries;
       sourceErrors = res.sourceErrors;
     } catch (e) {
+      if (generation != _searchGeneration) return;
       error = e.toString();
       listings = [];
+      nextCursor = null;
+      total = 0;
       sourceErrors = [];
     } finally {
-      loading = false;
-      notifyListeners();
+      if (generation == _searchGeneration) {
+        loading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> loadMore() async {
+    final cursor = nextCursor;
+    if (loading || loadingMore || cursor == null || cursor.isEmpty) return;
+    final generation = _searchGeneration;
+    loadingMore = true;
+    notifyListeners();
+    try {
+      final res = await _api.fetchListings(filters, cursor: cursor);
+      if (generation != _searchGeneration) return;
+      final seen = listings.map((item) => '${item.source}:${item.id}').toSet();
+      listings = [
+        ...listings,
+        ...res.listings.where((item) => seen.add('${item.source}:${item.id}')),
+      ];
+      nextCursor = res.nextCursor;
+      total = res.total;
+    } catch (e) {
+      if (generation == _searchGeneration) error = e.toString();
+    } finally {
+      if (generation == _searchGeneration) {
+        loadingMore = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> loadMapListings() async {
+    if (mapLoading || filters.countries.isEmpty) return;
+    final generation = _searchGeneration;
+    mapLoading = true;
+    notifyListeners();
+    try {
+      final points = await _api.fetchMapListings(filters);
+      if (generation == _searchGeneration) mapListings = points;
+    } finally {
+      if (generation == _searchGeneration) {
+        mapLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -147,6 +217,8 @@ class AppState extends ChangeNotifier {
     try {
       final res = await _api.fetchListings(filters, force: true);
       listings = res.listings;
+      nextCursor = res.nextCursor;
+      total = res.total;
       degradedCountries = res.degradedCountries;
       sourceErrors = res.sourceErrors;
       _startReloadAllCooldown(const Duration(seconds: 8));
@@ -175,7 +247,9 @@ class AppState extends ChangeNotifier {
   Future<Listing?> reloadListing(Listing l) async {
     final fresh = await _api.reloadListing(l);
     if (fresh != null) {
-      final i = listings.indexWhere((x) => x.id == l.id && x.source == l.source);
+      final i = listings.indexWhere(
+        (x) => x.id == l.id && x.source == l.source,
+      );
       if (i >= 0) {
         listings[i] = fresh;
         notifyListeners();

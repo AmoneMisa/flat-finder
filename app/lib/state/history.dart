@@ -36,9 +36,12 @@ class HistoryState extends ChangeNotifier {
         final list = jsonDecode(raw) as List;
         _items
           ..clear()
-          ..addAll(list.map((e) => Listing.fromJson(Map<String, dynamic>.from(e))));
+          ..addAll(
+            list.map((e) => Listing.fromJson(Map<String, dynamic>.from(e))),
+          );
         // Guard against an oversized list from an older build.
-        if (_items.length > maxItems) _items.removeRange(maxItems, _items.length);
+        if (_items.length > maxItems)
+          _items.removeRange(maxItems, _items.length);
       }
       final rawIds = p.getString(_kViewedIds);
       if (rawIds != null) {
@@ -86,7 +89,10 @@ class HistoryState extends ChangeNotifier {
   Future<void> _save() async {
     try {
       final p = await SharedPreferences.getInstance();
-      await p.setString(_kHistory, jsonEncode(_items.map((e) => e.toJson()).toList()));
+      await p.setString(
+        _kHistory,
+        jsonEncode(_items.map((e) => e.toJson()).toList()),
+      );
       await p.setString(_kViewedIds, jsonEncode(_viewedIds.toList()));
     } catch (_) {}
   }

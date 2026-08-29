@@ -38,11 +38,19 @@ export function installCatalogRoutes(app) {
             }
           }
 
-          for (const location of Object.values(locations)) {
+          for (const [cityName, location] of Object.entries(locations)) {
             location.districts = [...new Set(location.districts ?? [])]
               .sort((a, b) => a.localeCompare(b, 'uk'));
             location.metro = [...new Set(location.metro ?? [])]
               .sort((a, b) => a.localeCompare(b, 'uk'));
+
+            // Expose the selectable structured sub-city entities that the web
+            // client gets from geo-catalog. Flutter consumes these names as
+            // filters instead of treating them as arbitrary keyword search.
+            const zones = mapZonesFor(code, cityName, location.districts);
+            location.microdistricts = zones.microdistrictMarkers.map((item) => item.name);
+            location.quartals = zones.quartalMarkers.map((item) => item.name);
+            location.areas = zones.areaZones.map((item) => item.name);
           }
 
           return {

@@ -39,6 +39,26 @@ class BrandColors {
   static const radius = 10.0; // --radius
 }
 
+InputDecorationTheme _brandInputTheme(Color accent) => InputDecorationTheme(
+  filled: true,
+  fillColor: BrandColors.bgPanel,
+  hintStyle: const TextStyle(color: BrandColors.textMuted),
+  labelStyle: const TextStyle(color: BrandColors.textSoft),
+  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+  border: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(BrandColors.radius),
+    borderSide: const BorderSide(color: BrandColors.line),
+  ),
+  enabledBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(BrandColors.radius),
+    borderSide: const BorderSide(color: BrandColors.line),
+  ),
+  focusedBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(BrandColors.radius),
+    borderSide: BorderSide(color: accent, width: 2),
+  ),
+);
+
 /// Build the [ThemeData] for a named theme (see [kThemeOptions]). Kept as a
 /// free function so [main] can drive `MaterialApp.theme` from the current
 /// setting without duplicating the colour definitions.
@@ -46,57 +66,86 @@ ThemeData buildTheme(String name) {
   switch (name) {
     case 'dark':
       // The site's actual palette: navy/near-black with a single pink accent.
-      final scheme = ColorScheme.fromSeed(
-        seedColor: BrandColors.primary,
-        brightness: Brightness.dark,
-        secondary: BrandColors.secondary,
-      ).copyWith(
-        primary: BrandColors.primary,
-        secondary: BrandColors.secondary,
-        surface: BrandColors.bgPanel,
-        surfaceContainerHighest: BrandColors.bgPanel2,
-        onSurface: BrandColors.textPrimary,
-        outline: BrandColors.line,
-      );
+      final scheme =
+          ColorScheme.fromSeed(
+            seedColor: BrandColors.primary,
+            brightness: Brightness.dark,
+            secondary: BrandColors.secondary,
+          ).copyWith(
+            primary: BrandColors.primary,
+            secondary: BrandColors.secondary,
+            surface: BrandColors.bgPanel,
+            surfaceContainerHighest: BrandColors.bgPanel2,
+            onSurface: BrandColors.textPrimary,
+            outline: BrandColors.line,
+          );
       return ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
         scaffoldBackgroundColor: BrandColors.bgDeep,
         brightness: Brightness.dark,
+        inputDecorationTheme: _brandInputTheme(BrandColors.primary),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: BrandColors.bgDeep,
+          foregroundColor: BrandColors.textPrimary,
+          elevation: 0,
+        ),
+        cardTheme: CardThemeData(
+          color: BrandColors.bgPanel,
+          shape: RoundedRectangleBorder(
+            side: const BorderSide(color: BrandColors.line),
+            borderRadius: BorderRadius.circular(BrandColors.radius),
+          ),
+        ),
       );
     case 'darkBlue':
       // Same dark surfaces, blue accent instead of pink — an on-brand
       // alternative to the site's default rather than an unrelated hue.
-      final scheme = ColorScheme.fromSeed(
-        seedColor: BrandColors.accentBlue,
-        brightness: Brightness.dark,
-        secondary: BrandColors.secondary,
-      ).copyWith(
-        primary: BrandColors.accentBlue,
-        secondary: BrandColors.secondary,
-        surface: BrandColors.bgPanel,
-        surfaceContainerHighest: BrandColors.bgPanel2,
-        onSurface: BrandColors.textPrimary,
-        outline: BrandColors.line,
-      );
+      final scheme =
+          ColorScheme.fromSeed(
+            seedColor: BrandColors.accentBlue,
+            brightness: Brightness.dark,
+            secondary: BrandColors.secondary,
+          ).copyWith(
+            primary: BrandColors.accentBlue,
+            secondary: BrandColors.secondary,
+            surface: BrandColors.bgPanel,
+            surfaceContainerHighest: BrandColors.bgPanel2,
+            onSurface: BrandColors.textPrimary,
+            outline: BrandColors.line,
+          );
       return ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
         scaffoldBackgroundColor: BrandColors.bgDeep,
         brightness: Brightness.dark,
+        inputDecorationTheme: _brandInputTheme(BrandColors.accentBlue),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: BrandColors.bgDeep,
+          foregroundColor: BrandColors.textPrimary,
+          elevation: 0,
+        ),
+        cardTheme: CardThemeData(
+          color: BrandColors.bgPanel,
+          shape: RoundedRectangleBorder(
+            side: const BorderSide(color: BrandColors.line),
+            borderRadius: BorderRadius.circular(BrandColors.radius),
+          ),
+        ),
       );
     case 'light':
     default:
       // The site itself is dark-only; this is the same pink/purple brand
       // hues carried onto a light surface for users who prefer light mode.
-      final scheme = ColorScheme.fromSeed(
-        seedColor: BrandColors.primary,
-        brightness: Brightness.light,
-        secondary: BrandColors.primaryAlt,
-      ).copyWith(
-        primary: BrandColors.primary,
-        secondary: BrandColors.primaryAlt,
-      );
+      final scheme =
+          ColorScheme.fromSeed(
+            seedColor: BrandColors.primary,
+            brightness: Brightness.light,
+            secondary: BrandColors.primaryAlt,
+          ).copyWith(
+            primary: BrandColors.primary,
+            secondary: BrandColors.primaryAlt,
+          );
       return ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
@@ -114,11 +163,19 @@ class SettingsState extends ChangeNotifier {
 
   /// Currencies the user can normalize prices into. `null` keeps each listing's
   /// own currency.
-  static const currencyOptions = [null, 'EUR', 'USD', 'RON', 'UAH', 'KZT', 'UZS'];
+  static const currencyOptions = [
+    null,
+    'EUR',
+    'USD',
+    'RON',
+    'UAH',
+    'KZT',
+    'UZS',
+  ];
 
   String lang = 'en';
   String? displayCurrency; // null = native
-  String themeName = 'light'; // one of kThemeOptions
+  String themeName = 'dark'; // the web frontend is dark-first
 
   AppStrings get s => AppStrings(lang);
   Locale get locale => Locale(lang);

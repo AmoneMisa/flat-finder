@@ -50,6 +50,7 @@ class MapView extends StatefulWidget {
   final String? displayCurrency;
   final String country;
   final String city;
+
   /// Zoom level used when [center] changes (e.g. 6 for a country default,
   /// higher when a specific listing's "show on map" set the center).
   final double centerZoom;
@@ -84,7 +85,13 @@ class _MapViewState extends State<MapView> {
   Future<void> _loadZones() async {
     if (widget.country.isEmpty || widget.city.isEmpty) return;
     final zones = await _api.fetchMapZones(widget.country, widget.city);
-    if (mounted) setState(() => _zones = zones);
+    if (!mounted) return;
+    setState(() => _zones = zones);
+    // A selected city must open at city scale, not at the country's capital
+    // zoom. A focused listing keeps its explicit close zoom.
+    if (zones.cityZone != null && widget.centerZoom < 10) {
+      _controller.move(LatLng(zones.cityZone!.lat, zones.cityZone!.lng), 11.5);
+    }
   }
 
   @override
@@ -127,7 +134,9 @@ class _MapViewState extends State<MapView> {
   void _showZoneName(String name) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(name), duration: const Duration(seconds: 2)));
+      ..showSnackBar(
+        SnackBar(content: Text(name), duration: const Duration(seconds: 2)),
+      );
   }
 
   /// Listings restricted to the drawn area (once it has at least 3 points).
@@ -145,7 +154,8 @@ class _MapViewState extends State<MapView> {
     for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       final xi = poly[i].longitude, yi = poly[i].latitude;
       final xj = poly[j].longitude, yj = poly[j].latitude;
-      final intersect = ((yi > p.latitude) != (yj > p.latitude)) &&
+      final intersect =
+          ((yi > p.latitude) != (yj > p.latitude)) &&
           (p.longitude < (xj - xi) * (p.latitude - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
     }
@@ -160,7 +170,7 @@ class _MapViewState extends State<MapView> {
   List<_PlacedListing> _spread(List<Listing> located) {
     final groups = <String, List<Listing>>{};
     for (final l in located) {
-      final key = '${l.lat!.toStringAsFixed(4)},${l.lng!.toStringAsFixed(4)}';
+      final key = '${l.lat!.toStringAsFixed(3)},${l.lng!.toStringAsFixed(3)}';
       groups.putIfAbsent(key, () => []).add(l);
     }
     final out = <_PlacedListing>[];
@@ -171,13 +181,14 @@ class _MapViewState extends State<MapView> {
         continue;
       }
       // Small circle whose radius grows slightly with the crowd size.
-      final radius = 0.0004 * (1 + group.length / 12);
+      final radius = 0.00065 * (1 + group.length / 14);
       for (var i = 0; i < group.length; i++) {
         final l = group[i];
         final angle = 2 * math.pi * i / group.length;
         final dLat = radius * math.cos(angle);
         // Scale longitude by cos(lat) so the ring isn't squashed east–west.
-        final dLng = radius * math.sin(angle) / math.cos(l.lat! * math.pi / 180);
+        final dLng =
+            radius * math.sin(angle) / math.cos(l.lat! * math.pi / 180);
         out.add(_PlacedListing(l, LatLng(l.lat! + dLat, l.lng! + dLng)));
       }
     }
@@ -249,14 +260,17 @@ class _MapViewState extends State<MapView> {
                   for (final zone in _zones.districtZones)
                     for (final ring in _ringsFor(zone))
                       () {
-                        final dimmed = _selectedDistrictId != null &&
+                        final dimmed =
+                            _selectedDistrictId != null &&
                             zone.id != _selectedDistrictId;
                         final base = _parseHexColor(zone.colorHex);
                         final color = dimmed ? _desaturate(base, 0.85) : base;
                         return Polygon(
                           points: ring,
                           borderStrokeWidth: 2.5,
-                          borderColor: color.withValues(alpha: dimmed ? 0.5 : 0.9),
+                          borderColor: color.withValues(
+                            alpha: dimmed ? 0.5 : 0.9,
+                          ),
                           color: color.withValues(alpha: dimmed ? 0.08 : 0.22),
                         );
                       }(),
@@ -273,15 +287,21 @@ class _MapViewState extends State<MapView> {
                       child: IgnorePointer(
                         child: Center(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.55),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color: (_selectedDistrictId != null &&
+                                color:
+                                    (_selectedDistrictId != null &&
                                         zone.id != _selectedDistrictId)
-                                    ? _desaturate(_parseHexColor(zone.colorHex), 0.85)
-                                        .withValues(alpha: 0.55)
+                                    ? _desaturate(
+                                        _parseHexColor(zone.colorHex),
+                                        0.85,
+                                      ).withValues(alpha: 0.55)
                                     : _parseHexColor(zone.colorHex),
                               ),
                             ),
@@ -289,7 +309,8 @@ class _MapViewState extends State<MapView> {
                               zone.name,
                               style: TextStyle(
                                 color: Colors.white.withValues(
-                                  alpha: (_selectedDistrictId != null &&
+                                  alpha:
+                                      (_selectedDistrictId != null &&
                                           zone.id != _selectedDistrictId)
                                       ? 0.55
                                       : 1,
@@ -315,7 +336,10 @@ class _MapViewState extends State<MapView> {
                       height: 14,
                       child: GestureDetector(
                         onTap: () => _showZoneName(zone.name),
-                        child: _ZoneDot(colorHex: zone.colorHex, shape: BoxShape.circle),
+                        child: _ZoneDot(
+                          colorHex: zone.colorHex,
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
                 ],
@@ -330,7 +354,10 @@ class _MapViewState extends State<MapView> {
                       height: 14,
                       child: GestureDetector(
                         onTap: () => _showZoneName(zone.name),
-                        child: _ZoneDot(colorHex: zone.colorHex, shape: BoxShape.rectangle),
+                        child: _ZoneDot(
+                          colorHex: zone.colorHex,
+                          shape: BoxShape.rectangle,
+                        ),
                       ),
                     ),
                 ],
@@ -342,7 +369,8 @@ class _MapViewState extends State<MapView> {
                     points: _area,
                     borderStrokeWidth: 2,
                     borderColor: Theme.of(context).colorScheme.primary,
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                    color: Theme.of(context).colorScheme.primary
+                        .withValues(alpha: 0.15),
                   ),
                 ],
               ),
@@ -379,8 +407,8 @@ class _MapViewState extends State<MapView> {
                 for (final placed in _spread(visible))
                   Marker(
                     point: placed.point,
-                    width: 96,
-                    height: 34,
+                    width: 76,
+                    height: 32,
                     child: GestureDetector(
                       onTap: () => widget.onTapListing(placed.listing),
                       child: _PricePin(
@@ -457,7 +485,7 @@ class _MapViewState extends State<MapView> {
           Positioned(
             left: 12,
             right: 12,
-            bottom: 12,
+            bottom: 82,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -466,19 +494,23 @@ class _MapViewState extends State<MapView> {
                     _ZoneToggle(
                       label: s.t('districts'),
                       active: _showDistricts,
-                      onTap: () => setState(() => _showDistricts = !_showDistricts),
+                      onTap: () =>
+                          setState(() => _showDistricts = !_showDistricts),
                     ),
                   if (_zones.microdistrictMarkers.isNotEmpty)
                     _ZoneToggle(
                       label: s.t('microdistricts'),
                       active: _showMicrodistricts,
-                      onTap: () => setState(() => _showMicrodistricts = !_showMicrodistricts),
+                      onTap: () => setState(
+                        () => _showMicrodistricts = !_showMicrodistricts,
+                      ),
                     ),
                   if (_zones.quartalMarkers.isNotEmpty)
                     _ZoneToggle(
                       label: s.t('quartals'),
                       active: _showQuartals,
-                      onTap: () => setState(() => _showQuartals = !_showQuartals),
+                      onTap: () =>
+                          setState(() => _showQuartals = !_showQuartals),
                     ),
                   if (_zones.areaZones.isNotEmpty)
                     _ZoneToggle(
@@ -498,7 +530,11 @@ class _MapViewState extends State<MapView> {
 /// One toggle button in the layer toolbar (District/Microdistrict/Quartal/
 /// Area) — same active/inactive states as the site's `.flat-map__tool`.
 class _ZoneToggle extends StatelessWidget {
-  const _ZoneToggle({required this.label, required this.active, required this.onTap});
+  const _ZoneToggle({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -513,11 +549,11 @@ class _ZoneToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: active ? scheme.primary : Colors.black.withValues(alpha: 0.55),
+            color: active
+                ? scheme.primary
+                : Colors.black.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: active ? scheme.primary : Colors.white24,
-            ),
+            border: Border.all(color: active ? scheme.primary : Colors.white24),
           ),
           child: Text(
             label,
@@ -546,7 +582,9 @@ class _ZoneDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: _parseHexColor(colorHex),
         shape: shape,
-        borderRadius: shape == BoxShape.rectangle ? BorderRadius.circular(3) : null,
+        borderRadius: shape == BoxShape.rectangle
+            ? BorderRadius.circular(3)
+            : null,
         border: Border.all(color: Colors.white, width: 1.5),
         boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 2)],
       ),
@@ -569,9 +607,14 @@ class _PricePin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        listing.byAgency ? BrandColors.toneOrange : Theme.of(context).colorScheme.primary;
-    final label = pinPriceLabel(listing, rates: rates, displayCurrency: displayCurrency);
+    final color = listing.byAgency
+        ? BrandColors.toneOrange
+        : Theme.of(context).colorScheme.primary;
+    final label = pinPriceLabel(
+      listing,
+      rates: rates,
+      displayCurrency: displayCurrency,
+    );
     return Container(
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -584,7 +627,11 @@ class _PricePin extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
       ),
     );
   }

@@ -32,10 +32,12 @@ _DealTone? _dealTone(Listing l) {
 }
 
 String _dealBadgeLabel(AppStrings s, Listing l) {
-  if (l.dealType == 'shortRent') return s.t('shortTerm');
-  if (l.roomOnly) return s.t('roomOnly');
-  if (l.dealType == 'sale') return s.t('sale');
-  if (l.dealType == 'longRent') return s.t('longTerm');
+  // Keep the same precedence and wording as the web cards. A daily room
+  // listing remains short-term; otherwise roomOnly is its own transaction.
+  if (l.dealType == 'shortRent') return s.t('cardDailyRent');
+  if (l.roomOnly) return s.t('cardRoomRent');
+  if (l.dealType == 'sale') return s.t('cardSale');
+  if (l.dealType == 'longRent') return s.t('cardRent');
   return '';
 }
 
@@ -64,23 +66,68 @@ class ListingCard extends StatelessWidget {
     final isFav = favorites.isFavorite(listing.id);
     final isViewed = history.isViewed(listing.id);
     final priceState = listingPriceTone(listing, appState.rates);
+    final mobile = !grid && MediaQuery.sizeOf(context).width < 700;
 
     final dealTone = _dealTone(listing);
     final photo = Stack(
       fit: StackFit.expand,
       children: [
         _CardPhotoCarousel(listing: listing),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: mobile
+                    ? const LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        stops: [0.52, 0.78, 1],
+                        colors: [
+                          Colors.transparent,
+                          Color(0x660B102A),
+                          Color(0xFF0B102A),
+                        ],
+                      )
+                    : const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: [0.42, 0.76, 1],
+                        colors: [
+                          Colors.transparent,
+                          Color(0x660B102A),
+                          Color(0xFF0B102A),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ),
         if (dealTone != null)
           Positioned(
             top: 8,
             left: 8,
-            child: _DealBadge(tone: dealTone, label: _dealBadgeLabel(s, listing)),
+            child: _DealBadge(
+              tone: dealTone,
+              label: _dealBadgeLabel(s, listing),
+            ),
           ),
         if (listing.marketComparison?.goodPrice == true)
           Positioned(
             left: 8,
             bottom: 8,
-            child: _GoodPriceBadge(text: _goodPriceLabel(s)),
+            child: Tooltip(
+              message: _goodPriceTitle(listing, s),
+              child: _GoodPriceBadge(text: s.t('goodPrice')),
+            ),
+          ),
+        if (listing.potentiallyUnsafe)
+          Positioned(
+            left: 8,
+            bottom: listing.marketComparison?.goodPrice == true ? 40 : 8,
+            child: Tooltip(
+              message: s.t('potentiallyUnsafeHint'),
+              child: _WarningBadge(text: s.t('potentiallyUnsafe')),
+            ),
           ),
         Positioned(
           top: 8,
@@ -114,30 +161,64 @@ class ListingCard extends StatelessWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      elevation: isFav ? 8 : null,
-      shadowColor: isFav ? Colors.pink : null,
+      elevation: isFav ? 5 : 0,
+      shadowColor: isFav ? const Color(0x66E0679A) : Colors.transparent,
+      color: const Color(0xFF0B102A),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: listing.potentiallyUnsafe
+              ? const Color(0x8FF2B86B)
+              : isFav
+              ? const Color(0x85E0679A)
+              : Theme.of(context).dividerColor.withValues(alpha: .65),
+        ),
+      ),
       margin: grid
           ? const EdgeInsets.all(6)
-          : const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          : const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            grid
-                ? Expanded(child: photo)
-                : AspectRatio(aspectRatio: 16 / 8, child: photo),
-            _meta(
-              theme,
-              s,
-              filters: appState.filters,
-              rates: appState.rates,
-              displayCurrency: settings.displayCurrency,
-              priceState: priceState,
-              compact: grid,
-            ),
-          ],
-        ),
+        child: mobile
+            ? SizedBox(
+                height: 148,
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(width: constraints.maxWidth * .42, child: photo),
+                      Expanded(
+                        child: _meta(
+                          theme,
+                          s,
+                          filters: appState.filters,
+                          rates: appState.rates,
+                          displayCurrency: settings.displayCurrency,
+                          priceState: priceState,
+                          compact: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  grid
+                      ? Expanded(child: photo)
+                      : AspectRatio(aspectRatio: 1.5, child: photo),
+                  _meta(
+                    theme,
+                    s,
+                    filters: appState.filters,
+                    rates: appState.rates,
+                    displayCurrency: settings.displayCurrency,
+                    priceState: priceState,
+                    compact: grid,
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -157,7 +238,9 @@ class ListingCard extends StatelessWidget {
     final source = sourceLabel(listing.source, s);
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, compact ? 8 : 10, 12, compact ? 8 : 10),
+      padding: compact
+          ? const EdgeInsets.fromLTRB(6, 7, 8, 7)
+          : const EdgeInsets.fromLTRB(13, 11, 13, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,46 +251,61 @@ class ListingCard extends StatelessWidget {
             displayCurrency: displayCurrency,
             state: priceState,
             s: s,
+            compact: compact,
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: compact ? 2 : 6),
           Text(
             listing.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontSize: compact ? 11.5 : 14,
+              height: compact ? 1.25 : 1.36,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: compact ? 1 : 3),
           Text(
             _detailsLabel(s),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.hintColor,
+              fontSize: compact ? 9.5 : 12,
+              height: 1.25,
+            ),
           ),
           if (badges.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            SizedBox(height: compact ? 3 : 6),
             SizedBox(
-              height: 24,
+              height: compact ? 20 : 27,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: badges.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 5),
-                itemBuilder: (_, i) => _TagChip(text: badges[i]),
+                itemBuilder: (_, i) =>
+                    _TagChip(text: badges[i], compact: compact),
               ),
             ),
           ],
-          const SizedBox(height: 9),
-          Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.35)),
-          const SizedBox(height: 8),
+          SizedBox(height: compact ? 3 : 8),
           Row(
             children: [
-              Icon(Icons.location_on_outlined, size: 14, color: theme.hintColor),
+              Icon(
+                Icons.location_on_outlined,
+                size: compact ? 10 : 14,
+                color: theme.hintColor,
+              ),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   location,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.hintColor,
+                    fontSize: compact ? 8.5 : 11.5,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -215,7 +313,10 @@ class ListingCard extends StatelessWidget {
                 date == null ? source : '$source · $date',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.hintColor,
+                  fontSize: compact ? 8.5 : 11.5,
+                ),
               ),
             ],
           ),
@@ -231,7 +332,9 @@ class ListingCard extends StatelessWidget {
     }
     if (listing.areaSqm != null) {
       final area = listing.areaSqm!;
-      final value = area == area.roundToDouble() ? area.toInt().toString() : area.toString();
+      final value = area == area.roundToDouble()
+          ? area.toInt().toString()
+          : area.toString();
       parts.add('$value m²');
     }
     final floor = floorLabel(listing, s);
@@ -249,34 +352,67 @@ class ListingCard extends StatelessWidget {
 
   List<String> _contextBadges(Filters filters, AppStrings s) {
     final result = <String>[];
-    final geoFiltered = filters.district.trim().isNotEmpty || filters.metro.trim().isNotEmpty;
+    final geoFiltered =
+        filters.district.trim().isNotEmpty ||
+        filters.metro.trim().isNotEmpty ||
+        filters.microdistrict.trim().isNotEmpty ||
+        filters.quartal.trim().isNotEmpty ||
+        filters.area.trim().isNotEmpty;
+
+    void add(String value) {
+      final label = value.trim();
+      if (label.isEmpty || result.contains(label)) return;
+      result.add(label);
+    }
 
     // Do not repeat a seller value that the user has already selected in filters.
     if (filters.agency == AgencyFilter.any) {
-      result.add(listing.byAgency ? s.t('agency') : s.t('owner'));
+      add(listing.byAgency ? s.t('agency') : s.t('owner'));
     } else if (geoFiltered && listing.rooms != null) {
       // Once a geo facet is fixed by filters, room count is more useful than
       // repeating the selected district/metro on every card.
-      result.add(s.t('roomsN', {'n': '${listing.rooms}'}));
+      add(s.t('roomsN', {'n': '${listing.rooms}'}));
     } else {
       // Seller is already fixed: use the most useful available geo context.
       final district = listing.district?.trim();
       final metro = listing.metro?.trim();
       if (district != null && district.isNotEmpty) {
-        result.add(district);
+        add(district);
       } else if (metro != null && metro.isNotEmpty) {
-        result.add(metro);
+        add(metro);
       } else if (listing.nearby.isNotEmpty) {
-        result.add(s.nearbyLabel(listing.nearby.first));
+        add(s.nearbyLabel(listing.nearby.first));
       }
     }
 
-    // Keep cards compact: add at most two useful, non-duplicating listing tags.
+    if (listing.commission == false) {
+      add(s.t('badgeNoCommission'));
+    } else if (listing.commissionPercent != null) {
+      add(s.t('badgeCommissionPercent', {'n': '${listing.commissionPercent}'}));
+    } else if (listing.commission == true) {
+      add(s.t('badgeCommission'));
+    }
+    if (listing.newBuilding == true) add(s.t('badgeNew'));
+    if (listing.furnished == true) add(s.t('badgeFurnished'));
+    if (listing.airConditioner == true) add(s.t('badgeAC'));
+    if (listing.balcony == true) add(s.t('badgeBalcony'));
+    if (listing.parking == true) add(s.t('badgeParking'));
+    if (listing.elevator == true) add(s.t('badgeElevator'));
+    if (listing.internet == true) add(s.t('badgeInternet'));
+    if (listing.negotiable == true) add(s.t('badgeNegotiable'));
+    if (listing.petsAllowed == true) add(s.t('badgePet'));
+    if (listing.childrenAllowed == true) add(s.t('badgeChildren'));
+    if (listing.communalSeparated == false) add(s.t('badgeUtilIncl'));
+    if (listing.deposit == true) add(s.t('badgeDeposit'));
+    if (listing.audience == 'family') add(s.t('badgeFamily'));
+    if (listing.audience == 'women') add(s.t('badgeWomen'));
+    if (listing.audience == 'men') add(s.t('badgeMen'));
+
+    // Append normalized source tags after the structured badges.
     for (final raw in listing.tags) {
-      if (result.length >= 3) break;
       final label = tagLabel(raw, s).trim();
       if (label.isEmpty || _isRedundantTag(label, s, result)) continue;
-      result.add(label);
+      add(label);
     }
     return result;
   }
@@ -286,12 +422,14 @@ class ListingCard extends StatelessWidget {
     final blocked = <String>{
       s.t('owner').toLowerCase(),
       s.t('agency').toLowerCase(),
-      if (listing.rooms != null) s.t('roomsN', {'n': '${listing.rooms}'}).toLowerCase(),
+      if (listing.rooms != null)
+        s.t('roomsN', {'n': '${listing.rooms}'}).toLowerCase(),
       listing.city.toLowerCase(),
       if (listing.district != null) listing.district!.toLowerCase(),
       if (listing.metro != null) listing.metro!.toLowerCase(),
     };
-    return blocked.contains(lower) || current.any((e) => e.toLowerCase() == lower);
+    return blocked.contains(lower) ||
+        current.any((e) => e.toLowerCase() == lower);
   }
 }
 
@@ -302,6 +440,7 @@ class _PriceLine extends StatelessWidget {
     required this.displayCurrency,
     required this.state,
     required this.s,
+    this.compact = false,
   });
 
   final Listing listing;
@@ -309,6 +448,7 @@ class _PriceLine extends StatelessWidget {
   final String? displayCurrency;
   final PriceTone state;
   final AppStrings s;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -317,12 +457,17 @@ class _PriceLine extends StatelessWidget {
       return Text(
         s.t('priceOnRequest'),
         maxLines: 1,
-        style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w800),
+        style: TextStyle(
+          color: color,
+          fontSize: compact ? 14 : 18,
+          fontWeight: FontWeight.w800,
+        ),
       );
     }
 
     final f = NumberFormat.decimalPattern();
-    final native = '${f.format(listing.price!.round())} ${listing.currency}'.trim();
+    final native = '${f.format(listing.price!.round())} ${listing.currency}'
+        .trim();
     String? secondary;
     final target = displayCurrency;
     final fromRate = rates[listing.currency];
@@ -346,7 +491,7 @@ class _PriceLine extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: color,
-              fontSize: 18,
+              fontSize: compact ? 14 : 18,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -361,9 +506,10 @@ class _PriceLine extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).hintColor,
-                    fontWeight: FontWeight.w500,
-                  ),
+                color: Theme.of(context).hintColor,
+                fontSize: compact ? 9.5 : 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -372,7 +518,18 @@ class _PriceLine extends StatelessWidget {
   }
 }
 
-String _goodPriceLabel(AppStrings s) => s.lang == 'ru' ? 'Хорошая цена' : 'Good price';
+String _goodPriceTitle(Listing listing, AppStrings s) {
+  final comparison = listing.marketComparison;
+  final median = comparison?.medianUsd;
+  if (median == null) return s.t('goodPrice');
+  final medianLabel = median == median.roundToDouble()
+      ? median.toInt().toString()
+      : median.toStringAsFixed(2);
+  return s.t('goodPriceCompared', {
+    'count': '${comparison?.comparableCount ?? 0}',
+    'median': medianLabel,
+  });
+}
 
 class _GoodPriceBadge extends StatelessWidget {
   const _GoodPriceBadge({required this.text});
@@ -385,13 +542,15 @@ class _GoodPriceBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: BrandColors.toneGreen.withValues(alpha: 0.16),
-        border: Border.all(color: BrandColors.toneGreen.withValues(alpha: 0.75)),
+        border: Border.all(
+          color: BrandColors.toneGreen.withValues(alpha: 0.75),
+        ),
         borderRadius: BorderRadius.circular(7),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.savings_outlined, color: tint, size: 12),
+          Icon(Icons.trending_down, color: tint, size: 12),
           const SizedBox(width: 4),
           Text(
             text,
@@ -405,6 +564,40 @@ class _GoodPriceBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+class _WarningBadge extends StatelessWidget {
+  const _WarningBadge({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: BrandColors.toneOrange.withValues(alpha: .18),
+      border: Border.all(color: BrandColors.toneOrange.withValues(alpha: .75)),
+      borderRadius: BorderRadius.circular(7),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Icons.warning_amber_rounded,
+          color: BrandColors.toneOrange,
+          size: 12,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: const TextStyle(
+            color: BrandColors.toneOrange,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _CardPhotoCarousel extends StatefulWidget {
@@ -432,9 +625,9 @@ class _CardPhotoCarouselState extends State<_CardPhotoCarousel> {
   }
 
   Widget get _placeholder => const ColoredBox(
-        color: Color(0x11000000),
-        child: Icon(Icons.home_outlined, size: 56, color: Colors.black26),
-      );
+    color: Color(0x11000000),
+    child: Icon(Icons.home_outlined, size: 56, color: Colors.black26),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -467,7 +660,11 @@ class _CardPhotoCarouselState extends State<_CardPhotoCarousel> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.photo_library_outlined, color: Colors.white, size: 11),
+                  const Icon(
+                    Icons.photo_library_outlined,
+                    color: Colors.white,
+                    size: 11,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     '${_index + 1}/${photos.length}',
@@ -571,7 +768,11 @@ class _DealBadge extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -591,31 +792,40 @@ class _ViewedIcon extends StatelessWidget {
           color: Colors.black54,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(Icons.visibility_outlined, color: Colors.white70, size: 17),
+        child: const Icon(
+          Icons.visibility_outlined,
+          color: Colors.white70,
+          size: 17,
+        ),
       ),
     );
   }
 }
 
 class _TagChip extends StatelessWidget {
-  const _TagChip({required this.text});
+  const _TagChip({required this.text, this.compact = false});
   final String text;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 5 : 7,
+        vertical: compact ? 3 : 4,
+      ),
       decoration: BoxDecoration(
         color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: .06)),
+        borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
         text,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontSize: 10,
+          fontSize: compact ? 8.5 : 10.5,
           fontWeight: FontWeight.w600,
           color: scheme.onPrimaryContainer,
         ),

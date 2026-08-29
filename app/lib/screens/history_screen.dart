@@ -12,9 +12,9 @@ class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
 
   void _open(BuildContext context, Listing l) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)));
   }
 
   @override
@@ -58,7 +58,9 @@ class HistoryScreen extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 24, top: 4),
                     itemCount: items.length,
                     itemBuilder: (_, i) => ListingCard(
-                        listing: items[i], onTap: () => _open(context, items[i])),
+                      listing: items[i],
+                      onTap: () => _open(context, items[i]),
+                    ),
                   );
                 }
                 return GridView.builder(
@@ -71,9 +73,10 @@ class HistoryScreen extends StatelessWidget {
                   ),
                   itemCount: items.length,
                   itemBuilder: (_, i) => ListingCard(
-                      listing: items[i],
-                      grid: true,
-                      onTap: () => _open(context, items[i])),
+                    listing: items[i],
+                    grid: true,
+                    onTap: () => _open(context, items[i]),
+                  ),
                 );
               },
             ),

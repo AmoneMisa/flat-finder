@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flat_finder/models/filters.dart';
 import 'package:flat_finder/models/listing.dart';
+import 'package:flat_finder/models/search_statistics.dart';
+import 'package:flat_finder/utils/format.dart';
 
 void main() {
   test('filters preserve user selections across JSON round-trip', () {
@@ -25,7 +27,7 @@ void main() {
 
     final restored = Filters.fromJson(original.toJson());
 
-    expect(restored.countries, {'UA', 'UZ'});
+    expect(restored.countries, {'UA'});
     expect(restored.sources, {'telegram'});
     expect(restored.propertyType, PropertyType.flat);
     expect(restored.dealType, DealType.longRent);
@@ -72,6 +74,73 @@ void main() {
       'nearby': ['рынок', 'больница', '#юнусабад -19', 'Vosiq School'],
     });
 
-    expect(listing.nearby, ['Рынок', 'Больница', '#Юнусабад -19', 'Vosiq School']);
+    expect(listing.nearby, [
+      'Рынок',
+      'Больница',
+      '#Юнусабад -19',
+      'Vosiq School',
+    ]);
+  });
+
+  test('map pin keeps half-thousands instead of rounding 2500 to 3K', () {
+    final listing = Listing.fromJson({
+      'id': '2500',
+      'price': 2500,
+      'currency': 'UAH',
+    });
+
+    expect(pinPriceLabel(listing), '₴2.5K');
+  });
+
+  test('country metadata parses structured sub-city filter options', () {
+    final country = Country.fromJson({
+      'code': 'UZ',
+      'name': 'Uzbekistan',
+      'locations': {
+        'Tashkent': {
+          'districts': ['Chilanzar'],
+          'microdistricts': ['Chilanzar-10'],
+          'quartals': ['Beshagach'],
+          'areas': ['Tashkent City'],
+        },
+      },
+    });
+
+    expect(country.locations['Tashkent']!.microdistricts, ['Chilanzar-10']);
+    expect(country.locations['Tashkent']!.quartals, ['Beshagach']);
+    expect(country.locations['Tashkent']!.areas, ['Tashkent City']);
+  });
+
+  test('statistics parse the complete web graphics contract', () {
+    final stats = SearchStatistics.fromJson({
+      'total': 10,
+      'rawTotal': 14,
+      'priceBandsByDeal': {
+        'longRent': [
+          {'key': 'green', 'count': 3},
+        ],
+      },
+      'priceBandSamplesByDeal': {'longRent': 9},
+      'activity': [
+        {'date': '2026-08-29', 'count': 4},
+      ],
+      'quality': {'duplicatesRejected': 4, 'suspectedFake': 1},
+      'geographiesByDeal': {
+        'longRent': {
+          'district': [
+            {'label': 'Chilanzar', 'count': 5, 'priceCount': 4},
+          ],
+        },
+      },
+    });
+
+    expect(stats.rawTotal, 14);
+    expect(stats.priceBandsByDeal['longRent']!.single.count, 3);
+    expect(stats.activity.single.count, 4);
+    expect(stats.quality.duplicatesRejected, 4);
+    expect(
+      stats.geographiesByDeal['longRent']!['district']!.single.label,
+      'Chilanzar',
+    );
   });
 }

@@ -39,16 +39,26 @@ class _HomeScreenState extends State<HomeScreen> {
   _ViewTab _tab = _ViewTab.all;
   AppLinks? _appLinks;
   StreamSubscription<Uri>? _linkSub;
+  final ScrollController _resultsScroll = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _initDeepLinks();
+    _resultsScroll.addListener(_loadMoreNearEnd);
+  }
+
+  void _loadMoreNearEnd() {
+    if (!_resultsScroll.hasClients) return;
+    if (_resultsScroll.position.extentAfter < 600) {
+      context.read<AppState>().loadMore();
+    }
   }
 
   @override
   void dispose() {
     _linkSub?.cancel();
+    _resultsScroll.dispose();
     super.dispose();
   }
 
@@ -101,30 +111,42 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: false,
-      builder: (_) => FilterSheet(initial: state.filters, countries: state.countries),
+      builder: (_) => FilterSheet(
+        initial: state.filters,
+        countries: state.countries,
+        onChanged: (filters) async {
+          state.updateFilters(filters);
+          await state.search();
+          if (_mapMode) state.loadMapListings();
+        },
+      ),
     );
     if (result != null) {
       state.updateFilters(result);
       await state.search();
+      if (_mapMode) state.loadMapListings();
     }
   }
 
+  Future<void> _applyCompactFilters(AppState state, Filters filters) async {
+    state.updateFilters(filters);
+    await state.search();
+    if (_mapMode) state.loadMapListings();
+  }
+
   void _openSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const SettingsScreen()),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
   }
 
   void _openFavorites() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const FavoritesScreen()),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const FavoritesScreen()));
   }
 
   void _openHistory() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const HistoryScreen()),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const HistoryScreen()));
   }
 
   final ApiService _api = ApiService();
@@ -139,18 +161,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openListing(Listing l) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)));
   }
 
-  void _showMapPreview(Listing l) {
+  void _showMapPreview(Listing l) async {
+    Listing? full;
+    for (final item in context.read<AppState>().listings) {
+      if (item.id == l.id && item.source == l.source) {
+        full = item;
+        break;
+      }
+    }
+    full ??= await _api.reloadListing(l) ?? l;
+    if (!mounted) return;
+    final resolved = full;
     showModalBottomSheet(
       context: context,
-      builder: (_) => ListingCard(listing: l, onTap: () {
-        Navigator.pop(context);
-        _openListing(l);
-      }),
+      builder: (_) => ListingCard(
+        listing: resolved,
+        onTap: () {
+          Navigator.pop(context);
+          _openListing(resolved);
+        },
+      ),
     );
   }
 
@@ -160,7 +195,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return LatLng(_focusListing!.lat!, _focusListing!.lng!);
     }
     // Center on the first selected country's capital.
-    final code = state.filters.countries.isNotEmpty ? state.filters.countries.first : 'RO';
+    final code = state.filters.countries.isNotEmpty
+        ? state.filters.countries.first
+        : 'RO';
     final c = state.countryByCode(code);
     if (c != null) return LatLng(c.centerLat, c.centerLng);
     return const LatLng(45, 30);
@@ -198,38 +235,74 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: _mapMode ? settings.t('listView') : settings.t('mapView'),
             icon: Icon(_mapMode ? Icons.view_list : Icons.map_outlined),
-            onPressed: () => setState(() => _mapMode = !_mapMode),
-          ),
-          IconButton(
-            tooltip: settings.t('history'),
-            icon: const Icon(Icons.history),
-            onPressed: _openHistory,
-          ),
-          IconButton(
-            tooltip: settings.t('favorites'),
-            icon: const Icon(Icons.favorite_border),
-            onPressed: _openFavorites,
-          ),
-          IconButton(
-            tooltip: settings.t('statistics'),
-            icon: const Icon(Icons.bar_chart_outlined),
-            onPressed: () => _openStats(state),
+            onPressed: () {
+              setState(() => _mapMode = !_mapMode);
+              if (_mapMode) state.loadMapListings();
+            },
           ),
           IconButton(
             tooltip: settings.t('filters'),
             icon: const Icon(Icons.tune),
             onPressed: () => _openFilters(state),
           ),
-          IconButton(
-            tooltip: settings.t('settings'),
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: _openSettings,
+          PopupMenuButton<String>(
+            tooltip: settings.t('more'),
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              switch (value) {
+                case 'history':
+                  _openHistory();
+                case 'favorites':
+                  _openFavorites();
+                case 'statistics':
+                  _openStats(state);
+                case 'settings':
+                  _openSettings();
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'history',
+                child: ListTile(
+                  leading: const Icon(Icons.history),
+                  title: Text(settings.t('history')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'favorites',
+                child: ListTile(
+                  leading: const Icon(Icons.favorite_border),
+                  title: Text(settings.t('favorites')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'statistics',
+                child: ListTile(
+                  leading: const Icon(Icons.bar_chart_outlined),
+                  title: Text(settings.t('statistics')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: const Icon(Icons.settings_outlined),
+                  title: Text(settings.t('settings')),
+                ),
+              ),
+            ],
           ),
         ],
       ),
       body: Column(
         children: [
           _SummaryBar(state: state, settings: settings),
+          if (MediaQuery.sizeOf(context).width < 700)
+            _MobilePrimaryFilters(
+              filters: state.filters,
+              countries: state.countries,
+              settings: settings,
+              onChanged: (filters) => _applyCompactFilters(state, filters),
+            ),
           _ViewTabBar(
             current: _tab,
             settings: settings,
@@ -237,7 +310,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           if (state.degradedCountries.isNotEmpty)
             _Banner(
-              text: settings.t('demoBanner', {'countries': state.degradedCountries.join(', ')}),
+              text: settings.t('demoBanner', {
+                'countries': state.degradedCountries.join(', '),
+              }),
             ),
           if (state.sourceErrors.isNotEmpty)
             _SourceErrorBanner(errors: state.sourceErrors, settings: settings),
@@ -249,16 +324,25 @@ class _HomeScreenState extends State<HomeScreen> {
         icon: const Icon(Icons.tune),
         label: Text(settings.t('filters')),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
   Widget _body(
-      AppState state, SettingsState settings, FavoritesState favorites, HistoryState history) {
+    AppState state,
+    SettingsState settings,
+    FavoritesState favorites,
+    HistoryState history,
+  ) {
     if (state.loading && state.listings.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (state.error != null && state.listings.isEmpty) {
-      return _ErrorView(message: state.error!, onRetry: state.search, settings: settings);
+      return _ErrorView(
+        message: state.error!,
+        onRetry: state.search,
+        settings: settings,
+      );
     }
 
     final center = _centerFor(state);
@@ -281,13 +365,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (_mapMode) {
       return MapView(
-        listings: listings,
+        listings: state.mapListings.isNotEmpty ? state.mapListings : listings,
         center: center,
         centerZoom: _focusListing?.hasLocation == true ? 15 : 6,
         onTapListing: _showMapPreview,
         rates: state.rates,
         displayCurrency: settings.displayCurrency,
-        country: state.filters.countries.isNotEmpty ? state.filters.countries.first : '',
+        country: state.filters.countries.isNotEmpty
+            ? state.filters.countries.first
+            : '',
         city: state.filters.city,
       );
     }
@@ -300,16 +386,27 @@ class _HomeScreenState extends State<HomeScreen> {
             // columns lay the cards out in a responsive grid.
             if (columns == 1) {
               return ListView.builder(
+                controller: _resultsScroll,
                 padding: const EdgeInsets.only(bottom: 90, top: 4),
-                itemCount: listings.length,
+                itemCount: listings.length + (state.loadingMore ? 1 : 0),
                 itemBuilder: (_, i) {
+                  if (i == listings.length) {
+                    return const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
                   final l = listings[i];
                   return ListingCard(
-                      listing: l, onTap: () => _openListing(l), onShowOnMap: () => _showOnMap(l));
+                    listing: l,
+                    onTap: () => _openListing(l),
+                    onShowOnMap: () => _showOnMap(l),
+                  );
                 },
               );
             }
             return GridView.builder(
+              controller: _resultsScroll,
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 90),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
@@ -317,14 +414,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisSpacing: 2,
                 crossAxisSpacing: 2,
               ),
-              itemCount: listings.length,
+              itemCount: listings.length + (state.loadingMore ? 1 : 0),
               itemBuilder: (_, i) {
+                if (i == listings.length) {
+                  return const Center(child: CircularProgressIndicator());
+                }
                 final l = listings[i];
                 return ListingCard(
-                    listing: l,
-                    grid: true,
-                    onTap: () => _openListing(l),
-                    onShowOnMap: () => _showOnMap(l));
+                  listing: l,
+                  grid: true,
+                  onTap: () => _openListing(l),
+                  onShowOnMap: () => _showOnMap(l),
+                );
               },
             );
           },
@@ -342,7 +443,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Restrict the visible listings to the selected quick view (on top of the
   /// active filters/search). "Fresh" keeps only posts from the last 24 hours.
-  List<Listing> _applyTab(List<Listing> listings, FavoritesState fav, HistoryState hist) {
+  List<Listing> _applyTab(
+    List<Listing> listings,
+    FavoritesState fav,
+    HistoryState hist,
+  ) {
     switch (_tab) {
       case _ViewTab.all:
         return listings;
@@ -351,19 +456,24 @@ class _HomeScreenState extends State<HomeScreen> {
       case _ViewTab.viewed:
         return listings.where((l) => hist.isViewed(l.id)).toList();
       case _ViewTab.fresh:
-        final cutoff = DateTime.now().toUtc().subtract(const Duration(hours: 24));
+        final cutoff = DateTime.now().toUtc().subtract(
+          const Duration(hours: 24),
+        );
         return listings
-            .where((l) => l.createdAt != null && l.createdAt!.toUtc().isAfter(cutoff))
+            .where(
+              (l) =>
+                  l.createdAt != null && l.createdAt!.toUtc().isAfter(cutoff),
+            )
             .toList();
     }
   }
 
   String _emptyLabel(SettingsState settings) => switch (_tab) {
-        _ViewTab.favorites => settings.t('noFavoritesHere'),
-        _ViewTab.viewed => settings.t('noViewedHere'),
-        _ViewTab.fresh => settings.t('noFreshHere'),
-        _ViewTab.all => settings.t('noListings'),
-      };
+    _ViewTab.favorites => settings.t('noFavoritesHere'),
+    _ViewTab.viewed => settings.t('noViewedHere'),
+    _ViewTab.fresh => settings.t('noFreshHere'),
+    _ViewTab.all => settings.t('noListings'),
+  };
 
   /// Column count from the available width: 1 on phones, up to 4 on wide
   /// desktop windows.
@@ -372,6 +482,266 @@ class _HomeScreenState extends State<HomeScreen> {
     if (width >= 1100) return 3;
     if (width >= 700) return 2;
     return 1;
+  }
+}
+
+/// The primary web filters stay visible on phones. Advanced filters remain in
+/// the bottom sheet, but the common search path never requires opening it.
+class _MobilePrimaryFilters extends StatefulWidget {
+  const _MobilePrimaryFilters({
+    required this.filters,
+    required this.countries,
+    required this.settings,
+    required this.onChanged,
+  });
+
+  final Filters filters;
+  final List<Country> countries;
+  final SettingsState settings;
+  final ValueChanged<Filters> onChanged;
+
+  @override
+  State<_MobilePrimaryFilters> createState() => _MobilePrimaryFiltersState();
+}
+
+class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
+  late final TextEditingController _query;
+  late final TextEditingController _priceMin;
+  late final TextEditingController _priceMax;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _query = TextEditingController(text: widget.filters.query);
+    _priceMin = TextEditingController(
+      text: _numberText(widget.filters.priceMin),
+    );
+    _priceMax = TextEditingController(
+      text: _numberText(widget.filters.priceMax),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobilePrimaryFilters oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync(_query, widget.filters.query);
+    _sync(_priceMin, _numberText(widget.filters.priceMin));
+    _sync(_priceMax, _numberText(widget.filters.priceMax));
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _query.dispose();
+    _priceMin.dispose();
+    _priceMax.dispose();
+    super.dispose();
+  }
+
+  static String _numberText(num? value) => value?.toString() ?? '';
+
+  void _sync(TextEditingController controller, String value) {
+    if (controller.text == value) return;
+    controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
+  void _schedule(Filters filters, {bool immediate = false}) {
+    _debounce?.cancel();
+    if (immediate) {
+      widget.onChanged(filters);
+      return;
+    }
+    _debounce = Timer(
+      const Duration(milliseconds: 300),
+      () => widget.onChanged(filters),
+    );
+  }
+
+  Filters _withTextValues() {
+    final min = num.tryParse(_priceMin.text.trim());
+    final max = num.tryParse(_priceMax.text.trim());
+    return widget.filters.copyWith(
+      query: _query.text.trim(),
+      priceMin: min,
+      priceMax: max,
+      clearPriceMin: min == null,
+      clearPriceMax: max == null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.settings;
+    final selectedCountry = widget.filters.countries.isNotEmpty
+        ? widget.filters.countries.first
+        : null;
+    Country? country;
+    for (final item in widget.countries) {
+      if (item.code == selectedCountry) country = item;
+    }
+    final cities = country?.cities ?? const <String>[];
+    final selectedCity = cities.contains(widget.filters.city)
+        ? widget.filters.city
+        : null;
+
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        child: Column(
+          children: [
+            TextField(
+              controller: _query,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                labelText: s.t('keyword'),
+                hintText: s.t('keywordHint'),
+              ),
+              onChanged: (_) => _schedule(_withTextValues()),
+              onSubmitted: (_) => _schedule(_withTextValues(), immediate: true),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: selectedCountry,
+                    isExpanded: true,
+                    decoration: InputDecoration(labelText: s.t('country')),
+                    items: widget.countries
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item.code,
+                            child: Text(
+                              '${countryFlags[item.code] ?? ''} ${s.countryName(item.code, item.name)}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      _schedule(
+                        _withTextValues().copyWith(
+                          countries: {value},
+                          city: '',
+                          district: '',
+                          microdistrict: '',
+                          quartal: '',
+                          area: '',
+                          metro: '',
+                        ),
+                        immediate: true,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: selectedCity,
+                    isExpanded: true,
+                    decoration: InputDecoration(labelText: s.t('city')),
+                    hint: Text(s.t('anyCity')),
+                    items: cities
+                        .map(
+                          (city) => DropdownMenuItem(
+                            value: city,
+                            child: Text(city, overflow: TextOverflow.ellipsis),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => _schedule(
+                      _withTextValues().copyWith(
+                        city: value ?? '',
+                        district: '',
+                        microdistrict: '',
+                        quartal: '',
+                        area: '',
+                        metro: '',
+                      ),
+                      immediate: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<AgencyFilter>(
+                    value: widget.filters.agency,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: s.t('realEstateAgency'),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: AgencyFilter.any,
+                        child: Text(s.t('any')),
+                      ),
+                      DropdownMenuItem(
+                        value: AgencyFilter.owner,
+                        child: Text(s.t('owner')),
+                      ),
+                      DropdownMenuItem(
+                        value: AgencyFilter.agency,
+                        child: Text(s.t('agency')),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      _schedule(
+                        _withTextValues().copyWith(agency: value),
+                        immediate: true,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _priceMin,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: s.t('min'),
+                            hintText: s.t('minPlaceholder'),
+                          ),
+                          onChanged: (_) => _schedule(_withTextValues()),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: TextField(
+                          controller: _priceMax,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: s.t('max'),
+                            hintText: s.t('maxPlaceholder'),
+                          ),
+                          onChanged: (_) => _schedule(_withTextValues()),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -440,7 +810,11 @@ class _SummaryBar extends StatelessWidget {
     if (f.sources.isNotEmpty && f.sources.length < kAllSources.length) {
       parts.add(f.sources.map((s) => kSourceLabels[s] ?? s).join('/'));
     }
-    parts.add(settings.t('results', {'n': '${state.listings.length}'}));
+    parts.add(
+      settings.t('results', {
+        'n': '${state.total > 0 ? state.total : state.listings.length}',
+      }),
+    );
     return Container(
       width: double.infinity,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -495,7 +869,11 @@ class _SourceErrorBanner extends StatelessWidget {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-          leading: Icon(Icons.error_outline, size: 20, color: Colors.red.shade700),
+          leading: Icon(
+            Icons.error_outline,
+            size: 20,
+            color: Colors.red.shade700,
+          ),
           title: Text(
             '${settings.t('sourceErrorsTitle')} (${errors.length})',
             style: TextStyle(fontSize: 13, color: Colors.red.shade900),
@@ -507,8 +885,10 @@ class _SourceErrorBanner extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(_label(e),
-                      style: TextStyle(fontSize: 12, color: Colors.red.shade900)),
+                  child: Text(
+                    _label(e),
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade900),
+                  ),
                 ),
               ),
           ],
@@ -519,7 +899,11 @@ class _SourceErrorBanner extends StatelessWidget {
 }
 
 class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry, required this.settings});
+  const _ErrorView({
+    required this.message,
+    required this.onRetry,
+    required this.settings,
+  });
   final String message;
   final VoidCallback onRetry;
   final SettingsState settings;

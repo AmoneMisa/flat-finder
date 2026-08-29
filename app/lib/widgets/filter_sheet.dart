@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -12,17 +14,23 @@ import '../utils/share_link.dart';
 
 /// Bottom sheet that edits a working copy of the filters and returns it on Apply.
 class FilterSheet extends StatefulWidget {
-  const FilterSheet(
-      {super.key, required this.initial, required this.countries});
+  const FilterSheet({
+    super.key,
+    required this.initial,
+    required this.countries,
+    required this.onChanged,
+  });
 
   final Filters initial;
   final List<Country> countries;
+  final ValueChanged<Filters> onChanged;
 
   @override
   State<FilterSheet> createState() => _FilterSheetState();
 }
 
 class _FilterSheetState extends State<FilterSheet> {
+  Timer? _liveApplyTimer;
   late Set<String> _countries;
   late Set<String> _sources;
   late List<String> _customSources;
@@ -93,69 +101,140 @@ class _FilterSheetState extends State<FilterSheet> {
     _noCommission = widget.initial.noCommission;
     _maxAgeDays = widget.initial.maxAgeDays;
     _sort = widget.initial.sort;
-    _city =
-        widget.initial.city.trim().isEmpty ? null : widget.initial.city.trim();
+    _city = widget.initial.city.trim().isEmpty
+        ? null
+        : widget.initial.city.trim();
     _district = widget.initial.district.trim().isEmpty
         ? null
         : widget.initial.district.trim();
     _metro = widget.initial.metro.trim().isEmpty
         ? null
         : widget.initial.metro.trim();
-    _minCtl =
-        TextEditingController(text: widget.initial.priceMin?.toString() ?? '');
-    _maxCtl =
-        TextEditingController(text: widget.initial.priceMax?.toString() ?? '');
+    _minCtl = TextEditingController(
+      text: widget.initial.priceMin?.toString() ?? '',
+    );
+    _maxCtl = TextEditingController(
+      text: widget.initial.priceMax?.toString() ?? '',
+    );
     _tolerance = (widget.initial.priceTolerance ?? 0) > 0;
     _toleranceCtl = TextEditingController(
-        text: widget.initial.priceTolerance?.toString() ?? '');
-    _roomsMinCtl =
-        TextEditingController(text: widget.initial.roomsMin?.toString() ?? '');
-    _roomsMaxCtl =
-        TextEditingController(text: widget.initial.roomsMax?.toString() ?? '');
+      text: widget.initial.priceTolerance?.toString() ?? '',
+    );
+    _roomsMinCtl = TextEditingController(
+      text: widget.initial.roomsMin?.toString() ?? '',
+    );
+    _roomsMaxCtl = TextEditingController(
+      text: widget.initial.roomsMax?.toString() ?? '',
+    );
     _bedroomsMinCtl = TextEditingController(
-        text: widget.initial.bedroomsMin?.toString() ?? '');
+      text: widget.initial.bedroomsMin?.toString() ?? '',
+    );
     _bedroomsMaxCtl = TextEditingController(
-        text: widget.initial.bedroomsMax?.toString() ?? '');
-    _floorMinCtl =
-        TextEditingController(text: widget.initial.floorMin?.toString() ?? '');
-    _floorMaxCtl =
-        TextEditingController(text: widget.initial.floorMax?.toString() ?? '');
+      text: widget.initial.bedroomsMax?.toString() ?? '',
+    );
+    _floorMinCtl = TextEditingController(
+      text: widget.initial.floorMin?.toString() ?? '',
+    );
+    _floorMaxCtl = TextEditingController(
+      text: widget.initial.floorMax?.toString() ?? '',
+    );
     _totalFloorsMinCtl = TextEditingController(
-        text: widget.initial.totalFloorsMin?.toString() ?? '');
+      text: widget.initial.totalFloorsMin?.toString() ?? '',
+    );
     _totalFloorsMaxCtl = TextEditingController(
-        text: widget.initial.totalFloorsMax?.toString() ?? '');
-    _yearMinCtl =
-        TextEditingController(text: widget.initial.yearMin?.toString() ?? '');
-    _yearMaxCtl =
-        TextEditingController(text: widget.initial.yearMax?.toString() ?? '');
-    _areaMinCtl =
-        TextEditingController(text: widget.initial.areaMin?.toString() ?? '');
-    _areaMaxCtl =
-        TextEditingController(text: widget.initial.areaMax?.toString() ?? '');
+      text: widget.initial.totalFloorsMax?.toString() ?? '',
+    );
+    _yearMinCtl = TextEditingController(
+      text: widget.initial.yearMin?.toString() ?? '',
+    );
+    _yearMaxCtl = TextEditingController(
+      text: widget.initial.yearMax?.toString() ?? '',
+    );
+    _areaMinCtl = TextEditingController(
+      text: widget.initial.areaMin?.toString() ?? '',
+    );
+    _areaMaxCtl = TextEditingController(
+      text: widget.initial.areaMax?.toString() ?? '',
+    );
     _pricePerSqmMinCtl = TextEditingController(
-        text: widget.initial.pricePerSqmMin?.toString() ?? '');
+      text: widget.initial.pricePerSqmMin?.toString() ?? '',
+    );
     _pricePerSqmMaxCtl = TextEditingController(
-        text: widget.initial.pricePerSqmMax?.toString() ?? '');
+      text: widget.initial.pricePerSqmMax?.toString() ?? '',
+    );
     _commissionPercentMinCtl = TextEditingController(
-        text: widget.initial.commissionPercentMin?.toString() ?? '');
+      text: widget.initial.commissionPercentMin?.toString() ?? '',
+    );
     _commissionPercentMaxCtl = TextEditingController(
-        text: widget.initial.commissionPercentMax?.toString() ?? '');
-    _metroMaxMCtl =
-        TextEditingController(text: widget.initial.metroMaxM?.toString() ?? '');
+      text: widget.initial.commissionPercentMax?.toString() ?? '',
+    );
+    _metroMaxMCtl = TextEditingController(
+      text: widget.initial.metroMaxM?.toString() ?? '',
+    );
     _nearbyMaxMCtl = TextEditingController(
-        text: widget.initial.nearbyMaxM?.toString() ?? '');
-    _microdistrictCtl =
-        TextEditingController(text: widget.initial.microdistrict);
+      text: widget.initial.nearbyMaxM?.toString() ?? '',
+    );
+    _microdistrictCtl = TextEditingController(
+      text: widget.initial.microdistrict,
+    );
     _quartalCtl = TextEditingController(text: widget.initial.quartal);
     _areaNameCtl = TextEditingController(text: widget.initial.area);
     _queryCtl = TextEditingController(text: widget.initial.query);
     _nearbyKind = widget.initial.nearbyKind;
     _priceCurrency = widget.initial.priceCurrency;
     _withPhotos = widget.initial.withPhotos;
+
+    for (final controller in _textControllers) {
+      controller.addListener(_scheduleLiveApply);
+    }
+  }
+
+  List<TextEditingController> get _textControllers => [
+    _minCtl,
+    _maxCtl,
+    _toleranceCtl,
+    _roomsMinCtl,
+    _roomsMaxCtl,
+    _bedroomsMinCtl,
+    _bedroomsMaxCtl,
+    _floorMinCtl,
+    _floorMaxCtl,
+    _totalFloorsMinCtl,
+    _totalFloorsMaxCtl,
+    _yearMinCtl,
+    _yearMaxCtl,
+    _areaMinCtl,
+    _areaMaxCtl,
+    _pricePerSqmMinCtl,
+    _pricePerSqmMaxCtl,
+    _commissionPercentMinCtl,
+    _commissionPercentMaxCtl,
+    _metroMaxMCtl,
+    _nearbyMaxMCtl,
+    _microdistrictCtl,
+    _quartalCtl,
+    _areaNameCtl,
+    _queryCtl,
+  ];
+
+  void _scheduleLiveApply() {
+    _liveApplyTimer?.cancel();
+    _liveApplyTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted && _countries.isNotEmpty && _sources.isNotEmpty) {
+        widget.onChanged(_currentFilters());
+      }
+    });
+  }
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _scheduleLiveApply();
   }
 
   @override
   void dispose() {
+    _liveApplyTimer?.cancel();
     _minCtl.dispose();
     _maxCtl.dispose();
     _toleranceCtl.dispose();
@@ -360,9 +439,8 @@ class _FilterSheetState extends State<FilterSheet> {
       // clipboard copy above still lets the user paste the link.
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.t('searchLinkCopied'))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(s.t('searchLinkCopied'))));
     }
   }
 
@@ -446,9 +524,8 @@ class _FilterSheetState extends State<FilterSheet> {
       case 'update':
         await presets.save(p.name, _currentFilters());
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(s.t('presetUpdated'))),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(s.t('presetUpdated'))));
         }
       case 'rename':
         await _renamePreset(s, p);
@@ -487,8 +564,10 @@ class _FilterSheetState extends State<FilterSheet> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(s.t('customSourcesHint'),
-                    style: Theme.of(dialogCtx).textTheme.bodySmall),
+                Text(
+                  s.t('customSourcesHint'),
+                  style: Theme.of(dialogCtx).textTheme.bodySmall,
+                ),
               ],
             ),
             actions: [
@@ -513,8 +592,8 @@ class _FilterSheetState extends State<FilterSheet> {
                           busy = true;
                           error = null;
                         });
-                        final SourceValidation r =
-                            await appState.validateSource(url);
+                        final SourceValidation r = await appState
+                            .validateSource(url);
                         if (!dialogCtx.mounted) return;
                         if (r.ok) {
                           Navigator.pop(dialogCtx, url);
@@ -529,7 +608,8 @@ class _FilterSheetState extends State<FilterSheet> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : Text(s.t('validateAdd')),
               ),
             ],
@@ -542,28 +622,31 @@ class _FilterSheetState extends State<FilterSheet> {
   }
 
   String _audienceLabel(SettingsState s, Audience a) => switch (a) {
-        Audience.any => s.t('any'),
-        Audience.women => s.t('women'),
-        Audience.men => s.t('men'),
-        Audience.family => s.t('family'),
-      };
+    Audience.any => s.t('any'),
+    Audience.women => s.t('women'),
+    Audience.men => s.t('men'),
+    Audience.family => s.t('family'),
+  };
 
   String _sortLabel(SettingsState s, SortBy v) => switch (v) {
-        SortBy.relevance => s.t('sortRelevance'),
-        SortBy.dateNew => s.t('sortDate'),
-        SortBy.priceAsc => s.t('sortPriceAsc'),
-        SortBy.priceDesc => s.t('sortPriceDesc'),
-        SortBy.areaDesc => s.t('sortArea'),
-        SortBy.distanceCenter => s.t('sortCenter'),
-        SortBy.distanceMetro => s.t('sortMetro'),
-      };
+    SortBy.relevance => s.t('sortRelevance'),
+    SortBy.dateNew => s.t('sortDate'),
+    SortBy.dateOld => s.t('sortDateOld'),
+    SortBy.priceAsc => s.t('sortPriceAsc'),
+    SortBy.priceDesc => s.t('sortPriceDesc'),
+    SortBy.titleAsc => s.t('sortTitleAsc'),
+    SortBy.titleDesc => s.t('sortTitleDesc'),
+    SortBy.areaDesc => s.t('sortArea'),
+    SortBy.distanceCenter => s.t('sortCenter'),
+    SortBy.distanceMetro => s.t('sortMetro'),
+  };
 
   String _dealLabel(SettingsState s, DealType d) => switch (d) {
-        DealType.any => s.t('any'),
-        DealType.sale => s.t('sale'),
-        DealType.longRent => s.t('longTerm'),
-        DealType.shortRent => s.t('shortTerm'),
-      };
+    DealType.any => s.t('any'),
+    DealType.sale => s.t('sale'),
+    DealType.longRent => s.t('longTerm'),
+    DealType.shortRent => s.t('shortTerm'),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -573,9 +656,7 @@ class _FilterSheetState extends State<FilterSheet> {
       initialChildSize: 0.8,
       maxChildSize: 0.95,
       builder: (context, scroll) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-        // Apply sits outside the scroll area so it's always reachable
-        // without hunting for it at the bottom of a long filter list.
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             Expanded(
@@ -593,9 +674,11 @@ class _FilterSheetState extends State<FilterSheet> {
                       ),
                     ),
                   ),
-                  Text(s.t('filters'),
-                      style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 10),
+                  Text(
+                    s.t('filters'),
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
                   // The keyword search is the single most-used field — kept above
                   // every category instead of buried at the bottom of the sheet.
                   TextField(
@@ -606,46 +689,53 @@ class _FilterSheetState extends State<FilterSheet> {
                       prefixIcon: const Icon(Icons.search),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Builder(builder: (context) {
-                    final presets = context.watch<PresetsState>().presets;
-                    return Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        for (final p in presets)
-                          InputChip(
-                            label: Text(p.name),
-                            // Tap applies; the edit icon opens rename/update/share/delete.
-                            onPressed: () => _loadPreset(p.filters),
-                            avatar: GestureDetector(
-                              onTap: () => _editPreset(s, p),
-                              child: const Icon(Icons.edit, size: 16),
+                  const SizedBox(height: 16),
+                  Builder(
+                    builder: (context) {
+                      final presets = context.watch<PresetsState>().presets;
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          for (final p in presets)
+                            InputChip(
+                              label: Text(p.name),
+                              // Tap applies; the edit icon opens rename/update/share/delete.
+                              onPressed: () => _loadPreset(p.filters),
+                              avatar: GestureDetector(
+                                onTap: () => _editPreset(s, p),
+                                child: const Icon(Icons.edit, size: 16),
+                              ),
+                              onDeleted: () =>
+                                  context.read<PresetsState>().remove(p.name),
                             ),
-                            onDeleted: () =>
-                                context.read<PresetsState>().remove(p.name),
+                          ActionChip(
+                            avatar: const Icon(
+                              Icons.bookmark_add_outlined,
+                              size: 18,
+                            ),
+                            label: Text(s.t('savePreset')),
+                            onPressed: () => _savePreset(s),
                           ),
-                        ActionChip(
-                          avatar:
-                              const Icon(Icons.bookmark_add_outlined, size: 18),
-                          label: Text(s.t('savePreset')),
-                          onPressed: () => _savePreset(s),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.share_outlined, size: 18),
-                          label: Text(s.t('shareSearch')),
-                          onPressed: () => _shareFilters(s, _currentFilters()),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.filter_alt_off_outlined,
-                              size: 18),
-                          label: Text(s.t('clearFilters')),
-                          onPressed: () => _loadPreset(Filters()),
-                        ),
-                      ],
-                    );
-                  }),
+                          ActionChip(
+                            avatar: const Icon(Icons.share_outlined, size: 18),
+                            label: Text(s.t('shareSearch')),
+                            onPressed: () =>
+                                _shareFilters(s, _currentFilters()),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(
+                              Icons.filter_alt_off_outlined,
+                              size: 18,
+                            ),
+                            label: Text(s.t('clearFilters')),
+                            onPressed: () => _loadPreset(Filters()),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                   _section(
                     context,
                     icon: Icons.public,
@@ -658,20 +748,19 @@ class _FilterSheetState extends State<FilterSheet> {
                         children: widget.countries.map((c) {
                           final selected = _countries.contains(c.code);
                           return ChoiceChip(
-                            label: Text(c.name),
+                            label: Text(s.s.countryName(c.code, c.name)),
                             selected: selected,
                             onSelected: (v) => setState(() {
                               if (!v) return; // can't deselect the only country
                               _countries = {c.code};
-                              _city =
-                                  null; // city/district/metro belong to a country
+                              _city = null; // city/district/metro belong to a country
                               _district = null;
                               _metro = null;
                             }),
                           );
                         }).toList(),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('city')),
                       _searchableDropdown(
                         key: ValueKey('city-${_countries.join(',')}'),
@@ -688,7 +777,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       // District & metro inputs only appear when the picked city has data.
                       if (_cityLoc != null &&
                           _cityLoc!.districts.isNotEmpty) ...[
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 16),
                         _label(s.t('district')),
                         _searchableDropdown(
                           key: ValueKey('district-$_city'),
@@ -699,7 +788,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                       ],
                       if (_cityLoc != null && _cityLoc!.metro.isNotEmpty) ...[
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 16),
                         _label(s.t('metro')),
                         _searchableDropdown(
                           key: ValueKey('metro-$_city'),
@@ -709,34 +798,68 @@ class _FilterSheetState extends State<FilterSheet> {
                           onChanged: (v) => setState(() => _metro = v),
                         ),
                       ],
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('microdistrict')),
-                      TextField(
-                        controller: _microdistrictCtl,
-                        decoration: InputDecoration(
-                          hintText: s.t('microdistrictHint'),
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
+                      _cityLoc != null && _cityLoc!.microdistricts.isNotEmpty
+                          ? _searchableDropdown(
+                              key: ValueKey('microdistrict-$_city'),
+                              hint: s.t('anyMicrodistrict'),
+                              options: _cityLoc!.microdistricts,
+                              value: _microdistrictCtl.text.trim().isEmpty
+                                  ? null
+                                  : _microdistrictCtl.text.trim(),
+                              onChanged: (v) =>
+                                  _microdistrictCtl.text = v ?? '',
+                              onTextChanged: (v) => _microdistrictCtl.text = v,
+                            )
+                          : TextField(
+                              controller: _microdistrictCtl,
+                              decoration: InputDecoration(
+                                hintText: s.t('microdistrictPlaceholder'),
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                      const SizedBox(height: 16),
                       _label(s.t('quartal')),
-                      TextField(
-                        controller: _quartalCtl,
-                        decoration: InputDecoration(
-                          hintText: s.t('quartalHint'),
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
+                      _cityLoc != null && _cityLoc!.quartals.isNotEmpty
+                          ? _searchableDropdown(
+                              key: ValueKey('quartal-$_city'),
+                              hint: s.t('quartalPlaceholder'),
+                              options: _cityLoc!.quartals,
+                              value: _quartalCtl.text.trim().isEmpty
+                                  ? null
+                                  : _quartalCtl.text.trim(),
+                              onChanged: (v) => _quartalCtl.text = v ?? '',
+                              onTextChanged: (v) => _quartalCtl.text = v,
+                            )
+                          : TextField(
+                              controller: _quartalCtl,
+                              decoration: InputDecoration(
+                                hintText: s.t('quartalPlaceholder'),
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                      const SizedBox(height: 16),
                       _label(s.t('areaName')),
-                      TextField(
-                        controller: _areaNameCtl,
-                        decoration: InputDecoration(
-                          hintText: s.t('areaNameHint'),
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
+                      _cityLoc != null && _cityLoc!.areas.isNotEmpty
+                          ? _searchableDropdown(
+                              key: ValueKey('area-$_city'),
+                              hint: s.t('areaPlaceholder'),
+                              options: _cityLoc!.areas,
+                              value: _areaNameCtl.text.trim().isEmpty
+                                  ? null
+                                  : _areaNameCtl.text.trim(),
+                              onChanged: (v) => _areaNameCtl.text = v ?? '',
+                              onTextChanged: (v) => _areaNameCtl.text = v,
+                            )
+                          : TextField(
+                              controller: _areaNameCtl,
+                              decoration: InputDecoration(
+                                hintText: s.t('areaPlaceholder'),
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                      const SizedBox(height: 16),
                       _label(s.t('metroDistance')),
                       TextField(
                         controller: _metroMaxMCtl,
@@ -747,21 +870,25 @@ class _FilterSheetState extends State<FilterSheet> {
                           border: const OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('nearbyDistance')),
                       DropdownButtonFormField<String?>(
                         initialValue: _nearbyKind,
                         isExpanded: true,
                         decoration: InputDecoration(
-                            labelText: s.t('nearbyKind'),
-                            border: const OutlineInputBorder()),
+                          labelText: s.t('nearbyKind'),
+                          border: const OutlineInputBorder(),
+                        ),
                         items: [
                           DropdownMenuItem<String?>(
-                              value: null, child: Text(s.t('any'))),
+                            value: null,
+                            child: Text(s.t('any')),
+                          ),
                           for (final kind in kNearbyKinds)
                             DropdownMenuItem<String?>(
-                                value: kind,
-                                child: Text(s.t('nearbyKind_$kind'))),
+                              value: kind,
+                              child: Text(s.t('nearbyKind_$kind')),
+                            ),
                         ],
                         onChanged: (v) => setState(() => _nearbyKind = v),
                       ),
@@ -802,18 +929,23 @@ class _FilterSheetState extends State<FilterSheet> {
                           );
                         }).toList(),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('customSources')),
-                      Text(s.t('customSourcesHint'),
-                          style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        s.t('customSourcesHint'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                       const SizedBox(height: 8),
                       for (final url in _customSources)
                         ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.link, size: 20),
-                          title: Text(url,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          title: Text(
+                            url,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           trailing: IconButton(
                             icon: const Icon(Icons.close, size: 20),
                             tooltip: s.t('remove'),
@@ -840,19 +972,23 @@ class _FilterSheetState extends State<FilterSheet> {
                       SegmentedButton<PropertyType>(
                         segments: [
                           ButtonSegment(
-                              value: PropertyType.any, label: Text(s.t('any'))),
+                            value: PropertyType.any,
+                            label: Text(s.t('any')),
+                          ),
                           ButtonSegment(
-                              value: PropertyType.flat,
-                              label: Text(s.t('apartment'))),
+                            value: PropertyType.flat,
+                            label: Text(s.t('apartment')),
+                          ),
                           ButtonSegment(
-                              value: PropertyType.house,
-                              label: Text(s.t('house'))),
+                            value: PropertyType.house,
+                            label: Text(s.t('house')),
+                          ),
                         ],
                         selected: {_type},
                         onSelectionChanged: (v) =>
                             setState(() => _type = v.first),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('dealType')),
                       // A 4-way SegmentedButton squeezes long Russian labels ("Долгосрочно",
                       // "Посуточно") into equal-width slots too narrow to fit, forcing an
@@ -862,38 +998,48 @@ class _FilterSheetState extends State<FilterSheet> {
                         spacing: 8,
                         runSpacing: 8,
                         children: DealType.values
-                            .map((d) => ChoiceChip(
-                                  label: Text(_dealLabel(s, d)),
-                                  selected: _deal == d,
-                                  onSelected: (v) {
-                                    if (v) setState(() => _deal = d);
-                                  },
-                                ))
+                            .map(
+                              (d) => ChoiceChip(
+                                label: Text(_dealLabel(s, d)),
+                                selected: _deal == d,
+                                onSelected: (v) {
+                                  if (v) setState(() => _deal = d);
+                                },
+                              ),
+                            )
                             .toList(),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('realEstateAgency')),
                       SegmentedButton<AgencyFilter>(
                         segments: [
                           ButtonSegment(
-                              value: AgencyFilter.any, label: Text(s.t('any'))),
+                            value: AgencyFilter.any,
+                            label: Text(s.t('any')),
+                          ),
                           ButtonSegment(
-                              value: AgencyFilter.owner,
-                              label: Text(s.t('owner'))),
+                            value: AgencyFilter.owner,
+                            label: Text(s.t('owner')),
+                          ),
                           ButtonSegment(
-                              value: AgencyFilter.agency,
-                              label: Text(s.t('agency'))),
+                            value: AgencyFilter.agency,
+                            label: Text(s.t('agency')),
+                          ),
                         ],
                         selected: {_agency},
                         onSelectionChanged: (v) =>
                             setState(() => _agency = v.first),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('audience')),
                       SegmentedButton<Audience>(
                         segments: Audience.values
-                            .map((a) => ButtonSegment(
-                                value: a, label: Text(_audienceLabel(s, a))))
+                            .map(
+                              (a) => ButtonSegment(
+                                value: a,
+                                label: Text(_audienceLabel(s, a)),
+                              ),
+                            )
                             .toList(),
                         selected: {_audience},
                         onSelectionChanged: (v) =>
@@ -914,8 +1060,9 @@ class _FilterSheetState extends State<FilterSheet> {
                               controller: _minCtl,
                               keyboardType: TextInputType.number,
                               decoration: InputDecoration(
-                                  labelText: s.t('min'),
-                                  border: const OutlineInputBorder()),
+                                labelText: s.t('min'),
+                                border: const OutlineInputBorder(),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -927,8 +1074,9 @@ class _FilterSheetState extends State<FilterSheet> {
                               // rebuild to show/hide that checkbox as this changes.
                               onChanged: (_) => setState(() {}),
                               decoration: InputDecoration(
-                                  labelText: s.t('max'),
-                                  border: const OutlineInputBorder()),
+                                labelText: s.t('max'),
+                                border: const OutlineInputBorder(),
+                              ),
                             ),
                           ),
                         ],
@@ -939,11 +1087,12 @@ class _FilterSheetState extends State<FilterSheet> {
                           onChanged: (v) =>
                               setState(() => _tolerance = v ?? false),
                           contentPadding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
                           controlAffinity: ListTileControlAffinity.leading,
                           title: Text(s.t('priceTolerance')),
-                          subtitle: Text(s.t('priceToleranceHint'),
-                              style: Theme.of(context).textTheme.bodySmall),
+                          subtitle: Text(
+                            s.t('priceToleranceHint'),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
                       if (_tolerance && _maxCtl.text.trim().isNotEmpty)
                         TextField(
@@ -957,34 +1106,41 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                       if (_countries.length == 1 &&
                           widget.countries
-                              .firstWhere((c) => c.code == _countries.first,
-                                  orElse: () => const Country(
-                                      code: '',
-                                      name: '',
-                                      currency: '',
-                                      centerLat: 0,
-                                      centerLng: 0))
+                              .firstWhere(
+                                (c) => c.code == _countries.first,
+                                orElse: () => const Country(
+                                  code: '',
+                                  name: '',
+                                  currency: '',
+                                  centerLat: 0,
+                                  centerLng: 0,
+                                ),
+                              )
                               .currency
                               .isNotEmpty) ...[
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String?>(
                           initialValue: _priceCurrency,
                           decoration: InputDecoration(
-                              labelText: s.t('priceCurrency'),
-                              border: const OutlineInputBorder()),
+                            labelText: s.t('priceCurrency'),
+                            border: const OutlineInputBorder(),
+                          ),
                           items: [
                             DropdownMenuItem<String?>(
-                                value: null,
-                                child: Text(s.t('nativeCurrency'))),
+                              value: null,
+                              child: Text(s.t('nativeCurrency')),
+                            ),
                             for (final code in SettingsState.currencyOptions)
                               if (code != null)
                                 DropdownMenuItem<String?>(
-                                    value: code, child: Text(code)),
+                                  value: code,
+                                  child: Text(code),
+                                ),
                           ],
                           onChanged: (v) => setState(() => _priceCurrency = v),
                         ),
                       ],
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('pricePerSqm')),
                       _minMaxRow(s, _pricePerSqmMinCtl, _pricePerSqmMaxCtl),
                     ],
@@ -996,19 +1152,19 @@ class _FilterSheetState extends State<FilterSheet> {
                     children: [
                       _label(s.t('rooms')),
                       _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('bedrooms')),
                       _minMaxRow(s, _bedroomsMinCtl, _bedroomsMaxCtl),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('floor')),
                       _minMaxRow(s, _floorMinCtl, _floorMaxCtl),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('totalFloors')),
                       _minMaxRow(s, _totalFloorsMinCtl, _totalFloorsMaxCtl),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('buildingYear')),
                       _minMaxRow(s, _yearMinCtl, _yearMaxCtl),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('areaSqm')),
                       _minMaxRow(s, _areaMinCtl, _areaMaxCtl),
                     ],
@@ -1041,7 +1197,6 @@ class _FilterSheetState extends State<FilterSheet> {
                         value: _withPhotos,
                         onChanged: (v) => setState(() => _withPhotos = v),
                         contentPadding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
                         title: Text(s.t('withPhotos')),
                       ),
                     ],
@@ -1055,57 +1210,55 @@ class _FilterSheetState extends State<FilterSheet> {
                         value: _pets,
                         onChanged: (v) => setState(() => _pets = v),
                         contentPadding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
                         title: Text(s.t('petsAllowed')),
                       ),
                       SwitchListTile(
                         value: _children,
                         onChanged: (v) => setState(() => _children = v),
                         contentPadding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
                         title: Text(s.t('childrenAllowed')),
                       ),
                       SwitchListTile(
                         value: _roomOnly,
                         onChanged: (v) => setState(() => _roomOnly = v),
                         contentPadding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
                         title: Text(s.t('roomOnly')),
-                        subtitle: Text(s.t('roomOnlyHint'),
-                            style: Theme.of(context).textTheme.bodySmall),
+                        subtitle: Text(
+                          s.t('roomOnlyHint'),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
                       SwitchListTile(
                         value: _noElevator,
                         onChanged: (v) => setState(() => _noElevator = v),
                         contentPadding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
                         title: Text(s.t('noElevator')),
                       ),
                       SwitchListTile(
                         value: _noDeposit,
                         onChanged: (v) => setState(() => _noDeposit = v),
                         contentPadding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
                         title: Text(s.t('noDeposit')),
                       ),
                       SwitchListTile(
                         value: _communalIncluded,
                         onChanged: (v) => setState(() => _communalIncluded = v),
                         contentPadding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
                         title: Text(s.t('communalIncluded')),
                       ),
                       SwitchListTile(
                         value: _noCommission,
                         onChanged: (v) => setState(() => _noCommission = v),
                         contentPadding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
                         title: Text(s.t('noCommission')),
                       ),
                       const SizedBox(height: 8),
                       _label(s.t('commissionPercentRange')),
-                      _minMaxRow(s, _commissionPercentMinCtl,
-                          _commissionPercentMaxCtl),
+                      _minMaxRow(
+                        s,
+                        _commissionPercentMinCtl,
+                        _commissionPercentMaxCtl,
+                      ),
                     ],
                   ),
                   _section(
@@ -1117,32 +1270,48 @@ class _FilterSheetState extends State<FilterSheet> {
                       DropdownButtonFormField<int?>(
                         initialValue: _maxAgeDays,
                         isExpanded: true,
-                        decoration:
-                            const InputDecoration(border: OutlineInputBorder()),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                        ),
                         items: [
                           DropdownMenuItem<int?>(
-                              value: null, child: Text(s.t('anyTime'))),
+                            value: null,
+                            child: Text(s.t('anyTime')),
+                          ),
                           DropdownMenuItem<int?>(
-                              value: 1, child: Text(s.t('lastDay'))),
+                            value: 1,
+                            child: Text(s.t('lastDay')),
+                          ),
                           DropdownMenuItem<int?>(
-                              value: 3, child: Text(s.t('last3Days'))),
+                            value: 3,
+                            child: Text(s.t('last3Days')),
+                          ),
                           DropdownMenuItem<int?>(
-                              value: 7, child: Text(s.t('lastWeek'))),
+                            value: 7,
+                            child: Text(s.t('lastWeek')),
+                          ),
                           DropdownMenuItem<int?>(
-                              value: 31, child: Text(s.t('lastMonth'))),
+                            value: 31,
+                            child: Text(s.t('lastMonth')),
+                          ),
                         ],
                         onChanged: (v) => setState(() => _maxAgeDays = v),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       _label(s.t('sortBy')),
                       DropdownButtonFormField<SortBy>(
                         initialValue: _sort,
                         isExpanded: true,
-                        decoration:
-                            const InputDecoration(border: OutlineInputBorder()),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                        ),
                         items: SortBy.values
-                            .map((v) => DropdownMenuItem(
-                                value: v, child: Text(_sortLabel(s, v))))
+                            .map(
+                              (v) => DropdownMenuItem(
+                                value: v,
+                                child: Text(_sortLabel(s, v)),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) =>
                             setState(() => _sort = v ?? SortBy.relevance),
@@ -1156,13 +1325,17 @@ class _FilterSheetState extends State<FilterSheet> {
             SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: FilledButton(
-                  onPressed:
-                      (_countries.isEmpty || _sources.isEmpty) ? null : _apply,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(s.t('applyFilters')),
+                padding: const EdgeInsets.only(top: 10),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: (_countries.isEmpty || _sources.isEmpty)
+                        ? null
+                        : _apply,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(s.t('applyFilters')),
+                    ),
                   ),
                 ),
               ),
@@ -1182,35 +1355,32 @@ class _FilterSheetState extends State<FilterSheet> {
     required List<Widget> children,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon,
-                  size: 16, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(width: 6),
-              Text(title, style: Theme.of(context).textTheme.titleSmall),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ...children,
-        ],
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: PageStorageKey<String>('filter-$title'),
+        initiallyExpanded: true,
+        leading: Icon(
+          icon,
+          size: 18,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        title: Text(title, style: Theme.of(context).textTheme.titleSmall),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: children,
       ),
     );
   }
 
   Widget _label(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(t,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-      );
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(t, style: const TextStyle(fontWeight: FontWeight.w600)),
+  );
 
   /// A type-to-search field over a fixed option list. Empty text = "any"
   /// (null). Keyed by the parent so it resets when the city/country changes.
@@ -1220,6 +1390,7 @@ class _FilterSheetState extends State<FilterSheet> {
     required List<String> options,
     required String? value,
     required ValueChanged<String?> onChanged,
+    ValueChanged<String>? onTextChanged,
   }) {
     return Autocomplete<String>(
       key: key,
@@ -1248,6 +1419,7 @@ class _FilterSheetState extends State<FilterSheet> {
                 ),
         ),
         onChanged: (t) {
+          onTextChanged?.call(t);
           final trimmed = t.trim();
           if (trimmed.isEmpty) {
             onChanged(null);
@@ -1273,11 +1445,13 @@ class _FilterSheetState extends State<FilterSheet> {
               padding: EdgeInsets.zero,
               shrinkWrap: true,
               children: opts
-                  .map((o) => ListTile(
-                        dense: true,
-                        title: Text(o),
-                        onTap: () => onSelected(o),
-                      ))
+                  .map(
+                    (o) => ListTile(
+                      dense: true,
+                      title: Text(o),
+                      onTap: () => onSelected(o),
+                    ),
+                  )
                   .toList(),
             ),
           ),
@@ -1286,27 +1460,35 @@ class _FilterSheetState extends State<FilterSheet> {
     );
   }
 
-  Widget _minMaxRow(SettingsState s, TextEditingController min,
-          TextEditingController max) =>
-      Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: min,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                  labelText: s.t('min'), border: const OutlineInputBorder()),
-            ),
+  Widget _minMaxRow(
+    SettingsState s,
+    TextEditingController min,
+    TextEditingController max,
+  ) => Row(
+    children: [
+      Expanded(
+        child: TextField(
+          controller: min,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: s.t('min'),
+            hintText: s.t('minPlaceholder'),
+            border: const OutlineInputBorder(),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: max,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                  labelText: s.t('max'), border: const OutlineInputBorder()),
-            ),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: TextField(
+          controller: max,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: s.t('max'),
+            hintText: s.t('maxPlaceholder'),
+            border: const OutlineInputBorder(),
           ),
-        ],
-      );
+        ),
+      ),
+    ],
+  );
 }

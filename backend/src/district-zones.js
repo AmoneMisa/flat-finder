@@ -86,7 +86,7 @@ export function districtZonesFor(countryCode, cityName, districtOptions = []) {
 export function mapZonesFor(countryCode, cityName, districtOptions = []) {
   const country = String(countryCode || '').toUpperCase();
   if (!country || !cityName) {
-    return {districtZones: [], microdistrictMarkers: [], quartalMarkers: [], areaZones: []};
+    return {districtZones: [], microdistrictMarkers: [], quartalMarkers: [], areaZones: [], cityZone: null};
   }
 
   const cityEntity = resolveLexiconGeoEntity({country, type: 'city', canonical: cityName});
@@ -110,5 +110,6 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
     700,
   );
 
-  return {districtZones, microdistrictMarkers, quartalMarkers, areaZones};
+  const cityZone = cityEntity ? zoneFromEntity(cityEntity, 0) : null;
+  return {districtZones, microdistrictMarkers, quartalMarkers, areaZones, cityZone};
 }

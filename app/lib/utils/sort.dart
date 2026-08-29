@@ -8,7 +8,8 @@ double _distanceKm(double lat1, double lng1, double lat2, double lng2) {
   const r = 6371.0; // Earth radius, km
   final dLat = (lat2 - lat1) * math.pi / 180;
   final dLng = (lng2 - lng1) * math.pi / 180;
-  final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+  final a =
+      math.sin(dLat / 2) * math.sin(dLat / 2) +
       math.cos(lat1 * math.pi / 180) *
           math.cos(lat2 * math.pi / 180) *
           math.sin(dLng / 2) *
@@ -17,7 +18,11 @@ double _distanceKm(double lat1, double lng1, double lat2, double lng2) {
 }
 
 /// Price expressed in [displayCurrency] (or native) for comparison, or null.
-num? _comparablePrice(Listing l, Map<String, double>? rates, String? displayCurrency) {
+num? _comparablePrice(
+  Listing l,
+  Map<String, double>? rates,
+  String? displayCurrency,
+) {
   if (l.price == null) return null;
   final from = rates?[l.currency];
   final to = displayCurrency == null ? null : rates?[displayCurrency];
@@ -62,13 +67,37 @@ List<Listing> sortListings(
         if (db == null) return -1;
         return db.compareTo(da); // newest first
       });
+    case SortBy.dateOld:
+      out.sort((a, b) {
+        final da = a.createdAt, db = b.createdAt;
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return da.compareTo(db);
+      });
     case SortBy.priceAsc:
-      out.sort((a, b) => byNum(_comparablePrice(a, rates, displayCurrency),
-          _comparablePrice(b, rates, displayCurrency)));
-    case SortBy.priceDesc:
-      out.sort((a, b) => byNum(_comparablePrice(a, rates, displayCurrency),
+      out.sort(
+        (a, b) => byNum(
+          _comparablePrice(a, rates, displayCurrency),
           _comparablePrice(b, rates, displayCurrency),
-          asc: false));
+        ),
+      );
+    case SortBy.priceDesc:
+      out.sort(
+        (a, b) => byNum(
+          _comparablePrice(a, rates, displayCurrency),
+          _comparablePrice(b, rates, displayCurrency),
+          asc: false,
+        ),
+      );
+    case SortBy.titleAsc:
+      out.sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
+    case SortBy.titleDesc:
+      out.sort(
+        (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()),
+      );
     case SortBy.areaDesc:
       out.sort((a, b) => byNum(a.areaSqm, b.areaSqm, asc: false));
     case SortBy.distanceCenter:

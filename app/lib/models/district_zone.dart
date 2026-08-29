@@ -42,21 +42,22 @@ class DistrictZone {
     if (type == 'MultiPolygon' && coords is List) {
       return [
         for (final polygon in coords)
-          if ((polygon as List).isNotEmpty) ring((polygon.first as List).cast<dynamic>()),
+          if ((polygon as List).isNotEmpty)
+            ring((polygon.first as List).cast<dynamic>()),
       ];
     }
     return const [];
   }
 
   factory DistrictZone.fromJson(Map<String, dynamic> j) => DistrictZone(
-        id: j['id']?.toString() ?? '',
-        name: j['name']?.toString() ?? '',
-        lat: (j['lat'] as num).toDouble(),
-        lng: (j['lng'] as num).toDouble(),
-        radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
-        colorHex: j['color']?.toString() ?? '#e0679a',
-        boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
-      );
+    id: j['id']?.toString() ?? '',
+    name: j['name']?.toString() ?? '',
+    lat: (j['lat'] as num).toDouble(),
+    lng: (j['lng'] as num).toDouble(),
+    radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
+    colorHex: j['color']?.toString() ?? '#e0679a',
+    boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
+  );
 }
 
 /// All four of a city's map zone layers — mirrors the site's
@@ -67,12 +68,14 @@ class MapZones {
   final List<DistrictZone> microdistrictMarkers;
   final List<DistrictZone> quartalMarkers; // mahallas
   final List<DistrictZone> areaZones;
+  final DistrictZone? cityZone;
 
   const MapZones({
     this.districtZones = const [],
     this.microdistrictMarkers = const [],
     this.quartalMarkers = const [],
     this.areaZones = const [],
+    this.cityZone,
   });
 
   factory MapZones.fromJson(Map<String, dynamic> j) {
@@ -84,6 +87,11 @@ class MapZones {
       microdistrictMarkers: list('microdistrictMarkers'),
       quartalMarkers: list('quartalMarkers'),
       areaZones: list('areaZones'),
+      cityZone: j['cityZone'] is Map
+          ? DistrictZone.fromJson(
+              Map<String, dynamic>.from(j['cityZone'] as Map),
+            )
+          : null,
     );
   }
 }

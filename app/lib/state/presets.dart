@@ -28,13 +28,15 @@ class PresetsState extends ChangeNotifier {
         final list = jsonDecode(raw) as List;
         _presets
           ..clear()
-          ..addAll(list.map((e) {
-            final m = Map<String, dynamic>.from(e);
-            return FilterPreset(
-              m['name']?.toString() ?? '',
-              Filters.fromJson(Map<String, dynamic>.from(m['filters'])),
-            );
-          }));
+          ..addAll(
+            list.map((e) {
+              final m = Map<String, dynamic>.from(e);
+              return FilterPreset(
+                m['name']?.toString() ?? '',
+                Filters.fromJson(Map<String, dynamic>.from(m['filters'])),
+              );
+            }),
+          );
         notifyListeners();
       }
     } catch (_) {}
@@ -57,8 +59,9 @@ class PresetsState extends ChangeNotifier {
     if (trimmed.isEmpty) return;
     final i = _presets.indexWhere((p) => p.name == oldName);
     if (i < 0) return;
-    final clash = _presets.any((p) =>
-        p.name != oldName && p.name.toLowerCase() == trimmed.toLowerCase());
+    final clash = _presets.any(
+      (p) => p.name != oldName && p.name.toLowerCase() == trimmed.toLowerCase(),
+    );
     if (clash) return;
     _presets[i] = FilterPreset(trimmed, _presets[i].filters);
     notifyListeners();
@@ -76,7 +79,11 @@ class PresetsState extends ChangeNotifier {
       final p = await SharedPreferences.getInstance();
       await p.setString(
         _kPresets,
-        jsonEncode(_presets.map((e) => {'name': e.name, 'filters': e.filters.toJson()}).toList()),
+        jsonEncode(
+          _presets
+              .map((e) => {'name': e.name, 'filters': e.filters.toJson()})
+              .toList(),
+        ),
       );
     } catch (_) {}
   }

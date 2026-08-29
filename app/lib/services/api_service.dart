@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -17,17 +18,25 @@ class SourceError {
   SourceError({required this.source, this.url, required this.message});
 
   factory SourceError.fromJson(Map<String, dynamic> j) => SourceError(
-        source: (j['source'] ?? 'source').toString(),
-        url: j['url']?.toString(),
-        message: (j['error'] ?? 'Failed').toString(),
-      );
+    source: (j['source'] ?? 'source').toString(),
+    url: j['url']?.toString(),
+    message: (j['error'] ?? 'Failed').toString(),
+  );
 }
 
 class ListingsResult {
   final List<Listing> listings;
   final List<String> degradedCountries; // served from demo data right now
   final List<SourceError> sourceErrors; // per-source failures to surface
-  ListingsResult(this.listings, this.degradedCountries, this.sourceErrors);
+  final String? nextCursor;
+  final int total;
+  ListingsResult(
+    this.listings,
+    this.degradedCountries,
+    this.sourceErrors, {
+    this.nextCursor,
+    this.total = 0,
+  });
 }
 
 /// Thrown when the backend rejects a manual reload with HTTP 429 (flood
@@ -141,10 +150,16 @@ class ApiService {
 
   /// [force] triggers a fresh backend scrape (bypasses the cache) — used by the
   /// manual "Reload all" action. It is flood-protected server-side (429).
-  Future<ListingsResult> fetchListings(Filters filters, {bool force = false}) async {
+  Future<ListingsResult> fetchListings(
+    Filters filters, {
+    bool force = false,
+    String? cursor,
+  }) async {
     final params = Map<String, String>.from(filters.toQueryParams());
     if (force) params['refresh'] = '1';
-    final uri = Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
+    if (cursor != null && cursor.isNotEmpty) params['cursor'] = cursor;
+    final uri = Uri.parse('$baseUrl/api/listings')
+        .replace(queryParameters: params);
     final res = await http.get(uri).timeout(const Duration(seconds: 30));
     if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
     if (res.statusCode != 200) {
@@ -152,14 +167,38 @@ class ApiService {
     }
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     final listings = (json['listings'] as List)
-        .map((e) => Listing.fromJson(_absolutizePhotos(e as Map<String, dynamic>)))
+        .map(
+          (e) => Listing.fromJson(_absolutizePhotos(e as Map<String, dynamic>)),
+        )
         .toList();
-    final degraded =
-        (json['degradedCountries'] as List? ?? []).map((e) => e.toString()).toList();
+    final degraded = (json['degradedCountries'] as List? ?? [])
+        .map((e) => e.toString())
+        .toList();
     final errors = (json['sourceErrors'] as List? ?? [])
         .map((e) => SourceError.fromJson(e as Map<String, dynamic>))
         .toList();
-    return ListingsResult(listings, degraded, errors);
+    return ListingsResult(
+      listings,
+      degraded,
+      errors,
+      nextCursor: json['nextCursor']?.toString(),
+      total: (json['count'] as num?)?.toInt() ?? listings.length,
+    );
+  }
+
+  /// Compact full-map feed. The backend walks every result cursor internally,
+  /// so Flutter shows the same flats as the web map instead of one card page.
+  Future<List<Listing>> fetchMapListings(Filters filters) async {
+    final params = Map<String, String>.from(filters.toQueryParams())
+      ..['mapOnly'] = 'true';
+    final uri = Uri.parse('$baseUrl/api/listings')
+        .replace(queryParameters: params);
+    final res = await http.get(uri).timeout(const Duration(seconds: 30));
+    if (res.statusCode != 200) return const [];
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    return ((json['mapPoints'] as List?) ?? const [])
+        .map((point) => Listing.fromJson(point as Map<String, dynamic>))
+        .toList();
   }
 
   /// Re-fetch a single listing fresh from its source (manual "Reload this
@@ -201,7 +240,10 @@ class ApiService {
           .post(
             Uri.parse('$baseUrl/api/sources/validate'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'url': url, if (country != null) 'country': country}),
+            body: jsonEncode({
+              'url': url,
+              if (country != null) 'country': country,
+            }),
           )
           .timeout(const Duration(seconds: 20));
       final json = jsonDecode(res.body) as Map<String, dynamic>;
@@ -211,7 +253,11 @@ class ApiService {
         error: json['error']?.toString(),
       );
     } catch (e) {
-      return SourceValidation(ok: false, count: 0, error: 'Could not reach server');
+      return SourceValidation(
+        ok: false,
+        count: 0,
+        error: 'Could not reach server',
+      );
     }
   }
 
@@ -223,15 +269,14 @@ class ApiService {
         .post(
           Uri.parse('$baseUrl/api/translation'),
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'text': text,
-            'targetLanguage': targetLanguage,
-          }),
+          body: jsonEncode({'text': text, 'targetLanguage': targetLanguage}),
         )
         .timeout(const Duration(seconds: 15));
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
-      throw Exception(json['error']?.toString() ?? 'translation HTTP ${res.statusCode}');
+      throw Exception(
+        json['error']?.toString() ?? 'translation HTTP ${res.statusCode}',
+      );
     }
     return TranslationJob.fromJson(json);
   }
@@ -242,7 +287,9 @@ class ApiService {
         .timeout(const Duration(seconds: 15));
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
-      throw Exception(json['error']?.toString() ?? 'translation HTTP ${res.statusCode}');
+      throw Exception(
+        json['error']?.toString() ?? 'translation HTTP ${res.statusCode}',
+      );
     }
     return TranslationJob.fromJson(json);
   }
@@ -261,11 +308,13 @@ class ApiService {
     if (normalized.isEmpty) return '';
 
     var job = await _startTranslation(normalized, targetLanguage);
-    if (job.status == 'completed' && job.translatedText?.trim().isNotEmpty == true) {
+    if (job.status == 'completed' &&
+        job.translatedText?.trim().isNotEmpty == true) {
       return job.translatedText!.trim();
     }
     if (job.status == 'disabled') throw Exception('translation disabled');
-    if (job.status == 'failed') throw Exception(job.error ?? 'translation failed');
+    if (job.status == 'failed')
+      throw Exception(job.error ?? 'translation failed');
     final key = job.key;
     if (key == null || key.isEmpty) throw Exception('translation key missing');
 
@@ -289,12 +338,16 @@ class ApiService {
         if (translated.isEmpty) throw Exception('translation was empty');
         return translated;
       }
-      if (job.status == 'failed' || job.status == 'not_found' || job.status == 'disabled') {
+      if (job.status == 'failed' ||
+          job.status == 'not_found' ||
+          job.status == 'disabled') {
         throw Exception(job.error ?? 'translation ${job.status}');
       }
     }
 
-    throw TimeoutException('translation did not finish before the client deadline');
+    throw TimeoutException(
+      'translation did not finish before the client deadline',
+    );
   }
 
   /// Exchange rates relative to USD (units of currency per 1 USD), used to
@@ -306,7 +359,8 @@ class ApiService {
     final params = Map<String, String>.from(filters.toQueryParams());
     params['includeStats'] = 'true';
     params['statsOnly'] = 'true';
-    final uri = Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
+    final uri = Uri.parse('$baseUrl/api/listings')
+        .replace(queryParameters: params);
     final res = await http.get(uri).timeout(const Duration(seconds: 20));
     if (res.statusCode != 200) return null;
     final json = jsonDecode(res.body) as Map<String, dynamic>;
