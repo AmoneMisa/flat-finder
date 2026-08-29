@@ -615,7 +615,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       s.t('filters'),
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     // The keyword search is the single most-used field — kept above
                     // every category instead of buried at the bottom of the sheet.
                     TextField(
@@ -627,7 +627,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         prefixIcon: const Icon(Icons.search),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Builder(
                       builder: (context) {
                         final presets = context.watch<PresetsState>().presets;
@@ -710,7 +710,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             });
                           },
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         SearchableDropdown(
                           key: ValueKey('city-${_countries.join(',')}'),
                           hint: s.t('anyCity'),
@@ -729,7 +729,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         // District & metro inputs only appear when the picked city has data.
                         if (_cityLoc != null &&
                             _cityLoc!.districts.isNotEmpty) ...[
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           SearchableDropdown(
                             key: ValueKey('district-$_city'),
                             hint: s.t('anyDistrict'),
@@ -740,7 +740,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           ),
                         ],
                         if (_cityLoc != null && _cityLoc!.metro.isNotEmpty) ...[
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           SearchableDropdown(
                             key: ValueKey('metro-$_city'),
                             hint: s.t('anyStation'),
@@ -750,7 +750,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             onChanged: (v) => setState(() => _metro = v),
                           ),
                         ],
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _cityLoc != null && _cityLoc!.microdistricts.isNotEmpty
                             ? SearchableDropdown(
                                 key: ValueKey('microdistrict-$_city'),
@@ -775,7 +775,7 @@ class _FilterSheetState extends State<FilterSheet> {
                                   border: const OutlineInputBorder(),
                                 ),
                               ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _cityLoc != null && _cityLoc!.quartals.isNotEmpty
                             ? SearchableDropdown(
                                 key: ValueKey('quartal-$_city'),
@@ -797,7 +797,7 @@ class _FilterSheetState extends State<FilterSheet> {
                                   border: const OutlineInputBorder(),
                                 ),
                               ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _cityLoc != null && _cityLoc!.areas.isNotEmpty
                             ? SearchableDropdown(
                                 key: ValueKey('area-$_city'),
@@ -819,7 +819,7 @@ class _FilterSheetState extends State<FilterSheet> {
                                   border: const OutlineInputBorder(),
                                 ),
                               ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         TextField(
                           controller: _metroMaxMCtl,
                           keyboardType: TextInputType.number,
@@ -830,7 +830,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             border: const OutlineInputBorder(),
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         DropdownButtonFormField<String?>(
                           initialValue: _nearbyKind,
                           isExpanded: true,
@@ -896,7 +896,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             if (v != null) setState(() => _type = v);
                           },
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         DropdownButtonFormField<DealType>(
                           value: _deal,
                           isExpanded: true,
@@ -916,7 +916,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             if (v != null) setState(() => _deal = v);
                           },
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         DropdownButtonFormField<AgencyFilter>(
                           value: _agency,
                           isExpanded: true,
@@ -942,7 +942,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             if (v != null) setState(() => _agency = v);
                           },
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         DropdownButtonFormField<Audience>(
                           value: _audience,
                           isExpanded: true,
@@ -1063,7 +1063,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         // Price per m² only makes sense for a sale — a rental's
                         // per-month price isn't comparable per square meter.
                         if (_deal == DealType.sale) ...[
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 8),
                           _minMaxRow(
                             s,
                             _pricePerSqmMinCtl,
@@ -1079,30 +1079,30 @@ class _FilterSheetState extends State<FilterSheet> {
                       title: s.t('sectionSize'),
                       children: [
                         _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl, s.t('rooms')),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _minMaxRow(
                           s,
                           _bedroomsMinCtl,
                           _bedroomsMaxCtl,
                           s.t('bedrooms'),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _minMaxRow(s, _floorMinCtl, _floorMaxCtl, s.t('floor')),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _minMaxRow(
                           s,
                           _totalFloorsMinCtl,
                           _totalFloorsMaxCtl,
                           s.t('totalFloors'),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _minMaxRow(
                           s,
                           _yearMinCtl,
                           _yearMaxCtl,
                           s.t('buildingYear'),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _minMaxRow(s, _areaMinCtl, _areaMaxCtl, s.t('areaSqm')),
                       ],
                     ),
@@ -1236,7 +1236,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           ],
                           onChanged: (v) => setState(() => _maxAgeDays = v),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         DropdownButtonFormField<SortBy>(
                           initialValue: _sort,
                           isExpanded: true,
