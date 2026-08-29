@@ -286,6 +286,10 @@ class _StatsSheetState extends State<StatsSheet> {
   );
 
   Widget _card(String title, {Widget? trailing, required Widget child}) => Card(
+    // Material 3's auto-derived surfaceContainer tone (from the pink seed)
+    // reads as a muddy brown on this dark theme — pin it to the app's own
+    // panel color like every other card/section in the app.
+    color: Theme.of(context).colorScheme.surface,
     margin: const EdgeInsets.only(bottom: 12),
     child: Padding(
       padding: const EdgeInsets.all(14),
@@ -312,7 +316,13 @@ class _StatsSheetState extends State<StatsSheet> {
   );
 
   Widget _metric(String label, String value, [String? detail]) => Container(
-    constraints: const BoxConstraints(minWidth: 130),
+    // A fixed minHeight (not just minWidth) so cards in the same row/wrap
+    // stay the same size even when one label wraps to more lines than
+    // another (e.g. "Долгосрочно" vs "Только комната (подселение)").
+    constraints: BoxConstraints(
+      minWidth: 130,
+      minHeight: detail != null ? 92 : 72,
+    ),
     padding: const EdgeInsets.all(10),
     decoration: BoxDecoration(
       border: Border.all(color: Theme.of(context).dividerColor),

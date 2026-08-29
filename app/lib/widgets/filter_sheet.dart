@@ -277,7 +277,11 @@ class _FilterSheetState extends State<FilterSheet> {
     for (final c in widget.countries) {
       if (_countries.contains(c.code)) set.addAll(c.cities);
     }
-    return set.toList()..sort();
+    final sorted = set.toList()..sort();
+    return withPinnedCities(
+      _countries.isNotEmpty ? _countries.first : '',
+      sorted,
+    );
   }
 
   /// District/metro data for the currently selected city, if any is available.
@@ -358,7 +362,7 @@ class _FilterSheetState extends State<FilterSheet> {
           controller: ctl,
           autofocus: true,
           decoration: InputDecoration(
-            hintText: s.t('presetName'),
+            labelText: s.t('presetName'),
             border: const OutlineInputBorder(),
           ),
         ),
@@ -463,7 +467,7 @@ class _FilterSheetState extends State<FilterSheet> {
           controller: ctl,
           autofocus: true,
           decoration: InputDecoration(
-            hintText: s.t('presetName'),
+            labelText: s.t('presetName'),
             border: const OutlineInputBorder(),
           ),
         ),
@@ -607,7 +611,7 @@ class _FilterSheetState extends State<FilterSheet> {
                   TextField(
                     controller: _queryCtl,
                     decoration: InputDecoration(
-                      hintText: s.t('keywordHint'),
+                      labelText: s.t('keywordHint'),
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.search),
                     ),
@@ -665,23 +669,30 @@ class _FilterSheetState extends State<FilterSheet> {
                     title: s.t('sectionLocation'),
                     children: [
                       // One country at a time: the sources and cities differ per country.
-                      _label(s.t('country')),
-                      Wrap(
-                        spacing: 8,
-                        children: widget.countries.map((c) {
-                          final selected = _countries.contains(c.code);
-                          return ChoiceChip(
-                            label: Text(s.s.countryName(c.code, c.name)),
-                            selected: selected,
-                            onSelected: (v) => setState(() {
-                              if (!v) return; // can't deselect the only country
-                              _countries = {c.code};
-                              _city = null; // city/district/metro belong to a country
-                              _district = null;
-                              _metro = null;
-                            }),
-                          );
-                        }).toList(),
+                      DropdownButtonFormField<String>(
+                        value: _countries.isNotEmpty
+                            ? _countries.first
+                            : null,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(labelText: s.t('country')),
+                        items: widget.countries
+                            .map(
+                              (c) => DropdownMenuItem(
+                                value: c.code,
+                                child: Text(s.s.countryName(c.code, c.name)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _countries = {value};
+                            _city = null; // city/district/metro belong to a country
+                            _district = null;
+                            _metro = null;
+                          });
+                        },
                       ),
                       const SizedBox(height: 10),
                       _label(s.t('city')),
@@ -745,7 +756,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           : TextField(
                               controller: _microdistrictCtl,
                               decoration: InputDecoration(
-                                hintText: s.t('microdistrictPlaceholder'),
+                                labelText: s.t('microdistrictPlaceholder'),
                                 border: const OutlineInputBorder(),
                               ),
                             ),
@@ -766,7 +777,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           : TextField(
                               controller: _quartalCtl,
                               decoration: InputDecoration(
-                                hintText: s.t('quartalPlaceholder'),
+                                labelText: s.t('quartalPlaceholder'),
                                 border: const OutlineInputBorder(),
                               ),
                             ),
@@ -787,7 +798,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           : TextField(
                               controller: _areaNameCtl,
                               decoration: InputDecoration(
-                                hintText: s.t('areaPlaceholder'),
+                                labelText: s.t('areaPlaceholder'),
                                 border: const OutlineInputBorder(),
                               ),
                             ),
@@ -797,7 +808,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         controller: _metroMaxMCtl,
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
-                          hintText: s.t('metroDistanceHint'),
+                          labelText: s.t('metroDistanceHint'),
                           suffixText: 'm',
                           border: const OutlineInputBorder(),
                         ),
@@ -843,82 +854,94 @@ class _FilterSheetState extends State<FilterSheet> {
                     icon: Icons.home_work_outlined,
                     title: s.t('sectionProperty'),
                     children: [
-                      _label(s.t('propertyType')),
-                      SegmentedButton<PropertyType>(
-                        segments: [
-                          ButtonSegment(
+                      DropdownButtonFormField<PropertyType>(
+                        value: _type,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(
+                          labelText: s.t('propertyType'),
+                        ),
+                        items: [
+                          DropdownMenuItem(
                             value: PropertyType.any,
-                            label: Text(s.t('any')),
+                            child: Text(s.t('any')),
                           ),
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: PropertyType.flat,
-                            label: Text(s.t('apartment')),
+                            child: Text(s.t('apartment')),
                           ),
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: PropertyType.house,
-                            label: Text(s.t('house')),
+                            child: Text(s.t('house')),
                           ),
                         ],
-                        selected: {_type},
-                        onSelectionChanged: (v) =>
-                            setState(() => _type = v.first),
+                        onChanged: (v) {
+                          if (v != null) setState(() => _type = v);
+                        },
                       ),
                       const SizedBox(height: 10),
-                      _label(s.t('dealType')),
-                      // A 4-way SegmentedButton squeezes long Russian labels ("Долгосрочно",
-                      // "Посуточно") into equal-width slots too narrow to fit, forcing an
-                      // ugly mid-word wrap. Chips wrap onto a new line instead of breaking
-                      // a word in half.
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: DealType.values
+                      DropdownButtonFormField<DealType>(
+                        value: _deal,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(
+                          labelText: s.t('dealType'),
+                        ),
+                        items: DealType.values
                             .map(
-                              (d) => ChoiceChip(
-                                label: Text(_dealLabel(s, d)),
-                                selected: _deal == d,
-                                onSelected: (v) {
-                                  if (v) setState(() => _deal = d);
-                                },
+                              (d) => DropdownMenuItem(
+                                value: d,
+                                child: Text(_dealLabel(s, d)),
                               ),
                             )
                             .toList(),
+                        onChanged: (v) {
+                          if (v != null) setState(() => _deal = v);
+                        },
                       ),
                       const SizedBox(height: 10),
-                      _label(s.t('realEstateAgency')),
-                      SegmentedButton<AgencyFilter>(
-                        segments: [
-                          ButtonSegment(
+                      DropdownButtonFormField<AgencyFilter>(
+                        value: _agency,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(
+                          labelText: s.t('realEstateAgency'),
+                        ),
+                        items: [
+                          DropdownMenuItem(
                             value: AgencyFilter.any,
-                            label: Text(s.t('any')),
+                            child: Text(s.t('any')),
                           ),
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AgencyFilter.owner,
-                            label: Text(s.t('owner')),
+                            child: Text(s.t('owner')),
                           ),
-                          ButtonSegment(
+                          DropdownMenuItem(
                             value: AgencyFilter.agency,
-                            label: Text(s.t('agency')),
+                            child: Text(s.t('agency')),
                           ),
                         ],
-                        selected: {_agency},
-                        onSelectionChanged: (v) =>
-                            setState(() => _agency = v.first),
+                        onChanged: (v) {
+                          if (v != null) setState(() => _agency = v);
+                        },
                       ),
                       const SizedBox(height: 10),
-                      _label(s.t('audience')),
-                      SegmentedButton<Audience>(
-                        segments: Audience.values
+                      DropdownButtonFormField<Audience>(
+                        value: _audience,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(labelText: s.t('audience')),
+                        items: Audience.values
                             .map(
-                              (a) => ButtonSegment(
+                              (a) => DropdownMenuItem(
                                 value: a,
-                                label: Text(_audienceLabel(s, a)),
+                                child: Text(_audienceLabel(s, a)),
                               ),
                             )
                             .toList(),
-                        selected: {_audience},
-                        onSelectionChanged: (v) =>
-                            setState(() => _audience = v.first),
+                        onChanged: (v) {
+                          if (v != null) setState(() => _audience = v);
+                        },
                       ),
                     ],
                   ),

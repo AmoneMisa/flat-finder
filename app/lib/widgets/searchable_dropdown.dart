@@ -52,7 +52,10 @@ class SearchableDropdown extends StatelessWidget {
         focusNode: focus,
         decoration: InputDecoration(
           isDense: true,
-          hintText: hint,
+          // A floating label (not a hint) so this reads the same as every
+          // other field — always sitting on the border, matching the
+          // dropdowns next to it instead of behaving like a placeholder.
+          labelText: hint,
           border: const OutlineInputBorder(),
           prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: ctl.text.isEmpty

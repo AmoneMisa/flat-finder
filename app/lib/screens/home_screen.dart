@@ -255,13 +255,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(settings.t('appTitle')),
+        title: Text(
+          settings.t('appTitle'),
+          style: const TextStyle(fontSize: 18),
+        ),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 2),
         actions: [
           IconButton(
             tooltip: _mapMode ? settings.t('listView') : settings.t('mapView'),
             iconSize: 20,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
             constraints: const BoxConstraints(),
             icon: Icon(_mapMode ? Icons.view_list : Icons.map_outlined),
             onPressed: () {
@@ -275,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // more often than any other filter.
           PopupMenuButton<SortBy>(
             tooltip: settings.t('sortBy'),
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
             icon: Icon(
               Icons.sort,
               size: 20,
@@ -299,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // header's icons instead of carrying its own text label.
           PopupMenuButton<String?>(
             tooltip: settings.t('displayCurrency'),
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
             icon: Icon(
               Icons.currency_exchange,
               size: 20,
@@ -319,14 +322,14 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: settings.t('statistics'),
             iconSize: 20,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
             constraints: const BoxConstraints(),
             icon: const Icon(Icons.bar_chart_outlined),
             onPressed: () => _openStats(state),
           ),
           PopupMenuButton<String>(
             tooltip: settings.t('more'),
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
             icon: const Icon(Icons.more_vert, size: 20),
             onSelected: (value) {
               switch (value) {
@@ -718,7 +721,10 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
     for (final item in widget.countries) {
       if (item.code == selectedCountry) country = item;
     }
-    final cities = country?.cities ?? const <String>[];
+    final cities = withPinnedCities(
+      selectedCountry ?? '',
+      country?.cities ?? const <String>[],
+    );
     final selectedCity = cities.contains(widget.filters.city)
         ? widget.filters.city
         : null;

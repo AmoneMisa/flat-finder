@@ -44,6 +44,11 @@ InputDecorationTheme _brandInputTheme(Color accent) => InputDecorationTheme(
   fillColor: BrandColors.bgPanel,
   hintStyle: const TextStyle(color: BrandColors.textMuted),
   labelStyle: const TextStyle(color: BrandColors.textSoft),
+  // The label always sits on the border, like a Dropdown's label always
+  // does once it has a value — otherwise an empty TextField's label sits
+  // centered like a placeholder, only jumping to the border on focus,
+  // which read as an inconsistent field style next to the dropdowns.
+  floatingLabelBehavior: FloatingLabelBehavior.always,
   isDense: true,
   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
   border: OutlineInputBorder(
@@ -76,7 +81,17 @@ ThemeData buildTheme(String name) {
             primary: BrandColors.primary,
             secondary: BrandColors.secondary,
             surface: BrandColors.bgPanel,
+            // Material 3 auto-derives these tonal surfaces from the seed
+            // color, which comes out as a muddy brown against this navy
+            // palette (cards, SegmentedButton's selected segment, etc. all
+            // read it) — pin every one to the app's own panel/pink tones.
             surfaceContainerHighest: BrandColors.bgPanel2,
+            surfaceContainerHigh: BrandColors.bgPanel2,
+            surfaceContainer: BrandColors.bgPanel,
+            surfaceContainerLow: BrandColors.bgPanel,
+            surfaceContainerLowest: BrandColors.bgDeep,
+            secondaryContainer: BrandColors.primary,
+            onSecondaryContainer: Colors.white,
             onSurface: BrandColors.textPrimary,
             outline: BrandColors.line,
           );
@@ -102,6 +117,13 @@ ThemeData buildTheme(String name) {
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(0, 40),
             padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+        segmentedButtonTheme: SegmentedButtonThemeData(
+          style: SegmentedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            textStyle: const TextStyle(fontSize: 12),
           ),
         ),
         inputDecorationTheme: _brandInputTheme(BrandColors.primary),
@@ -131,6 +153,12 @@ ThemeData buildTheme(String name) {
             secondary: BrandColors.secondary,
             surface: BrandColors.bgPanel,
             surfaceContainerHighest: BrandColors.bgPanel2,
+            surfaceContainerHigh: BrandColors.bgPanel2,
+            surfaceContainer: BrandColors.bgPanel,
+            surfaceContainerLow: BrandColors.bgPanel,
+            surfaceContainerLowest: BrandColors.bgDeep,
+            secondaryContainer: BrandColors.accentBlue,
+            onSecondaryContainer: Colors.white,
             onSurface: BrandColors.textPrimary,
             outline: BrandColors.line,
           );
@@ -156,6 +184,13 @@ ThemeData buildTheme(String name) {
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(0, 40),
             padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+        segmentedButtonTheme: SegmentedButtonThemeData(
+          style: SegmentedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            textStyle: const TextStyle(fontSize: 12),
           ),
         ),
         inputDecorationTheme: _brandInputTheme(BrandColors.accentBlue),

@@ -81,11 +81,6 @@ class _MapViewState extends State<MapView> {
   static const _pageSize = 8;
   final Map<String, int> _groupPage = {};
 
-  // Below this zoom, listings are too spread out on screen for photo cards
-  // to make sense (thousands of country-wide adverts would overlap into a
-  // wall of cards) — the site's own map only expands into photo cards once
-  // zoomed to roughly a city block, and shows plain dots before that.
-  static const _photoCardMinZoom = 12.0;
   double _zoom = 6;
 
   // Colour overlay layers, matching the site's map + its toolbar toggles.
@@ -184,40 +179,37 @@ class _MapViewState extends State<MapView> {
     return inside;
   }
 
-  /// Groups listings that share (almost) the same coordinate, matching the
-  /// site's map markers: a lone listing gets a plain price pin, a cluster
-  /// fans its current page of photo cards out around the point with a
-  /// center counter + arrows to flip pages, instead of stacking pins.
-  ///
-  /// Below [_photoCardMinZoom] this instead buckets listings into a coarse,
-  /// zoom-scaled grid — at country/region zoom, thousands of adverts are
-  /// spread across the whole screen, and grouping only exact coordinate
-  /// matches would render a full-size photo card per advert, all
-  /// overlapping. [_markersForGroup] renders those coarse buckets as plain
-  /// dots instead, same as the site's map before it's zoomed to a block.
-  List<_PinGroup> _groupsFor(List<Listing> located) {
-    if (_zoom >= _photoCardMinZoom) {
-      final groups = <String, List<Listing>>{};
-      for (final l in located) {
-        final key =
-            '${l.lat!.toStringAsFixed(3)},${l.lng!.toStringAsFixed(3)}';
-        groups.putIfAbsent(key, () => []).add(l);
-      }
-      return [
-        for (final entry in groups.entries)
-          _PinGroup(
-            entry.key,
-            entry.value,
-            LatLng(entry.value.first.lat!, entry.value.first.lng!),
-          ),
-      ];
-    }
+  /// Approximate meters per screen pixel at [lat] and the current [_zoom]
+  /// (standard slippy-map/Web Mercator scale factor), used to size the
+  /// clustering radius in real map units instead of a fixed lat/lng
+  /// tolerance that means wildly different screen distances at different
+  /// zoom levels — that mismatch was the root cause of markers still
+  /// overlapping (or over-merging) at some zooms.
+  double _metersPerPixel(double lat) =>
+      156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, _zoom);
 
-    final cellDeg = 360 / math.pow(2, _zoom.clamp(2, 18));
+  /// Clusters listings by screen-pixel proximity — like the site's map
+  /// (Leaflet marker clustering): any two listings within [_clusterRadiusPx]
+  /// screen pixels of each other end up in the same group, at any zoom
+  /// level, so pins never visually overlap regardless of how zoomed out the
+  /// map is or how many results are loaded.
+  static const _clusterRadiusPx = 42.0;
+
+  List<_PinGroup> _groupsFor(List<Listing> located) {
+    if (located.isEmpty) return const [];
+    final avgLat =
+        located.map((l) => l.lat!).reduce((a, b) => a + b) / located.length;
+    final metersPerPixel = _metersPerPixel(avgLat);
+    final cellMeters = _clusterRadiusPx * metersPerPixel;
+    final latCellDeg = (cellMeters / 111320).clamp(1e-6, 60.0);
+    final lngCellDeg =
+        (cellMeters / (111320 * math.cos(avgLat * math.pi / 180)))
+            .clamp(1e-6, 60.0);
+
     final groups = <String, List<Listing>>{};
     for (final l in located) {
-      final latIdx = (l.lat! / cellDeg).floor();
-      final lngIdx = (l.lng! / cellDeg).floor();
+      final latIdx = (l.lat! / latCellDeg).floor();
+      final lngIdx = (l.lng! / lngCellDeg).floor();
       groups.putIfAbsent('cell:$latIdx,$lngIdx', () => []).add(l);
     }
     return [
@@ -235,59 +227,42 @@ class _MapViewState extends State<MapView> {
     ];
   }
 
-  /// All markers (fanned photo cards + a center page-counter pill) for one
-  /// clustered pin group's currently active page.
-  List<Marker> _markersForGroup(_PinGroup group) {
-    if (_zoom < _photoCardMinZoom) {
-      // A bucket that doesn't overlap anything else (exactly one listing)
-      // shows its price directly; only an actual overlap falls back to a
-      // plain dot, which zooms in on tap instead of trying to show several
-      // prices stacked on the same point.
-      if (group.listings.length == 1) {
-        final l = group.listings.first;
-        return [
-          Marker(
-            point: group.point,
-            width: 76,
-            height: 32,
-            child: GestureDetector(
-              onTap: () => widget.onTapListing(l),
-              child: _PricePin(
-                listing: l,
-                rates: widget.rates,
-                displayCurrency: widget.displayCurrency,
-              ),
-            ),
-          ),
-        ];
-      }
-      return [
-        Marker(
-          point: group.point,
-          width: 30,
-          height: 30,
-          child: GestureDetector(
-            onTap: () => _controller.move(group.point, _photoCardMinZoom),
-            child: _ClusterDot(count: group.listings.length),
-          ),
-        ),
-      ];
-    }
+  /// The cluster currently expanded into its photo-card carousel — matches
+  /// the site's map, where tapping a numbered cluster fans it out in place
+  /// (with a page counter + arrows for more than one page) while every
+  /// other cluster on screen stays a plain dot, instead of the whole map
+  /// switching modes on zoom.
+  String? _expandedGroupKey;
 
+  /// Markers for one cluster: a plain dot (numbered once it holds more than
+  /// one listing) that expands in place into its photo-card carousel when
+  /// tapped, or a single small dot for a lone listing that opens it
+  /// directly.
+  List<Marker> _markersForGroup(_PinGroup group) {
     if (group.listings.length == 1) {
       final l = group.listings.first;
       return [
         Marker(
           point: group.point,
-          width: 76,
-          height: 32,
+          width: 22,
+          height: 22,
           child: GestureDetector(
             onTap: () => widget.onTapListing(l),
-            child: _PricePin(
-              listing: l,
-              rates: widget.rates,
-              displayCurrency: widget.displayCurrency,
-            ),
+            child: const _ClusterDot(count: 1),
+          ),
+        ),
+      ];
+    }
+
+    if (group.key != _expandedGroupKey) {
+      return [
+        Marker(
+          point: group.point,
+          width: 34,
+          height: 34,
+          child: GestureDetector(
+            onTap: () => setState(() => _expandedGroupKey = group.key),
+            child: _ClusterDot(count: group.listings.length),
           ),
         ),
       ];
@@ -332,23 +307,27 @@ class _MapViewState extends State<MapView> {
             ),
           );
         }(),
-      if (pages.length > 1)
-        Marker(
-          point: group.point,
-          width: 96,
-          height: 36,
-          child: _PagePill(
-            index: pageIndex,
-            total: pages.length,
-            onPrev: () => setState(
-              () => _groupPage[group.key] =
-                  (pageIndex - 1 + pages.length) % pages.length,
-            ),
-            onNext: () => setState(
-              () => _groupPage[group.key] = (pageIndex + 1) % pages.length,
-            ),
-          ),
+      Marker(
+        point: group.point,
+        width: 96,
+        height: 36,
+        child: _PagePill(
+          index: pageIndex,
+          total: pages.length,
+          onClose: () => setState(() => _expandedGroupKey = null),
+          onPrev: pages.length > 1
+              ? () => setState(
+                  () => _groupPage[group.key] =
+                      (pageIndex - 1 + pages.length) % pages.length,
+                )
+              : null,
+          onNext: pages.length > 1
+              ? () => setState(
+                  () => _groupPage[group.key] = (pageIndex + 1) % pages.length,
+                )
+              : null,
         ),
+      ),
     ];
     return markers;
   }
@@ -764,17 +743,25 @@ class _PinGroup {
   final LatLng point;
 }
 
-/// A plain price pill for a lone (unclustered) listing.
-/// A plain colored dot for a coarse map cluster below [
-/// _MapViewState._photoCardMinZoom] — a count badge appears once the bucket
-/// holds more than one listing. Tapping zooms in on it (handled by the
-/// caller), matching the site's map before it's zoomed to a city block.
+/// A map marker dot, matching the site's clustering: a lone listing (count
+/// 1) is a small plain white dot with no label; a real cluster is a bigger
+/// colored circle carrying its count, tapped to fan out into its photo-card
+/// carousel in place.
 class _ClusterDot extends StatelessWidget {
   const _ClusterDot({required this.count});
   final int count;
 
   @override
   Widget build(BuildContext context) {
+    if (count <= 1) {
+      return Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 3)],
+        ),
+      );
+    }
     final color = Theme.of(context).colorScheme.primary;
     return Container(
       alignment: Alignment.center,
@@ -784,58 +771,19 @@ class _ClusterDot extends StatelessWidget {
         border: Border.all(color: Colors.white, width: 2),
         boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
       ),
-      child: count > 1
-          ? Text(
-              count > 999 ? '999+' : '$count',
-              maxLines: 1,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 9,
-              ),
-            )
-          : null,
-    );
-  }
-}
-
-class _PricePin extends StatelessWidget {
-  const _PricePin({required this.listing, this.rates, this.displayCurrency});
-  final Listing listing;
-  final Map<String, double>? rates;
-  final String? displayCurrency;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = listing.byAgency
-        ? BrandColors.toneOrange
-        : Theme.of(context).colorScheme.primary;
-    final label = pinPriceLabel(
-      listing,
-      rates: rates,
-      displayCurrency: displayCurrency,
-    );
-    return Container(
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
-      ),
       child: Text(
-        label,
+        count > 999 ? '999+' : '$count',
         maxLines: 1,
-        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           color: Colors.white,
           fontWeight: FontWeight.bold,
-          fontSize: 12,
+          fontSize: 11,
         ),
       ),
     );
   }
 }
+
 
 /// One photo card in a fanned-out cluster, matching the site's map: a
 /// thumbnail with the price pinned to the bottom, or a generic placeholder
@@ -911,47 +859,57 @@ class _PhotoPlaceholder extends StatelessWidget {
   );
 }
 
-/// The center pill sitting on a crowded pin's true point once its listings
-/// span more than one page — shows "current/total" with arrows to flip.
+/// The center pill sitting on an expanded cluster's true point — shows
+/// "current/total" (arrows to flip pages, when there's more than one) and
+/// collapses the carousel back to a plain dot when its center is tapped.
 class _PagePill extends StatelessWidget {
   const _PagePill({
     required this.index,
     required this.total,
-    required this.onPrev,
-    required this.onNext,
+    required this.onClose,
+    this.onPrev,
+    this.onNext,
   });
 
   final int index;
   final int total;
-  final VoidCallback onPrev;
-  final VoidCallback onNext;
+  final VoidCallback onClose;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _PinArrow(icon: Icons.chevron_left, onTap: onPrev),
-        Container(
-          width: 44,
-          height: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
-          ),
-          child: Text(
-            '${index + 1}/$total',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 11,
+        if (onPrev != null) _PinArrow(icon: Icons.chevron_left, onTap: onPrev!),
+        GestureDetector(
+          onTap: onClose,
+          child: Container(
+            width: 44,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 3),
+              ],
             ),
+            child: total > 1
+                ? Text(
+                    '${index + 1}/$total',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  )
+                : const Icon(Icons.close, size: 16, color: Colors.white),
           ),
         ),
-        _PinArrow(icon: Icons.chevron_right, onTap: onNext),
+        if (onNext != null) _PinArrow(icon: Icons.chevron_right, onTap: onNext!),
       ],
     );
   }

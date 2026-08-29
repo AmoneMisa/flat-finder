@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/strings.dart';
+import '../models/filters.dart';
 import '../models/listing.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
@@ -557,7 +558,13 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        _SpecTable(listing: listing, s: s),
+                        _SpecTable(
+                          listing: listing,
+                          s: s,
+                          country: context.watch<AppState>().countryByCode(
+                            listing.country,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -589,24 +596,6 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                             visualDensity: VisualDensity.compact,
                             backgroundColor:
                                 theme.colorScheme.secondaryContainer,
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-                if (listing.tags.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(s.t('tags'), style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: listing.tags
-                        .map(
-                          (t) => Chip(
-                            label: Text(tagLabel(t, s)),
-                            visualDensity: VisualDensity.compact,
-                            backgroundColor: theme.colorScheme.primaryContainer,
                           ),
                         )
                         .toList(),
@@ -661,24 +650,27 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   ),
                 ] else if (listing.description.trim().isNotEmpty) ...[
                   const SizedBox(height: 20),
-                  Text(s.t('description'), style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  SelectableText(
-                    listing.description,
-                    style: theme.textTheme.bodyMedium,
+                  Theme(
+                    data: theme.copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: const EdgeInsets.only(bottom: 8),
+                      title: Text(
+                        s.t('description'),
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: SelectableText(
+                            listing.description,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: listing.url.isEmpty
-                      ? null
-                      : () => launchUrl(
-                          Uri.parse(listing.url),
-                          mode: LaunchMode.externalApplication,
-                        ),
-                  icon: const Icon(Icons.open_in_new),
-                  label: Text(s.t('openOriginal')),
-                ),
               ],
             ),
           ),
@@ -767,10 +759,17 @@ class _SpecRow {
 }
 
 class _SpecTable extends StatelessWidget {
-  const _SpecTable({required this.listing, required this.s});
+  const _SpecTable({required this.listing, required this.s, this.country});
 
   final Listing listing;
   final AppStrings s;
+  /// The listing's country record (fetched with the UI's locale), used to
+  /// translate its city/district/metro/microdistrict/quartal/area names —
+  /// unlike the client-only [cityLabel] dict, this covers every city, not
+  /// just RO/KZ/UZ.
+  final Country? country;
+
+  CityLocations? get _cityLoc => country?.locations[listing.city];
 
   String? _yesNo(bool? value) {
     if (value == null) return null;
@@ -853,11 +852,25 @@ class _SpecTable extends StatelessWidget {
       (
         Icons.map_outlined,
         'city',
-        l.city.isNotEmpty ? cityLabel(l.city, s.lang) : null,
+        l.city.isNotEmpty
+            ? (country?.cityLabel(l.city) ?? cityLabel(l.city, s.lang))
+            : null,
       ),
-      (Icons.person_pin_circle_outlined, 'district', l.district),
-      (Icons.grid_view_outlined, 'kvartal', l.kvartal),
-      (Icons.directions_subway_outlined, 'metro', l.metro),
+      (
+        Icons.person_pin_circle_outlined,
+        'district',
+        l.district == null ? null : (_cityLoc?.districtLabels[l.district] ?? l.district),
+      ),
+      (
+        Icons.grid_view_outlined,
+        'kvartal',
+        l.kvartal == null ? null : (_cityLoc?.quartalLabels[l.kvartal] ?? l.kvartal),
+      ),
+      (
+        Icons.directions_subway_outlined,
+        'metro',
+        l.metro == null ? null : (_cityLoc?.metroLabels[l.metro] ?? l.metro),
+      ),
       (Icons.location_on_outlined, 'address', l.address),
       (
         Icons.storefront_outlined,
@@ -983,6 +996,7 @@ class _SpecTable extends StatelessWidget {
               children: [
                 Tooltip(
                   message: row.label,
+                  triggerMode: TooltipTriggerMode.tap,
                   child: Icon(
                     row.icon,
                     size: 18,

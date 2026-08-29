@@ -47,6 +47,27 @@ String cityLabel(String city, String locale) {
   return _cityNamesRu[city] ?? city;
 }
 
+/// The handful of cities worth surfacing first in a country's city list —
+/// its major/capital cities, so they don't get lost below hundreds of towns
+/// in alphabetical order (Ukraine alone has ~326).
+const _pinnedCities = {
+  'UZ': ['Tashkent', 'Samarkand', 'Bukhara'],
+  'UA': ['Kharkiv', 'Kyiv', 'Odesa'],
+};
+
+/// Reorders [cities] so any of [countryCode]'s pinned cities that are
+/// actually present come first, in the given priority order, followed by
+/// the rest in their original order.
+List<String> withPinnedCities(String countryCode, List<String> cities) {
+  final pins = _pinnedCities[countryCode.toUpperCase()];
+  if (pins == null || pins.isEmpty) return cities;
+  final present = cities.toSet();
+  final front = [for (final p in pins) if (present.contains(p)) p];
+  if (front.isEmpty) return cities;
+  final frontSet = front.toSet();
+  return [...front, for (final c in cities) if (!frontSet.contains(c)) c];
+}
+
 /// Formats a listing's price, optionally converting it into [displayCurrency]
 /// using [rates] (units of currency per 1 USD, as returned by /api/rates).
 /// Falls back to the listing's native currency when conversion isn't possible.

@@ -30,7 +30,7 @@ class AppStrings {
 
   static const _values = <String, Map<String, String>>{
     'en': {
-      'appTitle': 'F.F.',
+      'appTitle': 'FlatFinder',
       'mapView': 'Map view',
       'listView': 'List view',
       'filters': 'Filters',
@@ -419,7 +419,7 @@ class AppStrings {
       'tag_noCommission': 'No commission',
     },
     'ru': {
-      'appTitle': 'F.F.',
+      'appTitle': 'FlatFinder',
       'mapView': 'На карте',
       'listView': 'Списком',
       'filters': 'Фильтры',

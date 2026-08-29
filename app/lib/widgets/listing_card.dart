@@ -332,7 +332,7 @@ class ListingCard extends StatelessWidget {
           ),
           // Actions sit at the very bottom of the card, clear of the photo,
           // badge, and viewed icon so nothing overlaps on narrow mobile cards.
-          SizedBox(height: compact ? 4 : 8),
+          SizedBox(height: (compact ? 4 : 8) + 4),
           Align(alignment: Alignment.centerRight, child: actions),
         ],
       ),
@@ -712,9 +712,9 @@ class _FavButton extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: IconButton(
         tooltip: tooltip,
-        iconSize: 19,
+        iconSize: 15,
         visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(5),
         constraints: const BoxConstraints(),
         onPressed: onPressed,
         icon: Icon(
@@ -749,9 +749,9 @@ class _CardActionButton extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: IconButton(
         tooltip: tooltip,
-        iconSize: 19,
+        iconSize: 15,
         visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(5),
         constraints: const BoxConstraints(),
         onPressed: onPressed,
         icon: Icon(icon, color: scheme.onSurfaceVariant),
