@@ -27,7 +27,16 @@ const kSourceLabels = {
 /// params (`parseListingFilters` in listing-routes.js) and stores generically
 /// so new amenities don't need a new Filters field each time.
 const kAmenityFilters = [
+  'dishwasher', 'airConditioner', 'parking', 'internet', 'gas', 'balcony', 'terrace',
+  'privateYard', 'newBuilding',
   'tv', 'microwave', 'oven', 'bidet', 'walkInCloset', 'bathtub', 'shower', 'euroLayout',
+];
+
+/// Landmark kinds the backend's `nearbyKind` filter accepts (paired with
+/// `nearbyMaxM`) — matches the categories nearby-places.js indexes listings by.
+const kNearbyKinds = [
+  'metro', 'landmark', 'mall', 'supermarket', 'market', 'pharmacy', 'clinic',
+  'school', 'kindergarten', 'park', 'historic', 'cinema', 'transport',
 ];
 
 /// Districts and metro/transit stations available within a single city.
@@ -92,10 +101,26 @@ class Filters {
   num? bedroomsMax;
   num? floorMin;
   num? floorMax;
+  num? totalFloorsMin;
+  num? totalFloorsMax;
   num? yearMin;
   num? yearMax;
+  num? areaMin;
+  num? areaMax;
+  num? pricePerSqmMin;
+  num? pricePerSqmMax;
+  num? commissionPercentMin;
+  num? commissionPercentMax;
+  String? priceCurrency; // which currency priceMin/priceMax are denominated in
+  num? metroMaxM; // max distance (meters) from a metro/transit station
+  num? nearbyMaxM; // max distance (meters) from nearbyKind
+  String? nearbyKind; // one of kNearbyKinds
+  bool withPhotos;
   String city;
   String district;
+  String microdistrict;
+  String quartal;
+  String area;
   String metro;
   String query;
   bool pets; // require "pets allowed"
@@ -126,10 +151,26 @@ class Filters {
     this.bedroomsMax,
     this.floorMin,
     this.floorMax,
+    this.totalFloorsMin,
+    this.totalFloorsMax,
     this.yearMin,
     this.yearMax,
+    this.areaMin,
+    this.areaMax,
+    this.pricePerSqmMin,
+    this.pricePerSqmMax,
+    this.commissionPercentMin,
+    this.commissionPercentMax,
+    this.priceCurrency,
+    this.metroMaxM,
+    this.nearbyMaxM,
+    this.nearbyKind,
+    this.withPhotos = false,
     this.city = '',
     this.district = '',
+    this.microdistrict = '',
+    this.quartal = '',
+    this.area = '',
     this.metro = '',
     this.query = '',
     this.pets = false,
@@ -164,8 +205,21 @@ class Filters {
     num? bedroomsMax,
     num? floorMin,
     num? floorMax,
+    num? totalFloorsMin,
+    num? totalFloorsMax,
     num? yearMin,
     num? yearMax,
+    num? areaMin,
+    num? areaMax,
+    num? pricePerSqmMin,
+    num? pricePerSqmMax,
+    num? commissionPercentMin,
+    num? commissionPercentMax,
+    String? priceCurrency,
+    num? metroMaxM,
+    num? nearbyMaxM,
+    String? nearbyKind,
+    bool? withPhotos,
     bool clearPriceMin = false,
     bool clearPriceMax = false,
     bool clearPriceTolerance = false,
@@ -175,10 +229,25 @@ class Filters {
     bool clearBedroomsMax = false,
     bool clearFloorMin = false,
     bool clearFloorMax = false,
+    bool clearTotalFloorsMin = false,
+    bool clearTotalFloorsMax = false,
     bool clearYearMin = false,
     bool clearYearMax = false,
+    bool clearAreaMin = false,
+    bool clearAreaMax = false,
+    bool clearPricePerSqmMin = false,
+    bool clearPricePerSqmMax = false,
+    bool clearCommissionPercentMin = false,
+    bool clearCommissionPercentMax = false,
+    bool clearPriceCurrency = false,
+    bool clearMetroMaxM = false,
+    bool clearNearbyMaxM = false,
+    bool clearNearbyKind = false,
     String? city,
     String? district,
+    String? microdistrict,
+    String? quartal,
+    String? area,
     String? metro,
     String? query,
     bool? pets,
@@ -211,10 +280,28 @@ class Filters {
       bedroomsMax: clearBedroomsMax ? null : (bedroomsMax ?? this.bedroomsMax),
       floorMin: clearFloorMin ? null : (floorMin ?? this.floorMin),
       floorMax: clearFloorMax ? null : (floorMax ?? this.floorMax),
+      totalFloorsMin: clearTotalFloorsMin ? null : (totalFloorsMin ?? this.totalFloorsMin),
+      totalFloorsMax: clearTotalFloorsMax ? null : (totalFloorsMax ?? this.totalFloorsMax),
       yearMin: clearYearMin ? null : (yearMin ?? this.yearMin),
       yearMax: clearYearMax ? null : (yearMax ?? this.yearMax),
+      areaMin: clearAreaMin ? null : (areaMin ?? this.areaMin),
+      areaMax: clearAreaMax ? null : (areaMax ?? this.areaMax),
+      pricePerSqmMin: clearPricePerSqmMin ? null : (pricePerSqmMin ?? this.pricePerSqmMin),
+      pricePerSqmMax: clearPricePerSqmMax ? null : (pricePerSqmMax ?? this.pricePerSqmMax),
+      commissionPercentMin:
+          clearCommissionPercentMin ? null : (commissionPercentMin ?? this.commissionPercentMin),
+      commissionPercentMax:
+          clearCommissionPercentMax ? null : (commissionPercentMax ?? this.commissionPercentMax),
+      priceCurrency: clearPriceCurrency ? null : (priceCurrency ?? this.priceCurrency),
+      metroMaxM: clearMetroMaxM ? null : (metroMaxM ?? this.metroMaxM),
+      nearbyMaxM: clearNearbyMaxM ? null : (nearbyMaxM ?? this.nearbyMaxM),
+      nearbyKind: clearNearbyKind ? null : (nearbyKind ?? this.nearbyKind),
+      withPhotos: withPhotos ?? this.withPhotos,
       city: city ?? this.city,
       district: district ?? this.district,
+      microdistrict: microdistrict ?? this.microdistrict,
+      quartal: quartal ?? this.quartal,
+      area: area ?? this.area,
       metro: metro ?? this.metro,
       query: query ?? this.query,
       pets: pets ?? this.pets,
@@ -249,10 +336,26 @@ class Filters {
         'bedroomsMax': bedroomsMax,
         'floorMin': floorMin,
         'floorMax': floorMax,
+        'totalFloorsMin': totalFloorsMin,
+        'totalFloorsMax': totalFloorsMax,
         'yearMin': yearMin,
         'yearMax': yearMax,
+        'areaMin': areaMin,
+        'areaMax': areaMax,
+        'pricePerSqmMin': pricePerSqmMin,
+        'pricePerSqmMax': pricePerSqmMax,
+        'commissionPercentMin': commissionPercentMin,
+        'commissionPercentMax': commissionPercentMax,
+        'priceCurrency': priceCurrency,
+        'metroMaxM': metroMaxM,
+        'nearbyMaxM': nearbyMaxM,
+        'nearbyKind': nearbyKind,
+        'withPhotos': withPhotos,
         'city': city,
         'district': district,
+        'microdistrict': microdistrict,
+        'quartal': quartal,
+        'area': area,
         'metro': metro,
         'query': query,
         'pets': pets,
@@ -300,10 +403,26 @@ class Filters {
       bedroomsMax: n(j['bedroomsMax']),
       floorMin: n(j['floorMin']),
       floorMax: n(j['floorMax']),
+      totalFloorsMin: n(j['totalFloorsMin']),
+      totalFloorsMax: n(j['totalFloorsMax']),
       yearMin: n(j['yearMin']),
       yearMax: n(j['yearMax']),
+      areaMin: n(j['areaMin']),
+      areaMax: n(j['areaMax']),
+      pricePerSqmMin: n(j['pricePerSqmMin']),
+      pricePerSqmMax: n(j['pricePerSqmMax']),
+      commissionPercentMin: n(j['commissionPercentMin']),
+      commissionPercentMax: n(j['commissionPercentMax']),
+      priceCurrency: j['priceCurrency'] as String?,
+      metroMaxM: n(j['metroMaxM']),
+      nearbyMaxM: n(j['nearbyMaxM']),
+      nearbyKind: j['nearbyKind'] as String?,
+      withPhotos: j['withPhotos'] == true,
       city: (j['city'] ?? '').toString(),
       district: (j['district'] ?? '').toString(),
+      microdistrict: (j['microdistrict'] ?? '').toString(),
+      quartal: (j['quartal'] ?? '').toString(),
+      area: (j['area'] ?? '').toString(),
       metro: (j['metro'] ?? '').toString(),
       query: (j['query'] ?? '').toString(),
       pets: j['pets'] == true,
@@ -362,10 +481,26 @@ class Filters {
       bedroomsMax: n(q['bedroomsMax']),
       floorMin: n(q['floorMin']),
       floorMax: n(q['floorMax']),
+      totalFloorsMin: n(q['totalFloorsMin']),
+      totalFloorsMax: n(q['totalFloorsMax']),
       yearMin: n(q['yearMin']),
       yearMax: n(q['yearMax']),
+      areaMin: n(q['areaMin']),
+      areaMax: n(q['areaMax']),
+      pricePerSqmMin: n(q['pricePerSqmMin']),
+      pricePerSqmMax: n(q['pricePerSqmMax']),
+      commissionPercentMin: n(q['commissionPercentMin']),
+      commissionPercentMax: n(q['commissionPercentMax']),
+      priceCurrency: (q['priceCurrency']?.isNotEmpty ?? false) ? q['priceCurrency'] : null,
+      metroMaxM: n(q['metroMaxM']),
+      nearbyMaxM: n(q['nearbyMaxM']),
+      nearbyKind: (q['nearbyKind']?.isNotEmpty ?? false) ? q['nearbyKind'] : null,
+      withPhotos: q['withPhotos'] == 'true',
       city: (q['city'] ?? '').trim(),
       district: (q['district'] ?? '').trim(),
+      microdistrict: (q['microdistrict'] ?? '').trim(),
+      quartal: (q['quartal'] ?? '').trim(),
+      area: (q['area'] ?? '').trim(),
       metro: (q['metro'] ?? '').trim(),
       query: (q['query'] ?? '').trim(),
       pets: q['pets'] == 'true',
@@ -421,10 +556,32 @@ class Filters {
     if (bedroomsMax != null) p['bedroomsMax'] = bedroomsMax.toString();
     if (floorMin != null) p['floorMin'] = floorMin.toString();
     if (floorMax != null) p['floorMax'] = floorMax.toString();
+    if (totalFloorsMin != null) p['totalFloorsMin'] = totalFloorsMin.toString();
+    if (totalFloorsMax != null) p['totalFloorsMax'] = totalFloorsMax.toString();
     if (yearMin != null) p['yearMin'] = yearMin.toString();
     if (yearMax != null) p['yearMax'] = yearMax.toString();
+    if (areaMin != null) p['areaMin'] = areaMin.toString();
+    if (areaMax != null) p['areaMax'] = areaMax.toString();
+    if (pricePerSqmMin != null) p['pricePerSqmMin'] = pricePerSqmMin.toString();
+    if (pricePerSqmMax != null) p['pricePerSqmMax'] = pricePerSqmMax.toString();
+    if (commissionPercentMin != null) {
+      p['commissionPercentMin'] = commissionPercentMin.toString();
+    }
+    if (commissionPercentMax != null) {
+      p['commissionPercentMax'] = commissionPercentMax.toString();
+    }
+    if (priceCurrency != null && priceCurrency!.isNotEmpty) {
+      p['priceCurrency'] = priceCurrency!;
+    }
+    if (metroMaxM != null) p['metroMaxM'] = metroMaxM.toString();
+    if (nearbyMaxM != null) p['nearbyMaxM'] = nearbyMaxM.toString();
+    if (nearbyKind != null && nearbyKind!.isNotEmpty) p['nearbyKind'] = nearbyKind!;
+    if (withPhotos) p['withPhotos'] = 'true';
     if (city.trim().isNotEmpty) p['city'] = city.trim();
     if (district.trim().isNotEmpty) p['district'] = district.trim();
+    if (microdistrict.trim().isNotEmpty) p['microdistrict'] = microdistrict.trim();
+    if (quartal.trim().isNotEmpty) p['quartal'] = quartal.trim();
+    if (area.trim().isNotEmpty) p['area'] = area.trim();
     if (metro.trim().isNotEmpty) p['metro'] = metro.trim();
     if (query.trim().isNotEmpty) p['query'] = query.trim();
     return p;

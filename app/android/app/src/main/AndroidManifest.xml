@@ -26,12 +26,26 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Opens shared search links (flatfinder://search?…) in the app. -->
+            <!-- Opens shared search/listing links (flatfinder://search?…,
+                 flatfinder://listing?id=…) in the app. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="flatfinder" android:host="search"/>
+                <data android:scheme="flatfinder" android:host="listing"/>
+            </intent-filter>
+            <!-- Android App Links: a whiteslove.me/flat-finder link opens straight
+                 into the app (no chooser) once Digital Asset Links verification
+                 passes — see public/.well-known/assetlinks.json in the site repo.
+                 autoVerify requires that file to list this build's signing
+                 certificate SHA-256; until then this still works as an ordinary
+                 (chooser-prompting) deep link. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="whiteslove.me" android:pathPrefix="/flat-finder"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

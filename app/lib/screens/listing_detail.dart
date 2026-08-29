@@ -147,7 +147,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     if (info.isNotEmpty) b.writeln(info.join(' · '));
     if (listing.contact != null) b.writeln(listing.contact!);
     if (listing.url.isNotEmpty) b.writeln(listing.url);
-    if (listing.publicId != null) b.writeln(buildListingShareUrl(listing.publicId!));
+    if (listing.publicId != null) b.writeln(buildListingWebShareUrl(listing.publicId!));
     return b.toString().trim();
   }
 
@@ -158,7 +158,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   /// details as a last resort.
   Future<void> _shareLink(AppStrings s, Map<String, double> rates, String? displayCurrency) async {
     final link = listing.publicId != null
-        ? buildListingShareUrl(listing.publicId!)
+        ? buildListingWebShareUrl(listing.publicId!)
         : listing.url.isNotEmpty
             ? listing.url
             : _shareText(s, rates, displayCurrency);

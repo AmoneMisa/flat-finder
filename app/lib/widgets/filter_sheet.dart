@@ -52,9 +52,25 @@ class _FilterSheetState extends State<FilterSheet> {
   late TextEditingController _bedroomsMaxCtl;
   late TextEditingController _floorMinCtl;
   late TextEditingController _floorMaxCtl;
+  late TextEditingController _totalFloorsMinCtl;
+  late TextEditingController _totalFloorsMaxCtl;
   late TextEditingController _yearMinCtl;
   late TextEditingController _yearMaxCtl;
+  late TextEditingController _areaMinCtl;
+  late TextEditingController _areaMaxCtl;
+  late TextEditingController _pricePerSqmMinCtl;
+  late TextEditingController _pricePerSqmMaxCtl;
+  late TextEditingController _commissionPercentMinCtl;
+  late TextEditingController _commissionPercentMaxCtl;
+  late TextEditingController _metroMaxMCtl;
+  late TextEditingController _nearbyMaxMCtl;
+  late TextEditingController _microdistrictCtl;
+  late TextEditingController _quartalCtl;
+  late TextEditingController _areaNameCtl;
   late TextEditingController _queryCtl;
+  String? _nearbyKind;
+  String? _priceCurrency;
+  late bool _withPhotos;
 
   @override
   void initState() {
@@ -90,9 +106,31 @@ class _FilterSheetState extends State<FilterSheet> {
     _bedroomsMaxCtl = TextEditingController(text: widget.initial.bedroomsMax?.toString() ?? '');
     _floorMinCtl = TextEditingController(text: widget.initial.floorMin?.toString() ?? '');
     _floorMaxCtl = TextEditingController(text: widget.initial.floorMax?.toString() ?? '');
+    _totalFloorsMinCtl =
+        TextEditingController(text: widget.initial.totalFloorsMin?.toString() ?? '');
+    _totalFloorsMaxCtl =
+        TextEditingController(text: widget.initial.totalFloorsMax?.toString() ?? '');
     _yearMinCtl = TextEditingController(text: widget.initial.yearMin?.toString() ?? '');
     _yearMaxCtl = TextEditingController(text: widget.initial.yearMax?.toString() ?? '');
+    _areaMinCtl = TextEditingController(text: widget.initial.areaMin?.toString() ?? '');
+    _areaMaxCtl = TextEditingController(text: widget.initial.areaMax?.toString() ?? '');
+    _pricePerSqmMinCtl =
+        TextEditingController(text: widget.initial.pricePerSqmMin?.toString() ?? '');
+    _pricePerSqmMaxCtl =
+        TextEditingController(text: widget.initial.pricePerSqmMax?.toString() ?? '');
+    _commissionPercentMinCtl =
+        TextEditingController(text: widget.initial.commissionPercentMin?.toString() ?? '');
+    _commissionPercentMaxCtl =
+        TextEditingController(text: widget.initial.commissionPercentMax?.toString() ?? '');
+    _metroMaxMCtl = TextEditingController(text: widget.initial.metroMaxM?.toString() ?? '');
+    _nearbyMaxMCtl = TextEditingController(text: widget.initial.nearbyMaxM?.toString() ?? '');
+    _microdistrictCtl = TextEditingController(text: widget.initial.microdistrict);
+    _quartalCtl = TextEditingController(text: widget.initial.quartal);
+    _areaNameCtl = TextEditingController(text: widget.initial.area);
     _queryCtl = TextEditingController(text: widget.initial.query);
+    _nearbyKind = widget.initial.nearbyKind;
+    _priceCurrency = widget.initial.priceCurrency;
+    _withPhotos = widget.initial.withPhotos;
   }
 
   @override
@@ -106,8 +144,21 @@ class _FilterSheetState extends State<FilterSheet> {
     _bedroomsMaxCtl.dispose();
     _floorMinCtl.dispose();
     _floorMaxCtl.dispose();
+    _totalFloorsMinCtl.dispose();
+    _totalFloorsMaxCtl.dispose();
     _yearMinCtl.dispose();
     _yearMaxCtl.dispose();
+    _areaMinCtl.dispose();
+    _areaMaxCtl.dispose();
+    _pricePerSqmMinCtl.dispose();
+    _pricePerSqmMaxCtl.dispose();
+    _commissionPercentMinCtl.dispose();
+    _commissionPercentMaxCtl.dispose();
+    _metroMaxMCtl.dispose();
+    _nearbyMaxMCtl.dispose();
+    _microdistrictCtl.dispose();
+    _quartalCtl.dispose();
+    _areaNameCtl.dispose();
     _queryCtl.dispose();
     super.dispose();
   }
@@ -144,18 +195,34 @@ class _FilterSheetState extends State<FilterSheet> {
       audience: _audience,
       city: _city ?? '',
       district: _district ?? '',
+      microdistrict: _microdistrictCtl.text,
+      quartal: _quartalCtl.text,
+      area: _areaNameCtl.text,
       metro: _metro ?? '',
       priceMin: parse(_minCtl.text),
       priceMax: parse(_maxCtl.text),
       priceTolerance: _tolerance ? parse(_toleranceCtl.text) : null,
+      priceCurrency: _priceCurrency,
       roomsMin: parse(_roomsMinCtl.text),
       roomsMax: parse(_roomsMaxCtl.text),
       bedroomsMin: parse(_bedroomsMinCtl.text),
       bedroomsMax: parse(_bedroomsMaxCtl.text),
       floorMin: parse(_floorMinCtl.text),
       floorMax: parse(_floorMaxCtl.text),
+      totalFloorsMin: parse(_totalFloorsMinCtl.text),
+      totalFloorsMax: parse(_totalFloorsMaxCtl.text),
       yearMin: parse(_yearMinCtl.text),
       yearMax: parse(_yearMaxCtl.text),
+      areaMin: parse(_areaMinCtl.text),
+      areaMax: parse(_areaMaxCtl.text),
+      pricePerSqmMin: parse(_pricePerSqmMinCtl.text),
+      pricePerSqmMax: parse(_pricePerSqmMaxCtl.text),
+      commissionPercentMin: parse(_commissionPercentMinCtl.text),
+      commissionPercentMax: parse(_commissionPercentMaxCtl.text),
+      metroMaxM: parse(_metroMaxMCtl.text),
+      nearbyMaxM: parse(_nearbyMaxMCtl.text),
+      nearbyKind: _nearbyKind,
+      withPhotos: _withPhotos,
       query: _queryCtl.text,
       pets: _pets,
       children: _children,
@@ -227,19 +294,35 @@ class _FilterSheetState extends State<FilterSheet> {
       _sort = f.sort;
       _city = f.city.trim().isEmpty ? null : f.city.trim();
       _district = f.district.trim().isEmpty ? null : f.district.trim();
+      _microdistrictCtl.text = f.microdistrict;
+      _quartalCtl.text = f.quartal;
+      _areaNameCtl.text = f.area;
       _metro = f.metro.trim().isEmpty ? null : f.metro.trim();
       _minCtl.text = f.priceMin?.toString() ?? '';
       _maxCtl.text = f.priceMax?.toString() ?? '';
       _tolerance = (f.priceTolerance ?? 0) > 0;
       _toleranceCtl.text = f.priceTolerance?.toString() ?? '';
+      _priceCurrency = f.priceCurrency;
       _roomsMinCtl.text = f.roomsMin?.toString() ?? '';
       _roomsMaxCtl.text = f.roomsMax?.toString() ?? '';
       _bedroomsMinCtl.text = f.bedroomsMin?.toString() ?? '';
       _bedroomsMaxCtl.text = f.bedroomsMax?.toString() ?? '';
       _floorMinCtl.text = f.floorMin?.toString() ?? '';
       _floorMaxCtl.text = f.floorMax?.toString() ?? '';
+      _totalFloorsMinCtl.text = f.totalFloorsMin?.toString() ?? '';
+      _totalFloorsMaxCtl.text = f.totalFloorsMax?.toString() ?? '';
       _yearMinCtl.text = f.yearMin?.toString() ?? '';
       _yearMaxCtl.text = f.yearMax?.toString() ?? '';
+      _areaMinCtl.text = f.areaMin?.toString() ?? '';
+      _areaMaxCtl.text = f.areaMax?.toString() ?? '';
+      _pricePerSqmMinCtl.text = f.pricePerSqmMin?.toString() ?? '';
+      _pricePerSqmMaxCtl.text = f.pricePerSqmMax?.toString() ?? '';
+      _commissionPercentMinCtl.text = f.commissionPercentMin?.toString() ?? '';
+      _commissionPercentMaxCtl.text = f.commissionPercentMax?.toString() ?? '';
+      _metroMaxMCtl.text = f.metroMaxM?.toString() ?? '';
+      _nearbyMaxMCtl.text = f.nearbyMaxM?.toString() ?? '';
+      _nearbyKind = f.nearbyKind;
+      _withPhotos = f.withPhotos;
       _queryCtl.text = f.query;
     });
   }
@@ -675,6 +758,26 @@ class _FilterSheetState extends State<FilterSheet> {
                   border: const OutlineInputBorder(),
                 ),
               ),
+            if (_countries.length == 1 &&
+                widget.countries
+                    .firstWhere((c) => c.code == _countries.first,
+                        orElse: () => const Country(
+                            code: '', name: '', currency: '', centerLat: 0, centerLng: 0))
+                    .currency
+                    .isNotEmpty) ...[
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String?>(
+                initialValue: _priceCurrency,
+                decoration: InputDecoration(
+                    labelText: s.t('priceCurrency'), border: const OutlineInputBorder()),
+                items: [
+                  DropdownMenuItem<String?>(value: null, child: Text(s.t('nativeCurrency'))),
+                  for (final code in SettingsState.currencyOptions)
+                    if (code != null) DropdownMenuItem<String?>(value: code, child: Text(code)),
+                ],
+                onChanged: (v) => setState(() => _priceCurrency = v),
+              ),
+            ],
             const SizedBox(height: 20),
             _label(s.t('rooms')),
             _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl),
@@ -685,8 +788,20 @@ class _FilterSheetState extends State<FilterSheet> {
             _label(s.t('floor')),
             _minMaxRow(s, _floorMinCtl, _floorMaxCtl),
             const SizedBox(height: 20),
+            _label(s.t('totalFloors')),
+            _minMaxRow(s, _totalFloorsMinCtl, _totalFloorsMaxCtl),
+            const SizedBox(height: 20),
             _label(s.t('buildingYear')),
             _minMaxRow(s, _yearMinCtl, _yearMaxCtl),
+            const SizedBox(height: 20),
+            _label(s.t('areaSqm')),
+            _minMaxRow(s, _areaMinCtl, _areaMaxCtl),
+            const SizedBox(height: 20),
+            _label(s.t('pricePerSqm')),
+            _minMaxRow(s, _pricePerSqmMinCtl, _pricePerSqmMaxCtl),
+            const SizedBox(height: 20),
+            _label(s.t('commissionPercentRange')),
+            _minMaxRow(s, _commissionPercentMinCtl, _commissionPercentMaxCtl),
             const SizedBox(height: 20),
             _label(s.t('audience')),
             SegmentedButton<Audience>(
@@ -825,6 +940,68 @@ class _FilterSheetState extends State<FilterSheet> {
               ),
             ],
             const SizedBox(height: 20),
+            _label(s.t('microdistrict')),
+            TextField(
+              controller: _microdistrictCtl,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 20),
+            _label(s.t('quartal')),
+            TextField(
+              controller: _quartalCtl,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 20),
+            _label(s.t('areaName')),
+            TextField(
+              controller: _areaNameCtl,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 20),
+            _label(s.t('metroDistance')),
+            TextField(
+              controller: _metroMaxMCtl,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                hintText: s.t('metroDistanceHint'),
+                suffixText: 'm',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _label(s.t('nearbyDistance')),
+            DropdownButtonFormField<String?>(
+              initialValue: _nearbyKind,
+              isExpanded: true,
+              decoration: InputDecoration(
+                  labelText: s.t('nearbyKind'), border: const OutlineInputBorder()),
+              items: [
+                DropdownMenuItem<String?>(value: null, child: Text(s.t('any'))),
+                for (final kind in kNearbyKinds)
+                  DropdownMenuItem<String?>(value: kind, child: Text(s.t('nearbyKind_$kind'))),
+              ],
+              onChanged: (v) => setState(() => _nearbyKind = v),
+            ),
+            if (_nearbyKind != null) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _nearbyMaxMCtl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: s.t('nearbyDistance'),
+                  suffixText: 'm',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            SwitchListTile(
+              value: _withPhotos,
+              onChanged: (v) => setState(() => _withPhotos = v),
+              contentPadding: EdgeInsets.zero,
+              title: Text(s.t('withPhotos')),
+            ),
+            const SizedBox(height: 12),
             _label(s.t('keyword')),
             TextField(
               controller: _queryCtl,
