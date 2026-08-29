@@ -47,7 +47,10 @@ class FlatFinderApp extends StatelessWidget {
       ],
       child: Consumer<SettingsState>(
         builder: (context, settings, _) => MaterialApp(
-          title: settings.t('appTitle'),
+          // A non-breaking space keeps "Flat Finder" as one token, so
+          // Android's task-switcher can't fold it down to initials
+          // ("F.F.") the way it does with an ordinary two-word title.
+          title: settings.t('appTitle').replaceAll(' ', ' '),
           debugShowCheckedModeBanner: false,
           locale: settings.locale,
           supportedLocales: AppStrings.supported.map((l) => Locale(l)),

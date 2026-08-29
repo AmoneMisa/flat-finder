@@ -252,6 +252,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.tune),
             onPressed: () => _openFilters(state),
           ),
+          IconButton(
+            tooltip: settings.t('statistics'),
+            icon: const Icon(Icons.bar_chart_outlined),
+            onPressed: () => _openStats(state),
+          ),
           PopupMenuButton<String>(
             tooltip: settings.t('more'),
             icon: const Icon(Icons.more_vert),
@@ -334,13 +339,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.favorite_border),
                     title: Text(settings.t('favorites')),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'statistics',
-                  child: ListTile(
-                    leading: const Icon(Icons.bar_chart_outlined),
-                    title: Text(settings.t('statistics')),
                   ),
                 ),
                 PopupMenuItem(
@@ -810,42 +808,48 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                           const SizedBox(width: 6),
                           // Which currency Min/Max are denominated in — the
                           // fast-filter row had a price range with no way to
-                          // say what currency it meant.
-                          DropdownButton<String?>(
-                            value: widget.filters.priceCurrency,
-                            underline: const SizedBox.shrink(),
-                            hint: Text(
-                              country?.currency ?? '',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            items: [
-                              DropdownMenuItem<String?>(
-                                value: null,
-                                child: Text(
-                                  country?.currency ?? s.t('nativeCurrency'),
-                                ),
+                          // say what currency it meant. A form field (not a
+                          // plain DropdownButton) so it matches the Min/Max
+                          // TextFields' height instead of sitting shorter.
+                          SizedBox(
+                            width: 92,
+                            child: DropdownButtonFormField<String?>(
+                              value: widget.filters.priceCurrency,
+                              decoration: const InputDecoration(),
+                              hint: Text(
+                                country?.currency ?? '',
+                                style: const TextStyle(fontSize: 12),
                               ),
-                              for (final code in SettingsState.currencyOptions)
-                                if (code != null)
-                                  DropdownMenuItem<String?>(
-                                    value: code,
-                                    child: Text(code),
+                              items: [
+                                DropdownMenuItem<String?>(
+                                  value: null,
+                                  child: Text(
+                                    country?.currency ?? s.t('nativeCurrency'),
                                   ),
-                            ],
-                            onChanged: (value) {
-                              // Same currency drives both the price-range
-                              // filter and the card conversion shown below
-                              // the native price, matching the web app's
-                              // single `displayCurrency`.
-                              widget.settings.setDisplayCurrency(value);
-                              _schedule(
-                                _withTextValues().copyWith(
-                                  priceCurrency: value,
-                                  clearPriceCurrency: value == null,
                                 ),
-                                immediate: true,
-                              );
-                            },
+                                for (final code
+                                    in SettingsState.currencyOptions)
+                                  if (code != null)
+                                    DropdownMenuItem<String?>(
+                                      value: code,
+                                      child: Text(code),
+                                    ),
+                              ],
+                              onChanged: (value) {
+                                // Same currency drives both the price-range
+                                // filter and the card conversion shown below
+                                // the native price, matching the web app's
+                                // single `displayCurrency`.
+                                widget.settings.setDisplayCurrency(value);
+                                _schedule(
+                                  _withTextValues().copyWith(
+                                    priceCurrency: value,
+                                    clearPriceCurrency: value == null,
+                                  ),
+                                  immediate: true,
+                                );
+                              },
+                            ),
                           ),
                         ],
                       ),

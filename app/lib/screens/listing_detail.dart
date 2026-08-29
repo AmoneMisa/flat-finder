@@ -837,6 +837,19 @@ class _SpecTable extends StatelessWidget {
       (Icons.smoking_rooms_outlined, 'smoking', _yesNo(l.smokingAllowed)),
       (Icons.meeting_room, 'roomShare', l.roomOnly ? s.t('yes') : null),
       (Icons.info_outline, 'firstRental', _yesNo(l.firstRental)),
+      (Icons.school_outlined, 'studentTarget', _yesNo(l.studentTarget)),
+      (
+        Icons.supervisor_account_outlined,
+        'landlordPresent',
+        _yesNo(l.landlordPresent),
+      ),
+      (Icons.event_repeat_outlined, 'minLease', l.minLeaseTerm),
+      (Icons.event_available_outlined, 'available', l.availableFrom),
+    ]);
+
+    // Money/payment terms get their own full-width group below Conditions,
+    // matching the web's separate "Оплата" section.
+    final costs = pick([
       (Icons.sell, 'negotiable', _yesNo(l.negotiable)),
       (
         Icons.savings_outlined,
@@ -861,14 +874,6 @@ class _SpecTable extends StatelessWidget {
         'perPersonPrice',
         _money(l.perPersonPrice),
       ),
-      (Icons.school_outlined, 'studentTarget', _yesNo(l.studentTarget)),
-      (
-        Icons.supervisor_account_outlined,
-        'landlordPresent',
-        _yesNo(l.landlordPresent),
-      ),
-      (Icons.event_repeat_outlined, 'minLease', l.minLeaseTerm),
-      (Icons.event_available_outlined, 'available', l.availableFrom),
     ]);
 
     return [
@@ -878,58 +883,113 @@ class _SpecTable extends StatelessWidget {
         (s.t('specGroupLocation'), location),
         (s.t('specGroupAmenities'), amenities),
         (s.t('specGroupConditions'), conditions),
+        (s.t('specGroupCosts'), costs),
       ])
         if (items.isNotEmpty) (title, items),
     ];
   }
 
+  Widget _groupBlock(
+    ThemeData theme,
+    String title,
+    List<(IconData, String)> items,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.hintColor,
+            letterSpacing: 0.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        for (final (icon, value) in items) ...[
+          Divider(height: 1, color: theme.dividerColor.withValues(alpha: .4)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(value, style: theme.textTheme.bodyMedium),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final groups = _groups();
-    if (groups.isEmpty) return const SizedBox.shrink();
+    final byTitle = {for (final g in _groups()) g.$1: g.$2};
+    if (byTitle.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
+
+    // The web's table is two columns: left stacks Advert then Property,
+    // right stacks Location then Amenities. Conditions and Costs (Payment)
+    // then span full width below, each as their own single-column block.
+    final left = <(String, List<(IconData, String)>)>[
+      for (final key in [s.t('specGroupAdvert'), s.t('specGroupProperty')])
+        if (byTitle[key] case final items?) (key, items),
+    ];
+    final right = <(String, List<(IconData, String)>)>[
+      for (final key in [s.t('specGroupLocation'), s.t('specGroupAmenities')])
+        if (byTitle[key] case final items?) (key, items),
+    ];
+    final full = <(String, List<(IconData, String)>)>[
+      for (final key in [s.t('specGroupConditions'), s.t('specGroupCosts')])
+        if (byTitle[key] case final items?) (key, items),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(s.t('specifications'), style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
-        for (final (title, items) in groups) ...[
-          Text(
-            title,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.hintColor,
-              letterSpacing: 0.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            runSpacing: 8,
+        if (left.isNotEmpty || right.isNotEmpty)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final (icon, value) in items)
-                FractionallySizedBox(
-                  widthFactor: 0.5,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(icon, size: 18, color: theme.hintColor),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            value,
-                            style: theme.textTheme.bodyMedium,
-                          ),
+              if (left.isNotEmpty)
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final (title, items) in left)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _groupBlock(theme, title, items),
                         ),
-                      ],
-                    ),
+                    ],
+                  ),
+                ),
+              if (left.isNotEmpty && right.isNotEmpty)
+                const SizedBox(width: 12),
+              if (right.isNotEmpty)
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final (title, items) in right)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _groupBlock(theme, title, items),
+                        ),
+                    ],
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 14),
-        ],
+        for (final (title, items) in full)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _groupBlock(theme, title, items),
+          ),
       ],
     );
   }

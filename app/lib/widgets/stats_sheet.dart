@@ -9,6 +9,7 @@ import '../models/filters.dart';
 import '../models/search_statistics.dart';
 import '../services/api_service.dart';
 import '../state/settings.dart';
+import '../utils/format.dart';
 
 class StatsSheet extends StatefulWidget {
   const StatsSheet({super.key, required this.api, required this.filters});
@@ -123,9 +124,11 @@ class _StatsSheetState extends State<StatsSheet> {
           ),
           child: SizedBox(
             height: 150,
+            width: double.infinity,
             child: activity.isEmpty
                 ? Center(child: Text(s.t('statsNoData')))
                 : CustomPaint(
+                    size: Size.infinite,
                     painter: _LineChartPainter(
                       activity.map((e) => e.count.toDouble()).toList(),
                       const Color(0xff24a7d6),
@@ -193,7 +196,12 @@ class _StatsSheetState extends State<StatsSheet> {
               : _BarList([
                   for (final row in geography)
                     _BarRow(
-                      row.label,
+                      // The backend returns raw geography names; only city
+                      // names have a (partial, RO/KZ/UZ) local translation
+                      // dict client-side, matching the listing cards.
+                      _geoDimension == 'city'
+                          ? cityLabel(row.label, s.lang)
+                          : row.label,
                       row.count,
                       const Color(0xff24a7d6),
                       subtitle:
@@ -284,18 +292,18 @@ class _StatsSheetState extends State<StatsSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  title.toUpperCase(),
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ),
-              if (trailing != null) Flexible(flex: 2, child: trailing),
-            ],
+          // Title always sits on its own line above the stat block; a
+          // trailing segmented control gets its own full-width line below
+          // it instead of being squeezed beside the title, where it used
+          // to get clipped.
+          Text(
+            title.toUpperCase(),
+            style: Theme.of(context).textTheme.labelSmall,
           ),
+          if (trailing != null) ...[
+            const SizedBox(height: 8),
+            trailing,
+          ],
           const SizedBox(height: 12),
           child,
         ],
