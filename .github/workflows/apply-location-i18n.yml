@@ -7,6 +7,7 @@ on:
       - .github/workflows/apply-location-i18n.yml
       - .github/scripts/apply-location-i18n.py
       - .github/scripts/apply-mobile-polish.py
+      - .github/scripts/apply-stats-percent.py
 
 permissions:
   contents: write
@@ -36,6 +37,7 @@ jobs:
           PY
           python3 .github/scripts/apply-location-i18n.py
           python3 .github/scripts/apply-mobile-polish.py
+          python3 .github/scripts/apply-stats-percent.py
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -73,8 +75,8 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/scripts/apply-location-i18n.py .github/scripts/apply-mobile-polish.py .github/workflows/apply-location-i18n.yml
+          git rm .github/scripts/apply-location-i18n.py .github/scripts/apply-mobile-polish.py .github/scripts/apply-stats-percent.py .github/workflows/apply-location-i18n.yml
           git add app backend
           git diff --cached --check
-          git commit -m "fix(app): localize geography and tighten mobile UI"
+          git commit -m "fix(app): localize geography, tighten mobile UI, show deal shares"
           git push origin master
