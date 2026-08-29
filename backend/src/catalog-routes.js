@@ -76,6 +76,10 @@ function localizedMapZones(zones, locale, countryCode, cityName) {
     ...zone,
     label: lexiconLocationLabel(zone.name, locale, kind, countryCode, cityName),
   }));
+  const mapPoiGroup = (items) => items.map((zone) => ({
+    ...zone,
+    label: geographyDisplayName(zone.name, locale, 'poi') || zone.name,
+  }));
   return {
     ...zones,
     districtZones: mapGroup(zones.districtZones || [], 'district'),
@@ -83,6 +87,9 @@ function localizedMapZones(zones, locale, countryCode, cityName) {
     quartalMarkers: mapGroup(zones.quartalMarkers || [], 'mahalla'),
     areaZones: mapGroup(zones.areaZones || [], 'local_area'),
     metroStations: mapGroup(zones.metroStations || [], 'metro'),
+    parks: mapPoiGroup(zones.parks || []),
+    shoppingMalls: mapPoiGroup(zones.shoppingMalls || []),
+    universities: mapPoiGroup(zones.universities || []),
     cityZone: zones.cityZone
       ? {...zones.cityZone, label: geographyDisplayName(zones.cityZone.name, locale, 'city')}
       : null,
