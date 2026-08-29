@@ -601,12 +601,22 @@ class _FilterSheetState extends State<FilterSheet> {
             ),
             const SizedBox(height: 20),
             _label(s.t('dealType')),
-            SegmentedButton<DealType>(
-              segments: DealType.values
-                  .map((d) => ButtonSegment(value: d, label: Text(_dealLabel(s, d))))
+            // A 4-way SegmentedButton squeezes long Russian labels ("Долгосрочно",
+            // "Посуточно") into equal-width slots too narrow to fit, forcing an
+            // ugly mid-word wrap. Chips wrap onto a new line instead of breaking
+            // a word in half.
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: DealType.values
+                  .map((d) => ChoiceChip(
+                        label: Text(_dealLabel(s, d)),
+                        selected: _deal == d,
+                        onSelected: (v) {
+                          if (v) setState(() => _deal = d);
+                        },
+                      ))
                   .toList(),
-              selected: {_deal},
-              onSelectionChanged: (v) => setState(() => _deal = v.first),
             ),
             const SizedBox(height: 20),
             _label(s.t('realEstateAgency')),
@@ -636,22 +646,26 @@ class _FilterSheetState extends State<FilterSheet> {
                   child: TextField(
                     controller: _maxCtl,
                     keyboardType: TextInputType.number,
+                    // Tolerance only makes sense once a max price is set —
+                    // rebuild to show/hide that checkbox as this changes.
+                    onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
                         labelText: s.t('max'), border: const OutlineInputBorder()),
                   ),
                 ),
               ],
             ),
-            CheckboxListTile(
-              value: _tolerance,
-              onChanged: (v) => setState(() => _tolerance = v ?? false),
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Text(s.t('priceTolerance')),
-              subtitle: Text(s.t('priceToleranceHint'),
-                  style: Theme.of(context).textTheme.bodySmall),
-            ),
-            if (_tolerance)
+            if (_maxCtl.text.trim().isNotEmpty)
+              CheckboxListTile(
+                value: _tolerance,
+                onChanged: (v) => setState(() => _tolerance = v ?? false),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(s.t('priceTolerance')),
+                subtitle: Text(s.t('priceToleranceHint'),
+                    style: Theme.of(context).textTheme.bodySmall),
+              ),
+            if (_tolerance && _maxCtl.text.trim().isNotEmpty)
               TextField(
                 controller: _toleranceCtl,
                 keyboardType: TextInputType.number,

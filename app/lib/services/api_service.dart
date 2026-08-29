@@ -80,11 +80,20 @@ class ApiService {
 
   final String baseUrl;
 
-  /// The Android emulator reaches the host machine via 10.0.2.2; desktop/web
-  /// use localhost. Override with --dart-define=API_BASE=http://your-host:4000.
+  /// Production backend, reachable from a real device — same address the
+  /// site's flats-feed proxy (server/routes/flats-feed.get.ts) uses. Only
+  /// debug builds default to a local backend instead (the Android emulator
+  /// reaches the host machine via 10.0.2.2; desktop/web use localhost),
+  /// since a release APK installed on a phone has no "host machine" to
+  /// reach — defaulting it to localhost/10.0.2.2 would leave every filter
+  /// silently empty (no countries/cities load) with no visible error.
+  /// Override with --dart-define=API_BASE=http://your-host:4000.
+  static const String kProductionBaseUrl = 'http://185.5.206.229:8082';
+
   static String _defaultBaseUrl() {
     const override = String.fromEnvironment('API_BASE');
     if (override.isNotEmpty) return override;
+    if (kReleaseMode) return kProductionBaseUrl;
     if (!kIsWeb && Platform.isAndroid) return 'http://10.0.2.2:4000';
     return 'http://localhost:4000';
   }
