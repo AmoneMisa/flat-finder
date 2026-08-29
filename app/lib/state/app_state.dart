@@ -149,6 +149,20 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// Drops a listing confirmed gone by a live source re-check (e.g. an OLX
+  /// advert taken down since the last crawl) from the current result set —
+  /// mirrors the web's `removeUnavailableListing`.
+  void removeListing(String source, String country, String id) {
+    final before = listings.length;
+    listings = listings
+        .where(
+          (l) =>
+              !(l.source == source && l.country == country && l.id == id),
+        )
+        .toList();
+    if (listings.length != before) notifyListeners();
+  }
+
   Future<void> search() async {
     final generation = ++_searchGeneration;
     if (filters.countries.isEmpty) {

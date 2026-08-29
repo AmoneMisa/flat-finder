@@ -9,9 +9,7 @@ import '../models/filters.dart';
 import '../models/listing.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
-import '../state/favorites.dart';
 import '../state/hidden.dart';
-import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
 import '../utils/share_link.dart';
@@ -34,7 +32,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 /// Quick views layered on top of the active filters/search results.
-enum _ViewTab { all, fresh, favorites, viewed, hidden }
+enum _ViewTab { all, fresh, hidden }
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _mapMode = false;
@@ -220,8 +218,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final settings = context.watch<SettingsState>();
-    final favorites = context.watch<FavoritesState>();
-    final history = context.watch<HistoryState>();
     final hidden = context.watch<HiddenState>();
     // Cheap no-op once already fetched for this language; re-fetches with
     // localized city/district/metro names once settings finish loading (or
@@ -266,10 +262,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   setState(() => _tab = _ViewTab.all);
                 case 'view_fresh':
                   setState(() => _tab = _ViewTab.fresh);
-                case 'view_favorites':
-                  setState(() => _tab = _ViewTab.favorites);
-                case 'view_viewed':
-                  setState(() => _tab = _ViewTab.viewed);
                 case 'view_hidden':
                   setState(() => _tab = _ViewTab.hidden);
                 case 'history':
@@ -283,21 +275,13 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
             itemBuilder: (_) {
+              // Favorites/History have their own dedicated (grouped) screens
+              // reachable below, so only the views without one of those get a
+              // quick-switch entry here — no more duplicate favorites/viewed
+              // entries.
               const views = <(_ViewTab, String, String, IconData)>[
                 (_ViewTab.all, 'view_all', 'tabAll', Icons.list),
                 (_ViewTab.fresh, 'view_fresh', 'tabFresh', Icons.bolt),
-                (
-                  _ViewTab.favorites,
-                  'view_favorites',
-                  'tabFavorites',
-                  Icons.favorite,
-                ),
-                (
-                  _ViewTab.viewed,
-                  'view_viewed',
-                  'tabViewed',
-                  Icons.visibility,
-                ),
                 (
                   _ViewTab.hidden,
                   'view_hidden',
@@ -371,7 +355,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           if (state.sourceErrors.isNotEmpty)
             _SourceErrorBanner(errors: state.sourceErrors, settings: settings),
-          Expanded(child: _body(state, settings, favorites, history, hidden)),
+          Expanded(child: _body(state, settings, hidden)),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -383,13 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _body(
-    AppState state,
-    SettingsState settings,
-    FavoritesState favorites,
-    HistoryState history,
-    HiddenState hidden,
-  ) {
+  Widget _body(AppState state, SettingsState settings, HiddenState hidden) {
     if (state.loading && state.listings.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -411,8 +389,6 @@ class _HomeScreenState extends State<HomeScreen> {
         rates: state.rates,
         displayCurrency: settings.displayCurrency,
       ),
-      favorites,
-      history,
       hidden,
     );
 
@@ -500,12 +476,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Restrict the visible listings to the selected quick view (on top of the
   /// active filters/search). "Fresh" keeps only posts from the last 24 hours.
-  List<Listing> _applyTab(
-    List<Listing> listings,
-    FavoritesState fav,
-    HistoryState hist,
-    HiddenState hidden,
-  ) {
+  List<Listing> _applyTab(List<Listing> listings, HiddenState hidden) {
     if (_tab == _ViewTab.hidden) {
       return listings.where((l) => hidden.isHidden(l.id)).toList();
     }
@@ -515,10 +486,6 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (_tab) {
       case _ViewTab.all:
         return active.toList();
-      case _ViewTab.favorites:
-        return active.where((l) => fav.isFavorite(l.id)).toList();
-      case _ViewTab.viewed:
-        return active.where((l) => hist.isViewed(l.id)).toList();
       case _ViewTab.fresh:
         final cutoff = DateTime.now().toUtc().subtract(
           const Duration(hours: 24),
@@ -535,8 +502,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _emptyLabel(SettingsState settings) => switch (_tab) {
-    _ViewTab.favorites => settings.t('noFavoritesHere'),
-    _ViewTab.viewed => settings.t('noViewedHere'),
     _ViewTab.fresh => settings.t('noFreshHere'),
     _ViewTab.hidden => settings.t('noHiddenHere'),
     _ViewTab.all => settings.t('noListings'),
@@ -768,129 +733,128 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                // A select (not a bordered SegmentedButton row) so it reads
+                // as one more field alongside Country/City/Agency, with a
+                // placeholder like the others instead of always showing
+                // "Any".
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 2, bottom: 2),
-                        child: Text(
-                          s.t('priceRange'),
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: Theme.of(context).hintColor),
-                        ),
+                  child: DropdownButtonFormField<_QuickDeal>(
+                    value: _quickDealFor(widget.filters),
+                    isExpanded: true,
+                    decoration: InputDecoration(labelText: s.t('dealType')),
+                    items: [
+                      DropdownMenuItem(
+                        value: _QuickDeal.any,
+                        child: Text(s.t('any')),
                       ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _priceMin,
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                labelText: s.t('min'),
-                                hintText: s.t('minPlaceholder'),
-                              ),
-                              onChanged: (_) => _schedule(_withTextValues()),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: TextField(
-                              controller: _priceMax,
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                labelText: s.t('max'),
-                                hintText: s.t('maxPlaceholder'),
-                              ),
-                              onChanged: (_) => _schedule(_withTextValues()),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          // Which currency Min/Max are denominated in — the
-                          // fast-filter row had a price range with no way to
-                          // say what currency it meant. A form field (not a
-                          // plain DropdownButton) so it matches the Min/Max
-                          // TextFields' height instead of sitting shorter.
-                          SizedBox(
-                            width: 92,
-                            child: DropdownButtonFormField<String?>(
-                              value: widget.filters.priceCurrency,
-                              decoration: const InputDecoration(),
-                              hint: Text(
-                                country?.currency ?? '',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              items: [
-                                DropdownMenuItem<String?>(
-                                  value: null,
-                                  child: Text(
-                                    country?.currency ?? s.t('nativeCurrency'),
-                                  ),
-                                ),
-                                for (final code
-                                    in SettingsState.currencyOptions)
-                                  if (code != null)
-                                    DropdownMenuItem<String?>(
-                                      value: code,
-                                      child: Text(code),
-                                    ),
-                              ],
-                              onChanged: (value) {
-                                // Same currency drives both the price-range
-                                // filter and the card conversion shown below
-                                // the native price, matching the web app's
-                                // single `displayCurrency`.
-                                widget.settings.setDisplayCurrency(value);
-                                _schedule(
-                                  _withTextValues().copyWith(
-                                    priceCurrency: value,
-                                    clearPriceCurrency: value == null,
-                                  ),
-                                  immediate: true,
-                                );
-                              },
-                            ),
-                          ),
-                        ],
+                      DropdownMenuItem(
+                        value: _QuickDeal.sale,
+                        child: Text(s.t('sale')),
+                      ),
+                      DropdownMenuItem(
+                        value: _QuickDeal.longRent,
+                        child: Text(s.t('longTerm')),
+                      ),
+                      DropdownMenuItem(
+                        value: _QuickDeal.room,
+                        child: Text(s.t('roomOnly')),
+                      ),
+                      DropdownMenuItem(
+                        value: _QuickDeal.shortRent,
+                        child: Text(s.t('shortTerm')),
                       ),
                     ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      _schedule(
+                        _withQuickDeal(_withTextValues(), value),
+                        immediate: true,
+                      );
+                    },
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<_QuickDeal>(
-                segments: [
-                  ButtonSegment(
-                    value: _QuickDeal.any,
-                    label: Text(s.t('any')),
-                  ),
-                  ButtonSegment(
-                    value: _QuickDeal.sale,
-                    label: Text(s.t('sale')),
-                  ),
-                  ButtonSegment(
-                    value: _QuickDeal.longRent,
-                    label: Text(s.t('longTerm')),
-                  ),
-                  ButtonSegment(
-                    value: _QuickDeal.room,
-                    label: Text(s.t('roomOnly')),
-                  ),
-                  ButtonSegment(
-                    value: _QuickDeal.shortRent,
-                    label: Text(s.t('shortTerm')),
-                  ),
-                ],
-                selected: {_quickDealFor(widget.filters)},
-                showSelectedIcon: false,
-                onSelectionChanged: (v) => _schedule(
-                  _withQuickDeal(_withTextValues(), v.first),
-                  immediate: true,
-                ),
+            Padding(
+              padding: const EdgeInsets.only(left: 2, bottom: 2),
+              child: Text(
+                s.t('priceRange'),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
               ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _priceMin,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: s.t('min'),
+                      hintText: s.t('minPlaceholder'),
+                    ),
+                    onChanged: (_) => _schedule(_withTextValues()),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: TextField(
+                    controller: _priceMax,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: s.t('max'),
+                      hintText: s.t('maxPlaceholder'),
+                    ),
+                    onChanged: (_) => _schedule(_withTextValues()),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Which currency Min/Max are denominated in — the fast-filter
+                // row had a price range with no way to say what currency it
+                // meant. A form field (not a plain DropdownButton) so it
+                // matches the Min/Max TextFields' height instead of sitting
+                // shorter.
+                SizedBox(
+                  width: 92,
+                  child: DropdownButtonFormField<String?>(
+                    value: widget.filters.priceCurrency,
+                    decoration: const InputDecoration(),
+                    hint: Text(
+                      country?.currency ?? '',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    items: [
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(
+                          country?.currency ?? s.t('nativeCurrency'),
+                        ),
+                      ),
+                      for (final code in SettingsState.currencyOptions)
+                        if (code != null)
+                          DropdownMenuItem<String?>(
+                            value: code,
+                            child: Text(code),
+                          ),
+                    ],
+                    onChanged: (value) {
+                      // Same currency drives both the price-range filter and
+                      // the card conversion shown below the native price,
+                      // matching the web app's single `displayCurrency`.
+                      widget.settings.setDisplayCurrency(value);
+                      _schedule(
+                        _withTextValues().copyWith(
+                          priceCurrency: value,
+                          clearPriceCurrency: value == null,
+                        ),
+                        immediate: true,
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ],
         ),

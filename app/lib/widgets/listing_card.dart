@@ -704,8 +704,9 @@ class _FavButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: Colors.black54,
+      color: scheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(8),
       clipBehavior: Clip.antiAlias,
       child: IconButton(
@@ -717,7 +718,7 @@ class _FavButton extends StatelessWidget {
         onPressed: onPressed,
         icon: Icon(
           isFav ? Icons.favorite : Icons.favorite_border,
-          color: isFav ? Colors.redAccent : Colors.white,
+          color: isFav ? Colors.redAccent : scheme.onSurfaceVariant,
         ),
       ),
     );
@@ -740,8 +741,9 @@ class _CardActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: Colors.black54,
+      color: scheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(8),
       clipBehavior: Clip.antiAlias,
       child: IconButton(
@@ -751,7 +753,7 @@ class _CardActionButton extends StatelessWidget {
         padding: const EdgeInsets.all(6),
         constraints: const BoxConstraints(),
         onPressed: onPressed,
-        icon: Icon(icon, color: Colors.white),
+        icon: Icon(icon, color: scheme.onSurfaceVariant),
       ),
     );
   }

@@ -39,6 +39,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   late Listing _listing = widget.listing;
   Listing get listing => _listing;
   bool _reloading = false;
+  bool _unavailable = false;
 
   bool _translating = false;
   String? _translatedText;
@@ -51,6 +52,41 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     // Every detail open funnels through here, so record "last viewed" once at a
     // single point regardless of where it was opened from (list, map, favorites).
     context.read<HistoryState>().record(listing);
+    // Same live-verification the web does on open: crawled OLX data can lag
+    // behind the real advert being taken down. Runs silently in the
+    // background — the screen opens immediately with what's already known.
+    if (listing.source == 'olx') _verifyStillAvailable();
+  }
+
+  /// Background OLX re-check on open, mirroring the web's
+  /// `verifyOpenOlxListing`: silently refreshes the listing if it's still
+  /// live, or flags it unavailable and drops it from the main list if OLX
+  /// confirms it's gone. Network hiccups are ignored — fail open, like web.
+  Future<void> _verifyStillAvailable() async {
+    try {
+      final fresh = await context.read<AppState>().reloadListing(_listing);
+      if (!mounted) return;
+      if (fresh != null) {
+        setState(() {
+          _listing = fresh;
+          _translatedText = null;
+          _translatedLang = null;
+          _showTranslated = false;
+        });
+        return;
+      }
+      // null with no exception means the source confirmed the advert is
+      // gone (a network/rate-limit failure throws instead, handled below).
+      context.read<AppState>().removeListing(
+        listing.source,
+        listing.country,
+        listing.id,
+      );
+      setState(() => _unavailable = true);
+      _snack(context.read<SettingsState>().s.t('listingUnavailableTitle'));
+    } catch (_) {
+      // Inconclusive (timeout, rate limit, etc.) — leave the listing as-is.
+    }
   }
 
   /// Re-fetch this single listing fresh from the source. Server flood protection
@@ -299,7 +335,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
               ),
               const Spacer(),
               FilledButton.icon(
-                onPressed: listing.url.isEmpty
+                onPressed: _unavailable || listing.url.isEmpty
                     ? null
                     : () => launchUrl(
                         Uri.parse(listing.url),
@@ -314,6 +350,30 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       ),
       body: ListView(
         children: [
+          if (_unavailable)
+            Container(
+              width: double.infinity,
+              color: theme.colorScheme.errorContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 18,
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.t('listingUnavailableDescription'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           RepaintBoundary(
             key: _shareKey,
             child: Container(
