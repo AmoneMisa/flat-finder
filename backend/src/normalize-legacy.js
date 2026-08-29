@@ -13,6 +13,7 @@ import {
   parseRoomsFromText,
 } from './textparse-overrides.js';
 import {canonicalDistrict, parseLocation} from './locations.js';
+import {housingSemanticCanonical} from '@whiteslove/parsing-lexicon';
 import {parseDishwasher, parsePrivateYard, parseTerrace} from './amenity-parse.js';
 import {
   parseAppliances,
@@ -53,7 +54,12 @@ function normalizeNearbyPlaces(values) {
   for (const raw of values || []) {
     const value = String(raw || '').replace(/\s+/g, ' ').trim();
     if (!value) continue;
-    const key = value.toLocaleLowerCase();
+    // Generic terms (parks, markets, restaurants...) come back from the
+    // shared lexicon as an English canonical name; dedupe by that canonical
+    // identity so "Park"/"Парк"/"парки" collapse to one entry instead of
+    // three near-duplicate chips. The canonical/English form is kept as
+    // stored value; the client is responsible for localized display.
+    const key = housingSemanticCanonical(value).toLocaleLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(value);

@@ -219,7 +219,7 @@ class ListingCard extends StatelessWidget {
       } else if (metro != null && metro.isNotEmpty) {
         result.add(metro);
       } else if (listing.nearby.isNotEmpty) {
-        result.add(listing.nearby.first);
+        result.add(s.nearbyLabel(listing.nearby.first));
       }
     }
 

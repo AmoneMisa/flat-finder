@@ -372,4 +372,26 @@ class AppStrings {
       'tag_noCommission': 'Без комиссии',
     },
   };
+
+  // Generic "nearby" categories arrive from the backend as an English
+  // canonical name (parsing-lexicon's DISPLAY.en keys), not as listing
+  // content — unlike title/description, these are safe and expected to be
+  // localized. Named landmarks not in this map (e.g. "Alay Bazaar") fall
+  // through untranslated, same as unknown listing content.
+  static const _nearbyRu = {
+    'Park': 'Парк', 'Metro': 'Метро', 'Bus stop': 'Автобусная остановка',
+    'Public transport': 'Общественный транспорт', 'Main road': 'Главная дорога',
+    'Clinic': 'Клиника', 'Maternity hospital': 'Роддом', 'Hospital': 'Больница',
+    'School': 'Школа', 'Kindergarten': 'Детский сад', 'Childcare': 'Детские учреждения',
+    'University': 'Университет', 'Shopping center': 'Торговый центр', 'Shop': 'Магазин',
+    'Supermarket': 'Супермаркет', 'Market': 'Рынок', 'Cafe': 'Кафе',
+    'Restaurant': 'Ресторан', 'Playground': 'Детская площадка', 'Pharmacy': 'Аптека',
+    'Mosque': 'Мечеть', 'Church': 'Церковь', 'Railway station': 'Железнодорожный вокзал',
+    'Airport': 'Аэропорт',
+  };
+
+  String nearbyLabel(String value) {
+    if (lang != 'ru') return value;
+    return _nearbyRu[value] ?? value;
+  }
 }

@@ -355,7 +355,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                     children: listing.nearby
                         .map((n) => Chip(
                               avatar: const Icon(Icons.place_outlined, size: 18),
-                              label: Text(n),
+                              label: Text(s.nearbyLabel(n)),
                               visualDensity: VisualDensity.compact,
                               backgroundColor: theme.colorScheme.secondaryContainer,
                             ))
