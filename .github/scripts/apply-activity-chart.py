@@ -39,6 +39,12 @@ path = 'app/lib/widgets/stats_sheet.dart'
 text = read(path)
 text = replace_once(
     text,
+    "import 'dart:math' as math;\n",
+    "import 'dart:math' as math;\nimport 'dart:ui' as ui;\n",
+    'activity chart ui import',
+)
+text = replace_once(
+    text,
     """          trailing: _segments<int>(
             [7, 14, 21],
             _activityDays,
@@ -131,7 +137,7 @@ new_painter = r'''class _LineChartPainter extends CustomPainter {
       text: value,
       style: TextStyle(fontSize: size, fontWeight: weight, color: color),
     ),
-    textDirection: TextDirection.ltr,
+    textDirection: ui.TextDirection.ltr,
     maxLines: 1,
   )..layout();
 
@@ -151,7 +157,7 @@ new_painter = r'''class _LineChartPainter extends CustomPainter {
     );
 
     // Legend / direct line label.
-    final legendY = 10.0;
+    const legendY = 10.0;
     canvas.drawLine(
       const Offset(left, legendY),
       const Offset(left + 20, legendY),
