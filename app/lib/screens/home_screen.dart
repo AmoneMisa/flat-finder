@@ -255,16 +255,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 46,
         title: Text(
           settings.t('appTitle'),
           style: const TextStyle(fontSize: 18),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 2),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 1),
         actions: [
           IconButton(
             tooltip: _mapMode ? settings.t('listView') : settings.t('mapView'),
             iconSize: 20,
-            padding: const EdgeInsets.symmetric(horizontal: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
             constraints: const BoxConstraints(),
             icon: Icon(_mapMode ? Icons.view_list : Icons.map_outlined),
             onPressed: () {
@@ -278,7 +279,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // more often than any other filter.
           PopupMenuButton<SortBy>(
             tooltip: settings.t('sortBy'),
-            padding: const EdgeInsets.symmetric(horizontal: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
             icon: Icon(
               Icons.sort,
               size: 20,
@@ -302,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // header's icons instead of carrying its own text label.
           PopupMenuButton<String?>(
             tooltip: settings.t('displayCurrency'),
-            padding: const EdgeInsets.symmetric(horizontal: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
             icon: Icon(
               Icons.currency_exchange,
               size: 20,
@@ -322,14 +323,14 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: settings.t('statistics'),
             iconSize: 20,
-            padding: const EdgeInsets.symmetric(horizontal: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
             constraints: const BoxConstraints(),
             icon: const Icon(Icons.bar_chart_outlined),
             onPressed: () => _openStats(state),
           ),
           PopupMenuButton<String>(
             tooltip: settings.t('more'),
-            padding: const EdgeInsets.symmetric(horizontal: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 1),
             icon: const Icon(Icons.more_vert, size: 20),
             onSelected: (value) {
               switch (value) {
@@ -554,13 +555,20 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-          if (state.loading)
+          if (state.loading) ...[
+            // Blocks taps on the (still-visible, now stale) list while a
+            // reload is in flight, so a tap can't land on a card that's
+            // about to be replaced.
+            const Positioned.fill(
+              child: AbsorbPointer(child: SizedBox.expand()),
+            ),
             const Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: LinearProgressIndicator(),
             ),
+          ],
         ],
       ),
     );
@@ -714,6 +722,15 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
   @override
   Widget build(BuildContext context) {
     final s = widget.settings;
+    final theme = Theme.of(context);
+    final inputTextTheme = theme.textTheme.copyWith(
+      bodyLarge: theme.textTheme.bodyLarge?.copyWith(
+        fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16) - 1.5,
+      ),
+      titleMedium: theme.textTheme.titleMedium?.copyWith(
+        fontSize: (theme.textTheme.titleMedium?.fontSize ?? 16) - 1.5,
+      ),
+    );
     final selectedCountry = widget.filters.countries.isNotEmpty
         ? widget.filters.countries.first
         : null;
@@ -729,9 +746,11 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
         ? widget.filters.city
         : null;
 
-    return Material(
-      color: Theme.of(context).colorScheme.surface,
-      child: Padding(
+    return Theme(
+      data: theme.copyWith(textTheme: inputTextTheme),
+      child: Material(
+        color: theme.colorScheme.surface,
+        child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
         child: Column(
           children: [
@@ -754,7 +773,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                 // the full country name still appears once the menu opens,
                 // freeing up width for the (more useful) city search field.
                 SizedBox(
-                  width: 70,
+                  width: 76,
                   child: DropdownButtonFormField<String>(
                     value: selectedCountry,
                     isExpanded: true,
@@ -909,7 +928,10 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   child: TextField(
                     controller: _priceMin,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(labelText: s.t('priceFrom')),
+                    decoration: InputDecoration(
+                      labelText: s.t('priceFrom'),
+                      hintText: s.t('minPlaceholder'),
+                    ),
                     onChanged: (_) => _schedule(_withTextValues()),
                   ),
                 ),
@@ -918,13 +940,17 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   child: TextField(
                     controller: _priceMax,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(labelText: s.t('priceTo')),
+                    decoration: InputDecoration(
+                      labelText: s.t('priceTo'),
+                      hintText: s.t('maxPlaceholder'),
+                    ),
                     onChanged: (_) => _schedule(_withTextValues()),
                   ),
                 ),
               ],
             ),
           ],
+        ),
         ),
       ),
     );

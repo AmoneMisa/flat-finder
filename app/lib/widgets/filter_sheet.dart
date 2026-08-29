@@ -578,11 +578,22 @@ class _FilterSheetState extends State<FilterSheet> {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<SettingsState>();
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.8,
-      maxChildSize: 0.95,
-      builder: (context, scroll) => Padding(
+    final theme = Theme.of(context);
+    final inputTextTheme = theme.textTheme.copyWith(
+      bodyLarge: theme.textTheme.bodyLarge?.copyWith(
+        fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16) - 1.5,
+      ),
+      titleMedium: theme.textTheme.titleMedium?.copyWith(
+        fontSize: (theme.textTheme.titleMedium?.fontSize ?? 16) - 1.5,
+      ),
+    );
+    return Theme(
+      data: theme.copyWith(textTheme: inputTextTheme),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.8,
+        maxChildSize: 0.95,
+        builder: (context, scroll) => Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
@@ -695,7 +706,6 @@ class _FilterSheetState extends State<FilterSheet> {
                         },
                       ),
                       const SizedBox(height: 10),
-                      _label(s.t('city')),
                       SearchableDropdown(
                         key: ValueKey('city-${_countries.join(',')}'),
                         hint: s.t('anyCity'),
@@ -715,7 +725,6 @@ class _FilterSheetState extends State<FilterSheet> {
                       if (_cityLoc != null &&
                           _cityLoc!.districts.isNotEmpty) ...[
                         const SizedBox(height: 10),
-                        _label(s.t('district')),
                         SearchableDropdown(
                           key: ValueKey('district-$_city'),
                           hint: s.t('anyDistrict'),
@@ -727,7 +736,6 @@ class _FilterSheetState extends State<FilterSheet> {
                       ],
                       if (_cityLoc != null && _cityLoc!.metro.isNotEmpty) ...[
                         const SizedBox(height: 10),
-                        _label(s.t('metro')),
                         SearchableDropdown(
                           key: ValueKey('metro-$_city'),
                           hint: s.t('anyStation'),
@@ -738,7 +746,6 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                       ],
                       const SizedBox(height: 10),
-                      _label(s.t('microdistrict')),
                       _cityLoc != null && _cityLoc!.microdistricts.isNotEmpty
                           ? SearchableDropdown(
                               key: ValueKey('microdistrict-$_city'),
@@ -761,7 +768,6 @@ class _FilterSheetState extends State<FilterSheet> {
                               ),
                             ),
                       const SizedBox(height: 10),
-                      _label(s.t('quartal')),
                       _cityLoc != null && _cityLoc!.quartals.isNotEmpty
                           ? SearchableDropdown(
                               key: ValueKey('quartal-$_city'),
@@ -782,7 +788,6 @@ class _FilterSheetState extends State<FilterSheet> {
                               ),
                             ),
                       const SizedBox(height: 10),
-                      _label(s.t('areaName')),
                       _cityLoc != null && _cityLoc!.areas.isNotEmpty
                           ? SearchableDropdown(
                               key: ValueKey('area-$_city'),
@@ -803,7 +808,6 @@ class _FilterSheetState extends State<FilterSheet> {
                               ),
                             ),
                       const SizedBox(height: 10),
-                      _label(s.t('metroDistance')),
                       TextField(
                         controller: _metroMaxMCtl,
                         keyboardType: TextInputType.number,
@@ -814,7 +818,6 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      _label(s.t('nearbyDistance')),
                       DropdownButtonFormField<String?>(
                         initialValue: _nearbyKind,
                         isExpanded: true,
@@ -950,7 +953,6 @@ class _FilterSheetState extends State<FilterSheet> {
                     icon: Icons.payments_outlined,
                     title: s.t('sectionPrice'),
                     children: [
-                      _label(s.t('priceRange')),
                       Row(
                         children: [
                           Expanded(
@@ -1038,9 +1040,17 @@ class _FilterSheetState extends State<FilterSheet> {
                           onChanged: (v) => setState(() => _priceCurrency = v),
                         ),
                       ],
-                      const SizedBox(height: 10),
-                      _label(s.t('pricePerSqm')),
-                      _minMaxRow(s, _pricePerSqmMinCtl, _pricePerSqmMaxCtl),
+                      // Price per m² only makes sense for a sale — a rental's
+                      // per-month price isn't comparable per square meter.
+                      if (_deal == DealType.sale) ...[
+                        const SizedBox(height: 10),
+                        _minMaxRow(
+                          s,
+                          _pricePerSqmMinCtl,
+                          _pricePerSqmMaxCtl,
+                          s.t('pricePerSqm'),
+                        ),
+                      ],
                     ],
                   ),
                   _section(
@@ -1048,23 +1058,37 @@ class _FilterSheetState extends State<FilterSheet> {
                     icon: Icons.straighten_outlined,
                     title: s.t('sectionSize'),
                     children: [
-                      _label(s.t('rooms')),
-                      _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl),
+                      _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl, s.t('rooms')),
                       const SizedBox(height: 10),
-                      _label(s.t('bedrooms')),
-                      _minMaxRow(s, _bedroomsMinCtl, _bedroomsMaxCtl),
+                      _minMaxRow(
+                        s,
+                        _bedroomsMinCtl,
+                        _bedroomsMaxCtl,
+                        s.t('bedrooms'),
+                      ),
                       const SizedBox(height: 10),
-                      _label(s.t('floor')),
-                      _minMaxRow(s, _floorMinCtl, _floorMaxCtl),
+                      _minMaxRow(s, _floorMinCtl, _floorMaxCtl, s.t('floor')),
                       const SizedBox(height: 10),
-                      _label(s.t('totalFloors')),
-                      _minMaxRow(s, _totalFloorsMinCtl, _totalFloorsMaxCtl),
+                      _minMaxRow(
+                        s,
+                        _totalFloorsMinCtl,
+                        _totalFloorsMaxCtl,
+                        s.t('totalFloors'),
+                      ),
                       const SizedBox(height: 10),
-                      _label(s.t('buildingYear')),
-                      _minMaxRow(s, _yearMinCtl, _yearMaxCtl),
+                      _minMaxRow(
+                        s,
+                        _yearMinCtl,
+                        _yearMaxCtl,
+                        s.t('buildingYear'),
+                      ),
                       const SizedBox(height: 10),
-                      _label(s.t('areaSqm')),
-                      _minMaxRow(s, _areaMinCtl, _areaMaxCtl),
+                      _minMaxRow(
+                        s,
+                        _areaMinCtl,
+                        _areaMaxCtl,
+                        s.t('areaSqm'),
+                      ),
                     ],
                   ),
                   _section(
@@ -1150,13 +1174,15 @@ class _FilterSheetState extends State<FilterSheet> {
                         contentPadding: EdgeInsets.zero,
                         title: Text(s.t('noCommission')),
                       ),
-                      const SizedBox(height: 8),
-                      _label(s.t('commissionPercentRange')),
-                      _minMaxRow(
-                        s,
-                        _commissionPercentMinCtl,
-                        _commissionPercentMaxCtl,
-                      ),
+                      if (_deal == DealType.sale) ...[
+                        const SizedBox(height: 8),
+                        _minMaxRow(
+                          s,
+                          _commissionPercentMinCtl,
+                          _commissionPercentMaxCtl,
+                          s.t('commissionPercentRange'),
+                        ),
+                      ],
                     ],
                   ),
                   _section(
@@ -1164,7 +1190,6 @@ class _FilterSheetState extends State<FilterSheet> {
                     icon: Icons.sort,
                     title: s.t('sectionSortAndTiming'),
                     children: [
-                      _label(s.t('postedWithin')),
                       DropdownButtonFormField<int?>(
                         initialValue: _maxAgeDays,
                         isExpanded: true,
@@ -1196,7 +1221,6 @@ class _FilterSheetState extends State<FilterSheet> {
                         onChanged: (v) => setState(() => _maxAgeDays = v),
                       ),
                       const SizedBox(height: 10),
-                      _label(s.t('sortBy')),
                       DropdownButtonFormField<SortBy>(
                         initialValue: _sort,
                         isExpanded: true,
@@ -1239,6 +1263,7 @@ class _FilterSheetState extends State<FilterSheet> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
@@ -1286,23 +1311,26 @@ class _FilterSheetState extends State<FilterSheet> {
             horizontal: 10,
             vertical: 0,
           ),
-          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+          // Floating labels extend above the input border. Without this top
+          // inset the first field in each expanded category is clipped by
+          // the section's rounded Clip.antiAlias boundary.
+          childrenPadding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
           children: children,
         ),
       ),
     );
   }
 
-  Widget _label(String t) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(t, style: const TextStyle(fontWeight: FontWeight.w600)),
-  );
 
-
+  // The field's own labelText carries the section heading that used to sit
+  // above it as a separate _label() Text ("Комнаты от"/"Комнаты до" instead
+  // of a bare "Min"/"Max"), so the row is self-explanatory without a
+  // redundant caption above it.
   Widget _minMaxRow(
     SettingsState s,
     TextEditingController min,
     TextEditingController max,
+    String label,
   ) => Row(
     children: [
       Expanded(
@@ -1310,7 +1338,7 @@ class _FilterSheetState extends State<FilterSheet> {
           controller: min,
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
-            labelText: s.t('min'),
+            labelText: '$label ${s.t('min')}',
             hintText: s.t('minPlaceholder'),
             border: const OutlineInputBorder(),
           ),
@@ -1322,7 +1350,7 @@ class _FilterSheetState extends State<FilterSheet> {
           controller: max,
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
-            labelText: s.t('max'),
+            labelText: '$label ${s.t('max')}',
             hintText: s.t('maxPlaceholder'),
             border: const OutlineInputBorder(),
           ),

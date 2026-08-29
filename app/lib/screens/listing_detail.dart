@@ -472,91 +472,6 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           listing.title,
                           style: theme.textTheme.titleMedium,
                         ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _chip(
-                              Icons.home_work_outlined,
-                              propertyLabel(listing.propertyType, s),
-                            ),
-                            if (dealTypeLabel(listing.dealType, s) != null)
-                              _chip(
-                                Icons.sell_outlined,
-                                dealTypeLabel(listing.dealType, s)!,
-                              ),
-                            _chip(
-                              listing.byAgency ? Icons.business : Icons.person,
-                              listing.byAgency
-                                  ? s.t('agency')
-                                  : s.t('privateOwner'),
-                            ),
-                            if (listing.rooms != null)
-                              _chip(
-                                Icons.meeting_room_outlined,
-                                s.t('roomsN', {'n': '${listing.rooms}'}),
-                              ),
-                            if (listing.bedrooms != null)
-                              _chip(
-                                Icons.bed_outlined,
-                                s.t('bedroomsN', {'n': '${listing.bedrooms}'}),
-                              ),
-                            if (listing.areaSqm != null)
-                              _chip(Icons.square_foot, '${listing.areaSqm} m²'),
-                            if (floorLabel(listing, s) != null)
-                              _chip(
-                                Icons.stairs_outlined,
-                                floorLabel(listing, s)!,
-                              ),
-                            if (listing.buildingYear != null)
-                              _chip(
-                                Icons.calendar_today_outlined,
-                                s.t('yearBuiltN', {
-                                  'n': '${listing.buildingYear}',
-                                }),
-                              ),
-                            if (audienceLabel(listing.audience, s) != null)
-                              _chip(
-                                Icons.groups_outlined,
-                                audienceLabel(listing.audience, s)!,
-                              ),
-                            if (listing.roomOnly)
-                              _chip(Icons.single_bed_outlined, s.t('roomOnly')),
-                            if (listing.petsAllowed == true)
-                              _chip(Icons.pets, s.t('petsAllowed')),
-                            if (listing.childrenAllowed == true)
-                              _chip(Icons.child_care, s.t('childrenAllowed')),
-                            if (listing.deposit == true)
-                              _chip(
-                                Icons.savings_outlined,
-                                _costLabel(
-                                  s,
-                                  s.t('deposit'),
-                                  listing.depositAmount,
-                                  null,
-                                ),
-                              ),
-                            if (listing.commission == true)
-                              _chip(
-                                Icons.percent,
-                                _costLabel(
-                                  s,
-                                  s.t('commission'),
-                                  null,
-                                  listing.commissionPercent,
-                                ),
-                              ),
-                            if (listing.district != null)
-                              _chip(Icons.map_outlined, listing.district!),
-                            if (listing.metro != null)
-                              _chip(Icons.subway_outlined, listing.metro!),
-                            _chip(
-                              Icons.source_outlined,
-                              sourceLabel(listing.source, s),
-                            ),
-                          ],
-                        ),
                         const SizedBox(height: 16),
                         _SpecTable(
                           listing: listing,
@@ -679,20 +594,6 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     );
   }
 
-  Widget _chip(IconData icon, String label) =>
-      Chip(avatar: Icon(icon, size: 18), label: Text(label));
-
-  /// "Deposit 500" / "Commission 50%" / just the base word when no figure known.
-  String _costLabel(AppStrings s, String base, num? amount, num? percent) {
-    if (percent != null) {
-      final p = percent % 1 == 0
-          ? percent.toInt().toString()
-          : percent.toString();
-      return '$base $p%';
-    }
-    if (amount != null) return '$base ${amount.round()}';
-    return base;
-  }
 }
 
 /// Same "#12345 Long-term rent, Kyiv" title as the site's detail popup — the
@@ -731,7 +632,9 @@ class _DetailTitle extends StatelessWidget {
     return RichText(
       overflow: TextOverflow.ellipsis,
       text: TextSpan(
-        style: DefaultTextStyle.of(context).style,
+        style: DefaultTextStyle.of(
+          context,
+        ).style.copyWith(fontSize: 16),
         children: [
           TextSpan(
             text: '#${listing.publicId} ',

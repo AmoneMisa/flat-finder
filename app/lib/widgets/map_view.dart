@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -11,6 +10,7 @@ import '../models/listing.dart';
 import '../services/api_service.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
+import '../utils/price_tone.dart';
 
 /// Same district colours as whiteslove.me's map (`useDistrictZones.ts`
 /// ZONE_PALETTE) — kept only as a fallback for zones whose stored colour
@@ -75,9 +75,7 @@ class _MapViewState extends State<MapView> {
   bool _drawing = false;
   final List<LatLng> _area = [];
 
-  // Which page of photo cards is showing for each clustered pin group,
-  // matching the site's map: a crowded point fans out into a page of photo
-  // cards with a center counter + arrows to flip to the next page.
+  // Which page of price pins is showing for each clustered pin group.
   static const _pageSize = 8;
   final Map<String, int> _groupPage = {};
 
@@ -227,28 +225,26 @@ class _MapViewState extends State<MapView> {
     ];
   }
 
-  /// The cluster currently expanded into its photo-card carousel — matches
-  /// the site's map, where tapping a numbered cluster fans it out in place
-  /// (with a page counter + arrows for more than one page) while every
-  /// other cluster on screen stays a plain dot, instead of the whole map
-  /// switching modes on zoom.
+  /// The cluster currently expanded into its price-pin carousel.
   String? _expandedGroupKey;
 
-  /// Markers for one cluster: a plain dot (numbered once it holds more than
-  /// one listing) that expands in place into its photo-card carousel when
-  /// tapped, or a single small dot for a lone listing that opens it
-  /// directly.
+  /// Markers for one cluster. Individual flats are always price-only circles;
+  /// a grouped marker expands in place to reveal those circles.
   List<Marker> _markersForGroup(_PinGroup group) {
     if (group.listings.length == 1) {
       final l = group.listings.first;
       return [
         Marker(
           point: group.point,
-          width: 22,
-          height: 22,
+          width: 68,
+          height: 68,
           child: GestureDetector(
             onTap: () => widget.onTapListing(l),
-            child: const _ClusterDot(count: 1),
+            child: _MapPricePin(
+              listing: l,
+              rates: widget.rates,
+              displayCurrency: widget.displayCurrency,
+            ),
           ),
         ),
       ];
@@ -280,7 +276,7 @@ class _MapViewState extends State<MapView> {
     final pageIndex = (_groupPage[group.key] ?? 0).clamp(0, pages.length - 1);
     final page = pages[pageIndex];
 
-    const cardW = 84.0, cardH = 100.0;
+    const pinSize = 68.0;
     final radius = 0.0011 * (1 + page.length / 10);
     final markers = <Marker>[
       for (var i = 0; i < page.length; i++)
@@ -295,11 +291,11 @@ class _MapViewState extends State<MapView> {
               group.point.latitude + dLat,
               group.point.longitude + dLng,
             ),
-            width: cardW,
-            height: cardH,
+            width: pinSize,
+            height: pinSize,
             child: GestureDetector(
               onTap: () => widget.onTapListing(l),
-              child: _MapPhotoCard(
+              child: _MapPricePin(
                 listing: l,
                 rates: widget.rates,
                 displayCurrency: widget.displayCurrency,
@@ -784,12 +780,10 @@ class _ClusterDot extends StatelessWidget {
   }
 }
 
-
-/// One photo card in a fanned-out cluster, matching the site's map: a
-/// thumbnail with the price pinned to the bottom, or a generic placeholder
-/// tile for a listing with no photo.
-class _MapPhotoCard extends StatelessWidget {
-  const _MapPhotoCard({required this.listing, this.rates, this.displayCurrency});
+/// A price-only map pin. Its six-tone fill uses the same price-vs-market
+/// median scheme as listing cards and details.
+class _MapPricePin extends StatelessWidget {
+  const _MapPricePin({required this.listing, this.rates, this.displayCurrency});
 
   final Listing listing;
   final Map<String, double>? rates;
@@ -797,66 +791,36 @@ class _MapPhotoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ratesOrEmpty = rates ?? const <String, double>{};
     final label = pinPriceLabel(
       listing,
       rates: rates,
       displayCurrency: displayCurrency,
     );
-    final photo = listing.photos.isNotEmpty
-        ? listing.photos.first
-        : listing.photo;
+    final color = priceToneColor(listingPriceTone(listing, ratesOrEmpty));
     return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 7),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
         boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 4)],
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (photo != null)
-            CachedNetworkImage(
-              imageUrl: photo,
-              fit: BoxFit.cover,
-              placeholder: (_, __) => const ColoredBox(color: Color(0xFF1B2340)),
-              errorWidget: (_, __, ___) => const _PhotoPlaceholder(),
-            )
-          else
-            const _PhotoPlaceholder(),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 5),
-              color: const Color(0xFF0D1128),
-              alignment: Alignment.center,
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-          ),
-        ],
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 10,
+          shadows: [Shadow(color: Colors.black38, blurRadius: 2)],
+        ),
       ),
     );
   }
-}
-
-class _PhotoPlaceholder extends StatelessWidget {
-  const _PhotoPlaceholder();
-
-  @override
-  Widget build(BuildContext context) => const ColoredBox(
-    color: Color(0xFF1B2340),
-    child: Icon(Icons.home_outlined, size: 32, color: Colors.white38),
-  );
 }
 
 /// The center pill sitting on an expanded cluster's true point — shows

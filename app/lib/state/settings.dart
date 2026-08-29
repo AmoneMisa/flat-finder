@@ -50,6 +50,7 @@ InputDecorationTheme _brandInputTheme(Color accent) => InputDecorationTheme(
   // which read as an inconsistent field style next to the dropdowns.
   floatingLabelBehavior: FloatingLabelBehavior.always,
   isDense: true,
+  constraints: const BoxConstraints.tightFor(height: 48),
   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
   border: OutlineInputBorder(
     borderRadius: BorderRadius.circular(BrandColors.radius),

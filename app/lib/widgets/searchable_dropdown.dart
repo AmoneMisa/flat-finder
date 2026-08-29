@@ -57,7 +57,22 @@ class SearchableDropdown extends StatelessWidget {
           // dropdowns next to it instead of behaving like a placeholder.
           labelText: hint,
           border: const OutlineInputBorder(),
-          prefixIcon: const Icon(Icons.search, size: 20),
+          // The default prefixIcon reserves a 48x48 tap target, taller than
+          // a Dropdown's own trailing arrow — that mismatch was the field's
+          // real extra height next to Country/Agency/etc.
+          prefixIcon: const Icon(Icons.search, size: 18),
+          // As small as the icon itself needs — no reserved tap-target
+          // padding — since even a modest minHeight here was still taller
+          // than a plain Dropdown's own (unconstrained) trailing arrow,
+          // which was the field's last remaining extra height.
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 26,
+            minHeight: 20,
+          ),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 26,
+            minHeight: 20,
+          ),
           suffixIcon: ctl.text.isEmpty
               ? null
               : IconButton(

@@ -712,7 +712,7 @@ class _FavButton extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: IconButton(
         tooltip: tooltip,
-        iconSize: 15,
+        iconSize: 13,
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.all(5),
         constraints: const BoxConstraints(),
@@ -749,7 +749,7 @@ class _CardActionButton extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: IconButton(
         tooltip: tooltip,
-        iconSize: 15,
+        iconSize: 13,
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.all(5),
         constraints: const BoxConstraints(),
