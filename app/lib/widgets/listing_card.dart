@@ -8,6 +8,7 @@ import '../models/filters.dart';
 import '../models/listing.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
+import '../state/hidden.dart';
 import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
@@ -62,9 +63,11 @@ class ListingCard extends StatelessWidget {
     final appState = context.watch<AppState>();
     final favorites = context.watch<FavoritesState>();
     final history = context.watch<HistoryState>();
+    final hidden = context.watch<HiddenState>();
     final s = settings.s;
     final isFav = favorites.isFavorite(listing.id);
     final isViewed = history.isViewed(listing.id);
+    final isHidden = hidden.isHidden(listing.id);
     final priceState = listingPriceTone(listing, appState.rates);
     final mobile = !grid && MediaQuery.sizeOf(context).width < 700;
 
@@ -147,6 +150,11 @@ class ListingCard extends StatelessWidget {
             tooltip: s.t('showOnMap'),
             onPressed: onShowOnMap,
           ),
+        _CardActionButton(
+          icon: isHidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+          tooltip: isHidden ? s.t('restoreListing') : s.t('hideListing'),
+          onPressed: () => hidden.toggle(listing),
+        ),
         _FavButton(
           isFav: isFav,
           tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),

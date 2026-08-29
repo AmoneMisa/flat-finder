@@ -7,6 +7,7 @@ import 'l10n/strings.dart';
 import 'services/api_service.dart';
 import 'state/app_state.dart';
 import 'state/favorites.dart';
+import 'state/hidden.dart';
 import 'state/history.dart';
 import 'state/presets.dart';
 import 'state/settings.dart';
@@ -41,6 +42,7 @@ class FlatFinderApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AppState(ApiService())..init()),
         ChangeNotifierProvider(create: (_) => FavoritesState()..load()),
         ChangeNotifierProvider(create: (_) => HistoryState()..load()),
+        ChangeNotifierProvider(create: (_) => HiddenState()..load()),
         ChangeNotifierProvider(create: (_) => PresetsState()..load()),
       ],
       child: Consumer<SettingsState>(

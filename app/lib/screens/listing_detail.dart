@@ -15,6 +15,7 @@ import '../models/listing.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
+import '../state/hidden.dart';
 import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
@@ -232,8 +233,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final settings = context.watch<SettingsState>();
     final rates = context.watch<AppState>().rates;
     final favorites = context.watch<FavoritesState>();
+    final hidden = context.watch<HiddenState>();
     final s = settings.s;
     final isFav = favorites.isFavorite(listing.id);
+    final isHidden = hidden.isHidden(listing.id);
     final hasTranslation =
         _translatedText != null && _translatedLang == settings.lang;
     final showTranslated = hasTranslation && _showTranslated;
@@ -257,28 +260,57 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   : const Icon(Icons.refresh),
               onPressed: _reloading ? null : () => _reload(s),
             ),
-          IconButton(
-            tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
-            icon: Icon(
-              isFav ? Icons.favorite : Icons.favorite_border,
-              color: isFav ? Colors.red : null,
-            ),
-            onPressed: () => favorites.toggle(listing),
-          ),
-          if (_isDesktop)
-            IconButton(
-              tooltip: s.t('copyDetails'),
-              icon: const Icon(Icons.copy),
-              onPressed: () => _share(s, rates, settings.displayCurrency),
-            ),
-          IconButton(
-            tooltip: s.t('share'),
-            icon: const Icon(Icons.share),
-            onPressed: () => _isDesktop
-                ? _shareLink(s, rates, settings.displayCurrency)
-                : _share(s, rates, settings.displayCurrency),
-          ),
         ],
+      ),
+      // Favorite/hide/share moved down here, alongside the CTA, so the top
+      // bar stays uncluttered and every listing action lives in one place.
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: isHidden ? s.t('restoreListing') : s.t('hideListing'),
+                icon: Icon(
+                  isHidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                ),
+                onPressed: () => hidden.toggle(listing),
+              ),
+              IconButton(
+                tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
+                icon: Icon(
+                  isFav ? Icons.favorite : Icons.favorite_border,
+                  color: isFav ? Colors.red : null,
+                ),
+                onPressed: () => favorites.toggle(listing),
+              ),
+              if (_isDesktop)
+                IconButton(
+                  tooltip: s.t('copyDetails'),
+                  icon: const Icon(Icons.copy),
+                  onPressed: () => _share(s, rates, settings.displayCurrency),
+                ),
+              IconButton(
+                tooltip: s.t('share'),
+                icon: const Icon(Icons.share),
+                onPressed: () => _isDesktop
+                    ? _shareLink(s, rates, settings.displayCurrency)
+                    : _share(s, rates, settings.displayCurrency),
+              ),
+              const Spacer(),
+              FilledButton.icon(
+                onPressed: listing.url.isEmpty
+                    ? null
+                    : () => launchUrl(
+                        Uri.parse(listing.url),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                icon: const Icon(Icons.open_in_new),
+                label: Text(s.t('openOriginal')),
+              ),
+            ],
+          ),
+        ),
       ),
       body: ListView(
         children: [

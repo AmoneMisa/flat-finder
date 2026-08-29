@@ -1251,6 +1251,10 @@ class _FilterSheetState extends State<FilterSheet> {
         child: ExpansionTile(
           key: PageStorageKey<String>('filter-$title'),
           initiallyExpanded: true,
+          // Keep the section's fields (SearchableDropdown/Autocomplete in
+          // particular) mounted while collapsed instead of disposing them —
+          // Autocomplete's overlay can crash if it's torn down mid-collapse.
+          maintainState: true,
           leading: Icon(icon, size: 18, color: theme.colorScheme.primary),
           title: Text(title, style: theme.textTheme.titleSmall),
           dense: true,

@@ -10,6 +10,7 @@ import '../models/listing.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
+import '../state/hidden.dart';
 import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
@@ -33,7 +34,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 /// Quick views layered on top of the active filters/search results.
-enum _ViewTab { all, fresh, favorites, viewed }
+enum _ViewTab { all, fresh, favorites, viewed, hidden }
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _mapMode = false;
@@ -221,6 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final settings = context.watch<SettingsState>();
     final favorites = context.watch<FavoritesState>();
     final history = context.watch<HistoryState>();
+    final hidden = context.watch<HiddenState>();
     // Cheap no-op once already fetched for this language; re-fetches with
     // localized city/district/metro names once settings finish loading (or
     // whenever the language changes).
@@ -255,6 +257,16 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.more_vert),
             onSelected: (value) {
               switch (value) {
+                case 'view_all':
+                  setState(() => _tab = _ViewTab.all);
+                case 'view_fresh':
+                  setState(() => _tab = _ViewTab.fresh);
+                case 'view_favorites':
+                  setState(() => _tab = _ViewTab.favorites);
+                case 'view_viewed':
+                  setState(() => _tab = _ViewTab.viewed);
+                case 'view_hidden':
+                  setState(() => _tab = _ViewTab.hidden);
                 case 'history':
                   _openHistory();
                 case 'favorites':
@@ -265,36 +277,81 @@ class _HomeScreenState extends State<HomeScreen> {
                   _openSettings();
               }
             },
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'history',
-                child: ListTile(
-                  leading: const Icon(Icons.history),
-                  title: Text(settings.t('history')),
+            itemBuilder: (_) {
+              const views = <(_ViewTab, String, String, IconData)>[
+                (_ViewTab.all, 'view_all', 'tabAll', Icons.list),
+                (_ViewTab.fresh, 'view_fresh', 'tabFresh', Icons.bolt),
+                (
+                  _ViewTab.favorites,
+                  'view_favorites',
+                  'tabFavorites',
+                  Icons.favorite,
                 ),
-              ),
-              PopupMenuItem(
-                value: 'favorites',
-                child: ListTile(
-                  leading: const Icon(Icons.favorite_border),
-                  title: Text(settings.t('favorites')),
+                (
+                  _ViewTab.viewed,
+                  'view_viewed',
+                  'tabViewed',
+                  Icons.visibility,
                 ),
-              ),
-              PopupMenuItem(
-                value: 'statistics',
-                child: ListTile(
-                  leading: const Icon(Icons.bar_chart_outlined),
-                  title: Text(settings.t('statistics')),
+                (
+                  _ViewTab.hidden,
+                  'view_hidden',
+                  'tabHidden',
+                  Icons.visibility_off,
                 ),
-              ),
-              PopupMenuItem(
-                value: 'settings',
-                child: ListTile(
-                  leading: const Icon(Icons.settings_outlined),
-                  title: Text(settings.t('settings')),
+              ];
+              return [
+                for (final (tab, value, key, icon) in views)
+                  PopupMenuItem(
+                    value: value,
+                    child: ListTile(
+                      leading: Icon(
+                        icon,
+                        color: _tab == tab
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                      title: Text(settings.t(key)),
+                      trailing: _tab == tab
+                          ? Icon(
+                              Icons.check,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.primary,
+                            )
+                          : null,
+                    ),
+                  ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'history',
+                  child: ListTile(
+                    leading: const Icon(Icons.history),
+                    title: Text(settings.t('history')),
+                  ),
                 ),
-              ),
-            ],
+                PopupMenuItem(
+                  value: 'favorites',
+                  child: ListTile(
+                    leading: const Icon(Icons.favorite_border),
+                    title: Text(settings.t('favorites')),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'statistics',
+                  child: ListTile(
+                    leading: const Icon(Icons.bar_chart_outlined),
+                    title: Text(settings.t('statistics')),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'settings',
+                  child: ListTile(
+                    leading: const Icon(Icons.settings_outlined),
+                    title: Text(settings.t('settings')),
+                  ),
+                ),
+              ];
+            },
           ),
         ],
       ),
@@ -308,11 +365,6 @@ class _HomeScreenState extends State<HomeScreen> {
               settings: settings,
               onChanged: (filters) => _applyCompactFilters(state, filters),
             ),
-          _ViewTabBar(
-            current: _tab,
-            settings: settings,
-            onChanged: (t) => setState(() => _tab = t),
-          ),
           if (state.degradedCountries.isNotEmpty)
             _Banner(
               text: settings.t('demoBanner', {
@@ -321,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           if (state.sourceErrors.isNotEmpty)
             _SourceErrorBanner(errors: state.sourceErrors, settings: settings),
-          Expanded(child: _body(state, settings, favorites, history)),
+          Expanded(child: _body(state, settings, favorites, history, hidden)),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -338,6 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
     SettingsState settings,
     FavoritesState favorites,
     HistoryState history,
+    HiddenState hidden,
   ) {
     if (state.loading && state.listings.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -362,6 +415,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       favorites,
       history,
+      hidden,
     );
 
     if (listings.isEmpty) {
@@ -452,24 +506,33 @@ class _HomeScreenState extends State<HomeScreen> {
     List<Listing> listings,
     FavoritesState fav,
     HistoryState hist,
+    HiddenState hidden,
   ) {
+    if (_tab == _ViewTab.hidden) {
+      return listings.where((l) => hidden.isHidden(l.id)).toList();
+    }
+    // Every other view excludes dismissed listings, matching the site's
+    // `activeListings` (hidden ones only ever show up under the Hidden tab).
+    final active = listings.where((l) => !hidden.isHidden(l.id));
     switch (_tab) {
       case _ViewTab.all:
-        return listings;
+        return active.toList();
       case _ViewTab.favorites:
-        return listings.where((l) => fav.isFavorite(l.id)).toList();
+        return active.where((l) => fav.isFavorite(l.id)).toList();
       case _ViewTab.viewed:
-        return listings.where((l) => hist.isViewed(l.id)).toList();
+        return active.where((l) => hist.isViewed(l.id)).toList();
       case _ViewTab.fresh:
         final cutoff = DateTime.now().toUtc().subtract(
           const Duration(hours: 24),
         );
-        return listings
+        return active
             .where(
               (l) =>
                   l.createdAt != null && l.createdAt!.toUtc().isAfter(cutoff),
             )
             .toList();
+      case _ViewTab.hidden:
+        return const []; // unreachable, handled above
     }
   }
 
@@ -477,6 +540,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _ViewTab.favorites => settings.t('noFavoritesHere'),
     _ViewTab.viewed => settings.t('noViewedHere'),
     _ViewTab.fresh => settings.t('noFreshHere'),
+    _ViewTab.hidden => settings.t('noHiddenHere'),
     _ViewTab.all => settings.t('noListings'),
   };
 
@@ -768,13 +832,20 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                                     child: Text(code),
                                   ),
                             ],
-                            onChanged: (value) => _schedule(
-                              _withTextValues().copyWith(
-                                priceCurrency: value,
-                                clearPriceCurrency: value == null,
-                              ),
-                              immediate: true,
-                            ),
+                            onChanged: (value) {
+                              // Same currency drives both the price-range
+                              // filter and the card conversion shown below
+                              // the native price, matching the web app's
+                              // single `displayCurrency`.
+                              widget.settings.setDisplayCurrency(value);
+                              _schedule(
+                                _withTextValues().copyWith(
+                                  priceCurrency: value,
+                                  clearPriceCurrency: value == null,
+                                ),
+                                immediate: true,
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -786,26 +857,33 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              child: SegmentedButton<DealType>(
+              child: SegmentedButton<_QuickDeal>(
                 segments: [
-                  ButtonSegment(value: DealType.any, label: Text(s.t('any'))),
                   ButtonSegment(
-                    value: DealType.sale,
+                    value: _QuickDeal.any,
+                    label: Text(s.t('any')),
+                  ),
+                  ButtonSegment(
+                    value: _QuickDeal.sale,
                     label: Text(s.t('sale')),
                   ),
                   ButtonSegment(
-                    value: DealType.longRent,
+                    value: _QuickDeal.longRent,
                     label: Text(s.t('longTerm')),
                   ),
                   ButtonSegment(
-                    value: DealType.shortRent,
+                    value: _QuickDeal.room,
+                    label: Text(s.t('roomOnly')),
+                  ),
+                  ButtonSegment(
+                    value: _QuickDeal.shortRent,
                     label: Text(s.t('shortTerm')),
                   ),
                 ],
-                selected: {widget.filters.dealType},
+                selected: {_quickDealFor(widget.filters)},
                 showSelectedIcon: false,
                 onSelectionChanged: (v) => _schedule(
-                  _withTextValues().copyWith(dealType: v.first),
+                  _withQuickDeal(_withTextValues(), v.first),
                   immediate: true,
                 ),
               ),
@@ -815,50 +893,36 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
       ),
     );
   }
-}
 
-/// Horizontal quick-view selector (All / Fresh / Favorites / Viewed) shown above
-/// the results, layered on top of the active filters.
-class _ViewTabBar extends StatelessWidget {
-  const _ViewTabBar({
-    required this.current,
-    required this.settings,
-    required this.onChanged,
-  });
-
-  final _ViewTab current;
-  final SettingsState settings;
-  final ValueChanged<_ViewTab> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    const items = <(_ViewTab, String, IconData)>[
-      (_ViewTab.all, 'tabAll', Icons.list),
-      (_ViewTab.fresh, 'tabFresh', Icons.bolt),
-      (_ViewTab.favorites, 'tabFavorites', Icons.favorite),
-      (_ViewTab.viewed, 'tabViewed', Icons.visibility),
-    ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          for (final (tab, key, icon) in items)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                selected: current == tab,
-                showCheckmark: false,
-                avatar: Icon(icon, size: 16),
-                label: Text(settings.t(key)),
-                onSelected: (_) => onChanged(tab),
-              ),
-            ),
-        ],
-      ),
-    );
+  _QuickDeal _quickDealFor(Filters f) {
+    if (f.dealType == DealType.longRent && f.roomOnly) return _QuickDeal.room;
+    return switch (f.dealType) {
+      DealType.any => _QuickDeal.any,
+      DealType.sale => _QuickDeal.sale,
+      DealType.longRent => _QuickDeal.longRent,
+      DealType.shortRent => _QuickDeal.shortRent,
+    };
   }
+
+  Filters _withQuickDeal(Filters f, _QuickDeal deal) => switch (deal) {
+    _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
+    _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
+    _QuickDeal.longRent => f.copyWith(
+      dealType: DealType.longRent,
+      roomOnly: false,
+    ),
+    _QuickDeal.room => f.copyWith(dealType: DealType.longRent, roomOnly: true),
+    _QuickDeal.shortRent => f.copyWith(
+      dealType: DealType.shortRent,
+      roomOnly: false,
+    ),
+  };
 }
+
+/// The quick-filter deal-type segments: room-share rent is stored as
+/// `dealType: longRent, roomOnly: true` in [Filters], not its own enum value,
+/// so it's surfaced as a distinct option only in this control.
+enum _QuickDeal { any, sale, longRent, room, shortRent }
 
 class _SummaryBar extends StatelessWidget {
   const _SummaryBar({required this.state, required this.settings});
@@ -873,26 +937,9 @@ class _SummaryBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final f = state.filters;
-    final flags = f.countries.map((c) => countryFlags[c] ?? c).join(' ');
-    final type = switch (f.propertyType) {
-      PropertyType.flat => settings.t('apartments'),
-      PropertyType.house => settings.t('houses'),
-      PropertyType.any => settings.t('allTypes'),
-    };
-    final agency = switch (f.agency) {
-      AgencyFilter.owner => settings.t('owner'),
-      AgencyFilter.agency => settings.t('agency'),
-      AgencyFilter.any => settings.t('anySeller'),
-    };
-    final parts = [flags, type, agency];
-    if (f.sources.isNotEmpty && f.sources.length < kAllSources.length) {
-      parts.add(f.sources.map((s) => kSourceLabels[s] ?? s).join('/'));
-    }
-    parts.add(
-      settings.t('results', {
-        'n': '${state.total > 0 ? state.total : state.listings.length}',
-      }),
-    );
+    final resultsLabel = settings.t('results', {
+      'n': '${state.total > 0 ? state.total : state.listings.length}',
+    });
     return Container(
       width: double.infinity,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -901,7 +948,7 @@ class _SummaryBar extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              parts.join('   ·   '),
+              resultsLabel,
               style: Theme.of(context).textTheme.bodySmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
