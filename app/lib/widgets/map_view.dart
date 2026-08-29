@@ -261,7 +261,7 @@ class _PricePin extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color =
-        listing.byAgency ? Colors.orange.shade700 : Theme.of(context).colorScheme.primary;
+        listing.byAgency ? BrandColors.toneOrange : Theme.of(context).colorScheme.primary;
     final label = pinPriceLabel(listing, rates: rates, displayCurrency: displayCurrency);
     return Container(
       alignment: Alignment.center,

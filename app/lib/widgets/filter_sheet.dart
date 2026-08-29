@@ -32,6 +32,11 @@ class _FilterSheetState extends State<FilterSheet> {
   late bool _pets;
   late bool _children;
   late bool _roomOnly;
+  late Set<String> _amenities;
+  late bool _noElevator;
+  late bool _noDeposit;
+  late bool _communalIncluded;
+  late bool _noCommission;
   int? _maxAgeDays;
   late SortBy _sort;
   String? _city;
@@ -64,6 +69,11 @@ class _FilterSheetState extends State<FilterSheet> {
     _pets = widget.initial.pets;
     _children = widget.initial.children;
     _roomOnly = widget.initial.roomOnly;
+    _amenities = {...widget.initial.amenities};
+    _noElevator = widget.initial.noElevator;
+    _noDeposit = widget.initial.noDeposit;
+    _communalIncluded = widget.initial.communalIncluded;
+    _noCommission = widget.initial.noCommission;
     _maxAgeDays = widget.initial.maxAgeDays;
     _sort = widget.initial.sort;
     _city = widget.initial.city.trim().isEmpty ? null : widget.initial.city.trim();
@@ -150,6 +160,11 @@ class _FilterSheetState extends State<FilterSheet> {
       pets: _pets,
       children: _children,
       roomOnly: _roomOnly,
+      amenities: _amenities,
+      noElevator: _noElevator,
+      noDeposit: _noDeposit,
+      communalIncluded: _communalIncluded,
+      noCommission: _noCommission,
       maxAgeDays: _maxAgeDays,
       sort: _sort,
     );
@@ -203,6 +218,11 @@ class _FilterSheetState extends State<FilterSheet> {
       _pets = f.pets;
       _children = f.children;
       _roomOnly = f.roomOnly;
+      _amenities = {...f.amenities};
+      _noElevator = f.noElevator;
+      _noDeposit = f.noDeposit;
+      _communalIncluded = f.communalIncluded;
+      _noCommission = f.noCommission;
       _maxAgeDays = f.maxAgeDays;
       _sort = f.sort;
       _city = f.city.trim().isEmpty ? null : f.city.trim();
@@ -678,6 +698,50 @@ class _FilterSheetState extends State<FilterSheet> {
               title: Text(s.t('roomOnly')),
               subtitle: Text(s.t('roomOnlyHint'),
                   style: Theme.of(context).textTheme.bodySmall),
+            ),
+            SwitchListTile(
+              value: _noElevator,
+              onChanged: (v) => setState(() => _noElevator = v),
+              contentPadding: EdgeInsets.zero,
+              title: Text(s.t('noElevator')),
+            ),
+            SwitchListTile(
+              value: _noDeposit,
+              onChanged: (v) => setState(() => _noDeposit = v),
+              contentPadding: EdgeInsets.zero,
+              title: Text(s.t('noDeposit')),
+            ),
+            SwitchListTile(
+              value: _communalIncluded,
+              onChanged: (v) => setState(() => _communalIncluded = v),
+              contentPadding: EdgeInsets.zero,
+              title: Text(s.t('communalIncluded')),
+            ),
+            SwitchListTile(
+              value: _noCommission,
+              onChanged: (v) => setState(() => _noCommission = v),
+              contentPadding: EdgeInsets.zero,
+              title: Text(s.t('noCommission')),
+            ),
+            const SizedBox(height: 20),
+            _label(s.t('amenities')),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: kAmenityFilters.map((key) {
+                final selected = _amenities.contains(key);
+                return FilterChip(
+                  label: Text(s.t('amenity_$key')),
+                  selected: selected,
+                  onSelected: (v) => setState(() {
+                    if (v) {
+                      _amenities.add(key);
+                    } else {
+                      _amenities.remove(key);
+                    }
+                  }),
+                );
+              }).toList(),
             ),
             const SizedBox(height: 20),
             _label(s.t('postedWithin')),

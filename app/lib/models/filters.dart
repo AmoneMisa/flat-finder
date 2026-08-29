@@ -23,6 +23,13 @@ const kSourceLabels = {
   'telegram': 'Telegram',
 };
 
+/// Boolean amenity filters the backend accepts as bare `?key=true` query
+/// params (`parseListingFilters` in listing-routes.js) and stores generically
+/// so new amenities don't need a new Filters field each time.
+const kAmenityFilters = [
+  'tv', 'microwave', 'oven', 'bidet', 'walkInCloset', 'bathtub', 'shower', 'euroLayout',
+];
+
 /// Districts and metro/transit stations available within a single city.
 class CityLocations {
   final List<String> districts;
@@ -94,6 +101,11 @@ class Filters {
   bool pets; // require "pets allowed"
   bool children; // require "children allowed"
   bool roomOnly; // only partial / room-share rentals
+  Set<String> amenities; // subset of kAmenityFilters required present
+  bool noElevator;
+  bool noDeposit;
+  bool communalIncluded;
+  bool noCommission;
   int? maxAgeDays; // only posts newer than this many days
   SortBy sort; // client-side ordering (not sent to the server)
 
@@ -123,11 +135,17 @@ class Filters {
     this.pets = false,
     this.children = false,
     this.roomOnly = false,
+    Set<String>? amenities,
+    this.noElevator = false,
+    this.noDeposit = false,
+    this.communalIncluded = false,
+    this.noCommission = false,
     this.maxAgeDays,
     this.sort = SortBy.relevance,
   })  : countries = countries ?? {'RO'},
         sources = sources ?? {...kAllSources},
-        customSources = customSources ?? [];
+        customSources = customSources ?? [],
+        amenities = amenities ?? {};
 
   Filters copyWith({
     Set<String>? countries,
@@ -166,6 +184,11 @@ class Filters {
     bool? pets,
     bool? children,
     bool? roomOnly,
+    Set<String>? amenities,
+    bool? noElevator,
+    bool? noDeposit,
+    bool? communalIncluded,
+    bool? noCommission,
     int? maxAgeDays,
     bool clearMaxAgeDays = false,
     SortBy? sort,
@@ -197,6 +220,11 @@ class Filters {
       pets: pets ?? this.pets,
       children: children ?? this.children,
       roomOnly: roomOnly ?? this.roomOnly,
+      amenities: amenities ?? this.amenities,
+      noElevator: noElevator ?? this.noElevator,
+      noDeposit: noDeposit ?? this.noDeposit,
+      communalIncluded: communalIncluded ?? this.communalIncluded,
+      noCommission: noCommission ?? this.noCommission,
       maxAgeDays: clearMaxAgeDays ? null : (maxAgeDays ?? this.maxAgeDays),
       sort: sort ?? this.sort,
     );
@@ -230,6 +258,11 @@ class Filters {
         'pets': pets,
         'children': children,
         'roomOnly': roomOnly,
+        'amenities': amenities.toList(),
+        'noElevator': noElevator,
+        'noDeposit': noDeposit,
+        'communalIncluded': communalIncluded,
+        'noCommission': noCommission,
         'maxAgeDays': maxAgeDays,
         'sort': sort.name,
       };
@@ -276,6 +309,15 @@ class Filters {
       pets: j['pets'] == true,
       children: j['children'] == true,
       roomOnly: j['roomOnly'] == true,
+      amenities: (j['amenities'] as List?)
+              ?.map((e) => e.toString())
+              .where(kAmenityFilters.contains)
+              .toSet() ??
+          {},
+      noElevator: j['noElevator'] == true,
+      noDeposit: j['noDeposit'] == true,
+      communalIncluded: j['communalIncluded'] == true,
+      noCommission: j['noCommission'] == true,
       maxAgeDays: (j['maxAgeDays'] as num?)?.toInt(),
       sort: byName(SortBy.values, j['sort'], SortBy.relevance),
     );
@@ -329,6 +371,11 @@ class Filters {
       pets: q['pets'] == 'true',
       children: q['children'] == 'true',
       roomOnly: q['roomOnly'] == 'true',
+      amenities: kAmenityFilters.where((key) => q[key] == 'true').toSet(),
+      noElevator: q['noElevator'] == 'true',
+      noDeposit: q['noDeposit'] == 'true',
+      communalIncluded: q['communalIncluded'] == 'true',
+      noCommission: q['noCommission'] == 'true',
       maxAgeDays: int.tryParse(q['maxAgeDays'] ?? ''),
       sort: byName(SortBy.values, q['sort'], SortBy.relevance),
     );
@@ -347,6 +394,13 @@ class Filters {
     if (pets) p['pets'] = 'true';
     if (children) p['children'] = 'true';
     if (roomOnly) p['roomOnly'] = 'true';
+    for (final key in amenities) {
+      if (kAmenityFilters.contains(key)) p[key] = 'true';
+    }
+    if (noElevator) p['noElevator'] = 'true';
+    if (noDeposit) p['noDeposit'] = 'true';
+    if (communalIncluded) p['communalIncluded'] = 'true';
+    if (noCommission) p['noCommission'] = 'true';
     if (maxAgeDays != null && maxAgeDays! > 0) p['maxAgeDays'] = maxAgeDays.toString();
     // Only send when it's a real subset; all-selected means "all" server-side.
     if (sources.isNotEmpty && sources.length < kAllSources.length) {

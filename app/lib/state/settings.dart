@@ -7,36 +7,99 @@ import '../l10n/strings.dart';
 /// differ in their seed/surface colour.
 const kThemeOptions = ['light', 'dark', 'darkBlue'];
 
+/// whiteslove.me's design tokens (`--color-primary`, `--bg-*`, `--text-*`,
+/// `--flat-tone-*`...), pulled from its live `:root` custom properties so the
+/// app reads as the same product as the site rather than a generic Material
+/// palette. Keep these in sync if the site's tokens change.
+class BrandColors {
+  const BrandColors._();
+
+  static const primary = Color(0xFFE0679A); // --color-primary / --accent-pink
+  static const primaryAlt = Color(0xFF35316F); // --color-primary-alt
+  static const secondary = Color(0xFFCD99FF); // --color-secondary
+  static const accentBlue = Color(0xFF7189D9); // --accent-blue
+
+  static const bgDeep = Color(0xFF0D1128); // --bg-deep
+  static const bgPanel = Color(0xFF131730); // --bg-panel
+  static const bgPanel2 = Color(0xFF171C3A); // --bg-panel-2
+  static const line = Color(0xFF252A4A); // --line
+
+  static const textPrimary = Color(0xFFEEF0F7); // --text-primary
+  static const textSoft = Color(0xFFC8CCDF); // --text-soft
+  static const textMuted = Color(0xFF9EA4C1); // --text-muted
+
+  // --flat-tone-* — this product's own status/badge palette on the site.
+  static const toneGreen = Color(0xFF4ADE80);
+  static const toneBlue = Color(0xFF67E8F9);
+  static const tonePink = Color(0xFFE0679A);
+  static const toneOrange = Color(0xFFFB923C);
+  static const toneYellow = Color(0xFFFACC15);
+  static const toneRed = Color(0xFFEF4444);
+
+  static const radius = 10.0; // --radius
+}
+
 /// Build the [ThemeData] for a named theme (see [kThemeOptions]). Kept as a
 /// free function so [main] can drive `MaterialApp.theme` from the current
 /// setting without duplicating the colour definitions.
 ThemeData buildTheme(String name) {
-  const seed = Color(0xFF2E7D6B);
   switch (name) {
     case 'dark':
-      return ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: seed,
-        brightness: Brightness.dark,
-      );
-    case 'darkBlue':
+      // The site's actual palette: navy/near-black with a single pink accent.
       final scheme = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF3D5AFE),
+        seedColor: BrandColors.primary,
         brightness: Brightness.dark,
+        secondary: BrandColors.secondary,
       ).copyWith(
-        surface: const Color(0xFF0E1730),
-        surfaceContainerHighest: const Color(0xFF1B2745),
+        primary: BrandColors.primary,
+        secondary: BrandColors.secondary,
+        surface: BrandColors.bgPanel,
+        surfaceContainerHighest: BrandColors.bgPanel2,
+        onSurface: BrandColors.textPrimary,
+        outline: BrandColors.line,
       );
       return ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
-        scaffoldBackgroundColor: const Color(0xFF0A1226),
+        scaffoldBackgroundColor: BrandColors.bgDeep,
+        brightness: Brightness.dark,
+      );
+    case 'darkBlue':
+      // Same dark surfaces, blue accent instead of pink — an on-brand
+      // alternative to the site's default rather than an unrelated hue.
+      final scheme = ColorScheme.fromSeed(
+        seedColor: BrandColors.accentBlue,
+        brightness: Brightness.dark,
+        secondary: BrandColors.secondary,
+      ).copyWith(
+        primary: BrandColors.accentBlue,
+        secondary: BrandColors.secondary,
+        surface: BrandColors.bgPanel,
+        surfaceContainerHighest: BrandColors.bgPanel2,
+        onSurface: BrandColors.textPrimary,
+        outline: BrandColors.line,
+      );
+      return ThemeData(
+        useMaterial3: true,
+        colorScheme: scheme,
+        scaffoldBackgroundColor: BrandColors.bgDeep,
+        brightness: Brightness.dark,
       );
     case 'light':
     default:
+      // The site itself is dark-only; this is the same pink/purple brand
+      // hues carried onto a light surface for users who prefer light mode.
+      final scheme = ColorScheme.fromSeed(
+        seedColor: BrandColors.primary,
+        brightness: Brightness.light,
+        secondary: BrandColors.primaryAlt,
+      ).copyWith(
+        primary: BrandColors.primary,
+        secondary: BrandColors.primaryAlt,
+      );
       return ThemeData(
         useMaterial3: true,
-        colorSchemeSeed: seed,
+        colorScheme: scheme,
         brightness: Brightness.light,
       );
   }

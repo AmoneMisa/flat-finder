@@ -254,13 +254,16 @@ class _PriceState {
   final _PriceTier tier;
   final double? ratio;
 
+  // whiteslove.me's own `--flat-tone-*` status palette (green/yellow/orange/
+  // red), so a listing's price tier reads with the same colors as the site.
   Color get color => switch (tier) {
-        _PriceTier.low => const Color(0xFF7FE45C),
-        _PriceTier.belowAverage => const Color(0xFFA9DF6A),
-        _PriceTier.average => Colors.white,
-        _PriceTier.high => const Color(0xFFFF9F43),
-        _PriceTier.veryHigh => const Color(0xFFFF5D61),
-        _PriceTier.unknown => Colors.white,
+        _PriceTier.low => BrandColors.toneGreen,
+        _PriceTier.belowAverage =>
+          Color.lerp(BrandColors.toneGreen, BrandColors.toneYellow, 0.5)!,
+        _PriceTier.average => BrandColors.textPrimary,
+        _PriceTier.high => BrandColors.toneOrange,
+        _PriceTier.veryHigh => BrandColors.toneRed,
+        _PriceTier.unknown => BrandColors.textMuted,
       };
 }
 
@@ -363,22 +366,23 @@ class _GoodPriceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tint = Color.lerp(BrandColors.toneGreen, Colors.white, 0.25)!;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xDD183B19),
-        border: Border.all(color: const Color(0xFF7FE45C).withValues(alpha: 0.75)),
+        color: BrandColors.toneGreen.withValues(alpha: 0.16),
+        border: Border.all(color: BrandColors.toneGreen.withValues(alpha: 0.75)),
         borderRadius: BorderRadius.circular(7),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.savings_outlined, color: Color(0xFF9AF56E), size: 12),
+          Icon(Icons.savings_outlined, color: tint, size: 12),
           const SizedBox(width: 4),
           Text(
             text,
-            style: const TextStyle(
-              color: Color(0xFFA8F779),
+            style: TextStyle(
+              color: tint,
               fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
