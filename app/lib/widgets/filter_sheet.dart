@@ -379,7 +379,39 @@ class _FilterSheetState extends State<FilterSheet> {
     );
     ctl.dispose();
     if (name != null && name.isNotEmpty && mounted) {
-      await context.read<PresetsState>().save(name, _currentFilters());
+      final presets = context.read<PresetsState>();
+      final preset = await presets.save(name, _currentFilters());
+      if (preset == null || !mounted) return;
+      final enablePush = await showDialog<bool>(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          title: Text(s.t('enablePresetPushPromptTitle')),
+          content:
+              Text(s.t('enablePresetPushPromptBody', {'name': preset.name})),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: Text(s.t('notNow')),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogCtx, true),
+              icon: const Icon(Icons.notifications_active_outlined),
+              label: Text(s.t('enablePresetPush')),
+            ),
+          ],
+        ),
+      );
+      if (enablePush == true && mounted) {
+        final ok = await presets.setNotificationsEnabled(preset.id, true);
+        if (!ok && mounted) {
+          final key = presets.pushError == 'firebase_not_configured'
+              ? 'pushSetupRequired'
+              : 'pushEnableFailed';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(s.t(key))),
+          );
+        }
+      }
     }
   }
 

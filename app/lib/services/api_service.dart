@@ -407,4 +407,31 @@ class ApiService {
     final rates = (json['rates'] as Map<String, dynamic>? ?? {});
     return rates.map((k, v) => MapEntry(k, (v as num).toDouble()));
   }
+
+  Future<void> syncMobileSubscriptions({
+    required String deviceId,
+    required String pushToken,
+    required bool enabled,
+    required String platform,
+    required String language,
+    required List<Map<String, dynamic>> presets,
+  }) async {
+    final res = await http
+        .put(
+          Uri.parse('$baseUrl/api/mobile-subscriptions'),
+          headers: const {'content-type': 'application/json'},
+          body: jsonEncode({
+            'deviceId': deviceId,
+            'pushToken': pushToken,
+            'enabled': enabled,
+            'platform': platform,
+            'language': language,
+            'presets': presets,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) {
+      throw Exception('mobile subscriptions HTTP ${res.statusCode}');
+    }
+  }
 }
