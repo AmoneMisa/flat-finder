@@ -262,10 +262,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 38,
-        title: Text(
-          settings.t('appTitle'),
-          style: const TextStyle(fontSize: 18),
+        toolbarHeight: 52,
+        title: Image.asset(
+          'assets/logo.png',
+          height: 48,
+          fit: BoxFit.contain,
+          semanticLabel: settings.t('appTitle'),
         ),
         actionsPadding: EdgeInsets.zero,
         actions: [
