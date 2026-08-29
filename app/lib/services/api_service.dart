@@ -80,15 +80,19 @@ class ApiService {
 
   final String baseUrl;
 
-  /// Production backend, reachable from a real device — same address the
-  /// site's flats-feed proxy (server/routes/flats-feed.get.ts) uses. Only
-  /// debug builds default to a local backend instead (the Android emulator
-  /// reaches the host machine via 10.0.2.2; desktop/web use localhost),
-  /// since a release APK installed on a phone has no "host machine" to
-  /// reach — defaulting it to localhost/10.0.2.2 would leave every filter
-  /// silently empty (no countries/cities load) with no visible error.
+  /// Production backend, reachable from a real device — proxied through
+  /// whiteslove.me's existing HTTPS vhost (nginx `location /flat-api/` ->
+  /// 127.0.0.1:4000) rather than the bare http://185.5.206.229:8082 this
+  /// used to point at. Plain HTTP on a non-standard port gets silently
+  /// dropped by some mobile carriers (a real device hung on a 30s timeout
+  /// with no error while this exact IP:port answered fine from a desktop
+  /// browser); 443 over TLS on an existing domain is essentially never
+  /// blocked. Only debug builds default to a local backend instead (the
+  /// Android emulator reaches the host machine via 10.0.2.2; desktop/web
+  /// use localhost), since a release APK installed on a phone has no "host
+  /// machine" to reach.
   /// Override with --dart-define=API_BASE=http://your-host:4000.
-  static const String kProductionBaseUrl = 'http://185.5.206.229:8082';
+  static const String kProductionBaseUrl = 'https://whiteslove.me/flat-api';
 
   static String _defaultBaseUrl() {
     const override = String.fromEnvironment('API_BASE');
