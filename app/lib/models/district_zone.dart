@@ -3,8 +3,8 @@ import 'package:latlong2/latlong.dart';
 /// One canonical geographic map zone from `@whiteslove/geo-catalog`.
 ///
 /// The backend keeps the catalog's identity, hierarchy and boundary intact so
-/// Flutter can render and select districts, microdistricts, mahallas and local
-/// areas without inventing a parallel geography model.
+/// Flutter can render and select districts, microdistricts, mahallas, local
+/// areas and metro stations without inventing a parallel geography model.
 class DistrictZone {
   final String id;
   final String? parentId;
@@ -19,7 +19,8 @@ class DistrictZone {
   /// Real OSM/catalog boundary as one or more rings of [lat, lng] points,
   /// already converted from GeoJSON's [lng, lat] order. Empty when the catalog
   /// only has a centroid; callers may use the catalog accuracy as a visual
-  /// fallback circle in that case.
+  /// fallback circle in that case. Metro proximity rings are deliberately UI
+  /// radii around the canonical station center, not canonical boundaries.
   final List<List<LatLng>> boundaryRings;
 
   const DistrictZone({
