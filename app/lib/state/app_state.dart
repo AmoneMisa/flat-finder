@@ -45,6 +45,8 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
+  String _countriesLocale = '';
+
   Future<void> init() async {
     // Restore the user's last-used filters (country, type, price, etc.) so the
     // app reopens where they left off.
@@ -68,6 +70,25 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       error = e.toString();
       notifyListeners();
+    }
+  }
+
+  /// Re-fetches [countries] with localized city/district/metro/etc. labels
+  /// once the UI language is known (or changes) — `init()` runs before
+  /// SettingsState finishes loading the saved language, so it always starts
+  /// with unlocalized (raw) names. Cheap to call from `build()`: no-ops once
+  /// already fetched for this locale.
+  Future<void> ensureCountriesLocale(String locale) async {
+    if (locale == _countriesLocale || countries.isEmpty) return;
+    _countriesLocale = locale;
+    try {
+      final localized = await _api.fetchCountries(locale: locale);
+      if (locale != _countriesLocale) return; // superseded by a newer call
+      countries = localized;
+      notifyListeners();
+    } catch (_) {
+      // Keep the unlocalized list rather than surfacing an error for what's
+      // a display-only enhancement.
     }
   }
 

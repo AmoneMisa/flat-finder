@@ -77,13 +77,25 @@ Set<String> _singleCountry(Set<String>? values, [String fallback = 'RO']) {
   return {values.first};
 }
 
+Map<String, String> _stringMap(dynamic v) => v is Map
+    ? v.map((k, val) => MapEntry(k.toString(), val.toString()))
+    : const {};
+
 /// Districts and metro/transit stations available within a single city.
+/// The `*Labels` maps (raw name -> localized label) are only populated when
+/// `/api/countries` was fetched with a `locale` — see
+/// `ApiService.fetchCountries` and `geographyDisplayName` on the backend.
 class CityLocations {
   final List<String> districts;
   final List<String> metro;
   final List<String> microdistricts;
   final List<String> quartals;
   final List<String> areas;
+  final Map<String, String> districtLabels;
+  final Map<String, String> metroLabels;
+  final Map<String, String> microdistrictLabels;
+  final Map<String, String> quartalLabels;
+  final Map<String, String> areaLabels;
 
   const CityLocations({
     this.districts = const [],
@@ -91,6 +103,11 @@ class CityLocations {
     this.microdistricts = const [],
     this.quartals = const [],
     this.areas = const [],
+    this.districtLabels = const {},
+    this.metroLabels = const {},
+    this.microdistrictLabels = const {},
+    this.quartalLabels = const {},
+    this.areaLabels = const {},
   });
 
   factory CityLocations.fromJson(Map<String, dynamic> j) => CityLocations(
@@ -104,6 +121,11 @@ class CityLocations {
     quartals:
         (j['quartals'] as List?)?.map((e) => e.toString()).toList() ?? const [],
     areas: (j['areas'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+    districtLabels: _stringMap(j['districtLabels']),
+    metroLabels: _stringMap(j['metroLabels']),
+    microdistrictLabels: _stringMap(j['microdistrictLabels']),
+    quartalLabels: _stringMap(j['quartalLabels']),
+    areaLabels: _stringMap(j['areaLabels']),
   );
 }
 
@@ -115,6 +137,7 @@ class Country {
   final double centerLng;
   final List<String> cities;
   final Map<String, CityLocations> locations; // by city name
+  final Map<String, String> cityLabels; // raw city name -> localized label
 
   const Country({
     required this.code,
@@ -124,7 +147,13 @@ class Country {
     required this.centerLng,
     this.cities = const [],
     this.locations = const {},
+    this.cityLabels = const {},
   });
+
+  /// The display label for [city] — its localized name if the country was
+  /// fetched with a `locale` and a translation exists, otherwise the raw
+  /// name unchanged.
+  String cityLabel(String city) => cityLabels[city] ?? city;
 
   factory Country.fromJson(Map<String, dynamic> j) => Country(
     code: j['code'],
@@ -140,6 +169,7 @@ class Country {
         CityLocations.fromJson(Map<String, dynamic>.from(v)),
       ),
     ),
+    cityLabels: _stringMap(j['cityLabels']),
   );
 }
 

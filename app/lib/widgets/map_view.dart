@@ -162,37 +162,20 @@ class _MapViewState extends State<MapView> {
     return inside;
   }
 
-  /// Fan out listings that share (almost) the same coordinate so their price
-  /// pins don't stack directly on top of each other. Groups by a rounded
-  /// lat/lng key and arranges each group on a small circle around the shared
-  /// point. Filtering still uses each listing's true coordinate — only the
-  /// drawn marker is nudged.
-  List<_PlacedListing> _spread(List<Listing> located) {
+  /// Groups listings that share (almost) the same coordinate, matching the
+  /// site's map markers: a lone listing gets a plain price pin, a cluster
+  /// gets one circular bubble that pages through its members with arrows
+  /// instead of scattering separate pins on top of each other.
+  List<_PinGroup> _spread(List<Listing> located) {
     final groups = <String, List<Listing>>{};
     for (final l in located) {
       final key = '${l.lat!.toStringAsFixed(3)},${l.lng!.toStringAsFixed(3)}';
       groups.putIfAbsent(key, () => []).add(l);
     }
-    final out = <_PlacedListing>[];
-    for (final group in groups.values) {
-      if (group.length == 1) {
-        final l = group.first;
-        out.add(_PlacedListing(l, LatLng(l.lat!, l.lng!)));
-        continue;
-      }
-      // Small circle whose radius grows slightly with the crowd size.
-      final radius = 0.00065 * (1 + group.length / 14);
-      for (var i = 0; i < group.length; i++) {
-        final l = group[i];
-        final angle = 2 * math.pi * i / group.length;
-        final dLat = radius * math.cos(angle);
-        // Scale longitude by cos(lat) so the ring isn't squashed east–west.
-        final dLng =
-            radius * math.sin(angle) / math.cos(l.lat! * math.pi / 180);
-        out.add(_PlacedListing(l, LatLng(l.lat! + dLat, l.lng! + dLng)));
-      }
-    }
-    return out;
+    return [
+      for (final group in groups.values)
+        _PinGroup(group, LatLng(group.first.lat!, group.first.lng!)),
+    ];
   }
 
   void _onMapTap(LatLng point) {
@@ -404,18 +387,16 @@ class _MapViewState extends State<MapView> {
               ),
             MarkerLayer(
               markers: [
-                for (final placed in _spread(visible))
+                for (final group in _spread(visible))
                   Marker(
-                    point: placed.point,
-                    width: 76,
+                    point: group.point,
+                    width: group.listings.length > 1 ? 96 : 76,
                     height: 32,
-                    child: GestureDetector(
-                      onTap: () => widget.onTapListing(placed.listing),
-                      child: _PricePin(
-                        listing: placed.listing,
-                        rates: widget.rates,
-                        displayCurrency: widget.displayCurrency,
-                      ),
+                    child: _PricePinBubble(
+                      listings: group.listings,
+                      rates: widget.rates,
+                      displayCurrency: widget.displayCurrency,
+                      onTapListing: widget.onTapListing,
                     ),
                   ),
               ],
@@ -592,46 +573,137 @@ class _ZoneDot extends StatelessWidget {
   }
 }
 
-/// A listing paired with the (possibly nudged) point its pin is drawn at.
-class _PlacedListing {
-  const _PlacedListing(this.listing, this.point);
-  final Listing listing;
+/// Listings that share (almost) the same coordinate, plus the point the
+/// group's marker is drawn at.
+class _PinGroup {
+  const _PinGroup(this.listings, this.point);
+  final List<Listing> listings;
   final LatLng point;
 }
 
-class _PricePin extends StatelessWidget {
-  const _PricePin({required this.listing, this.rates, this.displayCurrency});
-  final Listing listing;
+/// A circular price bubble, matching the site's map marker style. A single
+/// listing renders as a plain pill; a cluster renders as a circle with the
+/// current member's price and left/right arrows to page through the group.
+class _PricePinBubble extends StatefulWidget {
+  const _PricePinBubble({
+    required this.listings,
+    required this.onTapListing,
+    this.rates,
+    this.displayCurrency,
+  });
+
+  final List<Listing> listings;
+  final void Function(Listing) onTapListing;
   final Map<String, double>? rates;
   final String? displayCurrency;
 
   @override
+  State<_PricePinBubble> createState() => _PricePinBubbleState();
+}
+
+class _PricePinBubbleState extends State<_PricePinBubble> {
+  int _index = 0;
+
+  void _page(int delta) {
+    setState(
+      () => _index = (_index + delta) % widget.listings.length < 0
+          ? widget.listings.length - 1
+          : (_index + delta) % widget.listings.length,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final listing = widget.listings[_index];
     final color = listing.byAgency
         ? BrandColors.toneOrange
         : Theme.of(context).colorScheme.primary;
     final label = pinPriceLabel(
       listing,
-      rates: rates,
-      displayCurrency: displayCurrency,
+      rates: widget.rates,
+      displayCurrency: widget.displayCurrency,
     );
-    return Container(
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
+
+    if (widget.listings.length == 1) {
+      return GestureDetector(
+        onTap: () => widget.onTapListing(listing),
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
         ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _PinArrow(icon: Icons.chevron_left, onTap: () => _page(-1)),
+        GestureDetector(
+          onTap: () => widget.onTapListing(listing),
+          child: Container(
+            width: 44,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 3),
+              ],
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 9,
+              ),
+            ),
+          ),
+        ),
+        _PinArrow(icon: Icons.chevron_right, onTap: () => _page(1)),
+      ],
+    );
+  }
+}
+
+class _PinArrow extends StatelessWidget {
+  const _PinArrow({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 20,
+        height: 20,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(
+          color: Colors.black54,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 14, color: Colors.white),
       ),
     );
   }

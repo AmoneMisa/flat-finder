@@ -127,8 +127,16 @@ class ApiService {
     return j;
   }
 
-  Future<List<Country>> fetchCountries() async {
-    final res = await http.get(Uri.parse('$baseUrl/api/countries'));
+  /// [locale] asks the backend to also return localized display labels
+  /// (`cityLabels`, `districtLabels`, etc. on each Country/CityLocations) via
+  /// parsing-lexicon's own geography translation table — the same one the
+  /// website uses. Pass '' (or omit) to skip that extra work server-side
+  /// when only the raw names are needed.
+  Future<List<Country>> fetchCountries({String locale = ''}) async {
+    final uri = Uri.parse(
+      '$baseUrl/api/countries',
+    ).replace(queryParameters: locale.isEmpty ? null : {'locale': locale});
+    final res = await http.get(uri);
     if (res.statusCode != 200) {
       throw Exception('countries HTTP ${res.statusCode}');
     }

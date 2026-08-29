@@ -221,6 +221,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final settings = context.watch<SettingsState>();
     final favorites = context.watch<FavoritesState>();
     final history = context.watch<HistoryState>();
+    // Cheap no-op once already fetched for this language; re-fetches with
+    // localized city/district/metro names once settings finish loading (or
+    // whenever the language changes).
+    state.ensureCountriesLocale(settings.lang);
 
     return Scaffold(
       appBar: AppBar(
@@ -650,7 +654,8 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                     hint: s.t('anyCity'),
                     options: cities,
                     value: selectedCity,
-                    labelOf: (city) => cityLabel(city, s.lang),
+                    labelOf: (city) =>
+                        country?.cityLabel(city) ?? cityLabel(city, s.lang),
                     onChanged: (value) => _schedule(
                       _withTextValues().copyWith(
                         city: value ?? '',
@@ -702,30 +707,76 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _priceMin,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: s.t('min'),
-                            hintText: s.t('minPlaceholder'),
-                          ),
-                          onChanged: (_) => _schedule(_withTextValues()),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 2, bottom: 2),
+                        child: Text(
+                          s.t('priceRange'),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: Theme.of(context).hintColor),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: TextField(
-                          controller: _priceMax,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: s.t('max'),
-                            hintText: s.t('maxPlaceholder'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _priceMin,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: s.t('min'),
+                                hintText: s.t('minPlaceholder'),
+                              ),
+                              onChanged: (_) => _schedule(_withTextValues()),
+                            ),
                           ),
-                          onChanged: (_) => _schedule(_withTextValues()),
-                        ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: TextField(
+                              controller: _priceMax,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: s.t('max'),
+                                hintText: s.t('maxPlaceholder'),
+                              ),
+                              onChanged: (_) => _schedule(_withTextValues()),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          // Which currency Min/Max are denominated in — the
+                          // fast-filter row had a price range with no way to
+                          // say what currency it meant.
+                          DropdownButton<String?>(
+                            value: widget.filters.priceCurrency,
+                            underline: const SizedBox.shrink(),
+                            hint: Text(
+                              country?.currency ?? '',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            items: [
+                              DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text(
+                                  country?.currency ?? s.t('nativeCurrency'),
+                                ),
+                              ),
+                              for (final code in SettingsState.currencyOptions)
+                                if (code != null)
+                                  DropdownMenuItem<String?>(
+                                    value: code,
+                                    child: Text(code),
+                                  ),
+                            ],
+                            onChanged: (value) => _schedule(
+                              _withTextValues().copyWith(
+                                priceCurrency: value,
+                                clearPriceCurrency: value == null,
+                              ),
+                              immediate: true,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -786,6 +837,11 @@ class _SummaryBar extends StatelessWidget {
   final AppState state;
   final SettingsState settings;
 
+  void _changeSort(BuildContext context, SortBy sort) {
+    if (sort == state.filters.sort) return;
+    state.updateFilters(state.filters.copyWith(sort: sort));
+  }
+
   @override
   Widget build(BuildContext context) {
     final f = state.filters;
@@ -812,10 +868,54 @@ class _SummaryBar extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Text(
-        parts.join('   ·   '),
-        style: Theme.of(context).textTheme.bodySmall,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              parts.join('   ·   '),
+              style: Theme.of(context).textTheme.bodySmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          // Sort used to live only inside the full filter sheet; surfaced
+          // here too since it's changed far more often than any other filter.
+          PopupMenuButton<SortBy>(
+            initialValue: f.sort,
+            tooltip: settings.t('sortBy'),
+            onSelected: (v) => _changeSort(context, v),
+            itemBuilder: (context) => SortBy.values
+                .map(
+                  (v) => PopupMenuItem(
+                    value: v,
+                    child: Text(sortLabel(settings.s, v)),
+                  ),
+                )
+                .toList(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.sort,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    sortLabel(settings.s, f.sort),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

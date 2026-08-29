@@ -140,10 +140,11 @@ String subtitleFor(Listing l, [AppStrings? s]) {
   final floor = floorLabel(l, s);
   if (floor != null) parts.add(floor);
   // Prefer the more specific "City, District" when we have a district.
-  if (l.city.isNotEmpty && l.district != null) {
-    parts.add('${l.city}, ${l.district}');
-  } else if (l.city.isNotEmpty) {
-    parts.add(l.city);
+  final cityName = l.city.isEmpty ? '' : cityLabel(l.city, s?.lang ?? 'en');
+  if (cityName.isNotEmpty && l.district != null) {
+    parts.add('$cityName, ${l.district}');
+  } else if (cityName.isNotEmpty) {
+    parts.add(cityName);
   }
   return parts.join(' · ');
 }

@@ -265,6 +265,14 @@ class _FilterSheetState extends State<FilterSheet> {
     super.dispose();
   }
 
+  /// The single selected country's full record (for city labels), if loaded.
+  Country? get _selectedCountry {
+    for (final c in widget.countries) {
+      if (_countries.contains(c.code)) return c;
+    }
+    return null;
+  }
+
   /// Cities offered in the dropdown: the union across the selected countries.
   List<String> get _cityOptions {
     final set = <String>{};
@@ -769,7 +777,9 @@ class _FilterSheetState extends State<FilterSheet> {
                         hint: s.t('anyCity'),
                         options: _cityOptions,
                         value: _city,
-                        labelOf: (city) => cityLabel(city, s.lang),
+                        labelOf: (city) =>
+                            _selectedCountry?.cityLabel(city) ??
+                            cityLabel(city, s.lang),
                         onChanged: (v) => setState(() {
                           _city = v;
                           _district =
@@ -787,6 +797,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           hint: s.t('anyDistrict'),
                           options: _cityLoc!.districts,
                           value: _district,
+                          labelOf: (d) => _cityLoc!.districtLabels[d] ?? d,
                           onChanged: (v) => setState(() => _district = v),
                         ),
                       ],
@@ -798,6 +809,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           hint: s.t('anyStation'),
                           options: _cityLoc!.metro,
                           value: _metro,
+                          labelOf: (m) => _cityLoc!.metroLabels[m] ?? m,
                           onChanged: (v) => setState(() => _metro = v),
                         ),
                       ],
@@ -811,6 +823,8 @@ class _FilterSheetState extends State<FilterSheet> {
                               value: _microdistrictCtl.text.trim().isEmpty
                                   ? null
                                   : _microdistrictCtl.text.trim(),
+                              labelOf: (m) =>
+                                  _cityLoc!.microdistrictLabels[m] ?? m,
                               onChanged: (v) =>
                                   _microdistrictCtl.text = v ?? '',
                               onTextChanged: (v) => _microdistrictCtl.text = v,
@@ -832,6 +846,7 @@ class _FilterSheetState extends State<FilterSheet> {
                               value: _quartalCtl.text.trim().isEmpty
                                   ? null
                                   : _quartalCtl.text.trim(),
+                              labelOf: (q) => _cityLoc!.quartalLabels[q] ?? q,
                               onChanged: (v) => _quartalCtl.text = v ?? '',
                               onTextChanged: (v) => _quartalCtl.text = v,
                             )
@@ -852,6 +867,7 @@ class _FilterSheetState extends State<FilterSheet> {
                               value: _areaNameCtl.text.trim().isEmpty
                                   ? null
                                   : _areaNameCtl.text.trim(),
+                              labelOf: (a) => _cityLoc!.areaLabels[a] ?? a,
                               onChanged: (v) => _areaNameCtl.text = v ?? '',
                               onTextChanged: (v) => _areaNameCtl.text = v,
                             )
@@ -912,27 +928,13 @@ class _FilterSheetState extends State<FilterSheet> {
                   _section(
                     context,
                     icon: Icons.travel_explore_outlined,
-                    title: s.t('sectionSources'),
+                    // The site never exposes a "which scrapers to use"
+                    // toggle — it always searches every built-in source, so
+                    // that choice was dropped from the app to match. Adding
+                    // your own extra source (a Telegram channel, RSS feed,
+                    // etc.) is a mobile-only feature kept here.
+                    title: s.t('sectionCustomSources'),
                     children: [
-                      _label(s.t('sources')),
-                      Wrap(
-                        spacing: 8,
-                        children: kAllSources.map((src) {
-                          final selected = _sources.contains(src);
-                          return FilterChip(
-                            label: Text(kSourceLabels[src] ?? src),
-                            selected: selected,
-                            onSelected: (v) => setState(() {
-                              if (v) {
-                                _sources.add(src);
-                              } else {
-                                _sources.remove(src);
-                              }
-                            }),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
                       _label(s.t('customSources')),
                       Text(
                         s.t('customSourcesHint'),

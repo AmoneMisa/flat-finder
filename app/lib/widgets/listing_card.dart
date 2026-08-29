@@ -232,7 +232,7 @@ class ListingCard extends StatelessWidget {
     bool compact = false,
   }) {
     final badges = _contextBadges(filters, s);
-    final location = _locationLabel();
+    final location = _locationLabel(s);
     final date = postedLabel(listing.createdAt, s);
     final source = sourceLabel(listing.source, s);
 
@@ -348,9 +348,10 @@ class ListingCard extends StatelessWidget {
     return parts.join(' · ');
   }
 
-  String _locationLabel() {
+  String _locationLabel(AppStrings s) {
     final parts = <String>[];
-    if (listing.city.trim().isNotEmpty) parts.add(listing.city.trim());
+    final city = listing.city.trim();
+    if (city.isNotEmpty) parts.add(cityLabel(city, s.lang));
     final district = listing.district?.trim();
     if (district != null && district.isNotEmpty) parts.add(district);
     return parts.isEmpty ? '—' : parts.join(', ');

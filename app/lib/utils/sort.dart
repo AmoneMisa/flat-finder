@@ -1,7 +1,23 @@
 import 'dart:math' as math;
 
+import '../l10n/strings.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
+
+/// Shared with the filter sheet's sort dropdown and the quick-access sort
+/// control on the main screen, so both stay in sync automatically.
+String sortLabel(AppStrings s, SortBy v) => switch (v) {
+  SortBy.relevance => s.t('sortRelevance'),
+  SortBy.dateNew => s.t('sortDate'),
+  SortBy.dateOld => s.t('sortDateOld'),
+  SortBy.priceAsc => s.t('sortPriceAsc'),
+  SortBy.priceDesc => s.t('sortPriceDesc'),
+  SortBy.titleAsc => s.t('sortTitleAsc'),
+  SortBy.titleDesc => s.t('sortTitleDesc'),
+  SortBy.areaDesc => s.t('sortArea'),
+  SortBy.distanceCenter => s.t('sortCenter'),
+  SortBy.distanceMetro => s.t('sortMetro'),
+};
 
 /// Great-circle distance in km between two lat/lng points (haversine).
 double _distanceKm(double lat1, double lng1, double lat2, double lng2) {

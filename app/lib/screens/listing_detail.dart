@@ -706,131 +706,198 @@ class _SpecTable extends StatelessWidget {
         .trim();
   }
 
-  List<(String, String)> _rows() {
+  /// Groups mirror the web's spec table sections: each group renders under
+  /// its own header, its rows laid out as icon+value pairs (no separate
+  /// label text, matching the web design) in a 2-column grid on mobile.
+  List<(String, List<(IconData, String)>)> _groups() {
     final l = listing;
-    final rows = <(String, String?)>[
-      (s.t('specDeal'), dealTypeLabel(l.dealType, s)),
-      (s.t('specType'), propertyLabel(l.propertyType, s)),
-      (s.t('specListedBy'), l.byAgency ? s.t('agency') : s.t('privateOwner')),
-      (s.t('specSource'), sourceLabel(l.source, s)),
-      (s.t('specRooms'), l.rooms?.toString()),
-      (s.t('specBedrooms'), l.bedrooms?.toString()),
-      (s.t('specBathrooms'), l.bathrooms?.toString()),
-      (s.t('specArea'), l.areaSqm != null ? '${l.areaSqm} m²' : null),
-      (s.t('specFloor'), floorLabel(l, s)),
-      (s.t('specYear'), l.buildingYear?.toString()),
-      (s.t('specNewBuilding'), _yesNo(l.newBuilding)),
-      (s.t('specCondition'), _conditionLabel(l.condition)),
-      (s.t('specComplex'), l.residenceComplex),
-      (s.t('specCity'), l.city.isNotEmpty ? l.city : null),
-      (s.t('specDistrict'), l.district),
-      (s.t('specKvartal'), l.kvartal),
-      (s.t('specMetro'), l.metro),
-      (s.t('specAddress'), l.address),
+    List<(IconData, String)> pick(List<(IconData, String, String?)> items) => [
+      for (final (icon, _, value) in items)
+        if (value != null && value.isNotEmpty) (icon, value),
+    ];
+
+    final advert = pick([
+      (Icons.sell_outlined, 'deal', dealTypeLabel(l.dealType, s)),
+      (Icons.home_outlined, 'type', propertyLabel(l.propertyType, s)),
       (
-        s.t('specShops'),
+        Icons.person_outline,
+        'listedBy',
+        l.byAgency ? s.t('agency') : s.t('privateOwner'),
+      ),
+      (Icons.open_in_new, 'source', sourceLabel(l.source, s)),
+    ]);
+
+    final property = pick([
+      (Icons.layers_outlined, 'floor', floorLabel(l, s)),
+      (
+        Icons.aspect_ratio_outlined,
+        'area',
+        l.areaSqm != null ? '${l.areaSqm} m²' : null,
+      ),
+      (Icons.meeting_room_outlined, 'rooms', l.rooms?.toString()),
+      (Icons.bed_outlined, 'bedrooms', l.bedrooms?.toString()),
+      (Icons.bathtub_outlined, 'bathrooms', l.bathrooms?.toString()),
+      (Icons.apartment_outlined, 'year', l.buildingYear?.toString()),
+      (Icons.new_releases_outlined, 'newBuilding', _yesNo(l.newBuilding)),
+      (Icons.brush_outlined, 'condition', _conditionLabel(l.condition)),
+      (Icons.location_city_outlined, 'complex', l.residenceComplex),
+    ]);
+
+    final location = pick([
+      (
+        Icons.map_outlined,
+        'city',
+        l.city.isNotEmpty ? cityLabel(l.city, s.lang) : null,
+      ),
+      (Icons.person_pin_circle_outlined, 'district', l.district),
+      (Icons.grid_view_outlined, 'kvartal', l.kvartal),
+      (Icons.directions_subway_outlined, 'metro', l.metro),
+      (Icons.location_on_outlined, 'address', l.address),
+      (
+        Icons.storefront_outlined,
+        'shops',
         l.nearbyShops.isNotEmpty ? l.nearbyShops.join(', ') : null,
       ),
-      (s.t('specNearby'), l.nearby.isNotEmpty ? l.nearby.join(', ') : null),
-      (s.t('specParking'), _yesNo(l.parking)),
-      (s.t('specElevator'), _yesNo(l.elevator)),
-      (s.t('specFurnished'), _yesNo(l.furnished)),
-      (s.t('specBalcony'), _yesNo(l.balcony)),
-      (s.t('specTerrace'), _yesNo(l.terrace)),
-      (s.t('specPrivateYard'), _yesNo(l.privateYard)),
-      (s.t('specDishwasher'), _yesNo(l.dishwasher)),
-      (s.t('specAC'), _yesNo(l.airConditioner)),
-      (s.t('specGas'), _yesNo(l.gas)),
-      (s.t('specHeating'), _yesNo(l.heating)),
-      (s.t('specHotWater'), _yesNo(l.hotWater)),
-      (s.t('specInternet'), _yesNo(l.internet)),
-      (s.t('specTV'), _yesNo(l.tv)),
-      (s.t('specMicrowave'), _yesNo(l.microwave)),
-      (s.t('specOven'), _yesNo(l.oven)),
-      (s.t('specBidet'), _yesNo(l.bidet)),
-      (s.t('specWalkInCloset'), _yesNo(l.walkInCloset)),
-      (s.t('specBathtub'), _yesNo(l.bathtub)),
-      (s.t('specShower'), _yesNo(l.shower)),
-      (s.t('specEuroLayout'), _yesNo(l.euroLayout)),
-      (s.t('specCadastral'), _yesNo(l.cadastral)),
-      (s.t('specFirstRental'), _yesNo(l.firstRental)),
-      (s.t('specPets'), _yesNo(l.petsAllowed)),
-      (s.t('specChildren'), _yesNo(l.childrenAllowed)),
-      (s.t('specSmoking'), _yesNo(l.smokingAllowed)),
-      (s.t('specAudience'), audienceLabel(l.audience, s)),
-      (s.t('specRoomShare'), l.roomOnly ? s.t('yes') : null),
-      (s.t('specNegotiable'), _yesNo(l.negotiable)),
       (
-        s.t('specDeposit'),
+        Icons.place_outlined,
+        'nearby',
+        l.nearby.isNotEmpty ? l.nearby.join(', ') : null,
+      ),
+      (
+        Icons.directions_bus_outlined,
+        'transit',
+        l.transitRoutes.isEmpty ? null : l.transitRoutes.join(', '),
+      ),
+    ]);
+
+    final amenities = pick([
+      (Icons.local_parking_outlined, 'parking', _yesNo(l.parking)),
+      (Icons.elevator_outlined, 'elevator', _yesNo(l.elevator)),
+      (Icons.chair_outlined, 'furnished', _yesNo(l.furnished)),
+      (Icons.balcony_outlined, 'balcony', _yesNo(l.balcony)),
+      (Icons.deck_outlined, 'terrace', _yesNo(l.terrace)),
+      (Icons.yard_outlined, 'yard', _yesNo(l.privateYard)),
+      (Icons.kitchen_outlined, 'dishwasher', _yesNo(l.dishwasher)),
+      (Icons.ac_unit_outlined, 'ac', _yesNo(l.airConditioner)),
+      (Icons.local_fire_department_outlined, 'gas', _yesNo(l.gas)),
+      (Icons.thermostat_outlined, 'heating', _yesNo(l.heating)),
+      (Icons.water_drop_outlined, 'hotWater', _yesNo(l.hotWater)),
+      (Icons.wifi, 'internet', _yesNo(l.internet)),
+      (Icons.tv_outlined, 'tv', _yesNo(l.tv)),
+      (Icons.microwave_outlined, 'microwave', _yesNo(l.microwave)),
+      (Icons.countertops_outlined, 'oven', _yesNo(l.oven)),
+      (Icons.bathroom_outlined, 'bidet', _yesNo(l.bidet)),
+      (Icons.checkroom_outlined, 'walkInCloset', _yesNo(l.walkInCloset)),
+      (Icons.bathtub, 'bathtubItem', _yesNo(l.bathtub)),
+      (Icons.shower_outlined, 'shower', _yesNo(l.shower)),
+      (Icons.straighten_outlined, 'euroLayout', _yesNo(l.euroLayout)),
+      (Icons.description_outlined, 'cadastral', _yesNo(l.cadastral)),
+    ]);
+
+    final conditions = pick([
+      (Icons.groups_outlined, 'audience', audienceLabel(l.audience, s)),
+      (
+        Icons.child_care_outlined,
+        'children',
+        _yesNo(l.childrenAllowed),
+      ),
+      (Icons.pets_outlined, 'pets', _yesNo(l.petsAllowed)),
+      (Icons.smoking_rooms_outlined, 'smoking', _yesNo(l.smokingAllowed)),
+      (Icons.meeting_room, 'roomShare', l.roomOnly ? s.t('yes') : null),
+      (Icons.info_outline, 'firstRental', _yesNo(l.firstRental)),
+      (Icons.sell, 'negotiable', _yesNo(l.negotiable)),
+      (
+        Icons.savings_outlined,
+        'deposit',
         l.deposit == null
             ? null
             : _costLabel(_yesNo(l.deposit)!, l.depositAmount, null),
       ),
       (
-        s.t('specCommission'),
+        Icons.percent_outlined,
+        'commission',
         l.commission == null && l.commissionAmount == null
             ? null
             : l.commissionAmount != null
             ? '${_yesNo(l.commission ?? true)} ${_money(l.commissionAmount)}'
             : _costLabel(_yesNo(l.commission)!, null, l.commissionPercent),
       ),
-      (s.t('specCommunal'), _yesNo(l.communalSeparated)),
-      (s.t('specUtilAmount'), _money(l.utilitiesAmount)),
-      (s.t('specPerPersonPrice'), _money(l.perPersonPrice)),
-      (s.t('specStudentTarget'), _yesNo(l.studentTarget)),
-      (s.t('specLandlordPresent'), _yesNo(l.landlordPresent)),
-      (s.t('specMinLease'), l.minLeaseTerm),
-      (s.t('specAvailable'), l.availableFrom),
+      (Icons.call_split_outlined, 'communal', _yesNo(l.communalSeparated)),
+      (Icons.receipt_long_outlined, 'utilAmount', _money(l.utilitiesAmount)),
       (
-        s.t('specTransitRoutes'),
-        l.transitRoutes.isEmpty ? null : l.transitRoutes.join(', '),
+        Icons.person_pin_outlined,
+        'perPersonPrice',
+        _money(l.perPersonPrice),
       ),
-    ];
+      (Icons.school_outlined, 'studentTarget', _yesNo(l.studentTarget)),
+      (
+        Icons.supervisor_account_outlined,
+        'landlordPresent',
+        _yesNo(l.landlordPresent),
+      ),
+      (Icons.event_repeat_outlined, 'minLease', l.minLeaseTerm),
+      (Icons.event_available_outlined, 'available', l.availableFrom),
+    ]);
+
     return [
-      for (final (label, value) in rows)
-        if (value != null && value.isNotEmpty) (label, value),
+      for (final (title, items) in [
+        (s.t('specGroupAdvert'), advert),
+        (s.t('specGroupProperty'), property),
+        (s.t('specGroupLocation'), location),
+        (s.t('specGroupAmenities'), amenities),
+        (s.t('specGroupConditions'), conditions),
+      ])
+        if (items.isNotEmpty) (title, items),
     ];
   }
 
   @override
   Widget build(BuildContext context) {
-    final rows = _rows();
-    if (rows.isEmpty) return const SizedBox.shrink();
+    final groups = _groups();
+    if (groups.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(s.t('specifications'), style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
-        Table(
-          columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()},
-          children: [
-            for (final (label, value) in rows)
-              TableRow(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 4,
-                      horizontal: 4,
-                    ),
-                    child: Text(
-                      label,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.hintColor,
-                      ),
+        for (final (title, items) in groups) ...[
+          Text(
+            title,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.hintColor,
+              letterSpacing: 0.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            runSpacing: 8,
+            children: [
+              for (final (icon, value) in items)
+                FractionallySizedBox(
+                  widthFactor: 0.5,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(icon, size: 18, color: theme.hintColor),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            value,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 4,
-                      horizontal: 4,
-                    ),
-                    child: Text(value, style: theme.textTheme.bodyMedium),
-                  ),
-                ],
-              ),
-          ],
-        ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+        ],
       ],
     );
   }
