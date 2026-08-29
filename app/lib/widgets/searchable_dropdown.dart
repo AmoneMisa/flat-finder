@@ -51,13 +51,18 @@ class SearchableDropdown extends StatelessWidget {
         controller: ctl,
         focusNode: focus,
         decoration: InputDecoration(
+          isDense: true,
           hintText: hint,
           border: const OutlineInputBorder(),
-          prefixIcon: const Icon(Icons.search),
+          prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: ctl.text.isEmpty
               ? null
               : IconButton(
-                  icon: const Icon(Icons.clear),
+                  icon: const Icon(Icons.clear, size: 18),
+                  iconSize: 18,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   onPressed: () {
                     ctl.clear();
                     onChanged(null);

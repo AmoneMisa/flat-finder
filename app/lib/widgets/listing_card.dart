@@ -144,17 +144,20 @@ class ListingCard extends StatelessWidget {
     final actions = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (onShowOnMap != null && listing.hasLocation)
+        if (onShowOnMap != null && listing.hasLocation) ...[
           _CardActionButton(
             icon: Icons.pin_drop_outlined,
             tooltip: s.t('showOnMap'),
             onPressed: onShowOnMap,
           ),
+          const SizedBox(width: 6),
+        ],
         _CardActionButton(
           icon: isHidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
           tooltip: isHidden ? s.t('restoreListing') : s.t('hideListing'),
           onPressed: () => hidden.toggle(listing),
         ),
+        const SizedBox(width: 6),
         _FavButton(
           isFav: isFav,
           tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
@@ -509,8 +512,6 @@ class _PriceLine extends StatelessWidget {
           ),
         ),
         if (secondary != null) ...[
-          const SizedBox(width: 7),
-          Text('·', style: TextStyle(color: Theme.of(context).hintColor)),
           const SizedBox(width: 7),
           Flexible(
             child: Text(

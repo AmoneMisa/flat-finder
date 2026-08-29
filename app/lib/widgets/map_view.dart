@@ -42,6 +42,7 @@ class MapView extends StatefulWidget {
     this.country = '',
     this.city = '',
     this.centerZoom = 6,
+    this.onExpand,
   });
 
   final List<Listing> listings;
@@ -51,6 +52,12 @@ class MapView extends StatefulWidget {
   final String? displayCurrency;
   final String country;
   final String city;
+
+  /// Shows a "view full-screen" button (top-right, next to the draw
+  /// controls) when set — the compact in-page map passes a callback that
+  /// pushes a full-screen route; the full-screen route itself passes null so
+  /// the button doesn't show a second time.
+  final VoidCallback? onExpand;
 
   /// Zoom level used when [center] changes (e.g. 6 for a country default,
   /// higher when a specific listing's "show on map" set the center).
@@ -232,6 +239,28 @@ class _MapViewState extends State<MapView> {
   /// clustered pin group's currently active page.
   List<Marker> _markersForGroup(_PinGroup group) {
     if (_zoom < _photoCardMinZoom) {
+      // A bucket that doesn't overlap anything else (exactly one listing)
+      // shows its price directly; only an actual overlap falls back to a
+      // plain dot, which zooms in on tap instead of trying to show several
+      // prices stacked on the same point.
+      if (group.listings.length == 1) {
+        final l = group.listings.first;
+        return [
+          Marker(
+            point: group.point,
+            width: 76,
+            height: 32,
+            child: GestureDetector(
+              onTap: () => widget.onTapListing(l),
+              child: _PricePin(
+                listing: l,
+                rates: widget.rates,
+                displayCurrency: widget.displayCurrency,
+              ),
+            ),
+          ),
+        ];
+      }
       return [
         Marker(
           point: group.point,
@@ -554,6 +583,16 @@ class _MapViewState extends State<MapView> {
           right: 12,
           child: Column(
             children: [
+              if (widget.onExpand != null) ...[
+                FloatingActionButton.small(
+                  heroTag: 'expand',
+                  onPressed: widget.onExpand,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                  child: const Icon(Icons.fullscreen),
+                ),
+                const SizedBox(height: 8),
+              ],
               FloatingActionButton.small(
                 heroTag: 'draw',
                 onPressed: () => setState(() => _drawing = !_drawing),
@@ -598,15 +637,17 @@ class _MapViewState extends State<MapView> {
             ),
           ),
         // District/microdistrict/quartal/area layer toggles — same toolbar
-        // as the site's map, each shown only when that layer has data.
+        // as the site's map, each shown only when that layer has data. Kept
+        // near the top (below the draw hint) instead of hovering over the
+        // bottom of the map, which is easy to reach but easy to miss.
         if (_zones.districtZones.isNotEmpty ||
             _zones.microdistrictMarkers.isNotEmpty ||
             _zones.quartalMarkers.isNotEmpty ||
             _zones.areaZones.isNotEmpty)
           Positioned(
             left: 12,
-            right: 12,
-            bottom: 82,
+            right: 68,
+            top: _drawing || _area.length >= 3 ? 56 : 12,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(

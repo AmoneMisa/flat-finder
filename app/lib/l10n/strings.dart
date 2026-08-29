@@ -30,7 +30,7 @@ class AppStrings {
 
   static const _values = <String, Map<String, String>>{
     'en': {
-      'appTitle': 'Flat Finder',
+      'appTitle': 'F.F.',
       'mapView': 'Map view',
       'listView': 'List view',
       'filters': 'Filters',
@@ -88,6 +88,8 @@ class AppStrings {
       'cardDailyRent': 'Short-term rent',
       'realEstateAgency': 'Listed by',
       'priceRange': 'Price range',
+      'priceFrom': 'Price from',
+      'priceTo': 'Price to',
       'min': 'Min',
       'max': 'Max',
       'keyword': 'Keyword',
@@ -417,7 +419,7 @@ class AppStrings {
       'tag_noCommission': 'No commission',
     },
     'ru': {
-      'appTitle': 'Поиск жилья',
+      'appTitle': 'F.F.',
       'mapView': 'На карте',
       'listView': 'Списком',
       'filters': 'Фильтры',
@@ -474,6 +476,8 @@ class AppStrings {
       'cardDailyRent': 'Посуточная аренда',
       'realEstateAgency': 'Кем размещено',
       'priceRange': 'Диапазон цен',
+      'priceFrom': 'Цена от',
+      'priceTo': 'Цена до',
       'min': 'От',
       'max': 'До',
       'keyword': 'Ключевое слово',

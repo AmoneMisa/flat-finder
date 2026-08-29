@@ -134,6 +134,35 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_mapMode) state.loadMapListings();
   }
 
+  /// Pushes the map as its own full-screen route (no app bar/filters above
+  /// it), reusing the exact same listings/center already loaded.
+  void _openFullScreenMap(
+    AppState state,
+    SettingsState settings,
+    String country,
+    List<Listing> listings,
+    LatLng center,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: Text(settings.t('mapView'))),
+          body: MapView(
+            key: ValueKey('fullscreen-map-$country-${state.filters.city}'),
+            listings: listings,
+            center: center,
+            centerZoom: _focusListing?.hasLocation == true ? 15 : 6,
+            onTapListing: _showMapPreview,
+            rates: state.rates,
+            displayCurrency: settings.displayCurrency,
+            country: country,
+            city: state.filters.city,
+          ),
+        ),
+      ),
+    );
+  }
+
   void _openSettings() {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
@@ -227,10 +256,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(settings.t('appTitle')),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 2),
         actions: [
           IconButton(
             tooltip: _mapMode ? settings.t('listView') : settings.t('mapView'),
             iconSize: 20,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            constraints: const BoxConstraints(),
             icon: Icon(_mapMode ? Icons.view_list : Icons.map_outlined),
             onPressed: () {
               setState(() => _mapMode = !_mapMode);
@@ -243,6 +275,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // more often than any other filter.
           PopupMenuButton<SortBy>(
             tooltip: settings.t('sortBy'),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
             icon: Icon(
               Icons.sort,
               size: 20,
@@ -262,9 +295,16 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           // The filter icon here duplicated the FAB below, which already
           // opens the same sheet — a currency switch is more useful to have
-          // one tap away in the header.
+          // one tap away in the header. Icon-only, matching the rest of the
+          // header's icons instead of carrying its own text label.
           PopupMenuButton<String?>(
             tooltip: settings.t('displayCurrency'),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            icon: Icon(
+              Icons.currency_exchange,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             onSelected: settings.setDisplayCurrency,
             itemBuilder: (_) => [
               PopupMenuItem<String?>(
@@ -275,37 +315,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (code != null)
                   PopupMenuItem<String?>(value: code, child: Text(code)),
             ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.currency_exchange,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    settings.displayCurrency ?? settings.t('nativeCurrency'),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
           IconButton(
             tooltip: settings.t('statistics'),
             iconSize: 20,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            constraints: const BoxConstraints(),
             icon: const Icon(Icons.bar_chart_outlined),
             onPressed: () => _openStats(state),
           ),
           PopupMenuButton<String>(
             tooltip: settings.t('more'),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
             icon: const Icon(Icons.more_vert, size: 20),
             onSelected: (value) {
               switch (value) {
@@ -450,17 +471,29 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (_mapMode) {
+      final mapCountry = state.filters.countries.isNotEmpty
+          ? state.filters.countries.first
+          : '';
       return MapView(
+        // A fresh key on country/city change forces a clean remount instead
+        // of relying on didUpdateWidget to notice and recenter — a country
+        // switch was leaving the map showing the old country's tiles.
+        key: ValueKey('map-$mapCountry-${state.filters.city}'),
         listings: state.mapListings.isNotEmpty ? state.mapListings : listings,
         center: center,
         centerZoom: _focusListing?.hasLocation == true ? 15 : 6,
         onTapListing: _showMapPreview,
         rates: state.rates,
         displayCurrency: settings.displayCurrency,
-        country: state.filters.countries.isNotEmpty
-            ? state.filters.countries.first
-            : '',
+        country: mapCountry,
         city: state.filters.city,
+        onExpand: () => _openFullScreenMap(
+          state,
+          settings,
+          mapCountry,
+          state.mapListings.isNotEmpty ? state.mapListings : listings,
+          center,
+        ),
       );
     }
     return RefreshIndicator(
@@ -715,10 +748,11 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                 // the full country name still appears once the menu opens,
                 // freeing up width for the (more useful) city search field.
                 SizedBox(
-                  width: 64,
+                  width: 70,
                   child: DropdownButtonFormField<String>(
                     value: selectedCountry,
                     isExpanded: true,
+                    isDense: true,
                     decoration: InputDecoration(labelText: s.t('country')),
                     selectedItemBuilder: (context) => widget.countries
                         .map(
@@ -791,6 +825,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   child: DropdownButtonFormField<AgencyFilter>(
                     value: widget.filters.agency,
                     isExpanded: true,
+                    isDense: true,
                     decoration: InputDecoration(
                       labelText: s.t('realEstateAgency'),
                     ),
@@ -826,6 +861,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   child: DropdownButtonFormField<_QuickDeal>(
                     value: _quickDealFor(widget.filters),
                     isExpanded: true,
+                    isDense: true,
                     decoration: InputDecoration(labelText: s.t('dealType')),
                     items: [
                       DropdownMenuItem(
@@ -861,26 +897,13 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
               ],
             ),
             const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(left: 2, bottom: 2),
-              child: Text(
-                '${s.t('priceRange')} '
-                '(${widget.settings.displayCurrency ?? country?.currency ?? s.t('nativeCurrency')})',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
-              ),
-            ),
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _priceMin,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: s.t('min'),
-                      hintText: s.t('minPlaceholder'),
-                    ),
+                    decoration: InputDecoration(labelText: s.t('priceFrom')),
                     onChanged: (_) => _schedule(_withTextValues()),
                   ),
                 ),
@@ -889,10 +912,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   child: TextField(
                     controller: _priceMax,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: s.t('max'),
-                      hintText: s.t('maxPlaceholder'),
-                    ),
+                    decoration: InputDecoration(labelText: s.t('priceTo')),
                     onChanged: (_) => _schedule(_withTextValues()),
                   ),
                 ),
