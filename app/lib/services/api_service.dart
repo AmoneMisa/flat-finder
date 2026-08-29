@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/search_statistics.dart';
 
 /// A source that failed during a search (a built-in scraper or a custom URL).
 class SourceError {
@@ -270,6 +271,22 @@ class ApiService {
 
   /// Exchange rates relative to USD (units of currency per 1 USD), used to
   /// convert listing prices into the user's chosen display currency.
+  /// Aggregate statistics for the current filters (deal-type breakdown,
+  /// median prices, ownership split, top geographies) without paying for a
+  /// page of listings — `statsOnly` skips the row fetch server-side.
+  Future<SearchStatistics?> fetchSearchStatistics(Filters filters) async {
+    final params = Map<String, String>.from(filters.toQueryParams());
+    params['includeStats'] = 'true';
+    params['statsOnly'] = 'true';
+    final uri = Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
+    final res = await http.get(uri).timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) return null;
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final stats = json['statistics'];
+    if (stats == null) return null;
+    return SearchStatistics.fromJson(stats as Map<String, dynamic>);
+  }
+
   /// District colour zones for the map overlay (same palette/boundaries as
   /// the site's map). Empty list when the backend has no district data for
   /// this country/city rather than throwing, so callers can just skip the

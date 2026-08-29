@@ -18,6 +18,7 @@ import '../utils/sort.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/listing_card.dart';
 import '../widgets/map_view.dart';
+import '../widgets/stats_sheet.dart';
 import 'favorites_screen.dart';
 import 'history_screen.dart';
 import 'listing_detail.dart';
@@ -105,6 +106,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  final ApiService _api = ApiService();
+
+  void _openStats(AppState state) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: false,
+      builder: (_) => StatsSheet(api: _api, filters: state.filters),
+    );
+  }
+
   void _openListing(Listing l) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)),
@@ -161,6 +173,11 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: settings.t('favorites'),
             icon: const Icon(Icons.favorite_border),
             onPressed: _openFavorites,
+          ),
+          IconButton(
+            tooltip: settings.t('statistics'),
+            icon: const Icon(Icons.bar_chart_outlined),
+            onPressed: () => _openStats(state),
           ),
           IconButton(
             tooltip: settings.t('filters'),
