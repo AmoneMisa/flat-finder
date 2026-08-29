@@ -271,7 +271,7 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             tooltip: _mapMode ? settings.t('listView') : settings.t('mapView'),
-            iconSize: 20,
+            iconSize: 22,
             padding: EdgeInsets.zero,
             style: headerActionStyle,
             icon: Icon(_mapMode ? Icons.view_list : Icons.map_outlined),
@@ -290,7 +290,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: headerActionStyle,
             icon: Icon(
               Icons.sort,
-              size: 20,
+              size: 22,
               color: Theme.of(context).colorScheme.primary,
             ),
             initialValue: state.filters.sort,
@@ -315,7 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: headerActionStyle,
             icon: Icon(
               Icons.currency_exchange,
-              size: 20,
+              size: 22,
               color: Theme.of(context).colorScheme.primary,
             ),
             onSelected: settings.setDisplayCurrency,
@@ -331,7 +331,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           IconButton(
             tooltip: settings.t('statistics'),
-            iconSize: 20,
+            iconSize: 22,
             padding: EdgeInsets.zero,
             style: headerActionStyle,
             icon: const Icon(Icons.bar_chart_outlined),
@@ -341,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: settings.t('more'),
             padding: EdgeInsets.zero,
             style: headerActionStyle,
-            icon: const Icon(Icons.more_vert, size: 20),
+            icon: const Icon(Icons.more_vert, size: 22),
             onSelected: (value) {
               switch (value) {
                 case 'view_all':

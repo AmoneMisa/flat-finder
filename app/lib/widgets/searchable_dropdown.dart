@@ -56,9 +56,10 @@ class SearchableDropdown extends StatelessWidget {
         focusNode: focus,
         decoration: InputDecoration(
           isDense: true,
+          constraints: const BoxConstraints.tightFor(height: 48),
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 8,
+            horizontal: 12,
+            vertical: 10,
           ),
           // A floating label (not a hint) so this reads the same as every
           // other field — always sitting on the border, matching the
