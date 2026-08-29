@@ -39,6 +39,7 @@ const BOOLEAN_FILTERS = [
   'newBuilding', 'dishwasher', 'airConditioner', 'parking', 'internet', 'gas',
   'balcony', 'terrace', 'privateYard', 'pets', 'children', 'roomOnly', 'withPhotos',
   'noElevator', 'noDeposit', 'communalIncluded', 'noCommission',
+  'tv', 'microwave', 'oven', 'bidet', 'walkInCloset', 'bathtub', 'shower', 'euroLayout',
 ];
 
 function hasSecondaryFilters(filters) {

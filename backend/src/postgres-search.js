@@ -192,6 +192,8 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   const booleanFilters = [
     ['dishwasher', 'dishwasher'], ['airConditioner', 'airConditioner'], ['parking', 'parking'], ['internet', 'internet'],
     ['gas', 'gas'], ['balcony', 'balcony'], ['terrace', 'terrace'], ['privateYard', 'privateYard'],
+    ['tv', 'tv'], ['microwave', 'microwave'], ['oven', 'oven'], ['bidet', 'bidet'],
+    ['walkInCloset', 'walkInCloset'], ['bathtub', 'bathtub'], ['shower', 'shower'], ['euroLayout', 'euroLayout'],
   ];
   for (const [filterName, dataName] of booleanFilters) if (filters[filterName] === true) where.push(`l.data @> '{"${dataName}":true}'::jsonb`);
 

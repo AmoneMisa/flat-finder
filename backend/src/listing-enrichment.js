@@ -127,6 +127,21 @@ function explicitlyOneWoman(text) {
   return /(?:только|нужн[а-яё]*|ищ[еу][а-яё]*|подсел[а-яё]*|возьм[её]м)[^\r\n.!?]{0,24}(?:одн(?:а|ой|у)|1)\s+(?:девушк[а-яё]*|женщин[а-яё]*)|(?:одн(?:а|ой|у)|1)\s+(?:девушк[а-яё]*|женщин[а-яё]*)[^\r\n.!?]{0,24}(?:только|нужн[а-яё]*|ищ[еу][а-яё]*|подсел[а-яё]*)|(?:faqat\s+)?(?:1|bitta)\s*(?:ta\s*)?(?:qiz|ayol)[^\r\n.!?]{0,18}(?:ijarachi\s*)?(?:kerak|kere|uchun)?|(?:фақат\s+)?(?:1|битта)\s*(?:та\s*)?(?:қиз|аёл)[^\r\n.!?]{0,18}(?:ижарачи\s*)?(?:керак|учун)?/iu.test(value);
 }
 
+// commissionPercent filtering (e.g. "commission under 30%") should still find
+// listings where the agency quoted a fixed fee instead of a rate -- compute
+// the equivalent percent from price when both are known. Only when the fee
+// and the listing price share a currency (or the fee's currency is unstated):
+// converting across currencies here would need a live FX rate this parse-only
+// step doesn't have, and a wrong-currency percent is worse than a missing one.
+function effectiveCommissionPercent(commissionAmount, price, currency) {
+  const amount = Number(commissionAmount?.amount);
+  const basePrice = Number(price);
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(basePrice) || basePrice <= 0) return null;
+  if (commissionAmount.currency && currency && commissionAmount.currency !== currency) return null;
+  const percent = (amount / basePrice) * 100;
+  return Number.isFinite(percent) && percent > 0 && percent <= 100 ? Math.round(percent * 10) / 10 : null;
+}
+
 function classifyPotentiallyUnsafe(listing, text, roomOnly) {
   return roomOnly === true && explicitlyOneWoman(text) && isLowRoomPrice(listing);
 }
@@ -165,7 +180,8 @@ export function enrichListingDetails(listing) {
     addressHouseNumber: enrichment.addressHouseNumber ?? null,
     addressBuilding: enrichment.addressBuilding ?? null,
     commission: source.commission ?? enrichment.commission ?? null,
-    commissionPercent: commissionPercent ?? source.commissionPercent ?? enrichment.commissionPercent ?? null,
+    commissionPercent: commissionPercent ?? source.commissionPercent ?? enrichment.commissionPercent
+      ?? effectiveCommissionPercent(enrichment.commissionAmount, source.price, source.currency),
     commissionAmount: enrichment.commissionAmount ?? null,
     cadastral: source.cadastral ?? parseCadastral(text),
     firstRental: source.firstRental ?? enrichment.firstRental ?? parseFirstRental(text),
