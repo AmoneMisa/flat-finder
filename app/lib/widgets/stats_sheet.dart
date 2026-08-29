@@ -46,7 +46,7 @@ class _StatsSheetState extends State<StatsSheet> {
         'sale' => s.t('sale'),
         'longRent' => s.t('longTerm'),
         'shortRent' => s.t('shortTerm'),
-        'roomRent' => s.t('roomOnly'),
+        'roomRent' => s.t('roomOnlyShort'),
         'unknown' => s.t('notSpecified'),
         _ => key,
       };
@@ -182,21 +182,14 @@ class _StatsSheetState extends State<StatsSheet> {
         ),
         _card(
           s.t('statsDeals'),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final deal in stats.dealTypes)
-                SizedBox(
-                  width: 148,
-                  child: _metric(
-                    _dealLabel(s, deal.key),
-                    metricWithPercent(deal.count, dealTotal),
-                    '${s.t('statsMedian')}: ${money(deal.medianUsd)}',
-                  ),
-                ),
-            ],
-          ),
+          child: _metricGrid([
+            for (final deal in stats.dealTypes)
+              _metric(
+                _dealLabel(s, deal.key),
+                metricWithPercent(deal.count, dealTotal),
+                '${s.t('statsMedian')}: ${money(deal.medianUsd)}',
+              ),
+          ]),
         ),
         if (bands.isNotEmpty)
           _card(
@@ -227,12 +220,7 @@ class _StatsSheetState extends State<StatsSheet> {
             children: [
               _dealRadios(stats, s),
               const SizedBox(height: 6),
-              _segments<String>(
-                const ['country', 'city', 'district', 'microdistrict', 'metro'],
-                _geoDimension,
-                (v) => _geoLabel(s, v),
-                (v) => setState(() => _geoDimension = v),
-              ),
+              _geoRadios(s),
             ],
           ),
           child: geography.isEmpty
@@ -255,55 +243,47 @@ class _StatsSheetState extends State<StatsSheet> {
         ),
         _card(
           s.t('statsOwnership'),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _metric(
-                s.t('privateOwner'),
-                metricWithPercent(stats.ownership.owners, ownershipTotal),
+          child: _metricGrid([
+            _metric(
+              s.t('privateOwner'),
+              metricWithPercent(stats.ownership.owners, ownershipTotal),
+            ),
+            _metric(
+              s.t('agency'),
+              metricWithPercent(stats.ownership.agencies, ownershipTotal),
+            ),
+            _metric(
+              s.t('noCommission'),
+              metricWithPercent(
+                stats.ownership.noCommission,
+                commissionTotal,
               ),
-              _metric(
-                s.t('agency'),
-                metricWithPercent(stats.ownership.agencies, ownershipTotal),
-              ),
-              _metric(
-                s.t('noCommission'),
-                metricWithPercent(
-                  stats.ownership.noCommission,
-                  commissionTotal,
-                ),
-              ),
-              _metric(
-                s.t('commission'),
-                metricWithPercent(stats.ownership.commission, commissionTotal),
-              ),
-            ],
-          ),
+            ),
+            _metric(
+              s.t('commission'),
+              metricWithPercent(stats.ownership.commission, commissionTotal),
+            ),
+          ]),
         ),
         _card(
           s.t('statsDataQuality'),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _metric(
-                s.t('statsVisible'),
-                metricWithPercent(stats.total, rawQualityTotal),
+          child: _metricGrid([
+            _metric(
+              s.t('statsVisible'),
+              metricWithPercent(stats.total, rawQualityTotal),
+            ),
+            _metric(
+              s.t('statsDuplicates'),
+              metricWithPercent(
+                stats.quality.duplicatesRejected,
+                rawQualityTotal,
               ),
-              _metric(
-                s.t('statsDuplicates'),
-                metricWithPercent(
-                  stats.quality.duplicatesRejected,
-                  rawQualityTotal,
-                ),
-              ),
-              _metric(
-                s.t('statsFake'),
-                metricWithPercent(stats.quality.suspectedFake, stats.total),
-              ),
-            ],
-          ),
+            ),
+            _metric(
+              s.t('statsFake'),
+              metricWithPercent(stats.quality.suspectedFake, stats.total),
+            ),
+          ]),
         ),
       ],
     );
@@ -368,24 +348,54 @@ class _StatsSheetState extends State<StatsSheet> {
     );
   }
 
-  Widget _segments<T extends Object>(
-    List<T> values,
-    T selected,
-    String Function(T) label,
-    ValueChanged<T> onChanged,
-  ) =>
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SegmentedButton<T>(
-          segments: [
-            for (final v in values)
-              ButtonSegment(
-                  value: v, label: Text(label(v), textAlign: TextAlign.center)),
-          ],
-          selected: {selected},
-          showSelectedIcon: false,
-          onSelectionChanged: (values) => onChanged(values.first),
-        ),
+  Widget _geoRadios(AppStrings s) {
+    const values = ['country', 'city', 'district', 'microdistrict', 'metro'];
+    final scheme = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 10,
+      runSpacing: 6,
+      children: [
+        for (final value in values)
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(() => _geoDimension = value),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _geoDimension == value
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: _geoDimension == value
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(_geoLabel(s, value), textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _metricGrid(List<Widget> metrics) => LayoutBuilder(
+        builder: (context, constraints) {
+          const gap = 8.0;
+          final width = math.max(0.0, (constraints.maxWidth - gap) / 2);
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: [
+              for (final metric in metrics)
+                SizedBox(width: width, child: metric),
+            ],
+          );
+        },
       );
 
   Widget _card(String title, {Widget? trailing, required Widget child}) => Card(
@@ -416,13 +426,7 @@ class _StatsSheetState extends State<StatsSheet> {
       );
 
   Widget _metric(String label, String value, [String? detail]) => Container(
-        // A fixed minHeight (not just minWidth) so cards in the same row/wrap
-        // stay the same size even when one label wraps to more lines than
-        // another (e.g. "Долгосрочно" vs "Только комната (подселение)").
-        constraints: BoxConstraints(
-          minWidth: 130,
-          minHeight: detail != null ? 92 : 72,
-        ),
+        height: detail != null ? 100 : 82,
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           border: Border.all(color: Theme.of(context).dividerColor),
@@ -431,16 +435,49 @@ class _StatsSheetState extends State<StatsSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-            Text(
-              value,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(color: const Color(0xffe0679a)),
+            SizedBox(
+              height: 30,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 30,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(color: const Color(0xffe0679a)),
+                  ),
+                ),
+              ),
             ),
             if (detail != null)
-              Text(detail, style: Theme.of(context).textTheme.labelSmall),
+              SizedBox(
+                height: 20,
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Text(
+                    detail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ),
+              ),
           ],
         ),
       );
