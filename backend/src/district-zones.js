@@ -38,6 +38,8 @@ function fitNonOverlappingRadii(zones, min, max) {
 function zoneFromEntity(entity, index) {
   return {
     id: entity.id,
+    parentId: entity.parentId ?? null,
+    type: entity.type,
     name: entity.canonicalName,
     lat: entity.center.lat,
     lng: entity.center.lng,
@@ -82,6 +84,10 @@ export function districtZonesFor(countryCode, cityName, districtOptions = []) {
  * microdistricts, mahallas ("quartals"), and local/development areas —
  * matching useDistrictZones.ts's four computed layers exactly, so the app
  * can offer the same show/hide toggles as the site's map toolbar.
+ *
+ * Every zone also carries its canonical `type` and `parentId`. Flutter uses
+ * that hierarchy to apply nested scopes (district + microdistrict + mahalla)
+ * without replacing a broader active filter with a narrower one.
  */
 export function mapZonesFor(countryCode, cityName, districtOptions = []) {
   const country = String(countryCode || '').toUpperCase();
