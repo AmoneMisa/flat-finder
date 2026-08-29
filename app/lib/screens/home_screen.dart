@@ -619,7 +619,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                           (item) => DropdownMenuItem(
                             value: item.code,
                             child: Text(
-                              '${countryFlags[item.code] ?? ''} ${s.countryName(item.code, item.name)}',
+                              '${countryFlags[item.code] ?? ''} ${s.s.countryName(item.code, item.name)}',
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
