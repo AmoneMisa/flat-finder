@@ -23,6 +23,7 @@ class SearchableDropdown extends StatelessWidget {
     required this.onChanged,
     this.onTextChanged,
     this.labelOf,
+    this.placeholder,
   });
 
   final String hint;
@@ -31,6 +32,7 @@ class SearchableDropdown extends StatelessWidget {
   final ValueChanged<String?> onChanged;
   final ValueChanged<String>? onTextChanged;
   final String Function(String)? labelOf;
+  final String? placeholder;
 
   String _label(String option) => labelOf?.call(option) ?? option;
 
@@ -43,7 +45,9 @@ class SearchableDropdown extends StatelessWidget {
         final q = t.text.trim().toLowerCase();
         if (q.isEmpty) return options;
         return options.where(
-          (o) => o.toLowerCase().contains(q) || _label(o).toLowerCase().contains(q),
+          (o) =>
+              o.toLowerCase().contains(q) ||
+              _label(o).toLowerCase().contains(q),
         );
       },
       onSelected: onChanged,
@@ -56,6 +60,7 @@ class SearchableDropdown extends StatelessWidget {
           // other field — always sitting on the border, matching the
           // dropdowns next to it instead of behaving like a placeholder.
           labelText: hint,
+          hintText: placeholder ?? hint,
           border: const OutlineInputBorder(),
           // The default prefixIcon reserves a 48x48 tap target, taller than
           // a Dropdown's own trailing arrow — that mismatch was the field's
@@ -118,7 +123,7 @@ class SearchableDropdown extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
               child: ListView(
-                padding: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 shrinkWrap: true,
                 children: opts
                     .map(

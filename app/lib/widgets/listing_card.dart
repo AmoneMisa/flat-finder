@@ -133,7 +133,11 @@ class ListingCard extends StatelessWidget {
             ),
           ),
         if (isViewed)
-          Positioned(top: 8, right: 8, child: _ViewedIcon(tooltip: s.t('viewedTag'))),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: _ViewedIcon(tooltip: s.t('viewedTag')),
+          ),
       ],
     );
 
@@ -150,14 +154,16 @@ class ListingCard extends StatelessWidget {
             tooltip: s.t('showOnMap'),
             onPressed: onShowOnMap,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
         ],
         _CardActionButton(
-          icon: isHidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+          icon: isHidden
+              ? Icons.visibility_outlined
+              : Icons.visibility_off_outlined,
           tooltip: isHidden ? s.t('restoreListing') : s.t('hideListing'),
           onPressed: () => hidden.toggle(listing),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 4),
         _FavButton(
           isFav: isFav,
           tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
@@ -706,29 +712,29 @@ class _FavButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      child: IconButton(
-        tooltip: tooltip,
-        iconSize: 13,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.all(5),
-        constraints: const BoxConstraints(),
-        onPressed: onPressed,
-        icon: Icon(
-          isFav ? Icons.favorite : Icons.favorite_border,
-          color: isFav ? Colors.redAccent : scheme.onSurfaceVariant,
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(7),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: Icon(
+              isFav ? Icons.favorite : Icons.favorite_border,
+              size: 18,
+              color: isFav ? Colors.redAccent : scheme.onSurfaceVariant,
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// A generic photo-overlay action button — same 32px dark square style as
-/// [_FavButton] (matches the site's `.flat-card__action`), for actions that
-/// don't need a filled/outline toggle state.
 class _CardActionButton extends StatelessWidget {
   const _CardActionButton({
     required this.icon,
@@ -743,18 +749,20 @@ class _CardActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      child: IconButton(
-        tooltip: tooltip,
-        iconSize: 13,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.all(5),
-        constraints: const BoxConstraints(),
-        onPressed: onPressed,
-        icon: Icon(icon, color: scheme.onSurfaceVariant),
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(7),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          ),
+        ),
       ),
     );
   }

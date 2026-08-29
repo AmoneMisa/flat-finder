@@ -151,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
             key: ValueKey('fullscreen-map-$country-${state.filters.city}'),
             listings: listings,
             center: center,
-            centerZoom: _focusListing?.hasLocation == true ? 15 : 6,
+            centerZoom: _focusListing?.hasLocation == true ? 18 : 6,
             onTapListing: _showMapPreview,
             rates: state.rates,
             displayCurrency: settings.displayCurrency,
@@ -485,7 +485,7 @@ class _HomeScreenState extends State<HomeScreen> {
         key: ValueKey('map-$mapCountry-${state.filters.city}'),
         listings: state.mapListings.isNotEmpty ? state.mapListings : listings,
         center: center,
-        centerZoom: _focusListing?.hasLocation == true ? 15 : 6,
+        centerZoom: _focusListing?.hasLocation == true ? 18 : 6,
         onTapListing: _showMapPreview,
         rates: state.rates,
         displayCurrency: settings.displayCurrency,
@@ -507,54 +507,54 @@ class _HomeScreenState extends State<HomeScreen> {
           LayoutBuilder(
             builder: (context, constraints) {
               final columns = _columnsFor(constraints.maxWidth);
-            // A single column keeps the original full-width card list; multiple
-            // columns lay the cards out in a responsive grid.
-            if (columns == 1) {
-              return ListView.builder(
+              // A single column keeps the original full-width card list; multiple
+              // columns lay the cards out in a responsive grid.
+              if (columns == 1) {
+                return ListView.builder(
+                  controller: _resultsScroll,
+                  padding: const EdgeInsets.only(bottom: 90, top: 4),
+                  itemCount: listings.length + (state.loadingMore ? 1 : 0),
+                  itemBuilder: (_, i) {
+                    if (i == listings.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    final l = listings[i];
+                    return ListingCard(
+                      listing: l,
+                      onTap: () => _openListing(l),
+                      onShowOnMap: () => _showOnMap(l),
+                    );
+                  },
+                );
+              }
+              return GridView.builder(
                 controller: _resultsScroll,
-                padding: const EdgeInsets.only(bottom: 90, top: 4),
+                padding: const EdgeInsets.fromLTRB(6, 4, 6, 90),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  childAspectRatio: 0.82,
+                  mainAxisSpacing: 2,
+                  crossAxisSpacing: 2,
+                ),
                 itemCount: listings.length + (state.loadingMore ? 1 : 0),
                 itemBuilder: (_, i) {
                   if (i == listings.length) {
-                    return const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
+                    return const Center(child: CircularProgressIndicator());
                   }
                   final l = listings[i];
                   return ListingCard(
                     listing: l,
+                    grid: true,
                     onTap: () => _openListing(l),
                     onShowOnMap: () => _showOnMap(l),
                   );
                 },
               );
-            }
-            return GridView.builder(
-              controller: _resultsScroll,
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 90),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                childAspectRatio: 0.82,
-                mainAxisSpacing: 2,
-                crossAxisSpacing: 2,
-              ),
-              itemCount: listings.length + (state.loadingMore ? 1 : 0),
-              itemBuilder: (_, i) {
-                if (i == listings.length) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final l = listings[i];
-                return ListingCard(
-                  listing: l,
-                  grid: true,
-                  onTap: () => _openListing(l),
-                  onShowOnMap: () => _showOnMap(l),
-                );
-              },
-            );
-          },
-        ),
+            },
+          ),
           if (state.loading) ...[
             // Blocks taps on the (still-visible, now stale) list while a
             // reload is in flight, so a tap can't land on a card that's
@@ -751,62 +751,86 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
       child: Material(
         color: theme.colorScheme.surface,
         child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-        child: Column(
-          children: [
-            TextField(
-              controller: _query,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search),
-                labelText: s.t('keyword'),
-                hintText: s.t('keywordHint'),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Column(
+            children: [
+              TextField(
+                controller: _query,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  labelText: s.t('keyword'),
+                  hintText: s.t('keywordHint'),
+                ),
+                onChanged: (_) => _schedule(_withTextValues()),
+                onSubmitted: (_) =>
+                    _schedule(_withTextValues(), immediate: true),
               ),
-              onChanged: (_) => _schedule(_withTextValues()),
-              onSubmitted: (_) => _schedule(_withTextValues(), immediate: true),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Collapsed, this only needs to show which flag is picked —
-                // the full country name still appears once the menu opens,
-                // freeing up width for the (more useful) city search field.
-                SizedBox(
-                  width: 76,
-                  child: DropdownButtonFormField<String>(
-                    value: selectedCountry,
-                    isExpanded: true,
-                    isDense: true,
-                    decoration: InputDecoration(labelText: s.t('country')),
-                    selectedItemBuilder: (context) => widget.countries
-                        .map(
-                          (item) => Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              countryFlags[item.code] ?? item.code,
-                              style: const TextStyle(fontSize: 18),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Collapsed, this only needs to show which flag is picked —
+                  // the full country name still appears once the menu opens,
+                  // freeing up width for the (more useful) city search field.
+                  SizedBox(
+                    width: 76,
+                    child: DropdownButtonFormField<String>(
+                      value: selectedCountry,
+                      isExpanded: true,
+                      isDense: true,
+                      decoration: InputDecoration(labelText: s.t('country')),
+                      selectedItemBuilder: (context) => widget.countries
+                          .map(
+                            (item) => Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                countryFlags[item.code] ?? item.code,
+                                style: const TextStyle(fontSize: 18),
+                              ),
                             ),
-                          ),
-                        )
-                        .toList(),
-                    items: widget.countries
-                        .map(
-                          (item) => DropdownMenuItem(
-                            value: item.code,
-                            child: Text(
-                              '${countryFlags[item.code] ?? ''} ${s.s.countryName(item.code, item.name)}',
-                              overflow: TextOverflow.ellipsis,
+                          )
+                          .toList(),
+                      items: widget.countries
+                          .map(
+                            (item) => DropdownMenuItem(
+                              value: item.code,
+                              child: Text(
+                                '${countryFlags[item.code] ?? ''} ${s.s.countryName(item.code, item.name)}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        _schedule(
+                          _withTextValues().copyWith(
+                            countries: {value},
+                            city: '',
+                            district: '',
+                            microdistrict: '',
+                            quartal: '',
+                            area: '',
+                            metro: '',
                           ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value == null) return;
-                      _schedule(
+                          immediate: true,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SearchableDropdown(
+                      key: ValueKey('quick-city-$selectedCountry'),
+                      hint: s.t('anyCity'),
+                      options: cities,
+                      value: selectedCity,
+                      labelOf: (city) =>
+                          country?.cityLabel(city) ?? cityLabel(city, s.lang),
+                      onChanged: (value) => _schedule(
                         _withTextValues().copyWith(
-                          countries: {value},
-                          city: '',
+                          city: value ?? '',
                           district: '',
                           microdistrict: '',
                           quartal: '',
@@ -814,143 +838,120 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                           metro: '',
                         ),
                         immediate: true,
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SearchableDropdown(
-                    key: ValueKey('quick-city-$selectedCountry'),
-                    hint: s.t('anyCity'),
-                    options: cities,
-                    value: selectedCity,
-                    labelOf: (city) =>
-                        country?.cityLabel(city) ?? cityLabel(city, s.lang),
-                    onChanged: (value) => _schedule(
-                      _withTextValues().copyWith(
-                        city: value ?? '',
-                        district: '',
-                        microdistrict: '',
-                        quartal: '',
-                        area: '',
-                        metro: '',
                       ),
-                      immediate: true,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<AgencyFilter>(
-                    value: widget.filters.agency,
-                    isExpanded: true,
-                    isDense: true,
-                    decoration: InputDecoration(
-                      labelText: s.t('realEstateAgency'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<AgencyFilter>(
+                      value: widget.filters.agency,
+                      isExpanded: true,
+                      isDense: true,
+                      decoration: InputDecoration(
+                        labelText: s.t('realEstateAgency'),
+                      ),
+                      items: [
+                        DropdownMenuItem(
+                          value: AgencyFilter.any,
+                          child: Text(s.t('any')),
+                        ),
+                        DropdownMenuItem(
+                          value: AgencyFilter.owner,
+                          child: Text(s.t('owner')),
+                        ),
+                        DropdownMenuItem(
+                          value: AgencyFilter.agency,
+                          child: Text(s.t('agency')),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        _schedule(
+                          _withTextValues().copyWith(agency: value),
+                          immediate: true,
+                        );
+                      },
                     ),
-                    items: [
-                      DropdownMenuItem(
-                        value: AgencyFilter.any,
-                        child: Text(s.t('any')),
-                      ),
-                      DropdownMenuItem(
-                        value: AgencyFilter.owner,
-                        child: Text(s.t('owner')),
-                      ),
-                      DropdownMenuItem(
-                        value: AgencyFilter.agency,
-                        child: Text(s.t('agency')),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      _schedule(
-                        _withTextValues().copyWith(agency: value),
-                        immediate: true,
-                      );
-                    },
                   ),
-                ),
-                const SizedBox(width: 8),
-                // A select (not a bordered SegmentedButton row) so it reads
-                // as one more field alongside Country/City/Agency, with a
-                // placeholder like the others instead of always showing
-                // "Any".
-                Expanded(
-                  child: DropdownButtonFormField<_QuickDeal>(
-                    value: _quickDealFor(widget.filters),
-                    isExpanded: true,
-                    isDense: true,
-                    decoration: InputDecoration(labelText: s.t('dealType')),
-                    items: [
-                      DropdownMenuItem(
-                        value: _QuickDeal.any,
-                        child: Text(s.t('any')),
-                      ),
-                      DropdownMenuItem(
-                        value: _QuickDeal.sale,
-                        child: Text(s.t('sale')),
-                      ),
-                      DropdownMenuItem(
-                        value: _QuickDeal.longRent,
-                        child: Text(s.t('longTerm')),
-                      ),
-                      DropdownMenuItem(
-                        value: _QuickDeal.room,
-                        child: Text(s.t('roomOnly')),
-                      ),
-                      DropdownMenuItem(
-                        value: _QuickDeal.shortRent,
-                        child: Text(s.t('shortTerm')),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      _schedule(
-                        _withQuickDeal(_withTextValues(), value),
-                        immediate: true,
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _priceMin,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: s.t('priceFrom'),
-                      hintText: s.t('minPlaceholder'),
+                  const SizedBox(width: 8),
+                  // A select (not a bordered SegmentedButton row) so it reads
+                  // as one more field alongside Country/City/Agency, with a
+                  // placeholder like the others instead of always showing
+                  // "Any".
+                  Expanded(
+                    child: DropdownButtonFormField<_QuickDeal>(
+                      value: _quickDealFor(widget.filters),
+                      isExpanded: true,
+                      isDense: true,
+                      decoration: InputDecoration(labelText: s.t('dealType')),
+                      items: [
+                        DropdownMenuItem(
+                          value: _QuickDeal.any,
+                          child: Text(s.t('any')),
+                        ),
+                        DropdownMenuItem(
+                          value: _QuickDeal.sale,
+                          child: Text(s.t('sale')),
+                        ),
+                        DropdownMenuItem(
+                          value: _QuickDeal.longRent,
+                          child: Text(s.t('longTerm')),
+                        ),
+                        DropdownMenuItem(
+                          value: _QuickDeal.room,
+                          child: Text(s.t('roomOnly')),
+                        ),
+                        DropdownMenuItem(
+                          value: _QuickDeal.shortRent,
+                          child: Text(s.t('shortTerm')),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        _schedule(
+                          _withQuickDeal(_withTextValues(), value),
+                          immediate: true,
+                        );
+                      },
                     ),
-                    onChanged: (_) => _schedule(_withTextValues()),
                   ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: TextField(
-                    controller: _priceMax,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: s.t('priceTo'),
-                      hintText: s.t('maxPlaceholder'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _priceMin,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: s.t('priceFrom'),
+                        hintText: s.t('minPlaceholder'),
+                      ),
+                      onChanged: (_) => _schedule(_withTextValues()),
                     ),
-                    onChanged: (_) => _schedule(_withTextValues()),
                   ),
-                ),
-              ],
-            ),
-          ],
-        ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: TextField(
+                      controller: _priceMax,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: s.t('priceTo'),
+                        hintText: s.t('maxPlaceholder'),
+                      ),
+                      onChanged: (_) => _schedule(_withTextValues()),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

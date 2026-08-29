@@ -244,6 +244,7 @@ ThemeData buildTheme(String name) {
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
+        inputDecorationTheme: _brandInputTheme(BrandColors.primary),
       );
   }
 }

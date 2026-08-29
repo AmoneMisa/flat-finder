@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -75,16 +76,22 @@ class _MapViewState extends State<MapView> {
   bool _drawing = false;
   final List<LatLng> _area = [];
 
-  // Which page of price pins is showing for each clustered pin group.
-  static const _pageSize = 8;
+  // Same marker behaviour as Personal Site.
+  static const _pageSize = 9;
+  static const _clusterRadiusPx = 38.0;
+  static const _clusterZoomMax = 19.0;
+  static const _priceMarkerWidth = 76.0;
+  static const _priceMarkerHeight = 28.0;
   final Map<String, int> _groupPage = {};
 
   double _zoom = 6;
+  String _lastFitSignature = '';
 
   // Colour overlay layers, matching the site's map + its toolbar toggles.
   MapZones _zones = const MapZones();
   String? _selectedDistrictId;
   // Defaults match the site's useShow*() refs in FlatMap.client.vue.
+  bool _showCity = true;
   bool _showDistricts = true;
   bool _showMicrodistricts = false;
   bool _showQuartals = false;
@@ -95,6 +102,7 @@ class _MapViewState extends State<MapView> {
     super.initState();
     _zoom = widget.centerZoom;
     _loadZones();
+    _scheduleFitToPoints();
   }
 
   Future<void> _loadZones() async {
@@ -102,9 +110,9 @@ class _MapViewState extends State<MapView> {
     final zones = await _api.fetchMapZones(widget.country, widget.city);
     if (!mounted) return;
     setState(() => _zones = zones);
-    // A selected city must open at city scale, not at the country's capital
-    // zoom. A focused listing keeps its explicit close zoom.
-    if (zones.cityZone != null && widget.centerZoom < 10) {
+    // The web map frames the actual map feed first. The city centroid is
+    // only a fallback when no located result exists.
+    if (zones.cityZone != null && widget.centerZoom < 10 && _visible.isEmpty) {
       _controller.move(LatLng(zones.cityZone!.lat, zones.cityZone!.lng), 11.5);
     }
   }
@@ -112,14 +120,18 @@ class _MapViewState extends State<MapView> {
   @override
   void didUpdateWidget(covariant MapView old) {
     super.didUpdateWidget(old);
-    // Recenter when the country selection changes the center noticeably.
-    if (old.center != widget.center) {
+    if (old.center != widget.center || old.centerZoom != widget.centerZoom) {
       _controller.move(widget.center, widget.centerZoom);
     }
-    if (old.country != widget.country || old.city != widget.city) {
+    final geographyChanged =
+        old.country != widget.country || old.city != widget.city;
+    if (geographyChanged) {
       _selectedDistrictId = null;
       _zones = const MapZones();
       _loadZones();
+    }
+    if (geographyChanged || !identical(old.listings, widget.listings)) {
+      _scheduleFitToPoints();
     }
   }
 
@@ -177,71 +189,184 @@ class _MapViewState extends State<MapView> {
     return inside;
   }
 
-  /// Approximate meters per screen pixel at [lat] and the current [_zoom]
-  /// (standard slippy-map/Web Mercator scale factor), used to size the
-  /// clustering radius in real map units instead of a fixed lat/lng
-  /// tolerance that means wildly different screen distances at different
-  /// zoom levels — that mismatch was the root cause of markers still
-  /// overlapping (or over-merging) at some zooms.
-  double _metersPerPixel(double lat) =>
-      156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, _zoom);
+  bool get _isFocused => widget.centerZoom >= 17.5;
 
-  /// Clusters listings by screen-pixel proximity — like the site's map
-  /// (Leaflet marker clustering): any two listings within [_clusterRadiusPx]
-  /// screen pixels of each other end up in the same group, at any zoom
-  /// level, so pins never visually overlap regardless of how zoomed out the
-  /// map is or how many results are loaded.
-  static const _clusterRadiusPx = 42.0;
+  String _listingKey(Listing listing) =>
+      '${listing.source}:${listing.country}:${listing.id}';
 
+  void _scheduleFitToPoints() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fitToPoints();
+    });
+  }
+
+  /// Matches Personal Site's fitToPoints(): frame the complete compact map
+  /// feed once and cap the initial zoom at 14.
+  void _fitToPoints() {
+    if (_isFocused) return;
+    final located = widget.listings
+        .where((listing) => listing.hasLocation)
+        .toList();
+    if (located.isEmpty) return;
+    final keys = located.map(_listingKey).toList()..sort();
+    final signature = keys.join(',');
+    if (signature == _lastFitSignature) return;
+    try {
+      _controller.fitCamera(
+        CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints([
+            for (final listing in located) LatLng(listing.lat!, listing.lng!),
+          ]),
+          padding: const EdgeInsets.all(30),
+          maxZoom: 14,
+        ),
+      );
+      _lastFitSignature = signature;
+    } catch (_) {
+      // The controller can still be attaching on the very first frame.
+    }
+  }
+
+  Offset _worldPixel(LatLng point) {
+    final worldSize = 256.0 * math.pow(2, _zoom).toDouble();
+    final lat = point.latitude.clamp(-85.05112878, 85.05112878).toDouble();
+    final sinLat = math.sin(lat * math.pi / 180);
+    final x = (point.longitude + 180) / 360 * worldSize;
+    final y =
+        (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
+        worldSize;
+    return Offset(x, y);
+  }
+
+  double _wrappedDx(double a, double b) {
+    final worldSize = 256.0 * math.pow(2, _zoom).toDouble();
+    final raw = (a - b).abs();
+    return math.min(raw, worldSize - raw);
+  }
+
+  /// Greedy screen-space clustering, equivalent to FlatMap.client.vue's
+  /// latLngToContainerPoint + 38px distance check.
   List<_PinGroup> _groupsFor(List<Listing> located) {
     if (located.isEmpty) return const [];
-    final avgLat =
-        located.map((l) => l.lat!).reduce((a, b) => a + b) / located.length;
-    final metersPerPixel = _metersPerPixel(avgLat);
-    final cellMeters = _clusterRadiusPx * metersPerPixel;
-    final latCellDeg = (cellMeters / 111320).clamp(1e-6, 60.0);
-    final lngCellDeg =
-        (cellMeters / (111320 * math.cos(avgLat * math.pi / 180)))
-            .clamp(1e-6, 60.0);
-
-    final groups = <String, List<Listing>>{};
-    for (final l in located) {
-      final latIdx = (l.lat! / latCellDeg).floor();
-      final lngIdx = (l.lng! / lngCellDeg).floor();
-      groups.putIfAbsent('cell:$latIdx,$lngIdx', () => []).add(l);
-    }
-    return [
-      for (final entry in groups.entries)
-        _PinGroup(
-          entry.key,
-          entry.value,
-          LatLng(
-            entry.value.map((l) => l.lat!).reduce((a, b) => a + b) /
-                entry.value.length,
-            entry.value.map((l) => l.lng!).reduce((a, b) => a + b) /
-                entry.value.length,
+    final clusters = <_ClusterAccumulator>[];
+    for (final listing in located) {
+      final point = _worldPixel(LatLng(listing.lat!, listing.lng!));
+      _ClusterAccumulator? target;
+      for (final cluster in clusters) {
+        final dx = _wrappedDx(cluster.x, point.dx);
+        final dy = cluster.y - point.dy;
+        if (dx * dx + dy * dy <= _clusterRadiusPx * _clusterRadiusPx) {
+          target = cluster;
+          break;
+        }
+      }
+      if (target == null) {
+        clusters.add(
+          _ClusterAccumulator(
+            x: point.dx,
+            y: point.dy,
+            latSum: listing.lat!,
+            lngSum: listing.lng!,
+            listings: [listing],
           ),
-        ),
+        );
+      } else {
+        target.listings.add(listing);
+        target.latSum += listing.lat!;
+        target.lngSum += listing.lng!;
+      }
+    }
+
+    return [
+      for (final cluster in clusters)
+        () {
+          final keys = cluster.listings.map(_listingKey).toList()..sort();
+          return _PinGroup(
+            keys.join('|'),
+            cluster.listings,
+            LatLng(
+              cluster.latSum / cluster.listings.length,
+              cluster.lngSum / cluster.listings.length,
+            ),
+          );
+        }(),
     ];
   }
 
-  /// The cluster currently expanded into its price-pin carousel.
   String? _expandedGroupKey;
 
-  /// Markers for one cluster. Individual flats are always price-only circles;
-  /// a grouped marker expands in place to reveal those circles.
-  List<Marker> _markersForGroup(_PinGroup group) {
+  bool _hasRealSpread(_PinGroup group) {
+    final first = group.listings.first;
+    return group.listings
+        .skip(1)
+        .any((listing) => listing.lat != first.lat || listing.lng != first.lng);
+  }
+
+  /// A price pill is wider than a point. Show it only when its complete
+  /// screen rectangle cannot intersect any neighbouring standalone pill or
+  /// cluster marker. Otherwise render the normal 16px point.
+  bool _canShowStandalonePrice(_PinGroup group, List<_PinGroup> groups) {
+    if (group.listings.length != 1) return false;
+    final point = _worldPixel(group.point);
+    for (final other in groups) {
+      if (identical(other, group)) continue;
+      final otherPoint = _worldPixel(other.point);
+      final dx = _wrappedDx(point.dx, otherPoint.dx);
+      final dy = (point.dy - otherPoint.dy).abs();
+      final otherHalfWidth = other.listings.length == 1
+          ? _priceMarkerWidth / 2
+          : 16.0;
+      final otherHalfHeight = other.listings.length == 1
+          ? _priceMarkerHeight / 2
+          : 16.0;
+      if (dx < _priceMarkerWidth / 2 + otherHalfWidth + 4 &&
+          dy < _priceMarkerHeight / 2 + otherHalfHeight + 4) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _openGroup(_PinGroup group) {
     if (group.listings.length == 1) {
-      final l = group.listings.first;
+      widget.onTapListing(group.listings.first);
+      return;
+    }
+    if (_hasRealSpread(group) && _zoom < _clusterZoomMax - 0.01) {
+      setState(() => _expandedGroupKey = null);
+      try {
+        _controller.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints([
+              for (final listing in group.listings)
+                LatLng(listing.lat!, listing.lng!),
+            ]),
+            padding: const EdgeInsets.all(40),
+            maxZoom: _clusterZoomMax,
+          ),
+        );
+      } catch (_) {}
+      return;
+    }
+    setState(() {
+      _expandedGroupKey = group.key;
+      _groupPage[group.key] = 0;
+    });
+  }
+
+  List<Marker> _markersForGroup(_PinGroup group, List<_PinGroup> groups) {
+    if (group.listings.length == 1 && _canShowStandalonePrice(group, groups)) {
+      final listing = group.listings.first;
       return [
         Marker(
           point: group.point,
-          width: 68,
-          height: 68,
+          width: _priceMarkerWidth,
+          height: _priceMarkerHeight,
           child: GestureDetector(
-            onTap: () => widget.onTapListing(l),
-            child: _MapPricePin(
-              listing: l,
+            behavior: HitTestBehavior.opaque,
+            onTap: () => widget.onTapListing(listing),
+            child: _StandalonePricePin(
+              listing: listing,
               rates: widget.rates,
               displayCurrency: widget.displayCurrency,
             ),
@@ -250,85 +375,67 @@ class _MapViewState extends State<MapView> {
       ];
     }
 
-    if (group.key != _expandedGroupKey) {
-      return [
-        Marker(
-          point: group.point,
-          width: 34,
-          height: 34,
-          child: GestureDetector(
-            onTap: () => setState(() => _expandedGroupKey = group.key),
-            child: _ClusterDot(count: group.listings.length),
-          ),
-        ),
-      ];
-    }
-
-    final pages = <List<Listing>>[];
-    for (var i = 0; i < group.listings.length; i += _pageSize) {
-      pages.add(
-        group.listings.sublist(
-          i,
-          math.min(i + _pageSize, group.listings.length),
-        ),
-      );
-    }
-    final pageIndex = (_groupPage[group.key] ?? 0).clamp(0, pages.length - 1);
-    final page = pages[pageIndex];
-
-    const pinSize = 68.0;
-    final radius = 0.0011 * (1 + page.length / 10);
-    final markers = <Marker>[
-      for (var i = 0; i < page.length; i++)
-        () {
-          final l = page[i];
-          final angle = 2 * math.pi * i / page.length;
-          final dLat = radius * math.cos(angle);
-          final dLng =
-              radius * math.sin(angle) / math.cos(group.point.latitude * math.pi / 180);
-          return Marker(
-            point: LatLng(
-              group.point.latitude + dLat,
-              group.point.longitude + dLng,
-            ),
-            width: pinSize,
-            height: pinSize,
-            child: GestureDetector(
-              onTap: () => widget.onTapListing(l),
-              child: _MapPricePin(
-                listing: l,
-                rates: widget.rates,
-                displayCurrency: widget.displayCurrency,
-              ),
-            ),
-          );
-        }(),
+    final size = group.listings.length > 1 ? 32.0 : 16.0;
+    return [
       Marker(
         point: group.point,
-        width: 96,
-        height: 36,
-        child: _PagePill(
-          index: pageIndex,
-          total: pages.length,
-          onClose: () => setState(() => _expandedGroupKey = null),
-          onPrev: pages.length > 1
-              ? () => setState(
-                  () => _groupPage[group.key] =
-                      (pageIndex - 1 + pages.length) % pages.length,
-                )
-              : null,
-          onNext: pages.length > 1
-              ? () => setState(
-                  () => _groupPage[group.key] = (pageIndex + 1) % pages.length,
-                )
-              : null,
+        width: size,
+        height: size,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _openGroup(group),
+          child: _ClusterDot(count: group.listings.length),
         ),
       ),
     ];
-    return markers;
+  }
+
+  _PinGroup? _expandedGroup(List<_PinGroup> groups) {
+    final key = _expandedGroupKey;
+    if (key == null) return null;
+    for (final group in groups) {
+      if (group.key == key) return group;
+    }
+    return null;
+  }
+
+  Marker _radialMarkerForGroup(_PinGroup group) {
+    final pageCount = (group.listings.length / _pageSize).ceil();
+    final current = _groupPage[group.key] ?? 0;
+    final pageIndex = current % pageCount;
+    final start = pageIndex * _pageSize;
+    final end = math.min(start + _pageSize, group.listings.length);
+    return Marker(
+      point: group.point,
+      width: 280,
+      height: 280,
+      child: _RadialClusterMarker(
+        items: group.listings.sublist(start, end),
+        pageIndex: pageIndex,
+        pageCount: pageCount,
+        rates: widget.rates,
+        displayCurrency: widget.displayCurrency,
+        onTapListing: widget.onTapListing,
+        onClose: () => setState(() => _expandedGroupKey = null),
+        onPrev: pageCount <= 1
+            ? null
+            : () => setState(
+                () => _groupPage[group.key] =
+                    (pageIndex - 1 + pageCount) % pageCount,
+              ),
+        onNext: pageCount <= 1
+            ? null
+            : () => setState(
+                () => _groupPage[group.key] = (pageIndex + 1) % pageCount,
+              ),
+      ),
+    );
   }
 
   void _onMapTap(LatLng point) {
+    if (_expandedGroupKey != null) {
+      setState(() => _expandedGroupKey = null);
+    }
     if (_drawing) {
       setState(() => _area.add(point));
       return;
@@ -354,6 +461,8 @@ class _MapViewState extends State<MapView> {
   Widget build(BuildContext context) {
     final s = context.watch<SettingsState>().s;
     final visible = _visible;
+    final groups = _groupsFor(visible);
+    final expandedGroup = _expandedGroup(groups);
     return Stack(
       children: [
         FlutterMap(
@@ -362,11 +471,18 @@ class _MapViewState extends State<MapView> {
             initialCenter: widget.center,
             initialZoom: widget.centerZoom,
             minZoom: 2,
-            maxZoom: 18,
+            maxZoom: 19,
             onTap: (_, point) => _onMapTap(point),
             onPositionChanged: (position, hasGesture) {
               final z = position.zoom;
-              if ((z - _zoom).abs() > 0.05) setState(() => _zoom = z);
+              final zoomChanged = (z - _zoom).abs() > 0.05;
+              final closeRadial = hasGesture && _expandedGroupKey != null;
+              if (zoomChanged || closeRadial) {
+                setState(() {
+                  _zoom = z;
+                  _expandedGroupKey = null;
+                });
+              }
             },
           ),
           children: [
@@ -375,6 +491,19 @@ class _MapViewState extends State<MapView> {
               userAgentPackageName: 'com.example.flat_finder',
               maxZoom: 19,
             ),
+            if (_showCity && _zones.cityZone?.boundaryRings.isNotEmpty == true)
+              PolygonLayer(
+                polygons: [
+                  for (final ring in _zones.cityZone!.boundaryRings)
+                    Polygon(
+                      points: ring,
+                      borderStrokeWidth: 2,
+                      borderColor: _parseHexColor(_zones.cityZone!.colorHex)
+                          .withValues(alpha: 0.55),
+                      color: Colors.transparent,
+                    ),
+                ],
+              ),
             if (_showAreas && _zones.areaZones.isNotEmpty)
               PolygonLayer(
                 polygons: [
@@ -541,8 +670,15 @@ class _MapViewState extends State<MapView> {
               ),
             MarkerLayer(
               markers: [
-                for (final group in _groupsFor(visible))
-                  ..._markersForGroup(group),
+                for (final group in groups) ..._markersForGroup(group, groups),
+                if (expandedGroup != null) _radialMarkerForGroup(expandedGroup),
+                if (_isFocused)
+                  Marker(
+                    point: widget.center,
+                    width: 44,
+                    height: 44,
+                    child: const _FocusMarker(),
+                  ),
               ],
             ),
             const RichAttributionWidget(
@@ -615,7 +751,8 @@ class _MapViewState extends State<MapView> {
         // as the site's map, each shown only when that layer has data. Kept
         // near the top (below the draw hint) instead of hovering over the
         // bottom of the map, which is easy to reach but easy to miss.
-        if (_zones.districtZones.isNotEmpty ||
+        if (_zones.cityZone?.boundaryRings.isNotEmpty == true ||
+            _zones.districtZones.isNotEmpty ||
             _zones.microdistrictMarkers.isNotEmpty ||
             _zones.quartalMarkers.isNotEmpty ||
             _zones.areaZones.isNotEmpty)
@@ -627,6 +764,12 @@ class _MapViewState extends State<MapView> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
+                  if (_zones.cityZone?.boundaryRings.isNotEmpty == true)
+                    _ZoneToggle(
+                      label: s.t('city'),
+                      active: _showCity,
+                      onTap: () => setState(() => _showCity = !_showCity),
+                    ),
                   if (_zones.districtZones.isNotEmpty)
                     _ZoneToggle(
                       label: s.t('districts'),
@@ -729,9 +872,22 @@ class _ZoneDot extends StatelessWidget {
   }
 }
 
-/// Listings that share (almost) the same coordinate, plus the point the
-/// group's markers are drawn around. [key] is stable across rebuilds so the
-/// active page survives (matches [_MapViewState._groupPage]'s keys).
+class _ClusterAccumulator {
+  _ClusterAccumulator({
+    required this.x,
+    required this.y,
+    required this.latSum,
+    required this.lngSum,
+    required this.listings,
+  });
+
+  final double x;
+  final double y;
+  double latSum;
+  double lngSum;
+  final List<Listing> listings;
+}
+
 class _PinGroup {
   const _PinGroup(this.key, this.listings, this.point);
   final String key;
@@ -739,51 +895,42 @@ class _PinGroup {
   final LatLng point;
 }
 
-/// A map marker dot, matching the site's clustering: a lone listing (count
-/// 1) is a small plain white dot with no label; a real cluster is a bigger
-/// colored circle carrying its count, tapped to fan out into its photo-card
-/// carousel in place.
 class _ClusterDot extends StatelessWidget {
   const _ClusterDot({required this.count});
   final int count;
 
   @override
   Widget build(BuildContext context) {
-    if (count <= 1) {
-      return Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 3)],
-        ),
-      );
-    }
     final color = Theme.of(context).colorScheme.primary;
     return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: color,
+        color: color.withValues(alpha: count > 1 ? 0.92 : 1),
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 2),
         boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
       ),
-      child: Text(
-        count > 999 ? '999+' : '$count',
-        maxLines: 1,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 11,
-        ),
-      ),
+      child: count > 1
+          ? Text(
+              count > 999 ? '999+' : '$count',
+              maxLines: 1,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            )
+          : null,
     );
   }
 }
 
-/// A price-only map pin. Its six-tone fill uses the same price-vs-market
-/// median scheme as listing cards and details.
-class _MapPricePin extends StatelessWidget {
-  const _MapPricePin({required this.listing, this.rates, this.displayCurrency});
+class _StandalonePricePin extends StatelessWidget {
+  const _StandalonePricePin({
+    required this.listing,
+    this.rates,
+    this.displayCurrency,
+  });
 
   final Listing listing;
   final Map<String, double>? rates;
@@ -802,8 +949,8 @@ class _MapPricePin extends StatelessWidget {
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 7),
       decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
+        color: color.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white, width: 2),
         boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 4)],
       ),
@@ -811,11 +958,10 @@ class _MapPricePin extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
         style: const TextStyle(
           color: Colors.white,
-          fontWeight: FontWeight.bold,
           fontSize: 10,
+          fontWeight: FontWeight.w800,
           shadows: [Shadow(color: Colors.black38, blurRadius: 2)],
         ),
       ),
@@ -823,80 +969,253 @@ class _MapPricePin extends StatelessWidget {
   }
 }
 
-/// The center pill sitting on an expanded cluster's true point — shows
-/// "current/total" (arrows to flip pages, when there's more than one) and
-/// collapses the carousel back to a plain dot when its center is tapped.
-class _PagePill extends StatelessWidget {
-  const _PagePill({
-    required this.index,
-    required this.total,
+class _FocusMarker extends StatelessWidget {
+  const _FocusMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: color.withValues(alpha: 0.58), width: 2),
+          ),
+        ),
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.95),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 3),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RadialClusterMarker extends StatelessWidget {
+  const _RadialClusterMarker({
+    required this.items,
+    required this.pageIndex,
+    required this.pageCount,
+    required this.rates,
+    required this.displayCurrency,
+    required this.onTapListing,
     required this.onClose,
     this.onPrev,
     this.onNext,
   });
 
-  final int index;
-  final int total;
+  final List<Listing> items;
+  final int pageIndex;
+  final int pageCount;
+  final Map<String, double>? rates;
+  final String? displayCurrency;
+  final void Function(Listing) onTapListing;
   final VoidCallback onClose;
   final VoidCallback? onPrev;
   final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (onPrev != null) _PinArrow(icon: Icons.chevron_left, onTap: onPrev!),
-        GestureDetector(
-          onTap: onClose,
-          child: Container(
-            width: 44,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 3),
-              ],
+    const size = 280.0;
+    const center = size / 2;
+    final radius = items.length <= 4 ? 72.0 : 94.0;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var i = 0; i < items.length; i++)
+            () {
+              final angle =
+                  (-90 + (360 / math.max(1, items.length)) * i) * math.pi / 180;
+              return Positioned(
+                left: center + math.cos(angle) * radius - 38,
+                top: center + math.sin(angle) * radius - 32,
+                child: _RadialTab(
+                  listing: items[i],
+                  rates: rates,
+                  displayCurrency: displayCurrency,
+                  onTap: () => onTapListing(items[i]),
+                ),
+              );
+            }(),
+          Positioned(
+            left: center - 26,
+            top: center - 26,
+            child: _RadialHub(
+              label: '${pageIndex + 1}/$pageCount',
+              onClose: onClose,
+              onPrev: onPrev,
+              onNext: onNext,
             ),
-            child: total > 1
-                ? Text(
-                    '${index + 1}/$total',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                    ),
-                  )
-                : const Icon(Icons.close, size: 16, color: Colors.white),
           ),
-        ),
-        if (onNext != null) _PinArrow(icon: Icons.chevron_right, onTap: onNext!),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _PinArrow extends StatelessWidget {
-  const _PinArrow({required this.icon, required this.onTap});
+class _RadialHub extends StatelessWidget {
+  const _RadialHub({
+    required this.label,
+    required this.onClose,
+    this.onPrev,
+    this.onNext,
+  });
+
+  final String label;
+  final VoidCallback onClose;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          _RadialArrow(icon: Icons.chevron_left, onTap: onPrev),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onClose,
+              child: Center(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          _RadialArrow(icon: Icons.chevron_right, onTap: onNext),
+        ],
+      ),
+    );
+  }
+}
+
+class _RadialArrow extends StatelessWidget {
+  const _RadialArrow({required this.icon, this.onTap});
   final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: onTap == null ? 0.35 : 1,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: 15,
+          height: 52,
+          child: Icon(icon, size: 20, color: Colors.white),
+        ),
+      ),
+    );
+  }
+}
+
+class _RadialTab extends StatelessWidget {
+  const _RadialTab({
+    required this.listing,
+    required this.rates,
+    required this.displayCurrency,
+    required this.onTap,
+  });
+
+  final Listing listing;
+  final Map<String, double>? rates;
+  final String? displayCurrency;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 20,
-        height: 20,
-        alignment: Alignment.center,
-        decoration: const BoxDecoration(
-          color: Colors.black54,
-          shape: BoxShape.circle,
+    final scheme = Theme.of(context).colorScheme;
+    final photo =
+        listing.photo ??
+        (listing.photos.isNotEmpty ? listing.photos.first : null);
+    final price = pinPriceLabel(
+      listing,
+      rates: rates,
+      displayCurrency: displayCurrency,
+    );
+    return Material(
+      color: scheme.surface,
+      borderRadius: BorderRadius.circular(7),
+      clipBehavior: Clip.antiAlias,
+      elevation: 6,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 76,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 76,
+                height: 46,
+                child: photo == null
+                    ? Icon(
+                        Icons.home_outlined,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: photo,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) =>
+                            ColoredBox(color: scheme.surfaceContainerHighest),
+                        errorWidget: (_, __, ___) => Icon(
+                          Icons.home_outlined,
+                          color: scheme.onSurfaceVariant.withValues(
+                            alpha: 0.45,
+                          ),
+                        ),
+                      ),
+              ),
+              SizedBox(
+                height: 18,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Center(
+                    child: Text(
+                      price,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        child: Icon(icon, size: 14, color: Colors.white),
       ),
     );
   }
