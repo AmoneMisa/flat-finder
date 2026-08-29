@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 
 def read(path):
@@ -67,7 +66,7 @@ text = replace_once(
 """,
     'effective known deal scope',
 )
-text = text.replace('trailing: _dealSegments(stats, s),', 'trailing: _dealRadios(stats, s),')
+text = text.replace('_dealSegments(stats, s)', '_dealRadios(stats, s)')
 old_method = """  Widget _dealSegments(SearchStatistics stats, AppStrings s) {
     final values =
         stats.dealTypes.where((e) => e.count > 0).map((e) => e.key).toList();
