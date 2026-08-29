@@ -82,6 +82,7 @@ function localizedMapZones(zones, locale, countryCode, cityName) {
     microdistrictMarkers: mapGroup(zones.microdistrictMarkers || [], 'microdistrict'),
     quartalMarkers: mapGroup(zones.quartalMarkers || [], 'mahalla'),
     areaZones: mapGroup(zones.areaZones || [], 'local_area'),
+    metroStations: mapGroup(zones.metroStations || [], 'metro'),
     cityZone: zones.cityZone
       ? {...zones.cityZone, label: geographyDisplayName(zones.cityZone.name, locale, 'city')}
       : null,
@@ -139,6 +140,12 @@ export function installCatalogRoutes(app) {
             location.microdistricts = zones.microdistrictMarkers.map((item) => item.name);
             location.quartals = zones.quartalMarkers.map((item) => item.name);
             location.areas = zones.areaZones.map((item) => item.name);
+            // Keep station choices in sync with the canonical map layer too;
+            // source-maintained lists may be incomplete for a city.
+            location.metro = [...new Set([
+              ...location.metro,
+              ...zones.metroStations.map((item) => item.name),
+            ])].sort((a, b) => a.localeCompare(b, 'uk'));
 
             if (locale) {
               location.districtLabels = labelMap(location.districts, locale, 'district', code, cityName);
