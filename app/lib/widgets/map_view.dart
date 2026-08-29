@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../models/district_zone.dart';
 import '../models/listing.dart';
 import '../services/api_service.dart';
+import '../state/app_state.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
 import '../utils/price_tone.dart';
@@ -16,6 +18,9 @@ import '../utils/price_tone.dart';
 /// ZONE_PALETTE) — kept only as a fallback for zones whose stored colour
 /// string fails to parse.
 const _fallbackZoneColor = Color(0xFFE0679A);
+const _metro200Color = Color(0xFF10B981);
+const _metro500Color = Color(0xFFD99A0B);
+const _metro1000Color = Color(0xFF8B5CF6);
 
 Color _parseHexColor(String hex) {
   final cleaned = hex.replaceFirst('#', '');
@@ -87,25 +92,30 @@ class _MapViewState extends State<MapView> {
   double _zoom = 6;
   String _lastFitSignature = '';
 
-  // Colour overlay layers, matching the site's map + its toolbar toggles.
+  // Canonical geography overlay layers.
   MapZones _zones = const MapZones();
   String? _selectedDistrictId;
-  // Defaults match the site's useShow*() refs in FlatMap.client.vue.
+  String? _selectedZoneId;
+  String? _activeZoneFocusId;
+
+  // Defaults mostly match Personal Site; metro is opt-in because its three
+  // proximity rings are visually dense.
   bool _showCity = true;
   bool _showDistricts = true;
   bool _showMicrodistricts = false;
   bool _showQuartals = false;
   bool _showAreas = true;
+  bool _showMetro = false;
 
   @override
   void initState() {
     super.initState();
     _zoom = widget.centerZoom;
-    _loadZones();
-    _scheduleFitToPoints();
+    _loadZones(focusCity: widget.city.isNotEmpty);
+    if (widget.city.isEmpty) _scheduleFitToPoints();
   }
 
-  Future<void> _loadZones() async {
+  Future<void> _loadZones({bool focusCity = false}) async {
     if (widget.country.isEmpty || widget.city.isEmpty) return;
     final zones = await _api.fetchMapZones(
       widget.country,
@@ -114,10 +124,13 @@ class _MapViewState extends State<MapView> {
     );
     if (!mounted) return;
     setState(() => _zones = zones);
-    // The web map frames the actual map feed first. The city centroid is
-    // only a fallback when no located result exists.
-    if (zones.cityZone != null && widget.centerZoom < 10 && _visible.isEmpty) {
-      _controller.move(LatLng(zones.cityZone!.lat, zones.cityZone!.lng), 11.5);
+
+    // A city typed/selected in filters is an explicit geographic scope, so it
+    // wins over automatic result fitting. Use the real city boundary when the
+    // catalog has it, otherwise its canonical center + accuracy radius.
+    if (focusCity && zones.cityZone != null && !_isFocused) {
+      _activeZoneFocusId = zones.cityZone!.id;
+      _focusZone(zones.cityZone!, maxZoom: 12);
     }
   }
 
@@ -127,48 +140,203 @@ class _MapViewState extends State<MapView> {
     if (old.center != widget.center || old.centerZoom != widget.centerZoom) {
       _controller.move(widget.center, widget.centerZoom);
     }
-    final geographyChanged = old.country != widget.country ||
-        old.city != widget.city ||
-        old.locale != widget.locale;
-    if (geographyChanged) {
+
+    final cityChanged = old.country != widget.country || old.city != widget.city;
+    final localeChanged = old.locale != widget.locale;
+    if (cityChanged) {
       _selectedDistrictId = null;
+      _selectedZoneId = null;
+      _activeZoneFocusId = null;
       _zones = const MapZones();
+      _loadZones(focusCity: widget.city.isNotEmpty);
+    } else if (localeChanged) {
       _loadZones();
     }
-    if (geographyChanged || !identical(old.listings, widget.listings)) {
+
+    if ((cityChanged || !identical(old.listings, widget.listings)) &&
+        widget.city.isEmpty &&
+        _activeZoneFocusId == null) {
       _scheduleFitToPoints();
     }
   }
 
-  /// A closed ring approximating a circle, for zones with no real boundary
-  /// polygon from the catalog (matches the site's Leaflet circle fallback).
-  List<LatLng> _circleRing(DistrictZone zone) {
-    const points = 48;
-    final latRad = zone.lat * math.pi / 180;
-    final dLat = zone.radiusM / 111320;
-    final dLng = zone.radiusM / (111320 * math.cos(latRad));
+  /// Closed ring with a real-world radius in metres. Used only when the geo
+  /// catalog has no boundary and for explicit metro walking-distance rings.
+  List<LatLng> _circleRingAt(double lat, double lng, double radiusM) {
+    const points = 64;
+    final latRad = lat * math.pi / 180;
+    final dLat = radiusM / 111320;
+    final cosLat = math.cos(latRad).abs().clamp(0.01, 1.0).toDouble();
+    final dLng = radiusM / (111320 * cosLat);
     return [
       for (var i = 0; i <= points; i++)
         LatLng(
-          zone.lat + dLat * math.sin(2 * math.pi * i / points),
-          zone.lng + dLng * math.cos(2 * math.pi * i / points),
+          lat + dLat * math.sin(2 * math.pi * i / points),
+          lng + dLng * math.cos(2 * math.pi * i / points),
         ),
     ];
   }
 
+  List<LatLng> _circleRing(DistrictZone zone, [double? radiusM]) =>
+      _circleRingAt(zone.lat, zone.lng, radiusM ?? zone.radiusM);
+
   List<List<LatLng>> _ringsFor(DistrictZone zone) =>
       zone.boundaryRings.isNotEmpty ? zone.boundaryRings : [_circleRing(zone)];
 
-  void _onDistrictTap(String id) {
-    setState(() => _selectedDistrictId = _selectedDistrictId == id ? null : id);
+  double _maxZoomForZone(String type) {
+    switch (type) {
+      case 'city':
+        return 12;
+      case 'district':
+        return 13.5;
+      case 'microdistrict':
+        return 15;
+      case 'mahalla':
+      case 'local_area':
+      case 'development_area':
+      case 'metro':
+        return 16;
+      default:
+        return 15;
+    }
   }
 
-  void _showZoneName(String name) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(name), duration: const Duration(seconds: 2)),
-      );
+  void _focusZone(DistrictZone zone, {double? maxZoom}) {
+    final points = <LatLng>[
+      for (final ring in _ringsFor(zone)) ...ring,
+    ];
+    final fallbackZoom = math
+        .min(maxZoom ?? _maxZoomForZone(zone.type), 19.0)
+        .toDouble();
+    try {
+      if (points.length >= 2) {
+        _controller.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(points),
+            padding: const EdgeInsets.all(34),
+            maxZoom: maxZoom ?? _maxZoomForZone(zone.type),
+          ),
+        );
+      } else {
+        _controller.move(LatLng(zone.lat, zone.lng), fallbackZoom);
+      }
+    } catch (_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        try {
+          _controller.move(LatLng(zone.lat, zone.lng), fallbackZoom);
+        } catch (_) {}
+      });
+    }
+  }
+
+  DistrictZone? _ancestorOfType(DistrictZone zone, String type) {
+    var current = zone;
+    for (var depth = 0; depth < 8; depth++) {
+      if (current.type == type) return current;
+      final parent = _zones.byId(current.parentId);
+      if (parent == null) return null;
+      current = parent;
+    }
+    return null;
+  }
+
+  Future<void> _applyZoneScope(DistrictZone zone) async {
+    final state = context.read<AppState>();
+    final current = state.filters;
+    final district = _ancestorOfType(zone, 'district');
+    final microdistrict = _ancestorOfType(zone, 'microdistrict');
+    final mahalla = _ancestorOfType(zone, 'mahalla');
+
+    final next = switch (zone.type) {
+      'district' => current.copyWith(
+          district: zone.name,
+          microdistrict: '',
+          quartal: '',
+          area: '',
+          metro: '',
+        ),
+      'microdistrict' => current.copyWith(
+          district: district?.name ?? current.district,
+          microdistrict: zone.name,
+          quartal: '',
+          area: '',
+          metro: '',
+        ),
+      'mahalla' => current.copyWith(
+          district: district?.name ?? current.district,
+          microdistrict: microdistrict?.name ?? current.microdistrict,
+          quartal: zone.name,
+          area: '',
+          metro: '',
+        ),
+      'local_area' => current.copyWith(
+          district: district?.name ?? current.district,
+          microdistrict: microdistrict?.name ?? current.microdistrict,
+          quartal: mahalla?.name ?? current.quartal,
+          area: zone.name,
+          metro: '',
+        ),
+      'development_area' => current.copyWith(
+          district: district?.name ?? current.district,
+          microdistrict: microdistrict?.name ?? current.microdistrict,
+          quartal: mahalla?.name ?? current.quartal,
+          area: zone.name,
+          metro: '',
+        ),
+      'metro' => current.copyWith(metro: zone.name),
+      _ => current,
+    };
+
+    if (identical(next, current)) return;
+    state.updateFilters(next);
+    await state.search();
+    if (!mounted) return;
+    await state.loadMapListings();
+  }
+
+  Future<void> _selectZone(DistrictZone zone) async {
+    final district = _ancestorOfType(zone, 'district');
+    setState(() {
+      _selectedZoneId = zone.id;
+      _selectedDistrictId = district?.id;
+      _activeZoneFocusId = zone.id;
+      _expandedGroupKey = null;
+    });
+    _focusZone(zone);
+    await _applyZoneScope(zone);
+  }
+
+  double _ringAreaScore(List<LatLng> ring) {
+    if (ring.isEmpty) return double.infinity;
+    var minLat = ring.first.latitude;
+    var maxLat = minLat;
+    var minLng = ring.first.longitude;
+    var maxLng = minLng;
+    for (final point in ring.skip(1)) {
+      minLat = math.min(minLat, point.latitude);
+      maxLat = math.max(maxLat, point.latitude);
+      minLng = math.min(minLng, point.longitude);
+      maxLng = math.max(maxLng, point.longitude);
+    }
+    return (maxLat - minLat).abs() * (maxLng - minLng).abs();
+  }
+
+  DistrictZone? _hitZone(LatLng point, Iterable<DistrictZone> zones) {
+    DistrictZone? best;
+    var bestArea = double.infinity;
+    for (final zone in zones) {
+      for (final ring in _ringsFor(zone)) {
+        if (!_pointInPolygon(point, ring)) continue;
+        final area = _ringAreaScore(ring);
+        if (area < bestArea) {
+          best = zone;
+          bestArea = area;
+        }
+        break;
+      }
+    }
+    return best;
   }
 
   /// Listings restricted to the drawn area (once it has at least 3 points).
@@ -205,9 +373,12 @@ class _MapViewState extends State<MapView> {
   }
 
   /// Matches Personal Site's fitToPoints(): frame the complete compact map
-  /// feed once and cap the initial zoom at 14.
+  /// feed once and cap the initial zoom at 14. Explicit city/zone scopes take
+  /// priority and suppress this auto-fit.
   void _fitToPoints() {
-    if (_isFocused) return;
+    if (_isFocused || widget.city.isNotEmpty || _activeZoneFocusId != null) {
+      return;
+    }
     final located =
         widget.listings.where((listing) => listing.hasLocation).toList();
     if (located.isEmpty) return;
@@ -310,9 +481,6 @@ class _MapViewState extends State<MapView> {
       final otherPoint = _worldPixel(other.point);
       final dx = _wrappedDx(point.dx, otherPoint.dx);
       final dy = (point.dy - otherPoint.dy).abs();
-      // Use a rotation-independent collision radius. The previous
-      // axis-aligned rectangle check could allow two wide pills that are
-      // diagonally close to overlap visually after map transforms.
       final ownRadius = math.sqrt(
         math.pow(_priceMarkerWidth / 2, 2) +
             math.pow(_priceMarkerHeight / 2, 2),
@@ -412,22 +580,57 @@ class _MapViewState extends State<MapView> {
       setState(() => _area.add(point));
       return;
     }
-    // Tapping a district selects it (dimming the rest); tapping empty map
-    // clears the selection — same behavior as the site's map.
-    if (_showDistricts) {
-      for (final zone in _zones.districtZones) {
-        for (final ring in _ringsFor(zone)) {
-          if (_pointInPolygon(point, ring)) {
-            _onDistrictTap(zone.id);
-            return;
-          }
-        }
-      }
+
+    // Hit-test narrow geographic scopes before broad districts. This prevents
+    // a district polygon from intercepting taps intended for a mahalla,
+    // microdistrict or local area inside it.
+    final candidates = <DistrictZone?>[
+      if (_showAreas) _hitZone(point, _zones.areaZones),
+      if (_showQuartals) _hitZone(point, _zones.quartalMarkers),
+      if (_showMicrodistricts) _hitZone(point, _zones.microdistrictMarkers),
+      if (_showDistricts) _hitZone(point, _zones.districtZones),
+    ];
+    for (final zone in candidates) {
+      if (zone == null) continue;
+      unawaited(_selectZone(zone));
+      return;
     }
-    if (_selectedDistrictId != null) setState(() => _selectedDistrictId = null);
   }
 
   void _clearArea() => setState(() => _area.clear());
+
+  Polygon _zonePolygon(
+    DistrictZone zone,
+    List<LatLng> ring, {
+    required double fillAlpha,
+    double borderWidth = 2,
+  }) {
+    final selected = zone.id == _selectedZoneId;
+    final districtDimmed = _selectedDistrictId != null &&
+        zone.type == 'district' &&
+        zone.id != _selectedDistrictId;
+    final base = _parseHexColor(zone.colorHex);
+    final color = districtDimmed ? _desaturate(base, 0.85) : base;
+    return Polygon(
+      points: ring,
+      borderStrokeWidth: selected ? borderWidth + 1 : borderWidth,
+      borderColor: color.withValues(
+        alpha: selected ? 1 : (districtDimmed ? 0.5 : 0.72),
+      ),
+      color: color.withValues(
+        alpha: selected ? math.min(fillAlpha + 0.13, 0.42) : fillAlpha,
+      ),
+    );
+  }
+
+  Polygon _metroRing(DistrictZone station, double radiusM, Color color) {
+    return Polygon(
+      points: _circleRing(station, radiusM),
+      borderStrokeWidth: 1.5,
+      borderColor: color.withValues(alpha: 0.78),
+      color: color.withValues(alpha: 0.075),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -435,6 +638,7 @@ class _MapViewState extends State<MapView> {
     final visible = _visible;
     final groups = _groupsFor(visible);
     final expandedGroup = _expandedGroup(groups);
+    final selectedZone = _zones.byId(_selectedZoneId);
     return Stack(
       children: [
         FlutterMap(
@@ -476,41 +680,53 @@ class _MapViewState extends State<MapView> {
                     ),
                 ],
               ),
-            if (_showAreas && _zones.areaZones.isNotEmpty)
-              PolygonLayer(
-                polygons: [
-                  for (final zone in _zones.areaZones)
-                    for (final ring in _ringsFor(zone))
-                      () {
-                        final color = _parseHexColor(zone.colorHex);
-                        return Polygon(
-                          points: ring,
-                          borderStrokeWidth: 2,
-                          borderColor: color.withValues(alpha: 0.6),
-                          color: color.withValues(alpha: 0.14),
-                        );
-                      }(),
-                ],
-              ),
             if (_showDistricts && _zones.districtZones.isNotEmpty)
               PolygonLayer(
                 polygons: [
                   for (final zone in _zones.districtZones)
                     for (final ring in _ringsFor(zone))
-                      () {
-                        final dimmed = _selectedDistrictId != null &&
-                            zone.id != _selectedDistrictId;
-                        final base = _parseHexColor(zone.colorHex);
-                        final color = dimmed ? _desaturate(base, 0.85) : base;
-                        return Polygon(
-                          points: ring,
-                          borderStrokeWidth: 2.5,
-                          borderColor: color.withValues(
-                            alpha: dimmed ? 0.5 : 0.9,
-                          ),
-                          color: color.withValues(alpha: dimmed ? 0.08 : 0.22),
-                        );
-                      }(),
+                      _zonePolygon(
+                        zone,
+                        ring,
+                        fillAlpha: 0.20,
+                        borderWidth: 2.5,
+                      ),
+                ],
+              ),
+            if (_showAreas && _zones.areaZones.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  for (final zone in _zones.areaZones)
+                    for (final ring in _ringsFor(zone))
+                      _zonePolygon(zone, ring, fillAlpha: 0.14),
+                ],
+              ),
+            if (_showMicrodistricts && _zones.microdistrictMarkers.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  for (final zone in _zones.microdistrictMarkers)
+                    for (final ring in _ringsFor(zone))
+                      _zonePolygon(zone, ring, fillAlpha: 0.12),
+                ],
+              ),
+            if (_showQuartals && _zones.quartalMarkers.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  for (final zone in _zones.quartalMarkers)
+                    for (final ring in _ringsFor(zone))
+                      _zonePolygon(zone, ring, fillAlpha: 0.15),
+                ],
+              ),
+            if (_showMetro && _zones.metroStations.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  // Largest first so the stronger inner zones stay visible.
+                  for (final station in _zones.metroStations)
+                    _metroRing(station, 1000, _metro1000Color),
+                  for (final station in _zones.metroStations)
+                    _metroRing(station, 500, _metro500Color),
+                  for (final station in _zones.metroStations)
+                    _metroRing(station, 200, _metro200Color),
                 ],
               ),
             if (_showDistricts && _zones.districtZones.isNotEmpty)
@@ -561,40 +777,61 @@ class _MapViewState extends State<MapView> {
                     ),
                 ],
               ),
-            if (_showMicrodistricts && _zones.microdistrictMarkers.isNotEmpty)
+            if (_showMetro && _zones.metroStations.isNotEmpty)
               MarkerLayer(
                 markers: [
-                  for (final zone in _zones.microdistrictMarkers)
+                  for (final station in _zones.metroStations)
                     Marker(
-                      point: LatLng(zone.lat, zone.lng),
-                      width: 14,
-                      height: 14,
+                      point: LatLng(station.lat, station.lng),
+                      width: 34,
+                      height: 34,
                       child: GestureDetector(
-                        onTap: () => _showZoneName(zone.label),
-                        child: _ZoneDot(
-                          colorHex: zone.colorHex,
-                          shape: BoxShape.circle,
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => unawaited(_selectZone(station)),
+                        child: _MetroStationMarker(
+                          selected: station.id == _selectedZoneId,
                         ),
                       ),
                     ),
                 ],
               ),
-            if (_showQuartals && _zones.quartalMarkers.isNotEmpty)
+            if (selectedZone != null && selectedZone.type != 'district')
               MarkerLayer(
                 markers: [
-                  for (final zone in _zones.quartalMarkers)
-                    Marker(
-                      point: LatLng(zone.lat, zone.lng),
-                      width: 14,
-                      height: 14,
-                      child: GestureDetector(
-                        onTap: () => _showZoneName(zone.label),
-                        child: _ZoneDot(
-                          colorHex: zone.colorHex,
-                          shape: BoxShape.rectangle,
+                  Marker(
+                    point: LatLng(selectedZone.lat, selectedZone.lng),
+                    width: 160,
+                    height: 26,
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(
+                              color: selectedZone.type == 'metro'
+                                  ? _metro200Color
+                                  : _parseHexColor(selectedZone.colorHex),
+                            ),
+                          ),
+                          child: Text(
+                            selectedZone.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                     ),
+                  ),
                 ],
               ),
             if (_area.length >= 3)
@@ -661,7 +898,6 @@ class _MapViewState extends State<MapView> {
             ),
           ],
         ),
-        // Draw controls.
         Positioned(
           top: 12,
           right: 12,
@@ -701,7 +937,6 @@ class _MapViewState extends State<MapView> {
             ],
           ),
         ),
-        // Hint while drawing, or a count once an area is applied.
         if (_drawing || _area.length >= 3)
           Positioned(
             top: 12,
@@ -720,15 +955,12 @@ class _MapViewState extends State<MapView> {
               ),
             ),
           ),
-        // District/microdistrict/quartal/area layer toggles — same toolbar
-        // as the site's map, each shown only when that layer has data. Kept
-        // near the top (below the draw hint) instead of hovering over the
-        // bottom of the map, which is easy to reach but easy to miss.
         if (_zones.cityZone?.boundaryRings.isNotEmpty == true ||
             _zones.districtZones.isNotEmpty ||
             _zones.microdistrictMarkers.isNotEmpty ||
             _zones.quartalMarkers.isNotEmpty ||
-            _zones.areaZones.isNotEmpty)
+            _zones.areaZones.isNotEmpty ||
+            _zones.metroStations.isNotEmpty)
           Positioned(
             left: 12,
             right: 68,
@@ -771,17 +1003,27 @@ class _MapViewState extends State<MapView> {
                       active: _showAreas,
                       onTap: () => setState(() => _showAreas = !_showAreas),
                     ),
+                  if (_zones.metroStations.isNotEmpty)
+                    _ZoneToggle(
+                      label: s.t('metro'),
+                      active: _showMetro,
+                      onTap: () => setState(() => _showMetro = !_showMetro),
+                    ),
                 ],
               ),
             ),
+          ),
+        if (_showMetro && _zones.metroStations.isNotEmpty)
+          Positioned(
+            left: 12,
+            bottom: 12,
+            child: const _MetroLegend(),
           ),
       ],
     );
   }
 }
 
-/// One toggle button in the layer toolbar (District/Microdistrict/Quartal/
-/// Area) — same active/inactive states as the site's `.flat-map__tool`.
 class _ZoneToggle extends StatelessWidget {
   const _ZoneToggle({
     required this.label,
@@ -821,24 +1063,81 @@ class _ZoneToggle extends StatelessWidget {
   }
 }
 
-/// A small circle/square dot marking a microdistrict or quartal (mahalla)
-/// centroid — matches the site's `flat-zone-marker_circle`/`_square` dots.
-class _ZoneDot extends StatelessWidget {
-  const _ZoneDot({required this.colorHex, required this.shape});
-  final String colorHex;
-  final BoxShape shape;
+class _MetroLegend extends StatelessWidget {
+  const _MetroLegend();
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
       decoration: BoxDecoration(
-        color: _parseHexColor(colorHex),
-        shape: shape,
-        borderRadius:
-            shape == BoxShape.rectangle ? BorderRadius.circular(3) : null,
-        border: Border.all(color: Colors.white, width: 1.5),
-        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 2)],
+        color: Colors.black.withValues(alpha: 0.68),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white24),
       ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _LegendItem(color: _metro200Color, label: '200 м'),
+          SizedBox(width: 8),
+          _LegendItem(color: _metro500Color, label: '500 м'),
+          SizedBox(width: 8),
+          _LegendItem(color: _metro1000Color, label: '1 км'),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  const _LegendItem({required this.color, required this.label});
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MetroStationMarker extends StatelessWidget {
+  const _MetroStationMarker({required this.selected});
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: selected
+            ? Theme.of(context).colorScheme.primary
+            : Colors.black.withValues(alpha: 0.78),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? Colors.white : _metro200Color,
+          width: selected ? 2.5 : 2,
+        ),
+        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
+      ),
+      child: const Icon(Icons.subway_outlined, size: 18, color: Colors.white),
     );
   }
 }
@@ -946,7 +1245,6 @@ class _FocusMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
-    // Focus is an outline only: it must never cover a standalone price label.
     return Center(
       child: Container(
         width: 50,

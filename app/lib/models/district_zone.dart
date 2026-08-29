@@ -1,24 +1,32 @@
 import 'package:latlong2/latlong.dart';
 
-/// One administrative district's map colour zone — mirrors whiteslove.me's
-/// `useDistrictZones.ts` district layer (same palette, same boundary data
-/// from `@whiteslove/geo-catalog`, served by the backend's
-/// `/api/district-zones` since Dart can't import that catalog directly).
+/// One canonical geographic map zone from `@whiteslove/geo-catalog`.
+///
+/// The backend keeps the catalog's identity, hierarchy and boundary intact so
+/// Flutter can render and select districts, microdistricts, mahallas, local
+/// areas and metro stations without inventing a parallel geography model.
 class DistrictZone {
   final String id;
+  final String? parentId;
+  final String type;
   final String name;
   final String label;
   final double lat;
   final double lng;
   final double radiusM;
   final String colorHex; // e.g. "#e0679a"
-  /// Real OSM boundary as one or more rings of [lat, lng] points, already
-  /// converted from GeoJSON's [lng, lat] order. Empty when the catalog only
-  /// has a centroid for this district (caller falls back to a circle).
+
+  /// Real OSM/catalog boundary as one or more rings of [lat, lng] points,
+  /// already converted from GeoJSON's [lng, lat] order. Empty when the catalog
+  /// only has a centroid; callers may use the catalog accuracy as a visual
+  /// fallback circle in that case. Metro proximity rings are deliberately UI
+  /// radii around the canonical station center, not canonical boundaries.
   final List<List<LatLng>> boundaryRings;
 
   const DistrictZone({
     required this.id,
+    required this.parentId,
+    required this.type,
     required this.name,
     required this.label,
     required this.lat,
@@ -36,8 +44,6 @@ class DistrictZone {
         .map((p) => LatLng((p[1] as num).toDouble(), (p[0] as num).toDouble()))
         .toList();
     if (type == 'Polygon' && coords is List) {
-      // First ring is the outer boundary; holes aren't rendered (Leaflet
-      // side doesn't special-case them for districts either).
       if (coords.isEmpty) return const [];
       return [ring((coords.first as List).cast<dynamic>())];
     }
@@ -53,6 +59,8 @@ class DistrictZone {
 
   factory DistrictZone.fromJson(Map<String, dynamic> j) => DistrictZone(
         id: j['id']?.toString() ?? '',
+        parentId: j['parentId']?.toString(),
+        type: j['type']?.toString() ?? '',
         name: j['name']?.toString() ?? '',
         label: j['label']?.toString() ?? j['name']?.toString() ?? '',
         lat: (j['lat'] as num).toDouble(),
@@ -64,14 +72,16 @@ class DistrictZone {
       );
 }
 
-/// All four of a city's map zone layers — mirrors the site's
-/// useDistrictZones.ts return shape and its four toolbar toggles
-/// (Districts/Microdistricts/Quartals/Areas).
+/// All canonical map-zone layers for one city. The legacy `*Markers` names are
+/// kept in the wire model for backward compatibility, but Flutter renders any
+/// available boundary as a real polygon and only falls back to a centroid
+/// circle when the geo catalog has no boundary for that entity.
 class MapZones {
   final List<DistrictZone> districtZones;
   final List<DistrictZone> microdistrictMarkers;
   final List<DistrictZone> quartalMarkers; // mahallas
   final List<DistrictZone> areaZones;
+  final List<DistrictZone> metroStations;
   final DistrictZone? cityZone;
 
   const MapZones({
@@ -79,8 +89,26 @@ class MapZones {
     this.microdistrictMarkers = const [],
     this.quartalMarkers = const [],
     this.areaZones = const [],
+    this.metroStations = const [],
     this.cityZone,
   });
+
+  Iterable<DistrictZone> get allZones sync* {
+    if (cityZone != null) yield cityZone!;
+    yield* districtZones;
+    yield* microdistrictMarkers;
+    yield* quartalMarkers;
+    yield* areaZones;
+    yield* metroStations;
+  }
+
+  DistrictZone? byId(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final zone in allZones) {
+      if (zone.id == id) return zone;
+    }
+    return null;
+  }
 
   factory MapZones.fromJson(Map<String, dynamic> j) {
     List<DistrictZone> list(String key) => ((j[key] as List?) ?? const [])
@@ -91,6 +119,7 @@ class MapZones {
       microdistrictMarkers: list('microdistrictMarkers'),
       quartalMarkers: list('quartalMarkers'),
       areaZones: list('areaZones'),
+      metroStations: list('metroStations'),
       cityZone: j['cityZone'] is Map
           ? DistrictZone.fromJson(
               Map<String, dynamic>.from(j['cityZone'] as Map),
