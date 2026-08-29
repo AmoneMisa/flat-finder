@@ -58,17 +58,18 @@ class DistrictZone {
   }
 
   factory DistrictZone.fromJson(Map<String, dynamic> j) => DistrictZone(
-    id: j['id']?.toString() ?? '',
-    parentId: j['parentId']?.toString(),
-    type: j['type']?.toString() ?? '',
-    name: j['name']?.toString() ?? '',
-    label: j['label']?.toString() ?? j['name']?.toString() ?? '',
-    lat: (j['lat'] as num).toDouble(),
-    lng: (j['lng'] as num).toDouble(),
-    radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
-    colorHex: j['color']?.toString() ?? '#e0679a',
-    boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
-  );
+        id: j['id']?.toString() ?? '',
+        parentId: j['parentId']?.toString(),
+        type: j['type']?.toString() ?? '',
+        name: j['name']?.toString() ?? '',
+        label: j['label']?.toString() ?? j['name']?.toString() ?? '',
+        lat: (j['lat'] as num).toDouble(),
+        lng: (j['lng'] as num).toDouble(),
+        radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
+        colorHex: j['color']?.toString() ?? '#e0679a',
+        boundaryRings:
+            _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
+      );
 }
 
 /// All canonical map-zone layers for one city. The legacy `*Markers` names are

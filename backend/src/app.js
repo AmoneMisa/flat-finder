@@ -10,6 +10,7 @@ import {installListingItemRoutes} from './listing-item-routes.js';
 import {installCatalogRoutes} from './catalog-routes.js';
 import {installMediaRoutes} from './media-routes.js';
 import {checkRate} from './request-rate-limit.js';
+import {registerMobileSubscriptionRoutes} from './mobile-subscriptions.js';
 
 export function createApp() {
   const app = express();
@@ -40,6 +41,7 @@ export function createApp() {
   installListingItemRoutes(app);
   installCatalogRoutes(app);
   installMediaRoutes(app);
+  registerMobileSubscriptionRoutes(app);
 
   return app;
 }

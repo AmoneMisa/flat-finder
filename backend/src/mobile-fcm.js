@@ -89,13 +89,7 @@ export async function sendMobilePush({token, title, body, data = {}}) {
           token,
           notification: {title, body},
           data: payloadData,
-          android: {
-            priority: 'high',
-            notification: {
-              channel_id: 'new_listings',
-              click_action: 'FLUTTER_NOTIFICATION_CLICK',
-            },
-          },
+          android: {priority: 'high'},
         },
       }),
       signal: AbortSignal.timeout(15_000),

@@ -275,7 +275,7 @@ class ListingCard extends StatelessWidget {
             s: s,
             compact: compact,
           ),
-          SizedBox(height: compact ? 2 : 6),
+          SizedBox(height: compact ? 0 : 3),
           Text(
             listing.title,
             maxLines: 1,
@@ -575,6 +575,8 @@ class _GoodPriceBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final tint = Color.lerp(BrandColors.toneGreen, Colors.white, 0.25)!;
     return Container(
+      alignment: Alignment.center,
+      constraints: const BoxConstraints(minHeight: 22),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: BrandColors.toneGreen.withValues(alpha: 0.16),
@@ -593,6 +595,7 @@ class _GoodPriceBadge extends StatelessWidget {
             style: TextStyle(
               color: tint,
               fontSize: 10,
+              height: 1,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -608,6 +611,8 @@ class _WarningBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
+        alignment: Alignment.center,
+        constraints: const BoxConstraints(minHeight: 22),
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
           color: BrandColors.toneOrange.withValues(alpha: .18),
@@ -629,6 +634,7 @@ class _WarningBadge extends StatelessWidget {
               style: const TextStyle(
                 color: BrandColors.toneOrange,
                 fontSize: 10,
+                height: 1,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -798,6 +804,7 @@ class _DealBadge extends StatelessWidget {
     if (label.isEmpty) return const SizedBox.shrink();
     final color = _dealToneColors[tone]!;
     return Container(
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFF0D1128),
@@ -812,6 +819,7 @@ class _DealBadge extends StatelessWidget {
         style: TextStyle(
           color: color,
           fontSize: 11,
+          height: 1,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -852,6 +860,7 @@ class _TagChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
+      alignment: Alignment.center,
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 5 : 7,
         vertical: compact ? 3 : 4,
@@ -867,6 +876,7 @@ class _TagChip extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: compact ? 8.5 : 10.5,
+          height: 1,
           fontWeight: FontWeight.w600,
           color: scheme.onPrimaryContainer,
         ),

@@ -263,7 +263,8 @@ class AppStrings {
       'badgeMen': 'Men only',
       'verifyListing': 'Verify listing',
       'potentiallyUnsafe': 'Potentially unsafe',
-      'potentiallyUnsafeHint': 'Unusually low-price room share seeking one woman. Verify the landlord and terms before meeting or paying.',
+      'potentiallyUnsafeHint':
+          'Unusually low-price room share seeking one woman. Verify the landlord and terms before meeting or paying.',
       'language': 'Language',
       'displayCurrency': 'Display currency',
       'nativeCurrency': 'Native (as listed)',
@@ -317,7 +318,8 @@ class AppStrings {
       'shoppingMalls': 'Malls',
       'universities': 'Universities',
       'customSources': 'Custom sources',
-      'customSourcesHint': 'Add a Telegram channel (t.me/…), a subreddit (reddit.com/r/…), a listing page, or an RSS feed. Sites needing login (Facebook, Instagram, Airbnb, Booking) can\'t be read.',
+      'customSourcesHint':
+          'Add a Telegram channel (t.me/…), a subreddit (reddit.com/r/…), a listing page, or an RSS feed. Sites needing login (Facebook, Instagram, Airbnb, Booking) can\'t be read.',
       'addSource': 'Add source',
       'validateAdd': 'Check & add',
       'remove': 'Remove',
@@ -408,6 +410,23 @@ class AppStrings {
       'deletePreset': 'Delete',
       'sharePreset': 'Share',
       'presetUpdated': 'Preset updated',
+      'presetHousingTitle': 'Housing by filter presets',
+      'noPresets': 'No filter presets yet. Save one from Filters first.',
+      'allListingsPreset': 'All listings',
+      'pushNotifications': 'New-listing notifications',
+      'pushNotificationsHint':
+          'Notify this phone when enabled presets get new listings.',
+      'pushSetupRequired':
+          'Push transport is not configured in this app build yet.',
+      'pushEnableFailed':
+          'Could not enable notifications. Check notification permission and connection.',
+      'enablePresetPush': 'Enable notifications',
+      'disablePresetPush': 'Disable notifications',
+      'enablePresetPushPromptTitle': 'Notify about new listings?',
+      'enablePresetPushPromptBody': 'Turn on notifications for “{name}”?',
+      'notNow': 'Not now',
+      'collapseFilters': 'Collapse filters',
+      'expandFilters': 'Expand filters',
       'rename': 'Rename',
       'tag_furnished': 'Furnished',
       'tag_unfurnished': 'Unfurnished',
@@ -662,7 +681,8 @@ class AppStrings {
       'badgeMen': 'Только мужчины',
       'verifyListing': 'Проверьте объявление',
       'potentiallyUnsafe': 'Потенциально опасное',
-      'potentiallyUnsafeHint': 'Подселение по необычно низкой цене с поиском одной женщины. Проверьте арендодателя и условия до встречи или оплаты.',
+      'potentiallyUnsafeHint':
+          'Подселение по необычно низкой цене с поиском одной женщины. Проверьте арендодателя и условия до встречи или оплаты.',
       'language': 'Язык',
       'displayCurrency': 'Валюта отображения',
       'nativeCurrency': 'Как в объявлении',
@@ -716,7 +736,8 @@ class AppStrings {
       'shoppingMalls': 'ТЦ',
       'universities': 'Университеты',
       'customSources': 'Свои источники',
-      'customSourcesHint': 'Добавьте Telegram-канал (t.me/…), сабреддит (reddit.com/r/…), страницу объявления или RSS-ленту. Сайты со входом (Facebook, Instagram, Airbnb, Booking) не поддерживаются.',
+      'customSourcesHint':
+          'Добавьте Telegram-канал (t.me/…), сабреддит (reddit.com/r/…), страницу объявления или RSS-ленту. Сайты со входом (Facebook, Instagram, Airbnb, Booking) не поддерживаются.',
       'addSource': 'Добавить источник',
       'validateAdd': 'Проверить и добавить',
       'remove': 'Удалить',
@@ -777,7 +798,8 @@ class AppStrings {
       'deposit': 'Залог',
       'commission': 'Комиссия',
       'favorites': 'Избранное',
-      'noFavorites': 'Пока нет сохранённых объявлений. Нажмите на сердечко, чтобы сохранить.',
+      'noFavorites':
+          'Пока нет сохранённых объявлений. Нажмите на сердечко, чтобы сохранить.',
       'otherCity': 'Другое',
       'history': 'Недавно просмотренные',
       'noHistory': 'Пока нет недавно просмотренных объявлений.',
@@ -806,6 +828,24 @@ class AppStrings {
       'deletePreset': 'Удалить',
       'sharePreset': 'Поделиться',
       'presetUpdated': 'Пресет обновлён',
+      'presetHousingTitle': 'Жильё по пресету фильтров',
+      'noPresets':
+          'Пока нет пресетов фильтров. Сначала сохраните пресет в фильтрах.',
+      'allListingsPreset': 'Все объявления',
+      'pushNotifications': 'Уведомления о новых квартирах',
+      'pushNotificationsHint':
+          'Присылать на этот телефон новые объявления по включённым пресетам.',
+      'pushSetupRequired': 'Push ещё не настроен для этой сборки приложения.',
+      'pushEnableFailed':
+          'Не удалось включить уведомления. Проверьте разрешение и соединение.',
+      'enablePresetPush': 'Включить уведомления',
+      'disablePresetPush': 'Выключить уведомления',
+      'enablePresetPushPromptTitle': 'Уведомлять о новых квартирах?',
+      'enablePresetPushPromptBody':
+          'Включить уведомления для пресета «{name}»?',
+      'notNow': 'Не сейчас',
+      'collapseFilters': 'Свернуть фильтры',
+      'expandFilters': 'Развернуть фильтры',
       'rename': 'Переименовать',
       'tag_furnished': 'С мебелью',
       'tag_unfurnished': 'Без мебели',

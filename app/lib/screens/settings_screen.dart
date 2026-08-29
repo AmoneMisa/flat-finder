@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
 import '../state/settings.dart';
+import '../state/presets.dart';
+import 'presets_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -10,6 +12,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsState>();
+    final presets = context.watch<PresetsState>();
     return Scaffold(
       appBar: AppBar(title: Text(settings.t('settings'))),
       body: ListView(
@@ -32,6 +35,34 @@ class SettingsScreen extends StatelessWidget {
               groupValue: settings.lang,
               title: Text(AppStrings.languageNames[code] ?? code),
               onChanged: (v) => settings.setLang(v!),
+            ),
+          ),
+          const Divider(),
+          _sectionTitle(context, settings.t('pushNotifications')),
+          SwitchListTile(
+            secondary: const Icon(Icons.notifications_outlined),
+            title: Text(settings.t('pushNotifications')),
+            subtitle: Text(
+              presets.pushClientConfigured
+                  ? settings.t('pushNotificationsHint')
+                  : settings.t('pushSetupRequired'),
+            ),
+            value: presets.pushMasterEnabled,
+            onChanged: (value) async {
+              final ok = await presets.setPushMasterEnabled(value);
+              if (!ok && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(settings.t('pushEnableFailed'))),
+                );
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.playlist_add_check_circle_outlined),
+            title: Text(settings.t('presetHousingTitle')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PresetsScreen()),
             ),
           ),
           const Divider(),

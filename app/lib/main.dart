@@ -43,7 +43,10 @@ class FlatFinderApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => FavoritesState()..load()),
         ChangeNotifierProvider(create: (_) => HistoryState()..load()),
         ChangeNotifierProvider(create: (_) => HiddenState()..load()),
-        ChangeNotifierProvider(create: (_) => PresetsState()..load()),
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (_) => PresetsState(ApiService())..load(),
+        ),
       ],
       child: Consumer<SettingsState>(
         builder: (context, settings, _) => MaterialApp(

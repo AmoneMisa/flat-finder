@@ -30,13 +30,13 @@ class FilterPreset {
     Filters? filters,
     bool? enabled,
     bool? notificationsEnabled,
-  }) => FilterPreset(
+  }) =>
+      FilterPreset(
         id: id,
         name: name ?? this.name,
         filters: filters ?? this.filters,
         enabled: enabled ?? this.enabled,
-        notificationsEnabled:
-            notificationsEnabled ?? this.notificationsEnabled,
+        notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       );
 
   Map<String, dynamic> toJson() => {
@@ -225,9 +225,8 @@ class PresetsState extends ChangeNotifier {
         await prefs.setString(_kDeviceId, deviceId);
       }
 
-      final active = pushMasterEnabled
-          ? _activePushPresets
-          : const <FilterPreset>[];
+      final active =
+          pushMasterEnabled ? _activePushPresets : const <FilterPreset>[];
       String token = '';
       if (active.isNotEmpty) {
         if (!_push.configured) {
@@ -248,7 +247,7 @@ class PresetsState extends ChangeNotifier {
         enabled: pushMasterEnabled,
         platform: defaultTargetPlatform.name,
         language: ui.PlatformDispatcher.instance.locale.languageCode,
-        presets: active,
+        presets: active.map((p) => p.toJson()).toList(),
       );
       return true;
     } catch (e) {
