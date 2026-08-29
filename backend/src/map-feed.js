@@ -1,4 +1,5 @@
 import { searchPostgresListings } from './postgres-search.js';
+import { attachMarketComparisons } from './market-comparison.js';
 
 const MAP_PAGE_SIZE = 60;
 const MAP_MAX_POINTS = Math.max(60, Math.min(Number(process.env.MAP_FEED_MAX_POINTS) || 3000, 10000));
@@ -88,9 +89,18 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
     }
   } while (cursor);
 
+  let enrichedPoints = points;
+  if (points.length && rates) {
+    try {
+      enrichedPoints = await attachMarketComparisons(points, rates);
+    } catch (err) {
+      console.warn('[map-feed] market comparison failed:', err?.message ?? err);
+    }
+  }
+
   return {
     count,
-    points,
+    points: enrichedPoints,
     truncated,
     pages,
     maxPoints: MAP_MAX_POINTS,

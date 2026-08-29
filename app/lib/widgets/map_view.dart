@@ -332,9 +332,12 @@ class _MapViewState extends State<MapView> {
         final targetZoom = math.min(_zoom + 1.0, _clusterZoomMax);
         setState(() => _expandedGroupKey = null);
         _controller.move(group.point, targetZoom);
+      } else {
+        _controller.move(group.point, _zoom);
       }
       return;
     }
+    _controller.move(group.point, _zoom);
     setState(() => _expandedGroupKey = group.key);
   }
 

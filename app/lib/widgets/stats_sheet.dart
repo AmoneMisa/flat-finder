@@ -47,6 +47,7 @@ class _StatsSheetState extends State<StatsSheet> {
         'longRent' => s.t('longTerm'),
         'shortRent' => s.t('shortTerm'),
         'roomRent' => s.t('roomOnly'),
+        'unknown' => s.t('notSpecified'),
         _ => key,
       };
 
@@ -129,13 +130,25 @@ class _StatsSheetState extends State<StatsSheet> {
     final cutoff = DateTime.now().subtract(Duration(days: _activityDays));
     final activity =
         stats.activity.where((row) => row.date.isAfter(cutoff)).toList();
-    final scopedGeo = stats.geographiesByDeal[_dealScope]?[_geoDimension];
+    const knownDealScopes = {'sale', 'longRent', 'shortRent', 'roomRent'};
+    final dealScopes = stats.dealTypes
+        .where((row) => row.count > 0 && knownDealScopes.contains(row.key))
+        .map((row) => row.key)
+        .toList();
+    final effectiveDealScope = dealScopes.contains(_dealScope)
+        ? _dealScope
+        : (dealScopes.isNotEmpty ? dealScopes.first : null);
+    final scopedGeo = effectiveDealScope == null
+        ? null
+        : stats.geographiesByDeal[effectiveDealScope]?[_geoDimension];
     final geography = (scopedGeo?.isNotEmpty == true
             ? scopedGeo!
             : stats.geographies[_geoDimension] ?? const <GeoStat>[])
         .take(8)
         .toList();
-    final bands = stats.priceBandsByDeal[_dealScope] ?? const <PriceBandStat>[];
+    final bands = effectiveDealScope == null
+        ? const <PriceBandStat>[]
+        : stats.priceBandsByDeal[effectiveDealScope] ?? const <PriceBandStat>[];
 
     return ListView(
       controller: scroll,
@@ -188,7 +201,7 @@ class _StatsSheetState extends State<StatsSheet> {
         if (bands.isNotEmpty)
           _card(
             s.t('statsPriceBands'),
-            trailing: _dealSegments(stats, s),
+            trailing: _dealRadios(stats, s),
             child: _BarList([
               for (final key in const [
                 'green',
@@ -212,7 +225,7 @@ class _StatsSheetState extends State<StatsSheet> {
           trailing: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _dealSegments(stats, s),
+              _dealRadios(stats, s),
               const SizedBox(height: 6),
               _segments<String>(
                 const ['country', 'city', 'district', 'microdistrict', 'metro'],
@@ -314,16 +327,44 @@ class _StatsSheetState extends State<StatsSheet> {
         ],
       );
 
-  Widget _dealSegments(SearchStatistics stats, AppStrings s) {
-    final values =
-        stats.dealTypes.where((e) => e.count > 0).map((e) => e.key).toList();
+  Widget _dealRadios(SearchStatistics stats, AppStrings s) {
+    const known = {'sale', 'longRent', 'shortRent', 'roomRent'};
+    final values = stats.dealTypes
+        .where((e) => e.count > 0 && known.contains(e.key))
+        .map((e) => e.key)
+        .toList();
     if (values.isEmpty) return const SizedBox.shrink();
     final selected = values.contains(_dealScope) ? _dealScope : values.first;
-    return _segments<String>(
-      values,
-      selected,
-      (v) => _dealLabel(s, v),
-      (v) => setState(() => _dealScope = v),
+    final scheme = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 10,
+      runSpacing: 6,
+      children: [
+        for (final value in values)
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(() => _dealScope = value),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    selected == value
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: selected == value
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(_dealLabel(s, value), textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 
