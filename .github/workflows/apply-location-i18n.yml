@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/apply-location-i18n.yml
       - .github/scripts/apply-location-i18n.py
+      - .github/scripts/apply-mobile-polish.py
 
 permissions:
   contents: write
@@ -19,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply patch
+      - name: Apply patches
         shell: bash
         run: |
           python3 - <<'PY'
@@ -34,6 +35,7 @@ jobs:
           path.write_text(text)
           PY
           python3 .github/scripts/apply-location-i18n.py
+          python3 .github/scripts/apply-mobile-polish.py
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -69,10 +71,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]]"
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/scripts/apply-location-i18n.py .github/workflows/apply-location-i18n.yml
+          git rm .github/scripts/apply-location-i18n.py .github/scripts/apply-mobile-polish.py .github/workflows/apply-location-i18n.yml
           git add app backend
           git diff --cached --check
-          git commit -m "fix(app): localize geography from parsing lexicon and compact header"
+          git commit -m "fix(app): localize geography and tighten mobile UI"
           git push origin master
