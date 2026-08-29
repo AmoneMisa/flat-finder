@@ -1,0 +1,62 @@
+name: Apply detail and map popup polish
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - .github/scripts/apply-detail-map-polish.py
+      - .github/workflows/apply-detail-map-polish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python3 .github/scripts/apply-detail-map-polish.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Format and verify Flutter
+        working-directory: app
+        run: |
+          dart format lib
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Verify backend
+        run: |
+          npm ci --prefix backend --no-audit --no-fund
+          npm test --prefix backend
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/scripts/apply-detail-map-polish.py .github/workflows/apply-detail-map-polish.yml
+          git add app backend
+          git diff --cached --check
+          git commit -m "fix(app): polish detail header, contacts and map preview"
+          git push origin master
