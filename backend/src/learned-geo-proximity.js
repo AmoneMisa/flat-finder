@@ -1,7 +1,6 @@
 // nearestAddressToMetro/nearestMetroToAddress ship in @whiteslove/geo-catalog
-// from the claude/poi-lexicon-update-00zhrs branch onward; bump the
-// package.json range once that branch merges and CI auto-publishes past 0.4.0.
-// Imported as a namespace (not named imports) so an older installed version
+// from 0.5.0 onward (package.json is pinned there or newer). Imported as a
+// namespace (not named imports) so an unexpectedly older installed version
 // missing those two exports fails at call time with a clear message instead
 // of a hard SyntaxError at module load that would take down the whole process.
 import * as geoCatalog from '@whiteslove/geo-catalog';
@@ -13,8 +12,8 @@ function requireLibFn(name) {
   const fn = geoCatalog[name];
   if (typeof fn !== 'function') {
     throw new Error(
-      `The installed @whiteslove/geo-catalog does not export ${name} yet — ` +
-      'bump the dependency once the geo-catalog resolver branch merges and publishes.',
+      `The installed @whiteslove/geo-catalog does not export ${name} — ` +
+      'bump the @whiteslove/geo-catalog dependency to >=0.5.0.',
     );
   }
   return fn;

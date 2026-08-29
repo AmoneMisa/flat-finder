@@ -5,14 +5,13 @@ import * as geoCatalog from '@whiteslove/geo-catalog';
 import { pool } from '../src/db.js';
 import { nearestAddressToMetro, nearestMetroToAddress, loadLearnedAddressesNear } from '../src/learned-geo-proximity.js';
 
-// nearestAddressToMetro/nearestMetroToAddress only exist in @whiteslove/geo-catalog
-// from the claude/poi-lexicon-update-00zhrs branch onward. Until that branch
-// merges and CI publishes past the currently-pinned range, the installed
-// package won't have them — skip rather than hard-fail so this doesn't block
-// unrelated CI runs on a pending cross-repo dependency.
+// nearestAddressToMetro/nearestMetroToAddress ship in @whiteslove/geo-catalog
+// from 0.5.0 onward. Guard rather than hard-assume, so an environment that
+// somehow installs an older version skips these two instead of crashing the
+// whole test run on a cross-repo dependency mismatch.
 const LIB_RESOLVER_AVAILABLE = typeof geoCatalog.nearestAddressToMetro === 'function'
   && typeof geoCatalog.nearestMetroToAddress === 'function';
-const skip = LIB_RESOLVER_AVAILABLE ? false : 'requires @whiteslove/geo-catalog with nearestAddressToMetro/nearestMetroToAddress (pending branch merge + publish)';
+const skip = LIB_RESOLVER_AVAILABLE ? false : 'requires @whiteslove/geo-catalog@>=0.5.0 (nearestAddressToMetro/nearestMetroToAddress)';
 
 function stubQuery(rows) {
   const original = pool.query;
