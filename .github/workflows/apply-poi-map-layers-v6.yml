@@ -1,0 +1,526 @@
+name: Apply canonical POI consumer patch v6
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patch
+        shell: bash
+        run: |
+          cat > /tmp/apply_poi.py <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              found = text.count(old)
+              if found != count:
+                  raise SystemExit(f"{path}: expected {count}, found {found}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, count))
+
+          model = Path("app/lib/models/district_zone.dart").read_text()
+          if "final List<DistrictZone> parks;" in model:
+              print("POI consumer patch already present; validation only.")
+              raise SystemExit(0)
+
+          replace(
+              "backend/src/district-zones.js",
+              """      metroStations: [],
+                cityZone: null,""",
+              """      metroStations: [],
+                parks: [],
+                shoppingMalls: [],
+                universities: [],
+                cityZone: null,""",
+          )
+
+          replace(
+              "backend/src/district-zones.js",
+              """  const cityZone = cityEntity ? zoneFromEntity(cityEntity, 0) : null;""",
+              """  // Canonical POI identity, coordinates, hierarchy and boundaries remain
+            // geo-catalog data. Flat Finder owns only their product presentation.
+            const parks = descendantsOf(cityId, country, 'poi.park')
+              .map((entity, index) => zoneFromEntity(entity, index));
+            const shoppingMalls = descendantsOf(cityId, country, 'poi.shopping_mall')
+              .map((entity, index) => zoneFromEntity(entity, index));
+            const universities = descendantsOf(cityId, country, 'poi.university')
+              .map((entity, index) => zoneFromEntity(entity, index));
+
+            const cityZone = cityEntity ? zoneFromEntity(cityEntity, 0) : null;""",
+          )
+
+          replace(
+              "backend/src/district-zones.js",
+              """    areaZones,
+              metroStations,
+              cityZone,""",
+              """    areaZones,
+              metroStations,
+              parks,
+              shoppingMalls,
+              universities,
+              cityZone,""",
+          )
+
+          replace(
+              "backend/src/catalog-routes.js",
+              """  const mapGroup = (items, kind) => items.map((zone) => ({
+              ...zone,
+              label: lexiconLocationLabel(zone.name, locale, kind, countryCode, cityName),
+            }));
+            return {""",
+              """  const mapGroup = (items, kind) => items.map((zone) => ({
+              ...zone,
+              label: lexiconLocationLabel(zone.name, locale, kind, countryCode, cityName),
+            }));
+            const mapPoiGroup = (items) => items.map((zone) => ({
+              ...zone,
+              label: geographyDisplayName(zone.name, locale, 'poi') || zone.name,
+            }));
+            return {""",
+          )
+
+          replace(
+              "backend/src/catalog-routes.js",
+              """    areaZones: mapGroup(zones.areaZones || [], 'local_area'),
+              metroStations: mapGroup(zones.metroStations || [], 'metro'),
+              cityZone:""",
+              """    areaZones: mapGroup(zones.areaZones || [], 'local_area'),
+              metroStations: mapGroup(zones.metroStations || [], 'metro'),
+              parks: mapPoiGroup(zones.parks || []),
+              shoppingMalls: mapPoiGroup(zones.shoppingMalls || []),
+              universities: mapPoiGroup(zones.universities || []),
+              cityZone:""",
+          )
+
+          replace(
+              "backend/test/map-zones-contract.test.js",
+              """  assert.ok(zones.metroStations.every((zone) => Number.isFinite(zone.lat) && Number.isFinite(zone.lng)));""",
+              """  assert.ok(zones.metroStations.every((zone) => Number.isFinite(zone.lat) && Number.isFinite(zone.lng)));
+            assert.ok(Array.isArray(zones.parks));
+            assert.ok(Array.isArray(zones.shoppingMalls));
+            assert.ok(Array.isArray(zones.universities));
+            assert.ok(zones.parks.every((zone) => zone.type === 'poi.park'));
+            assert.ok(zones.shoppingMalls.every((zone) => zone.type === 'poi.shopping_mall'));
+            assert.ok(zones.universities.every((zone) => zone.type === 'poi.university'));""",
+          )
+
+          replace(
+              "backend/test/map-zones-contract.test.js",
+              """    areaZones: [],
+              metroStations: [],
+              cityZone: null,""",
+              """    areaZones: [],
+              metroStations: [],
+              parks: [],
+              shoppingMalls: [],
+              universities: [],
+              cityZone: null,""",
+          )
+
+          replace(
+              "app/lib/models/district_zone.dart",
+              """  final List<DistrictZone> areaZones;
+            final List<DistrictZone> metroStations;
+            final DistrictZone? cityZone;""",
+              """  final List<DistrictZone> areaZones;
+            final List<DistrictZone> metroStations;
+            final List<DistrictZone> parks;
+            final List<DistrictZone> shoppingMalls;
+            final List<DistrictZone> universities;
+            final DistrictZone? cityZone;""",
+          )
+
+          replace(
+              "app/lib/models/district_zone.dart",
+              """    this.areaZones = const [],
+              this.metroStations = const [],
+              this.cityZone,""",
+              """    this.areaZones = const [],
+              this.metroStations = const [],
+              this.parks = const [],
+              this.shoppingMalls = const [],
+              this.universities = const [],
+              this.cityZone,""",
+          )
+
+          replace(
+              "app/lib/models/district_zone.dart",
+              """    yield* areaZones;
+              yield* metroStations;
+            }""",
+              """    yield* areaZones;
+              yield* metroStations;
+              yield* parks;
+              yield* shoppingMalls;
+              yield* universities;
+            }""",
+          )
+
+          replace(
+              "app/lib/models/district_zone.dart",
+              """      areaZones: list('areaZones'),
+                metroStations: list('metroStations'),
+                cityZone:""",
+              """      areaZones: list('areaZones'),
+                metroStations: list('metroStations'),
+                parks: list('parks'),
+                shoppingMalls: list('shoppingMalls'),
+                universities: list('universities'),
+                cityZone:""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """  bool _showAreas = true;
+            bool _showMetro = false;""",
+              """  bool _showAreas = true;
+            bool _showMetro = false;
+            bool _showParks = false;
+            bool _showShoppingMalls = false;
+            bool _showUniversities = false;""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """      case 'development_area':
+                case 'metro':
+                  return 16;""",
+              """      case 'development_area':
+                case 'metro':
+                case 'poi.park':
+                case 'poi.shopping_mall':
+                case 'poi.university':
+                  return 16;""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """    final candidates = <DistrictZone?>[
+                if (_showAreas) _hitZone(point, _zones.areaZones),""",
+              """    final candidates = <DistrictZone?>[
+                if (_showParks || _showShoppingMalls || _showUniversities)
+                  _hitZone(point, <DistrictZone>[
+                    if (_showParks) ..._zones.parks,
+                    if (_showShoppingMalls) ..._zones.shoppingMalls,
+                    if (_showUniversities) ..._zones.universities,
+                  ]),
+                if (_showAreas) _hitZone(point, _zones.areaZones),""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """  Polygon _metroRing(DistrictZone station, double radiusM, Color color) {
+              return Polygon(
+                points: _circleRing(station, radiusM),""",
+              """  Polygon _proximityRing(DistrictZone place, double radiusM, Color color) {
+              return Polygon(
+                points: _circleRing(place, radiusM),""",
+          )
+
+          p = Path("app/lib/widgets/map_view.dart")
+          p.write_text(p.read_text().replace("_metroRing(station,", "_proximityRing(station,"))
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """  @override
+            Widget build(BuildContext context) {
+              final s = context.watch<SettingsState>().s;
+              final visible = _visible;""",
+              """  List<Marker> _poiMarkers(List<DistrictZone> pois, IconData icon) => [
+                  for (final poi in pois)
+                    Marker(
+                      point: LatLng(poi.lat, poi.lng),
+                      width: 34,
+                      height: 34,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => unawaited(_selectZone(poi)),
+                        child: _PoiMarker(
+                          icon: icon,
+                          color: _parseHexColor(poi.colorHex),
+                          selected: poi.id == _selectedZoneId,
+                        ),
+                      ),
+                    ),
+                ];
+
+            @override
+            Widget build(BuildContext context) {
+              final s = context.watch<SettingsState>().s;
+              final visible = _visible;""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """            if (_showDistricts && _zones.districtZones.isNotEmpty)
+                MarkerLayer(""",
+              """            if (_showParks && _zones.parks.isNotEmpty)
+                PolygonLayer(
+                  polygons: [
+                    for (final poi in _zones.parks)
+                      _proximityRing(poi, 1000, _metro1000Color),
+                    for (final poi in _zones.parks)
+                      _proximityRing(poi, 500, _metro500Color),
+                    for (final poi in _zones.parks)
+                      _proximityRing(poi, 200, _metro200Color),
+                    for (final poi in _zones.parks)
+                      for (final ring in poi.boundaryRings)
+                        _zonePolygon(poi, ring, fillAlpha: 0.12),
+                  ],
+                ),
+              if (_showShoppingMalls && _zones.shoppingMalls.isNotEmpty)
+                PolygonLayer(
+                  polygons: [
+                    for (final poi in _zones.shoppingMalls)
+                      _proximityRing(poi, 1000, _metro1000Color),
+                    for (final poi in _zones.shoppingMalls)
+                      _proximityRing(poi, 500, _metro500Color),
+                    for (final poi in _zones.shoppingMalls)
+                      _proximityRing(poi, 200, _metro200Color),
+                    for (final poi in _zones.shoppingMalls)
+                      for (final ring in poi.boundaryRings)
+                        _zonePolygon(poi, ring, fillAlpha: 0.10),
+                  ],
+                ),
+              if (_showUniversities && _zones.universities.isNotEmpty)
+                PolygonLayer(
+                  polygons: [
+                    for (final poi in _zones.universities)
+                      _proximityRing(poi, 1000, _metro1000Color),
+                    for (final poi in _zones.universities)
+                      _proximityRing(poi, 500, _metro500Color),
+                    for (final poi in _zones.universities)
+                      _proximityRing(poi, 200, _metro200Color),
+                    for (final poi in _zones.universities)
+                      for (final ring in poi.boundaryRings)
+                        _zonePolygon(poi, ring, fillAlpha: 0.10),
+                  ],
+                ),
+              if (_showDistricts && _zones.districtZones.isNotEmpty)
+                MarkerLayer(""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """            if (selectedZone != null && selectedZone.type != 'district')
+                MarkerLayer(""",
+              """            if (_showParks && _zones.parks.isNotEmpty)
+                MarkerLayer(
+                  markers: _poiMarkers(_zones.parks, Icons.park_outlined),
+                ),
+              if (_showShoppingMalls && _zones.shoppingMalls.isNotEmpty)
+                MarkerLayer(
+                  markers: _poiMarkers(
+                    _zones.shoppingMalls,
+                    Icons.local_mall_outlined,
+                  ),
+                ),
+              if (_showUniversities && _zones.universities.isNotEmpty)
+                MarkerLayer(
+                  markers: _poiMarkers(
+                    _zones.universities,
+                    Icons.school_outlined,
+                  ),
+                ),
+              if (selectedZone != null && selectedZone.type != 'district')
+                MarkerLayer(""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """            _zones.areaZones.isNotEmpty ||
+                _zones.metroStations.isNotEmpty)""",
+              """            _zones.areaZones.isNotEmpty ||
+                _zones.metroStations.isNotEmpty ||
+                _zones.parks.isNotEmpty ||
+                _zones.shoppingMalls.isNotEmpty ||
+                _zones.universities.isNotEmpty)""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """                  if (_zones.metroStations.isNotEmpty)
+                      _ZoneToggle(
+                        label: s.t('metro'),
+                        active: _showMetro,
+                        onTap: () => setState(() => _showMetro = !_showMetro),
+                      ),""",
+              """                  if (_zones.metroStations.isNotEmpty)
+                      _ZoneToggle(
+                        label: s.t('metro'),
+                        active: _showMetro,
+                        onTap: () => setState(() => _showMetro = !_showMetro),
+                      ),
+                    if (_zones.parks.isNotEmpty)
+                      _ZoneToggle(
+                        label: s.t('parks'),
+                        active: _showParks,
+                        onTap: () => setState(() => _showParks = !_showParks),
+                      ),
+                    if (_zones.shoppingMalls.isNotEmpty)
+                      _ZoneToggle(
+                        label: s.t('shoppingMalls'),
+                        active: _showShoppingMalls,
+                        onTap: () => setState(
+                          () => _showShoppingMalls = !_showShoppingMalls,
+                        ),
+                      ),
+                    if (_zones.universities.isNotEmpty)
+                      _ZoneToggle(
+                        label: s.t('universities'),
+                        active: _showUniversities,
+                        onTap: () => setState(
+                          () => _showUniversities = !_showUniversities,
+                        ),
+                      ),""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """        if (_showMetro && _zones.metroStations.isNotEmpty)
+            Positioned(""",
+              """        if ((_showMetro && _zones.metroStations.isNotEmpty) ||
+                (_showParks && _zones.parks.isNotEmpty) ||
+                (_showShoppingMalls && _zones.shoppingMalls.isNotEmpty) ||
+                (_showUniversities && _zones.universities.isNotEmpty))
+            Positioned(""",
+          )
+
+          replace(
+              "app/lib/widgets/map_view.dart",
+              """class _ClusterAccumulator {""",
+              """class _PoiMarker extends StatelessWidget {
+            const _PoiMarker({
+              required this.icon,
+              required this.color,
+              required this.selected,
+            });
+
+            final IconData icon;
+            final Color color;
+            final bool selected;
+
+            @override
+            Widget build(BuildContext context) => Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.black.withValues(alpha: 0.78),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected ? Colors.white : color,
+                      width: selected ? 2.5 : 2,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black38, blurRadius: 3),
+                    ],
+                  ),
+                  child: Icon(icon, size: 18, color: Colors.white),
+                );
+          }
+
+          class _ClusterAccumulator {""",
+          )
+
+          replace(
+              "app/lib/l10n/strings.dart",
+              """      'areas': 'Areas',""",
+              """      'areas': 'Areas',
+                'parks': 'Parks',
+                'shoppingMalls': 'Malls',
+                'universities': 'Universities',""",
+          )
+
+          replace(
+              "app/lib/l10n/strings.dart",
+              """      'areas': 'Локации',""",
+              """      'areas': 'Локации',
+                'parks': 'Парки',
+                'shoppingMalls': 'ТЦ',
+                'universities': 'Университеты',""",
+          )
+
+          replace(
+              "app/lib/screens/home_screen.dart",
+              """      if (full != null) _listing = full!;""",
+              """      if (full != null) _listing = full;""",
+          )
+
+          replace(
+              "app/lib/screens/listing_detail.dart",
+              """    this.callingCode,
+          """,
+              """""",
+          )
+
+          replace(
+              "app/lib/screens/listing_detail.dart",
+              """  final String? callingCode;
+          """,
+              """""",
+          )
+
+          replace(
+              "app/lib/screens/listing_detail.dart",
+              """  String get _displayContact => _contactWithCountryCode(contact, callingCode);""",
+              """  String get _displayContact => contact;""",
+          )
+
+          replace(
+              "app/pubspec.yaml",
+              """    - assets/logo.png
+          """,
+              """""",
+          )
+
+          print("Canonical POI consumer patch applied.")
+          PY
+          python3 /tmp/apply_poi.py
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Verify backend
+        run: |
+          npm ci --prefix backend --no-audit --no-fund
+          node --check backend/src/district-zones.js
+          node --check backend/src/catalog-routes.js
+          node --test backend/test/map-zones-contract.test.js
+          npm test --prefix backend
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Verify Flutter
+        working-directory: app
+        run: |
+          dart format lib/models/district_zone.dart lib/widgets/map_view.dart lib/l10n/strings.dart lib/screens/home_screen.dart lib/screens/listing_detail.dart
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Commit validated patch and clean staging workflows
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f .github/workflows/apply-poi-map-layers*.yml
+          git add backend/src/district-zones.js backend/src/catalog-routes.js backend/test/map-zones-contract.test.js app/lib/models/district_zone.dart app/lib/widgets/map_view.dart app/lib/l10n/strings.dart app/lib/screens/home_screen.dart app/lib/screens/listing_detail.dart app/pubspec.yaml
+          git commit -m 'feat(app): add canonical POI map layers'
+          git push origin HEAD:master
