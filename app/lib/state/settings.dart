@@ -44,7 +44,8 @@ InputDecorationTheme _brandInputTheme(Color accent) => InputDecorationTheme(
   fillColor: BrandColors.bgPanel,
   hintStyle: const TextStyle(color: BrandColors.textMuted),
   labelStyle: const TextStyle(color: BrandColors.textSoft),
-  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+  isDense: true,
+  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
   border: OutlineInputBorder(
     borderRadius: BorderRadius.circular(BrandColors.radius),
     borderSide: const BorderSide(color: BrandColors.line),
@@ -84,6 +85,25 @@ ThemeData buildTheme(String name) {
         colorScheme: scheme,
         scaffoldBackgroundColor: BrandColors.bgDeep,
         brightness: Brightness.dark,
+        visualDensity: VisualDensity.compact,
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
         inputDecorationTheme: _brandInputTheme(BrandColors.primary),
         appBarTheme: const AppBarTheme(
           backgroundColor: BrandColors.bgDeep,
@@ -119,6 +139,25 @@ ThemeData buildTheme(String name) {
         colorScheme: scheme,
         scaffoldBackgroundColor: BrandColors.bgDeep,
         brightness: Brightness.dark,
+        visualDensity: VisualDensity.compact,
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
         inputDecorationTheme: _brandInputTheme(BrandColors.accentBlue),
         appBarTheme: const AppBarTheme(
           backgroundColor: BrandColors.bgDeep,
@@ -150,6 +189,25 @@ ThemeData buildTheme(String name) {
         useMaterial3: true,
         colorScheme: scheme,
         brightness: Brightness.light,
+        visualDensity: VisualDensity.compact,
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
       );
   }
 }

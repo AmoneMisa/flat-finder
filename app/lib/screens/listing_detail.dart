@@ -757,6 +757,15 @@ class _DetailTitle extends StatelessWidget {
 /// collapsed to one column since the app is narrow rather than the site's
 /// desktop 3-column layout. Empty rows are hidden so the table doesn't pad
 /// itself out with "Not specified" for every field a listing lacks.
+/// One row in the grouped spec table: an icon (tooltipped with [label]) and
+/// its formatted [value].
+class _SpecRow {
+  const _SpecRow(this.icon, this.label, this.value);
+  final IconData icon;
+  final String label;
+  final String value;
+}
+
 class _SpecTable extends StatelessWidget {
   const _SpecTable({required this.listing, required this.s});
 
@@ -800,12 +809,17 @@ class _SpecTable extends StatelessWidget {
 
   /// Groups mirror the web's spec table sections: each group renders under
   /// its own header, its rows laid out as icon+value pairs (no separate
-  /// label text, matching the web design) in a 2-column grid on mobile.
-  List<(String, List<(IconData, String)>)> _groups() {
+  /// label text, matching the web design) in a 2-column grid on mobile. The
+  /// row's field label still comes along (as [_SpecRow.label]) so the icon
+  /// can carry it as a tooltip.
+  String _capitalize(String key) => key[0].toUpperCase() + key.substring(1);
+
+  List<(String, List<_SpecRow>)> _groups() {
     final l = listing;
-    List<(IconData, String)> pick(List<(IconData, String, String?)> items) => [
-      for (final (icon, _, value) in items)
-        if (value != null && value.isNotEmpty) (icon, value),
+    List<_SpecRow> pick(List<(IconData, String, String?)> items) => [
+      for (final (icon, key, value) in items)
+        if (value != null && value.isNotEmpty)
+          _SpecRow(icon, s.t('spec${_capitalize(key)}'), value),
     ];
 
     final advert = pick([
@@ -857,7 +871,7 @@ class _SpecTable extends StatelessWidget {
       ),
       (
         Icons.directions_bus_outlined,
-        'transit',
+        'transitRoutes',
         l.transitRoutes.isEmpty ? null : l.transitRoutes.join(', '),
       ),
     ]);
@@ -868,19 +882,19 @@ class _SpecTable extends StatelessWidget {
       (Icons.chair_outlined, 'furnished', _yesNo(l.furnished)),
       (Icons.balcony_outlined, 'balcony', _yesNo(l.balcony)),
       (Icons.deck_outlined, 'terrace', _yesNo(l.terrace)),
-      (Icons.yard_outlined, 'yard', _yesNo(l.privateYard)),
+      (Icons.yard_outlined, 'privateYard', _yesNo(l.privateYard)),
       (Icons.kitchen_outlined, 'dishwasher', _yesNo(l.dishwasher)),
-      (Icons.ac_unit_outlined, 'ac', _yesNo(l.airConditioner)),
+      (Icons.ac_unit_outlined, 'AC', _yesNo(l.airConditioner)),
       (Icons.local_fire_department_outlined, 'gas', _yesNo(l.gas)),
       (Icons.thermostat_outlined, 'heating', _yesNo(l.heating)),
       (Icons.water_drop_outlined, 'hotWater', _yesNo(l.hotWater)),
       (Icons.wifi, 'internet', _yesNo(l.internet)),
-      (Icons.tv_outlined, 'tv', _yesNo(l.tv)),
+      (Icons.tv_outlined, 'TV', _yesNo(l.tv)),
       (Icons.microwave_outlined, 'microwave', _yesNo(l.microwave)),
       (Icons.countertops_outlined, 'oven', _yesNo(l.oven)),
       (Icons.bathroom_outlined, 'bidet', _yesNo(l.bidet)),
       (Icons.checkroom_outlined, 'walkInCloset', _yesNo(l.walkInCloset)),
-      (Icons.bathtub, 'bathtubItem', _yesNo(l.bathtub)),
+      (Icons.bathtub, 'bathtub', _yesNo(l.bathtub)),
       (Icons.shower_outlined, 'shower', _yesNo(l.shower)),
       (Icons.straighten_outlined, 'euroLayout', _yesNo(l.euroLayout)),
       (Icons.description_outlined, 'cadastral', _yesNo(l.cadastral)),
@@ -949,11 +963,7 @@ class _SpecTable extends StatelessWidget {
     ];
   }
 
-  Widget _groupBlock(
-    ThemeData theme,
-    String title,
-    List<(IconData, String)> items,
-  ) {
+  Widget _groupBlock(ThemeData theme, String title, List<_SpecRow> items) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -965,16 +975,23 @@ class _SpecTable extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
-        for (final (icon, value) in items) ...[
+        for (final row in items) ...[
           Divider(height: 1, color: theme.dividerColor.withValues(alpha: .4)),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Row(
               children: [
-                Icon(icon, size: 18, color: theme.colorScheme.primary),
+                Tooltip(
+                  message: row.label,
+                  child: Icon(
+                    row.icon,
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(value, style: theme.textTheme.bodyMedium),
+                  child: Text(row.value, style: theme.textTheme.bodyMedium),
                 ),
               ],
             ),
@@ -993,15 +1010,15 @@ class _SpecTable extends StatelessWidget {
     // The web's table is two columns: left stacks Advert then Property,
     // right stacks Location then Amenities. Conditions and Costs (Payment)
     // then span full width below, each as their own single-column block.
-    final left = <(String, List<(IconData, String)>)>[
+    final left = <(String, List<_SpecRow>)>[
       for (final key in [s.t('specGroupAdvert'), s.t('specGroupProperty')])
         if (byTitle[key] case final items?) (key, items),
     ];
-    final right = <(String, List<(IconData, String)>)>[
+    final right = <(String, List<_SpecRow>)>[
       for (final key in [s.t('specGroupLocation'), s.t('specGroupAmenities')])
         if (byTitle[key] case final items?) (key, items),
     ];
-    final full = <(String, List<(IconData, String)>)>[
+    final full = <(String, List<_SpecRow>)>[
       for (final key in [s.t('specGroupConditions'), s.t('specGroupCosts')])
         if (byTitle[key] case final items?) (key, items),
     ];

@@ -229,33 +229,84 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(settings.t('appTitle')),
         actions: [
           IconButton(
-            tooltip: settings.t('reloadAll'),
-            icon: const Icon(Icons.refresh),
-            onPressed: (state.loading || state.reloadAllCoolingDown)
-                ? null
-                : state.reloadAll,
-          ),
-          IconButton(
             tooltip: _mapMode ? settings.t('listView') : settings.t('mapView'),
+            iconSize: 20,
             icon: Icon(_mapMode ? Icons.view_list : Icons.map_outlined),
             onPressed: () {
               setState(() => _mapMode = !_mapMode);
               if (_mapMode) state.loadMapListings();
             },
           ),
-          IconButton(
-            tooltip: settings.t('filters'),
-            icon: const Icon(Icons.tune),
-            onPressed: () => _openFilters(state),
+          // Sort used to live only inside the full filter sheet, then in a
+          // separate summary-bar control — surfaced here as a plain icon,
+          // alongside the rest of the header's icons, since it's changed far
+          // more often than any other filter.
+          PopupMenuButton<SortBy>(
+            tooltip: settings.t('sortBy'),
+            icon: Icon(
+              Icons.sort,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            initialValue: state.filters.sort,
+            onSelected: (v) =>
+                state.updateFilters(state.filters.copyWith(sort: v)),
+            itemBuilder: (context) => SortBy.values
+                .map(
+                  (v) => PopupMenuItem(
+                    value: v,
+                    child: Text(sortLabel(settings.s, v)),
+                  ),
+                )
+                .toList(),
+          ),
+          // The filter icon here duplicated the FAB below, which already
+          // opens the same sheet — a currency switch is more useful to have
+          // one tap away in the header.
+          PopupMenuButton<String?>(
+            tooltip: settings.t('displayCurrency'),
+            onSelected: settings.setDisplayCurrency,
+            itemBuilder: (_) => [
+              PopupMenuItem<String?>(
+                value: null,
+                child: Text(settings.t('nativeCurrency')),
+              ),
+              for (final code in SettingsState.currencyOptions)
+                if (code != null)
+                  PopupMenuItem<String?>(value: code, child: Text(code)),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.currency_exchange,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    settings.displayCurrency ?? settings.t('nativeCurrency'),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
           IconButton(
             tooltip: settings.t('statistics'),
+            iconSize: 20,
             icon: const Icon(Icons.bar_chart_outlined),
             onPressed: () => _openStats(state),
           ),
           PopupMenuButton<String>(
             tooltip: settings.t('more'),
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert, size: 20),
             onSelected: (value) {
               switch (value) {
                 case 'view_all':
@@ -339,7 +390,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          _SummaryBar(state: state, settings: settings),
           if (MediaQuery.sizeOf(context).width < 700)
             _MobilePrimaryFilters(
               filters: state.filters,
@@ -347,6 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
               settings: settings,
               onChanged: (filters) => _applyCompactFilters(state, filters),
             ),
+          _SummaryBar(state: state, settings: settings),
           if (state.degradedCountries.isNotEmpty)
             _Banner(
               text: settings.t('demoBanner', {
@@ -358,10 +409,12 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(child: _body(state, settings, hidden)),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
+        tooltip: settings.t('filters'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         onPressed: () => _openFilters(state),
-        icon: const Icon(Icons.tune),
-        label: Text(settings.t('filters')),
+        child: const Icon(Icons.tune),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
@@ -410,11 +463,13 @@ class _HomeScreenState extends State<HomeScreen> {
         city: state.filters.city,
       );
     }
-    return Stack(
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = _columnsFor(constraints.maxWidth);
+    return RefreshIndicator(
+      onRefresh: () => _pullRefresh(state),
+      child: Stack(
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = _columnsFor(constraints.maxWidth);
             // A single column keeps the original full-width card list; multiple
             // columns lay the cards out in a responsive grid.
             if (columns == 1) {
@@ -463,15 +518,25 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        if (state.loading)
-          const Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: LinearProgressIndicator(),
-          ),
-      ],
+          if (state.loading)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: LinearProgressIndicator(),
+            ),
+        ],
+      ),
     );
+  }
+
+  /// Pull-to-refresh replaces the old header refresh button: dragging the
+  /// results down shows the platform loader and re-fetches. A fresh
+  /// (uncached) re-scrape is used when it isn't cooling down, otherwise this
+  /// falls back to a normal re-fetch of the current filters.
+  Future<void> _pullRefresh(AppState state) {
+    if (!state.loading && !state.reloadAllCoolingDown) return state.reloadAll();
+    return state.search();
   }
 
   /// Restrict the visible listings to the selected quick view (on top of the
@@ -596,12 +661,17 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
   Filters _withTextValues() {
     final min = num.tryParse(_priceMin.text.trim());
     final max = num.tryParse(_priceMax.text.trim());
+    // Min/Max are always interpreted in the header's display currency now —
+    // no separate currency picker next to the fields.
+    final currency = widget.settings.displayCurrency;
     return widget.filters.copyWith(
       query: _query.text.trim(),
       priceMin: min,
       priceMax: max,
       clearPriceMin: min == null,
       clearPriceMax: max == null,
+      priceCurrency: currency,
+      clearPriceCurrency: currency == null,
     );
   }
 
@@ -641,11 +711,26 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
+                // Collapsed, this only needs to show which flag is picked —
+                // the full country name still appears once the menu opens,
+                // freeing up width for the (more useful) city search field.
+                SizedBox(
+                  width: 64,
                   child: DropdownButtonFormField<String>(
                     value: selectedCountry,
                     isExpanded: true,
                     decoration: InputDecoration(labelText: s.t('country')),
+                    selectedItemBuilder: (context) => widget.countries
+                        .map(
+                          (item) => Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              countryFlags[item.code] ?? item.code,
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                          ),
+                        )
+                        .toList(),
                     items: widget.countries
                         .map(
                           (item) => DropdownMenuItem(
@@ -779,7 +864,8 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
             Padding(
               padding: const EdgeInsets.only(left: 2, bottom: 2),
               child: Text(
-                s.t('priceRange'),
+                '${s.t('priceRange')} '
+                '(${widget.settings.displayCurrency ?? country?.currency ?? s.t('nativeCurrency')})',
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
@@ -808,50 +894,6 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                       hintText: s.t('maxPlaceholder'),
                     ),
                     onChanged: (_) => _schedule(_withTextValues()),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                // Which currency Min/Max are denominated in — the fast-filter
-                // row had a price range with no way to say what currency it
-                // meant. A form field (not a plain DropdownButton) so it
-                // matches the Min/Max TextFields' height instead of sitting
-                // shorter.
-                SizedBox(
-                  width: 92,
-                  child: DropdownButtonFormField<String?>(
-                    value: widget.filters.priceCurrency,
-                    decoration: const InputDecoration(),
-                    hint: Text(
-                      country?.currency ?? '',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    items: [
-                      DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text(
-                          country?.currency ?? s.t('nativeCurrency'),
-                        ),
-                      ),
-                      for (final code in SettingsState.currencyOptions)
-                        if (code != null)
-                          DropdownMenuItem<String?>(
-                            value: code,
-                            child: Text(code),
-                          ),
-                    ],
-                    onChanged: (value) {
-                      // Same currency drives both the price-range filter and
-                      // the card conversion shown below the native price,
-                      // matching the web app's single `displayCurrency`.
-                      widget.settings.setDisplayCurrency(value);
-                      _schedule(
-                        _withTextValues().copyWith(
-                          priceCurrency: value,
-                          clearPriceCurrency: value == null,
-                        ),
-                        immediate: true,
-                      );
-                    },
                   ),
                 ),
               ],
@@ -897,14 +939,8 @@ class _SummaryBar extends StatelessWidget {
   final AppState state;
   final SettingsState settings;
 
-  void _changeSort(BuildContext context, SortBy sort) {
-    if (sort == state.filters.sort) return;
-    state.updateFilters(state.filters.copyWith(sort: sort));
-  }
-
   @override
   Widget build(BuildContext context) {
-    final f = state.filters;
     final resultsLabel = settings.t('results', {
       'n': '${state.total > 0 ? state.total : state.listings.length}',
     });
@@ -912,53 +948,11 @@ class _SummaryBar extends StatelessWidget {
       width: double.infinity,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              resultsLabel,
-              style: Theme.of(context).textTheme.bodySmall,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          // Sort used to live only inside the full filter sheet; surfaced
-          // here too since it's changed far more often than any other filter.
-          PopupMenuButton<SortBy>(
-            initialValue: f.sort,
-            tooltip: settings.t('sortBy'),
-            onSelected: (v) => _changeSort(context, v),
-            itemBuilder: (context) => SortBy.values
-                .map(
-                  (v) => PopupMenuItem(
-                    value: v,
-                    child: Text(sortLabel(settings.s, v)),
-                  ),
-                )
-                .toList(),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.sort,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    sortLabel(settings.s, f.sort),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+      child: Text(
+        resultsLabel,
+        style: Theme.of(context).textTheme.bodySmall,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

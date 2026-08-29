@@ -74,6 +74,13 @@ class _MapViewState extends State<MapView> {
   static const _pageSize = 8;
   final Map<String, int> _groupPage = {};
 
+  // Below this zoom, listings are too spread out on screen for photo cards
+  // to make sense (thousands of country-wide adverts would overlap into a
+  // wall of cards) — the site's own map only expands into photo cards once
+  // zoomed to roughly a city block, and shows plain dots before that.
+  static const _photoCardMinZoom = 12.0;
+  double _zoom = 6;
+
   // Colour overlay layers, matching the site's map + its toolbar toggles.
   MapZones _zones = const MapZones();
   String? _selectedDistrictId;
@@ -86,6 +93,7 @@ class _MapViewState extends State<MapView> {
   @override
   void initState() {
     super.initState();
+    _zoom = widget.centerZoom;
     _loadZones();
   }
 
@@ -173,18 +181,49 @@ class _MapViewState extends State<MapView> {
   /// site's map markers: a lone listing gets a plain price pin, a cluster
   /// fans its current page of photo cards out around the point with a
   /// center counter + arrows to flip pages, instead of stacking pins.
+  ///
+  /// Below [_photoCardMinZoom] this instead buckets listings into a coarse,
+  /// zoom-scaled grid — at country/region zoom, thousands of adverts are
+  /// spread across the whole screen, and grouping only exact coordinate
+  /// matches would render a full-size photo card per advert, all
+  /// overlapping. [_markersForGroup] renders those coarse buckets as plain
+  /// dots instead, same as the site's map before it's zoomed to a block.
   List<_PinGroup> _groupsFor(List<Listing> located) {
+    if (_zoom >= _photoCardMinZoom) {
+      final groups = <String, List<Listing>>{};
+      for (final l in located) {
+        final key =
+            '${l.lat!.toStringAsFixed(3)},${l.lng!.toStringAsFixed(3)}';
+        groups.putIfAbsent(key, () => []).add(l);
+      }
+      return [
+        for (final entry in groups.entries)
+          _PinGroup(
+            entry.key,
+            entry.value,
+            LatLng(entry.value.first.lat!, entry.value.first.lng!),
+          ),
+      ];
+    }
+
+    final cellDeg = 360 / math.pow(2, _zoom.clamp(2, 18));
     final groups = <String, List<Listing>>{};
     for (final l in located) {
-      final key = '${l.lat!.toStringAsFixed(3)},${l.lng!.toStringAsFixed(3)}';
-      groups.putIfAbsent(key, () => []).add(l);
+      final latIdx = (l.lat! / cellDeg).floor();
+      final lngIdx = (l.lng! / cellDeg).floor();
+      groups.putIfAbsent('cell:$latIdx,$lngIdx', () => []).add(l);
     }
     return [
       for (final entry in groups.entries)
         _PinGroup(
           entry.key,
           entry.value,
-          LatLng(entry.value.first.lat!, entry.value.first.lng!),
+          LatLng(
+            entry.value.map((l) => l.lat!).reduce((a, b) => a + b) /
+                entry.value.length,
+            entry.value.map((l) => l.lng!).reduce((a, b) => a + b) /
+                entry.value.length,
+          ),
         ),
     ];
   }
@@ -192,6 +231,20 @@ class _MapViewState extends State<MapView> {
   /// All markers (fanned photo cards + a center page-counter pill) for one
   /// clustered pin group's currently active page.
   List<Marker> _markersForGroup(_PinGroup group) {
+    if (_zoom < _photoCardMinZoom) {
+      return [
+        Marker(
+          point: group.point,
+          width: 30,
+          height: 30,
+          child: GestureDetector(
+            onTap: () => _controller.move(group.point, _photoCardMinZoom),
+            child: _ClusterDot(count: group.listings.length),
+          ),
+        ),
+      ];
+    }
+
     if (group.listings.length == 1) {
       final l = group.listings.first;
       return [
@@ -307,6 +360,10 @@ class _MapViewState extends State<MapView> {
             minZoom: 2,
             maxZoom: 18,
             onTap: (_, point) => _onMapTap(point),
+            onPositionChanged: (position, hasGesture) {
+              final z = position.zoom;
+              if ((z - _zoom).abs() > 0.05) setState(() => _zoom = z);
+            },
           ),
           children: [
             TileLayer(
@@ -667,6 +724,40 @@ class _PinGroup {
 }
 
 /// A plain price pill for a lone (unclustered) listing.
+/// A plain colored dot for a coarse map cluster below [
+/// _MapViewState._photoCardMinZoom] — a count badge appears once the bucket
+/// holds more than one listing. Tapping zooms in on it (handled by the
+/// caller), matching the site's map before it's zoomed to a city block.
+class _ClusterDot extends StatelessWidget {
+  const _ClusterDot({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
+      ),
+      child: count > 1
+          ? Text(
+              count > 999 ? '999+' : '$count',
+              maxLines: 1,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 9,
+              ),
+            )
+          : null,
+    );
+  }
+}
+
 class _PricePin extends StatelessWidget {
   const _PricePin({required this.listing, this.rates, this.displayCurrency});
   final Listing listing;
