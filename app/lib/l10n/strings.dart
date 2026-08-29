@@ -70,6 +70,7 @@ class AppStrings {
       'keyword': 'Keyword',
       'keywordHint': 'e.g. city, district, studio…',
       'applyFilters': 'Apply filters',
+      'clearFilters': 'Clear filters',
       'privateOwner': 'Private owner',
       'roomsN': '{n} rooms',
       'tags': 'Tags',

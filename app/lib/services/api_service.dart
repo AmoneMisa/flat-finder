@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 
@@ -269,6 +270,23 @@ class ApiService {
 
   /// Exchange rates relative to USD (units of currency per 1 USD), used to
   /// convert listing prices into the user's chosen display currency.
+  /// District colour zones for the map overlay (same palette/boundaries as
+  /// the site's map). Empty list when the backend has no district data for
+  /// this country/city rather than throwing, so callers can just skip the
+  /// overlay.
+  Future<List<DistrictZone>> fetchDistrictZones(String country, String city) async {
+    if (country.isEmpty || city.isEmpty) return const [];
+    final uri = Uri.parse('$baseUrl/api/district-zones')
+        .replace(queryParameters: {'country': country, 'city': city});
+    final res = await http.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) return const [];
+    final j = jsonDecode(res.body) as Map<String, dynamic>;
+    final zones = (j['zones'] as List?) ?? const [];
+    return zones
+        .map((e) => DistrictZone.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<Map<String, double>> fetchRates() async {
     final res = await http.get(Uri.parse('$baseUrl/api/rates'));
     if (res.statusCode != 200) {

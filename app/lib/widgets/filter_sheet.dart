@@ -515,6 +515,11 @@ class _FilterSheetState extends State<FilterSheet> {
                     label: Text(s.t('shareSearch')),
                     onPressed: () => _shareFilters(s, _currentFilters()),
                   ),
+                  ActionChip(
+                    avatar: const Icon(Icons.filter_alt_off_outlined, size: 18),
+                    label: Text(s.t('clearFilters')),
+                    onPressed: () => _loadPreset(Filters()),
+                  ),
                 ],
               );
             }),

@@ -5,9 +5,30 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
+import '../models/district_zone.dart';
 import '../models/listing.dart';
+import '../services/api_service.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
+
+/// Same district colours as whiteslove.me's map (`useDistrictZones.ts`
+/// ZONE_PALETTE) — kept only as a fallback for zones whose stored colour
+/// string fails to parse.
+const _fallbackZoneColor = Color(0xFFE0679A);
+
+Color _parseHexColor(String hex) {
+  final cleaned = hex.replaceFirst('#', '');
+  final value = int.tryParse(cleaned, radix: 16);
+  if (value == null) return _fallbackZoneColor;
+  return Color(0xFF000000 | value);
+}
+
+/// Desaturates a colour to approximate the site's `filter: grayscale(0.85)`
+/// on unselected districts once one district is selected.
+Color _desaturate(Color c, double amount) {
+  final hsl = HSLColor.fromColor(c);
+  return hsl.withSaturation(hsl.saturation * (1 - amount)).toColor();
+}
 
 class MapView extends StatefulWidget {
   const MapView({
@@ -17,6 +38,8 @@ class MapView extends StatefulWidget {
     required this.onTapListing,
     this.rates,
     this.displayCurrency,
+    this.country = '',
+    this.city = '',
   });
 
   final List<Listing> listings;
@@ -24,6 +47,8 @@ class MapView extends StatefulWidget {
   final void Function(Listing) onTapListing;
   final Map<String, double>? rates;
   final String? displayCurrency;
+  final String country;
+  final String city;
 
   @override
   State<MapView> createState() => _MapViewState();
@@ -31,10 +56,27 @@ class MapView extends StatefulWidget {
 
 class _MapViewState extends State<MapView> {
   final MapController _controller = MapController();
+  final ApiService _api = ApiService();
 
   // Freeform search area the user outlines by tapping the map.
   bool _drawing = false;
   final List<LatLng> _area = [];
+
+  // District colour overlay, matching the site's map.
+  List<DistrictZone> _districtZones = const [];
+  String? _selectedDistrictId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDistrictZones();
+  }
+
+  Future<void> _loadDistrictZones() async {
+    if (widget.country.isEmpty || widget.city.isEmpty) return;
+    final zones = await _api.fetchDistrictZones(widget.country, widget.city);
+    if (mounted) setState(() => _districtZones = zones);
+  }
 
   @override
   void didUpdateWidget(covariant MapView old) {
@@ -43,6 +85,34 @@ class _MapViewState extends State<MapView> {
     if (old.center != widget.center) {
       _controller.move(widget.center, 6);
     }
+    if (old.country != widget.country || old.city != widget.city) {
+      _selectedDistrictId = null;
+      _districtZones = const [];
+      _loadDistrictZones();
+    }
+  }
+
+  /// A closed ring approximating a circle, for zones with no real boundary
+  /// polygon from the catalog (matches the site's Leaflet circle fallback).
+  List<LatLng> _circleRing(DistrictZone zone) {
+    const points = 48;
+    final latRad = zone.lat * math.pi / 180;
+    final dLat = zone.radiusM / 111320;
+    final dLng = zone.radiusM / (111320 * math.cos(latRad));
+    return [
+      for (var i = 0; i <= points; i++)
+        LatLng(
+          zone.lat + dLat * math.sin(2 * math.pi * i / points),
+          zone.lng + dLng * math.cos(2 * math.pi * i / points),
+        ),
+    ];
+  }
+
+  List<List<LatLng>> _ringsFor(DistrictZone zone) =>
+      zone.boundaryRings.isNotEmpty ? zone.boundaryRings : [_circleRing(zone)];
+
+  void _onDistrictTap(String id) {
+    setState(() => _selectedDistrictId = _selectedDistrictId == id ? null : id);
   }
 
   /// Listings restricted to the drawn area (once it has at least 3 points).
@@ -100,8 +170,21 @@ class _MapViewState extends State<MapView> {
   }
 
   void _onMapTap(LatLng point) {
-    if (!_drawing) return;
-    setState(() => _area.add(point));
+    if (_drawing) {
+      setState(() => _area.add(point));
+      return;
+    }
+    // Tapping a district selects it (dimming the rest); tapping empty map
+    // clears the selection — same behavior as the site's map.
+    for (final zone in _districtZones) {
+      for (final ring in _ringsFor(zone)) {
+        if (_pointInPolygon(point, ring)) {
+          _onDistrictTap(zone.id);
+          return;
+        }
+      }
+    }
+    if (_selectedDistrictId != null) setState(() => _selectedDistrictId = null);
   }
 
   void _clearArea() => setState(() => _area.clear());
@@ -127,6 +210,68 @@ class _MapViewState extends State<MapView> {
               userAgentPackageName: 'com.example.flat_finder',
               maxZoom: 19,
             ),
+            if (_districtZones.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  for (final zone in _districtZones)
+                    for (final ring in _ringsFor(zone))
+                      () {
+                        final dimmed = _selectedDistrictId != null &&
+                            zone.id != _selectedDistrictId;
+                        final base = _parseHexColor(zone.colorHex);
+                        final color = dimmed ? _desaturate(base, 0.85) : base;
+                        return Polygon(
+                          points: ring,
+                          borderStrokeWidth: 2.5,
+                          borderColor: color.withValues(alpha: dimmed ? 0.5 : 0.9),
+                          color: color.withValues(alpha: dimmed ? 0.08 : 0.22),
+                        );
+                      }(),
+                ],
+              ),
+            if (_districtZones.isNotEmpty)
+              MarkerLayer(
+                markers: [
+                  for (final zone in _districtZones)
+                    Marker(
+                      point: LatLng(zone.lat, zone.lng),
+                      width: 120,
+                      height: 24,
+                      child: IgnorePointer(
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: (_selectedDistrictId != null &&
+                                        zone.id != _selectedDistrictId)
+                                    ? _desaturate(_parseHexColor(zone.colorHex), 0.85)
+                                        .withValues(alpha: 0.55)
+                                    : _parseHexColor(zone.colorHex),
+                              ),
+                            ),
+                            child: Text(
+                              zone.name,
+                              style: TextStyle(
+                                color: Colors.white.withValues(
+                                  alpha: (_selectedDistrictId != null &&
+                                          zone.id != _selectedDistrictId)
+                                      ? 0.55
+                                      : 1,
+                                ),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             if (_area.length >= 3)
               PolygonLayer(
                 polygons: [

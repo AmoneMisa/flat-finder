@@ -233,6 +233,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onTapListing: _showMapPreview,
         rates: state.rates,
         displayCurrency: settings.displayCurrency,
+        country: state.filters.countries.isNotEmpty ? state.filters.countries.first : '',
+        city: state.filters.city,
       );
     }
     return Stack(

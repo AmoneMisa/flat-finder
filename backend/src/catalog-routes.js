@@ -2,6 +2,7 @@ import {canonicalCityName, COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {cityLocations} from './locations.js';
 import {getAvailableListingLocations} from './db.js';
 import {getRates} from './fx.js';
+import {districtZonesFor} from './district-zones.js';
 
 export function installCatalogRoutes(app) {
   app.get('/api/countries', async (_req, res) => {
@@ -60,6 +61,21 @@ export function installCatalogRoutes(app) {
       return res.status(500).json({
         error: err?.message ?? String(err),
       });
+    }
+  });
+
+  app.get('/api/district-zones', async (req, res) => {
+    try {
+      const country = String(req.query.country || '').toUpperCase();
+      const city = String(req.query.city || '').trim();
+      if (!country || !city) {
+        return res.status(400).json({error: 'country and city are required'});
+      }
+      const locations = cityLocations(country);
+      const districtOptions = locations[city]?.districts ?? [];
+      return res.json({zones: districtZonesFor(country, city, districtOptions)});
+    } catch (err) {
+      return res.status(500).json({error: err?.message ?? String(err)});
     }
   });
 
