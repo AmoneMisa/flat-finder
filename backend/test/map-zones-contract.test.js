@@ -12,6 +12,9 @@ test('map zones expose canonical city center and structured filter layers', () =
   assert.ok(zones.districtZones.length > 0);
   assert.ok(zones.microdistrictMarkers.every((zone) => zone.name));
   assert.ok(zones.quartalMarkers.every((zone) => zone.name));
+  assert.ok(zones.metroStations.length > 0);
+  assert.ok(zones.metroStations.every((zone) => zone.type === 'metro'));
+  assert.ok(zones.metroStations.every((zone) => Number.isFinite(zone.lat) && Number.isFinite(zone.lng)));
 });
 
 test('empty map-zone request keeps a stable cityZone field', () => {
@@ -20,6 +23,7 @@ test('empty map-zone request keeps a stable cityZone field', () => {
     microdistrictMarkers: [],
     quartalMarkers: [],
     areaZones: [],
+    metroStations: [],
     cityZone: null,
   });
 });
