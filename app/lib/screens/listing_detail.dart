@@ -210,9 +210,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       );
     }
     if (info.isNotEmpty) b.writeln(info.join(' · '));
-    if (listing.contact != null) {
-      b.writeln(
-          _contactWithCountryCode(listing.contact!, country?.callingCode));
+    for (final contact in _listingContacts(listing, country?.callingCode)) {
+      b.writeln(contact);
     }
     if (listing.url.isNotEmpty) b.writeln(listing.url);
     if (listing.publicId != null)
@@ -295,6 +294,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final showTranslated = hasTranslation && _showTranslated;
     final hasTranslatableText = listing.description.trim().isNotEmpty ||
         listing.title.trim().isNotEmpty;
+    final contacts = _listingContacts(listing, country?.callingCode);
 
     return Scaffold(
       appBar: AppBar(
@@ -522,12 +522,14 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (listing.contact != null) ...[
-                  _ContactCard(
-                    contact: listing.contact!,
-                    callingCode: country?.callingCode,
-                    s: s,
-                  ),
+                if (contacts.isNotEmpty) ...[
+                  for (var i = 0; i < contacts.length; i++) ...[
+                    _ContactCard(
+                      contact: contacts[i],
+                      s: s,
+                    ),
+                    if (i < contacts.length - 1) const SizedBox(height: 8),
+                  ],
                   const SizedBox(height: 16),
                 ],
                 if (listing.nearby.isNotEmpty) ...[
@@ -1059,6 +1061,47 @@ String _contactWithCountryCode(String raw, String? callingCode) {
     digits = digits.substring(1);
   }
   return '+$prefixDigits$digits';
+}
+
+/// Primary parsed contact plus phone numbers present in the advert text.
+/// Keeps order, normalizes phones to the listing country's calling code, removes
+/// duplicates, and intentionally caps the UI/share payload at three contacts.
+List<String> _listingContacts(Listing listing, String? callingCode) {
+  final contacts = <String>[];
+  final seen = <String>{};
+
+  void add(String raw) {
+    if (contacts.length >= 3) return;
+    final value = raw.trim();
+    if (value.isEmpty) return;
+    final normalized = value.startsWith('@')
+        ? value
+        : _contactWithCountryCode(value, callingCode);
+    final key = normalized.startsWith('@')
+        ? normalized.toLowerCase()
+        : normalized.replaceAll(RegExp(r'\D'), '');
+    if (key.isEmpty || !seen.add(key)) return;
+    contacts.add(normalized);
+  }
+
+  final parsed = listing.contact;
+  if (parsed != null) add(parsed);
+
+  // Do not let a match span lines: phone numbers are extracted as one visual
+  // token/line. Both international (+/00) and national forms are accepted.
+  final phonePattern = RegExp(r'(?:\+|00)?\d[\d \t().-]{5,}\d');
+  for (final match in phonePattern.allMatches(listing.description)) {
+    if (contacts.length >= 3) break;
+    final raw = match.group(0)?.trim() ?? '';
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 7 || digits.length > 15) continue;
+    // Short unprefixed numbers are too ambiguous (floor/year/price fragments).
+    final explicitInternational = raw.startsWith('+') || raw.startsWith('00');
+    if (!explicitInternational && digits.length < 9) continue;
+    add(raw);
+  }
+
+  return contacts;
 }
 
 /// Prominent contact card shown near the top of the detail screen so the user

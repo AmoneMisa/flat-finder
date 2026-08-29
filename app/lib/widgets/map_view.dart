@@ -310,14 +310,16 @@ class _MapViewState extends State<MapView> {
       final otherPoint = _worldPixel(other.point);
       final dx = _wrappedDx(point.dx, otherPoint.dx);
       final dy = (point.dy - otherPoint.dy).abs();
-      final otherHalfWidth =
-          other.listings.length == 1 ? _priceMarkerWidth / 2 : 16.0;
-      final otherHalfHeight =
-          other.listings.length == 1 ? _priceMarkerHeight / 2 : 16.0;
-      if (dx < _priceMarkerWidth / 2 + otherHalfWidth + 4 &&
-          dy < _priceMarkerHeight / 2 + otherHalfHeight + 4) {
-        return false;
-      }
+      // Use a rotation-independent collision radius. The previous
+      // axis-aligned rectangle check could allow two wide pills that are
+      // diagonally close to overlap visually after map transforms.
+      final ownRadius = math.sqrt(
+        math.pow(_priceMarkerWidth / 2, 2) +
+            math.pow(_priceMarkerHeight / 2, 2),
+      );
+      final otherRadius = other.listings.length == 1 ? ownRadius : 16.0;
+      final distance = math.sqrt(dx * dx + dy * dy);
+      if (distance < ownRadius + otherRadius + 6) return false;
     }
     return true;
   }
@@ -639,14 +641,16 @@ class _MapViewState extends State<MapView> {
               ),
             MarkerLayer(
               markers: [
-                for (final group in groups) ..._markersForGroup(group, groups),
+                for (final group in groups)
+                  if (expandedGroup == null || group.key != expandedGroup.key)
+                    ..._markersForGroup(group, groups),
                 if (expandedGroup != null) _radialMarkerForGroup(expandedGroup),
-                if (_isFocused)
+                if (_isFocused && expandedGroup == null)
                   Marker(
                     point: widget.center,
-                    width: 44,
-                    height: 44,
-                    child: const _FocusMarker(),
+                    width: 54,
+                    height: 54,
+                    child: const IgnorePointer(child: _FocusMarker()),
                   ),
               ],
             ),
@@ -942,27 +946,16 @@ class _FocusMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: color.withValues(alpha: 0.58), width: 2),
-          ),
+    // Focus is an outline only: it must never cover a standalone price label.
+    return Center(
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: color.withValues(alpha: 0.72), width: 2),
         ),
-        Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.95),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 3),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
