@@ -134,11 +134,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   LatLng _centerFor(AppState state) {
+    // "Show on map" from a card takes priority over the country default.
+    if (_focusListing?.hasLocation == true) {
+      return LatLng(_focusListing!.lat!, _focusListing!.lng!);
+    }
     // Center on the first selected country's capital.
     final code = state.filters.countries.isNotEmpty ? state.filters.countries.first : 'RO';
     final c = state.countryByCode(code);
     if (c != null) return LatLng(c.centerLat, c.centerLng);
     return const LatLng(45, 30);
+  }
+
+  // Set by a card's "show on map" button (mirrors the site's
+  // `flat-map-focus` custom event) — switches to map view centered there.
+  Listing? _focusListing;
+
+  void _showOnMap(Listing l) {
+    setState(() {
+      _focusListing = l;
+      _mapMode = true;
+    });
   }
 
   @override
@@ -247,6 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return MapView(
         listings: listings,
         center: center,
+        centerZoom: _focusListing?.hasLocation == true ? 15 : 6,
         onTapListing: _showMapPreview,
         rates: state.rates,
         displayCurrency: settings.displayCurrency,
@@ -267,7 +283,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemCount: listings.length,
                 itemBuilder: (_, i) {
                   final l = listings[i];
-                  return ListingCard(listing: l, onTap: () => _openListing(l));
+                  return ListingCard(
+                      listing: l, onTap: () => _openListing(l), onShowOnMap: () => _showOnMap(l));
                 },
               );
             }
@@ -283,7 +300,10 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (_, i) {
                 final l = listings[i];
                 return ListingCard(
-                    listing: l, grid: true, onTap: () => _openListing(l));
+                    listing: l,
+                    grid: true,
+                    onTap: () => _openListing(l),
+                    onShowOnMap: () => _showOnMap(l));
               },
             );
           },

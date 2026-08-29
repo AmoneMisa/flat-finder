@@ -287,21 +287,17 @@ class ApiService {
     return SearchStatistics.fromJson(stats as Map<String, dynamic>);
   }
 
-  /// District colour zones for the map overlay (same palette/boundaries as
-  /// the site's map). Empty list when the backend has no district data for
-  /// this country/city rather than throwing, so callers can just skip the
-  /// overlay.
-  Future<List<DistrictZone>> fetchDistrictZones(String country, String city) async {
-    if (country.isEmpty || city.isEmpty) return const [];
+  /// All map colour-zone layers (districts, microdistricts, quartals/
+  /// mahallas, areas), same palette/boundaries as the site's map. Empty
+  /// zones when the backend has no data for this country/city rather than
+  /// throwing, so callers can just skip the overlay.
+  Future<MapZones> fetchMapZones(String country, String city) async {
+    if (country.isEmpty || city.isEmpty) return const MapZones();
     final uri = Uri.parse('$baseUrl/api/district-zones')
         .replace(queryParameters: {'country': country, 'city': city});
     final res = await http.get(uri).timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) return const [];
-    final j = jsonDecode(res.body) as Map<String, dynamic>;
-    final zones = (j['zones'] as List?) ?? const [];
-    return zones
-        .map((e) => DistrictZone.fromJson(e as Map<String, dynamic>))
-        .toList();
+    if (res.statusCode != 200) return const MapZones();
+    return MapZones.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   Future<Map<String, double>> fetchRates() async {

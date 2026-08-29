@@ -58,3 +58,32 @@ class DistrictZone {
         boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
       );
 }
+
+/// All four of a city's map zone layers — mirrors the site's
+/// useDistrictZones.ts return shape and its four toolbar toggles
+/// (Districts/Microdistricts/Quartals/Areas).
+class MapZones {
+  final List<DistrictZone> districtZones;
+  final List<DistrictZone> microdistrictMarkers;
+  final List<DistrictZone> quartalMarkers; // mahallas
+  final List<DistrictZone> areaZones;
+
+  const MapZones({
+    this.districtZones = const [],
+    this.microdistrictMarkers = const [],
+    this.quartalMarkers = const [],
+    this.areaZones = const [],
+  });
+
+  factory MapZones.fromJson(Map<String, dynamic> j) {
+    List<DistrictZone> list(String key) => ((j[key] as List?) ?? const [])
+        .map((e) => DistrictZone.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return MapZones(
+      districtZones: list('districtZones'),
+      microdistrictMarkers: list('microdistrictMarkers'),
+      quartalMarkers: list('quartalMarkers'),
+      areaZones: list('areaZones'),
+    );
+  }
+}

@@ -40,6 +40,7 @@ class MapView extends StatefulWidget {
     this.displayCurrency,
     this.country = '',
     this.city = '',
+    this.centerZoom = 6,
   });
 
   final List<Listing> listings;
@@ -49,6 +50,9 @@ class MapView extends StatefulWidget {
   final String? displayCurrency;
   final String country;
   final String city;
+  /// Zoom level used when [center] changes (e.g. 6 for a country default,
+  /// higher when a specific listing's "show on map" set the center).
+  final double centerZoom;
 
   @override
   State<MapView> createState() => _MapViewState();
@@ -62,20 +66,25 @@ class _MapViewState extends State<MapView> {
   bool _drawing = false;
   final List<LatLng> _area = [];
 
-  // District colour overlay, matching the site's map.
-  List<DistrictZone> _districtZones = const [];
+  // Colour overlay layers, matching the site's map + its toolbar toggles.
+  MapZones _zones = const MapZones();
   String? _selectedDistrictId;
+  // Defaults match the site's useShow*() refs in FlatMap.client.vue.
+  bool _showDistricts = true;
+  bool _showMicrodistricts = false;
+  bool _showQuartals = false;
+  bool _showAreas = true;
 
   @override
   void initState() {
     super.initState();
-    _loadDistrictZones();
+    _loadZones();
   }
 
-  Future<void> _loadDistrictZones() async {
+  Future<void> _loadZones() async {
     if (widget.country.isEmpty || widget.city.isEmpty) return;
-    final zones = await _api.fetchDistrictZones(widget.country, widget.city);
-    if (mounted) setState(() => _districtZones = zones);
+    final zones = await _api.fetchMapZones(widget.country, widget.city);
+    if (mounted) setState(() => _zones = zones);
   }
 
   @override
@@ -83,12 +92,12 @@ class _MapViewState extends State<MapView> {
     super.didUpdateWidget(old);
     // Recenter when the country selection changes the center noticeably.
     if (old.center != widget.center) {
-      _controller.move(widget.center, 6);
+      _controller.move(widget.center, widget.centerZoom);
     }
     if (old.country != widget.country || old.city != widget.city) {
       _selectedDistrictId = null;
-      _districtZones = const [];
-      _loadDistrictZones();
+      _zones = const MapZones();
+      _loadZones();
     }
   }
 
@@ -113,6 +122,12 @@ class _MapViewState extends State<MapView> {
 
   void _onDistrictTap(String id) {
     setState(() => _selectedDistrictId = _selectedDistrictId == id ? null : id);
+  }
+
+  void _showZoneName(String name) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(name), duration: const Duration(seconds: 2)));
   }
 
   /// Listings restricted to the drawn area (once it has at least 3 points).
@@ -176,7 +191,7 @@ class _MapViewState extends State<MapView> {
     }
     // Tapping a district selects it (dimming the rest); tapping empty map
     // clears the selection — same behavior as the site's map.
-    for (final zone in _districtZones) {
+    if (_showDistricts) for (final zone in _zones.districtZones) {
       for (final ring in _ringsFor(zone)) {
         if (_pointInPolygon(point, ring)) {
           _onDistrictTap(zone.id);
@@ -199,7 +214,7 @@ class _MapViewState extends State<MapView> {
           mapController: _controller,
           options: MapOptions(
             initialCenter: widget.center,
-            initialZoom: 6,
+            initialZoom: widget.centerZoom,
             minZoom: 2,
             maxZoom: 18,
             onTap: (_, point) => _onMapTap(point),
@@ -210,10 +225,26 @@ class _MapViewState extends State<MapView> {
               userAgentPackageName: 'com.example.flat_finder',
               maxZoom: 19,
             ),
-            if (_districtZones.isNotEmpty)
+            if (_showAreas && _zones.areaZones.isNotEmpty)
               PolygonLayer(
                 polygons: [
-                  for (final zone in _districtZones)
+                  for (final zone in _zones.areaZones)
+                    for (final ring in _ringsFor(zone))
+                      () {
+                        final color = _parseHexColor(zone.colorHex);
+                        return Polygon(
+                          points: ring,
+                          borderStrokeWidth: 2,
+                          borderColor: color.withValues(alpha: 0.6),
+                          color: color.withValues(alpha: 0.14),
+                        );
+                      }(),
+                ],
+              ),
+            if (_showDistricts && _zones.districtZones.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  for (final zone in _zones.districtZones)
                     for (final ring in _ringsFor(zone))
                       () {
                         final dimmed = _selectedDistrictId != null &&
@@ -229,10 +260,10 @@ class _MapViewState extends State<MapView> {
                       }(),
                 ],
               ),
-            if (_districtZones.isNotEmpty)
+            if (_showDistricts && _zones.districtZones.isNotEmpty)
               MarkerLayer(
                 markers: [
-                  for (final zone in _districtZones)
+                  for (final zone in _zones.districtZones)
                     Marker(
                       point: LatLng(zone.lat, zone.lng),
                       width: 120,
@@ -268,6 +299,36 @@ class _MapViewState extends State<MapView> {
                             ),
                           ),
                         ),
+                      ),
+                    ),
+                ],
+              ),
+            if (_showMicrodistricts && _zones.microdistrictMarkers.isNotEmpty)
+              MarkerLayer(
+                markers: [
+                  for (final zone in _zones.microdistrictMarkers)
+                    Marker(
+                      point: LatLng(zone.lat, zone.lng),
+                      width: 14,
+                      height: 14,
+                      child: GestureDetector(
+                        onTap: () => _showZoneName(zone.name),
+                        child: _ZoneDot(colorHex: zone.colorHex, shape: BoxShape.circle),
+                      ),
+                    ),
+                ],
+              ),
+            if (_showQuartals && _zones.quartalMarkers.isNotEmpty)
+              MarkerLayer(
+                markers: [
+                  for (final zone in _zones.quartalMarkers)
+                    Marker(
+                      point: LatLng(zone.lat, zone.lng),
+                      width: 14,
+                      height: 14,
+                      child: GestureDetector(
+                        onTap: () => _showZoneName(zone.name),
+                        child: _ZoneDot(colorHex: zone.colorHex, shape: BoxShape.rectangle),
                       ),
                     ),
                 ],
@@ -385,7 +446,108 @@ class _MapViewState extends State<MapView> {
               ),
             ),
           ),
+        // District/microdistrict/quartal/area layer toggles — same toolbar
+        // as the site's map, each shown only when that layer has data.
+        if (_zones.districtZones.isNotEmpty ||
+            _zones.microdistrictMarkers.isNotEmpty ||
+            _zones.quartalMarkers.isNotEmpty ||
+            _zones.areaZones.isNotEmpty)
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 12,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  if (_zones.districtZones.isNotEmpty)
+                    _ZoneToggle(
+                      label: s.t('districts'),
+                      active: _showDistricts,
+                      onTap: () => setState(() => _showDistricts = !_showDistricts),
+                    ),
+                  if (_zones.microdistrictMarkers.isNotEmpty)
+                    _ZoneToggle(
+                      label: s.t('microdistricts'),
+                      active: _showMicrodistricts,
+                      onTap: () => setState(() => _showMicrodistricts = !_showMicrodistricts),
+                    ),
+                  if (_zones.quartalMarkers.isNotEmpty)
+                    _ZoneToggle(
+                      label: s.t('quartals'),
+                      active: _showQuartals,
+                      onTap: () => setState(() => _showQuartals = !_showQuartals),
+                    ),
+                  if (_zones.areaZones.isNotEmpty)
+                    _ZoneToggle(
+                      label: s.t('areas'),
+                      active: _showAreas,
+                      onTap: () => setState(() => _showAreas = !_showAreas),
+                    ),
+                ],
+              ),
+            ),
+          ),
       ],
+    );
+  }
+}
+
+/// One toggle button in the layer toolbar (District/Microdistrict/Quartal/
+/// Area) — same active/inactive states as the site's `.flat-map__tool`.
+class _ZoneToggle extends StatelessWidget {
+  const _ZoneToggle({required this.label, required this.active, required this.onTap});
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: active ? scheme.primary : Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: active ? scheme.primary : Colors.white24,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? scheme.onPrimary : Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A small circle/square dot marking a microdistrict or quartal (mahalla)
+/// centroid — matches the site's `flat-zone-marker_circle`/`_square` dots.
+class _ZoneDot extends StatelessWidget {
+  const _ZoneDot({required this.colorHex, required this.shape});
+  final String colorHex;
+  final BoxShape shape;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _parseHexColor(colorHex),
+        shape: shape,
+        borderRadius: shape == BoxShape.rectangle ? BorderRadius.circular(3) : null,
+        border: Border.all(color: Colors.white, width: 1.5),
+        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 2)],
+      ),
     );
   }
 }

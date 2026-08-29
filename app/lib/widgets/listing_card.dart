@@ -12,16 +12,44 @@ import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
 
+/// Deal-type badge colours, matching the site's `.flat-card__deal_*` tones.
+enum _DealTone { sale, rent, room, shortTerm }
+
+const _dealToneColors = {
+  _DealTone.sale: Color(0xFFF58AB5),
+  _DealTone.rent: Color(0xFFB79CFF),
+  _DealTone.room: Color(0xFF77D9E8),
+  _DealTone.shortTerm: Color(0xFFF4C86A),
+};
+
+_DealTone? _dealTone(Listing l) {
+  if (l.dealType == 'shortRent') return _DealTone.shortTerm;
+  if (l.roomOnly) return _DealTone.room;
+  if (l.dealType == 'sale') return _DealTone.sale;
+  if (l.dealType == 'longRent') return _DealTone.rent;
+  return null;
+}
+
+String _dealBadgeLabel(AppStrings s, Listing l) {
+  if (l.dealType == 'shortRent') return s.t('shortTerm');
+  if (l.roomOnly) return s.t('roomOnly');
+  if (l.dealType == 'sale') return s.t('sale');
+  if (l.dealType == 'longRent') return s.t('longTerm');
+  return '';
+}
+
 class ListingCard extends StatelessWidget {
   const ListingCard({
     super.key,
     required this.listing,
     required this.onTap,
+    this.onShowOnMap,
     this.grid = false,
   });
 
   final Listing listing;
   final VoidCallback onTap;
+  final VoidCallback? onShowOnMap;
   final bool grid;
 
   @override
@@ -36,10 +64,17 @@ class ListingCard extends StatelessWidget {
     final isViewed = history.isViewed(listing.id);
     final priceState = _priceState(listing, appState.rates);
 
+    final dealTone = _dealTone(listing);
     final photo = Stack(
       fit: StackFit.expand,
       children: [
         _CardPhotoCarousel(listing: listing),
+        if (dealTone != null)
+          Positioned(
+            top: 8,
+            left: 8,
+            child: _DealBadge(tone: dealTone, label: _dealBadgeLabel(s, listing)),
+          ),
         if (listing.marketComparison?.goodPrice == true)
           Positioned(
             left: 8,
@@ -49,16 +84,28 @@ class ListingCard extends StatelessWidget {
         Positioned(
           top: 8,
           right: 8,
-          child: _FavButton(
-            isFav: isFav,
-            tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
-            onPressed: () => favorites.toggle(listing),
+          child: Row(
+            children: [
+              if (onShowOnMap != null && listing.hasLocation) ...[
+                _CardActionButton(
+                  icon: Icons.pin_drop_outlined,
+                  tooltip: s.t('showOnMap'),
+                  onPressed: onShowOnMap,
+                ),
+                const SizedBox(width: 6),
+              ],
+              _FavButton(
+                isFav: isFav,
+                tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
+                onPressed: () => favorites.toggle(listing),
+              ),
+            ],
           ),
         ),
         if (isViewed)
           Positioned(
             top: 8,
-            right: 46,
+            right: onShowOnMap != null && listing.hasLocation ? 84 : 46,
             child: _ViewedIcon(tooltip: s.t('viewedTag')),
           ),
       ],
@@ -496,6 +543,68 @@ class _FavButton extends StatelessWidget {
           isFav ? Icons.favorite : Icons.favorite_border,
           color: isFav ? Colors.redAccent : Colors.white,
         ),
+      ),
+    );
+  }
+}
+
+/// A generic photo-overlay action button — same 32px dark square style as
+/// [_FavButton] (matches the site's `.flat-card__action`), for actions that
+/// don't need a filled/outline toggle state.
+class _CardActionButton extends StatelessWidget {
+  const _CardActionButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        tooltip: tooltip,
+        iconSize: 19,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.all(6),
+        constraints: const BoxConstraints(),
+        onPressed: onPressed,
+        icon: Icon(icon, color: Colors.white),
+      ),
+    );
+  }
+}
+
+/// Deal-type label on the photo's top-left corner, matching the site's
+/// `.flat-card__deal` — a dark pill outlined and tinted per [_DealTone].
+class _DealBadge extends StatelessWidget {
+  const _DealBadge({required this.tone, required this.label});
+  final _DealTone tone;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    if (label.isEmpty) return const SizedBox.shrink();
+    final color = _dealToneColors[tone]!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1128),
+        border: Border.all(color: color.withValues(alpha: 0.42)),
+        borderRadius: BorderRadius.circular(7),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 12)],
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
       ),
     );
   }

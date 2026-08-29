@@ -76,3 +76,39 @@ export function districtZonesFor(countryCode, cityName, districtOptions = []) {
   const zones = entities.map((entity, index) => zoneFromEntity(entity, index));
   return fitNonOverlappingRadii(zones, 350, 1800);
 }
+
+/**
+ * All of a city's map zone layers at once: administrative districts,
+ * microdistricts, mahallas ("quartals"), and local/development areas —
+ * matching useDistrictZones.ts's four computed layers exactly, so the app
+ * can offer the same show/hide toggles as the site's map toolbar.
+ */
+export function mapZonesFor(countryCode, cityName, districtOptions = []) {
+  const country = String(countryCode || '').toUpperCase();
+  if (!country || !cityName) {
+    return {districtZones: [], microdistrictMarkers: [], quartalMarkers: [], areaZones: []};
+  }
+
+  const cityEntity = resolveLexiconGeoEntity({country, type: 'city', canonical: cityName});
+  const cityId = cityEntity?.id ?? null;
+
+  const districtZones = districtZonesFor(country, cityName, districtOptions);
+
+  const microdistrictMarkers = descendantsOf(cityId, country, 'microdistrict')
+    .map((entity, index) => zoneFromEntity(entity, index));
+
+  const quartalMarkers = descendantsOf(cityId, country, 'mahalla')
+    .map((entity, index) => zoneFromEntity(entity, index));
+
+  const areaEntities = [
+    ...descendantsOf(cityId, country, 'local_area'),
+    ...descendantsOf(cityId, country, 'development_area'),
+  ];
+  const areaZones = fitNonOverlappingRadii(
+    areaEntities.map((entity, index) => zoneFromEntity(entity, index)),
+    150,
+    700,
+  );
+
+  return {districtZones, microdistrictMarkers, quartalMarkers, areaZones};
+}
