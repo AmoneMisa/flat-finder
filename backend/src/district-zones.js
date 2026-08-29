@@ -94,6 +94,9 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
       quartalMarkers: [],
       areaZones: [],
       metroStations: [],
+      parks: [],
+      shoppingMalls: [],
+      universities: [],
       cityZone: null,
     };
   }
@@ -124,6 +127,15 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
   const metroStations = descendantsOf(cityId, country, 'metro')
     .map((entity, index) => zoneFromEntity(entity, index));
 
+  // Canonical POI identity, coordinates, hierarchy and boundaries remain
+  // geo-catalog data. Flat Finder owns only their product presentation.
+  const parks = descendantsOf(cityId, country, 'poi.park')
+    .map((entity, index) => zoneFromEntity(entity, index));
+  const shoppingMalls = descendantsOf(cityId, country, 'poi.shopping_mall')
+    .map((entity, index) => zoneFromEntity(entity, index));
+  const universities = descendantsOf(cityId, country, 'poi.university')
+    .map((entity, index) => zoneFromEntity(entity, index));
+
   const cityZone = cityEntity ? zoneFromEntity(cityEntity, 0) : null;
   return {
     districtZones,
@@ -131,6 +143,9 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
     quartalMarkers,
     areaZones,
     metroStations,
+    parks,
+    shoppingMalls,
+    universities,
     cityZone,
   };
 }

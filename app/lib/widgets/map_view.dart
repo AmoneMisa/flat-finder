@@ -106,6 +106,9 @@ class _MapViewState extends State<MapView> {
   bool _showQuartals = false;
   bool _showAreas = true;
   bool _showMetro = false;
+  bool _showParks = false;
+  bool _showShoppingMalls = false;
+  bool _showUniversities = false;
 
   @override
   void initState() {
@@ -141,7 +144,8 @@ class _MapViewState extends State<MapView> {
       _controller.move(widget.center, widget.centerZoom);
     }
 
-    final cityChanged = old.country != widget.country || old.city != widget.city;
+    final cityChanged =
+        old.country != widget.country || old.city != widget.city;
     final localeChanged = old.locale != widget.locale;
     if (cityChanged) {
       _selectedDistrictId = null;
@@ -195,6 +199,9 @@ class _MapViewState extends State<MapView> {
       case 'local_area':
       case 'development_area':
       case 'metro':
+      case 'poi.park':
+      case 'poi.shopping_mall':
+      case 'poi.university':
         return 16;
       default:
         return 15;
@@ -202,9 +209,7 @@ class _MapViewState extends State<MapView> {
   }
 
   void _focusZone(DistrictZone zone, {double? maxZoom}) {
-    final points = <LatLng>[
-      for (final ring in _ringsFor(zone)) ...ring,
-    ];
+    final points = <LatLng>[for (final ring in _ringsFor(zone)) ...ring];
     final fallbackZoom = math
         .min(maxZoom ?? _maxZoomForZone(zone.type), 19.0)
         .toDouble();
@@ -250,40 +255,40 @@ class _MapViewState extends State<MapView> {
 
     final next = switch (zone.type) {
       'district' => current.copyWith(
-          district: zone.name,
-          microdistrict: '',
-          quartal: '',
-          area: '',
-          metro: '',
-        ),
+        district: zone.name,
+        microdistrict: '',
+        quartal: '',
+        area: '',
+        metro: '',
+      ),
       'microdistrict' => current.copyWith(
-          district: district?.name ?? current.district,
-          microdistrict: zone.name,
-          quartal: '',
-          area: '',
-          metro: '',
-        ),
+        district: district?.name ?? current.district,
+        microdistrict: zone.name,
+        quartal: '',
+        area: '',
+        metro: '',
+      ),
       'mahalla' => current.copyWith(
-          district: district?.name ?? current.district,
-          microdistrict: microdistrict?.name ?? current.microdistrict,
-          quartal: zone.name,
-          area: '',
-          metro: '',
-        ),
+        district: district?.name ?? current.district,
+        microdistrict: microdistrict?.name ?? current.microdistrict,
+        quartal: zone.name,
+        area: '',
+        metro: '',
+      ),
       'local_area' => current.copyWith(
-          district: district?.name ?? current.district,
-          microdistrict: microdistrict?.name ?? current.microdistrict,
-          quartal: mahalla?.name ?? current.quartal,
-          area: zone.name,
-          metro: '',
-        ),
+        district: district?.name ?? current.district,
+        microdistrict: microdistrict?.name ?? current.microdistrict,
+        quartal: mahalla?.name ?? current.quartal,
+        area: zone.name,
+        metro: '',
+      ),
       'development_area' => current.copyWith(
-          district: district?.name ?? current.district,
-          microdistrict: microdistrict?.name ?? current.microdistrict,
-          quartal: mahalla?.name ?? current.quartal,
-          area: zone.name,
-          metro: '',
-        ),
+        district: district?.name ?? current.district,
+        microdistrict: microdistrict?.name ?? current.microdistrict,
+        quartal: mahalla?.name ?? current.quartal,
+        area: zone.name,
+        metro: '',
+      ),
       'metro' => current.copyWith(metro: zone.name),
       _ => current,
     };
@@ -354,7 +359,8 @@ class _MapViewState extends State<MapView> {
     for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       final xi = poly[i].longitude, yi = poly[i].latitude;
       final xj = poly[j].longitude, yj = poly[j].latitude;
-      final intersect = ((yi > p.latitude) != (yj > p.latitude)) &&
+      final intersect =
+          ((yi > p.latitude) != (yj > p.latitude)) &&
           (p.longitude < (xj - xi) * (p.latitude - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
     }
@@ -379,8 +385,9 @@ class _MapViewState extends State<MapView> {
     if (_isFocused || widget.city.isNotEmpty || _activeZoneFocusId != null) {
       return;
     }
-    final located =
-        widget.listings.where((listing) => listing.hasLocation).toList();
+    final located = widget.listings
+        .where((listing) => listing.hasLocation)
+        .toList();
     if (located.isEmpty) return;
     final keys = located.map(_listingKey).toList()..sort();
     final signature = keys.join(',');
@@ -407,7 +414,8 @@ class _MapViewState extends State<MapView> {
     final lat = point.latitude.clamp(-85.05112878, 85.05112878).toDouble();
     final sinLat = math.sin(lat * math.pi / 180);
     final x = (point.longitude + 180) / 360 * worldSize;
-    final y = (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
+    final y =
+        (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
         worldSize;
     return Offset(x, y);
   }
@@ -585,6 +593,12 @@ class _MapViewState extends State<MapView> {
     // a district polygon from intercepting taps intended for a mahalla,
     // microdistrict or local area inside it.
     final candidates = <DistrictZone?>[
+      if (_showParks || _showShoppingMalls || _showUniversities)
+        _hitZone(point, <DistrictZone>[
+          if (_showParks) ..._zones.parks,
+          if (_showShoppingMalls) ..._zones.shoppingMalls,
+          if (_showUniversities) ..._zones.universities,
+        ]),
       if (_showAreas) _hitZone(point, _zones.areaZones),
       if (_showQuartals) _hitZone(point, _zones.quartalMarkers),
       if (_showMicrodistricts) _hitZone(point, _zones.microdistrictMarkers),
@@ -606,7 +620,8 @@ class _MapViewState extends State<MapView> {
     double borderWidth = 2,
   }) {
     final selected = zone.id == _selectedZoneId;
-    final districtDimmed = _selectedDistrictId != null &&
+    final districtDimmed =
+        _selectedDistrictId != null &&
         zone.type == 'district' &&
         zone.id != _selectedDistrictId;
     final base = _parseHexColor(zone.colorHex);
@@ -623,14 +638,32 @@ class _MapViewState extends State<MapView> {
     );
   }
 
-  Polygon _metroRing(DistrictZone station, double radiusM, Color color) {
+  Polygon _proximityRing(DistrictZone place, double radiusM, Color color) {
     return Polygon(
-      points: _circleRing(station, radiusM),
+      points: _circleRing(place, radiusM),
       borderStrokeWidth: 1.5,
       borderColor: color.withValues(alpha: 0.78),
       color: color.withValues(alpha: 0.075),
     );
   }
+
+  List<Marker> _poiMarkers(List<DistrictZone> pois, IconData icon) => [
+    for (final poi in pois)
+      Marker(
+        point: LatLng(poi.lat, poi.lng),
+        width: 34,
+        height: 34,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => unawaited(_selectZone(poi)),
+          child: _PoiMarker(
+            icon: icon,
+            color: _parseHexColor(poi.colorHex),
+            selected: poi.id == _selectedZoneId,
+          ),
+        ),
+      ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -722,11 +755,53 @@ class _MapViewState extends State<MapView> {
                 polygons: [
                   // Largest first so the stronger inner zones stay visible.
                   for (final station in _zones.metroStations)
-                    _metroRing(station, 1000, _metro1000Color),
+                    _proximityRing(station, 1000, _metro1000Color),
                   for (final station in _zones.metroStations)
-                    _metroRing(station, 500, _metro500Color),
+                    _proximityRing(station, 500, _metro500Color),
                   for (final station in _zones.metroStations)
-                    _metroRing(station, 200, _metro200Color),
+                    _proximityRing(station, 200, _metro200Color),
+                ],
+              ),
+            if (_showParks && _zones.parks.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  for (final poi in _zones.parks)
+                    _proximityRing(poi, 1000, _metro1000Color),
+                  for (final poi in _zones.parks)
+                    _proximityRing(poi, 500, _metro500Color),
+                  for (final poi in _zones.parks)
+                    _proximityRing(poi, 200, _metro200Color),
+                  for (final poi in _zones.parks)
+                    for (final ring in poi.boundaryRings)
+                      _zonePolygon(poi, ring, fillAlpha: 0.12),
+                ],
+              ),
+            if (_showShoppingMalls && _zones.shoppingMalls.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  for (final poi in _zones.shoppingMalls)
+                    _proximityRing(poi, 1000, _metro1000Color),
+                  for (final poi in _zones.shoppingMalls)
+                    _proximityRing(poi, 500, _metro500Color),
+                  for (final poi in _zones.shoppingMalls)
+                    _proximityRing(poi, 200, _metro200Color),
+                  for (final poi in _zones.shoppingMalls)
+                    for (final ring in poi.boundaryRings)
+                      _zonePolygon(poi, ring, fillAlpha: 0.10),
+                ],
+              ),
+            if (_showUniversities && _zones.universities.isNotEmpty)
+              PolygonLayer(
+                polygons: [
+                  for (final poi in _zones.universities)
+                    _proximityRing(poi, 1000, _metro1000Color),
+                  for (final poi in _zones.universities)
+                    _proximityRing(poi, 500, _metro500Color),
+                  for (final poi in _zones.universities)
+                    _proximityRing(poi, 200, _metro200Color),
+                  for (final poi in _zones.universities)
+                    for (final ring in poi.boundaryRings)
+                      _zonePolygon(poi, ring, fillAlpha: 0.10),
                 ],
               ),
             if (_showDistricts && _zones.districtZones.isNotEmpty)
@@ -748,7 +823,8 @@ class _MapViewState extends State<MapView> {
                               color: Colors.black.withValues(alpha: 0.55),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color: (_selectedDistrictId != null &&
+                                color:
+                                    (_selectedDistrictId != null &&
                                         zone.id != _selectedDistrictId)
                                     ? _desaturate(
                                         _parseHexColor(zone.colorHex),
@@ -761,7 +837,8 @@ class _MapViewState extends State<MapView> {
                               zone.label,
                               style: TextStyle(
                                 color: Colors.white.withValues(
-                                  alpha: (_selectedDistrictId != null &&
+                                  alpha:
+                                      (_selectedDistrictId != null &&
                                           zone.id != _selectedDistrictId)
                                       ? 0.55
                                       : 1,
@@ -794,6 +871,24 @@ class _MapViewState extends State<MapView> {
                       ),
                     ),
                 ],
+              ),
+            if (_showParks && _zones.parks.isNotEmpty)
+              MarkerLayer(
+                markers: _poiMarkers(_zones.parks, Icons.park_outlined),
+              ),
+            if (_showShoppingMalls && _zones.shoppingMalls.isNotEmpty)
+              MarkerLayer(
+                markers: _poiMarkers(
+                  _zones.shoppingMalls,
+                  Icons.local_mall_outlined,
+                ),
+              ),
+            if (_showUniversities && _zones.universities.isNotEmpty)
+              MarkerLayer(
+                markers: _poiMarkers(
+                  _zones.universities,
+                  Icons.school_outlined,
+                ),
               ),
             if (selectedZone != null && selectedZone.type != 'district')
               MarkerLayer(
@@ -841,9 +936,7 @@ class _MapViewState extends State<MapView> {
                     points: _area,
                     borderStrokeWidth: 2,
                     borderColor: Theme.of(context).colorScheme.primary,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
+                    color: Theme.of(context).colorScheme.primary
                         .withValues(alpha: 0.15),
                   ),
                 ],
@@ -960,7 +1053,10 @@ class _MapViewState extends State<MapView> {
             _zones.microdistrictMarkers.isNotEmpty ||
             _zones.quartalMarkers.isNotEmpty ||
             _zones.areaZones.isNotEmpty ||
-            _zones.metroStations.isNotEmpty)
+            _zones.metroStations.isNotEmpty ||
+            _zones.parks.isNotEmpty ||
+            _zones.shoppingMalls.isNotEmpty ||
+            _zones.universities.isNotEmpty)
           Positioned(
             left: 12,
             right: 68,
@@ -1009,16 +1105,37 @@ class _MapViewState extends State<MapView> {
                       active: _showMetro,
                       onTap: () => setState(() => _showMetro = !_showMetro),
                     ),
+                  if (_zones.parks.isNotEmpty)
+                    _ZoneToggle(
+                      label: s.t('parks'),
+                      active: _showParks,
+                      onTap: () => setState(() => _showParks = !_showParks),
+                    ),
+                  if (_zones.shoppingMalls.isNotEmpty)
+                    _ZoneToggle(
+                      label: s.t('shoppingMalls'),
+                      active: _showShoppingMalls,
+                      onTap: () => setState(
+                        () => _showShoppingMalls = !_showShoppingMalls,
+                      ),
+                    ),
+                  if (_zones.universities.isNotEmpty)
+                    _ZoneToggle(
+                      label: s.t('universities'),
+                      active: _showUniversities,
+                      onTap: () => setState(
+                        () => _showUniversities = !_showUniversities,
+                      ),
+                    ),
                 ],
               ),
             ),
           ),
-        if (_showMetro && _zones.metroStations.isNotEmpty)
-          Positioned(
-            left: 12,
-            bottom: 12,
-            child: const _MetroLegend(),
-          ),
+        if ((_showMetro && _zones.metroStations.isNotEmpty) ||
+            (_showParks && _zones.parks.isNotEmpty) ||
+            (_showShoppingMalls && _zones.shoppingMalls.isNotEmpty) ||
+            (_showUniversities && _zones.universities.isNotEmpty))
+          Positioned(left: 12, bottom: 12, child: const _MetroLegend()),
       ],
     );
   }
@@ -1044,8 +1161,9 @@ class _ZoneToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color:
-                active ? scheme.primary : Colors.black.withValues(alpha: 0.55),
+            color: active
+                ? scheme.primary
+                : Colors.black.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: active ? scheme.primary : Colors.white24),
           ),
@@ -1140,6 +1258,35 @@ class _MetroStationMarker extends StatelessWidget {
       child: const Icon(Icons.subway_outlined, size: 18, color: Colors.white),
     );
   }
+}
+
+class _PoiMarker extends StatelessWidget {
+  const _PoiMarker({
+    required this.icon,
+    required this.color,
+    required this.selected,
+  });
+
+  final IconData icon;
+  final Color color;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: selected
+          ? Theme.of(context).colorScheme.primary
+          : Colors.black.withValues(alpha: 0.78),
+      shape: BoxShape.circle,
+      border: Border.all(
+        color: selected ? Colors.white : color,
+        width: selected ? 2.5 : 2,
+      ),
+      boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
+    ),
+    child: Icon(icon, size: 18, color: Colors.white),
+  );
 }
 
 class _ClusterAccumulator {

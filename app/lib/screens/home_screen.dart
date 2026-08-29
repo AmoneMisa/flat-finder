@@ -610,8 +610,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return active.toList();
       case _ViewTab.fresh:
         final cutoff = DateTime.now().toUtc().subtract(
-              const Duration(hours: 24),
-            );
+          const Duration(hours: 24),
+        );
         return active
             .where(
               (l) =>
@@ -624,10 +624,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _emptyLabel(SettingsState settings) => switch (_tab) {
-        _ViewTab.fresh => settings.t('noFreshHere'),
-        _ViewTab.hidden => settings.t('noHiddenHere'),
-        _ViewTab.all => settings.t('noListings'),
-      };
+    _ViewTab.fresh => settings.t('noFreshHere'),
+    _ViewTab.hidden => settings.t('noHiddenHere'),
+    _ViewTab.all => settings.t('noListings'),
+  };
 
   /// Column count from the available width: 1 on phones, up to 4 on wide
   /// desktop windows.
@@ -661,7 +661,8 @@ class _MapListingPreviewState extends State<_MapListingPreview> {
   @override
   void initState() {
     super.initState();
-    final needsHydration = _listing.marketComparison == null ||
+    final needsHydration =
+        _listing.marketComparison == null ||
         _listing.city.isEmpty ||
         (_listing.photos.isEmpty && _listing.photo == null);
     if (needsHydration) _hydrate();
@@ -681,29 +682,26 @@ class _MapListingPreviewState extends State<_MapListingPreview> {
     }
     if (!mounted) return;
     setState(() {
-      if (full != null) _listing = full!;
+      if (full != null) _listing = full;
       _hydrating = false;
     });
   }
 
   @override
   Widget build(BuildContext context) => SafeArea(
-        child: Stack(
-          children: [
-            ListingCard(
-              listing: _listing,
-              onTap: () => widget.onOpen(_listing),
-            ),
-            if (_hydrating)
-              const Positioned(
-                left: 8,
-                right: 8,
-                top: 0,
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
-          ],
-        ),
-      );
+    child: Stack(
+      children: [
+        ListingCard(listing: _listing, onTap: () => widget.onOpen(_listing)),
+        if (_hydrating)
+          const Positioned(
+            left: 8,
+            right: 8,
+            top: 0,
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+      ],
+    ),
+  );
 }
 
 /// The primary web filters stay visible on phones. Advanced filters remain in
@@ -822,8 +820,9 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
       selectedCountry ?? '',
       country?.cities ?? const <String>[],
     );
-    final selectedCity =
-        cities.contains(widget.filters.city) ? widget.filters.city : null;
+    final selectedCity = cities.contains(widget.filters.city)
+        ? widget.filters.city
+        : null;
 
     final compactInputTheme = theme.inputDecorationTheme.copyWith(
       isDense: true,
@@ -1058,19 +1057,18 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
   }
 
   Filters _withQuickDeal(Filters f, _QuickDeal deal) => switch (deal) {
-        _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
-        _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
-        _QuickDeal.longRent => f.copyWith(
-            dealType: DealType.longRent,
-            roomOnly: false,
-          ),
-        _QuickDeal.room =>
-          f.copyWith(dealType: DealType.longRent, roomOnly: true),
-        _QuickDeal.shortRent => f.copyWith(
-            dealType: DealType.shortRent,
-            roomOnly: false,
-          ),
-      };
+    _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
+    _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
+    _QuickDeal.longRent => f.copyWith(
+      dealType: DealType.longRent,
+      roomOnly: false,
+    ),
+    _QuickDeal.room => f.copyWith(dealType: DealType.longRent, roomOnly: true),
+    _QuickDeal.shortRent => f.copyWith(
+      dealType: DealType.shortRent,
+      roomOnly: false,
+    ),
+  };
 }
 
 /// The quick-filter deal-type segments: room-share rent is stored as

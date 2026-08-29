@@ -79,10 +79,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       // null with no exception means the source confirmed the advert is
       // gone (a network/rate-limit failure throws instead, handled below).
       context.read<AppState>().removeListing(
-            listing.source,
-            listing.country,
-            listing.id,
-          );
+        listing.source,
+        listing.country,
+        listing.id,
+      );
       setState(() => _unavailable = true);
       _snack(context.read<SettingsState>().s.t('listingUnavailableTitle'));
     } catch (_) {
@@ -143,9 +143,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     setState(() => _translating = true);
     try {
       final translated = await context.read<AppState>().translateText(
-            sourceText,
-            targetLanguage: lang,
-          );
+        sourceText,
+        targetLanguage: lang,
+      );
       if (!mounted) return;
       setState(() {
         _translatedText = translated;
@@ -232,8 +232,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final link = listing.publicId != null
         ? buildListingWebShareUrl(listing.publicId!)
         : listing.url.isNotEmpty
-            ? listing.url
-            : _shareText(s, rates, displayCurrency);
+        ? listing.url
+        : _shareText(s, rates, displayCurrency);
     await Clipboard.setData(ClipboardData(text: link));
     if (mounted) {
       ScaffoldMessenger.of(context)
@@ -258,8 +258,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       return;
     }
     try {
-      final boundary = _shareKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
+      final boundary =
+          _shareKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary != null) {
         final image = await boundary.toImage(pixelRatio: 2);
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -292,7 +293,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final hasTranslation =
         _translatedText != null && _translatedLang == settings.lang;
     final showTranslated = hasTranslation && _showTranslated;
-    final hasTranslatableText = listing.description.trim().isNotEmpty ||
+    final hasTranslatableText =
+        listing.description.trim().isNotEmpty ||
         listing.title.trim().isNotEmpty;
     final contacts = _listingContacts(listing, country?.callingCode);
 
@@ -375,9 +377,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                 onPressed: _unavailable || listing.url.isEmpty
                     ? null
                     : () => launchUrl(
-                          Uri.parse(listing.url),
-                          mode: LaunchMode.externalApplication,
-                        ),
+                        Uri.parse(listing.url),
+                        mode: LaunchMode.externalApplication,
+                      ),
                 icon: const Icon(Icons.open_in_new),
                 label: Text(s.t('openOriginal')),
               ),
@@ -524,10 +526,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
               children: [
                 if (contacts.isNotEmpty) ...[
                   for (var i = 0; i < contacts.length; i++) ...[
-                    _ContactCard(
-                      contact: contacts[i],
-                      s: s,
-                    ),
+                    _ContactCard(contact: contacts[i], s: s),
                     if (i < contacts.length - 1) const SizedBox(height: 8),
                   ],
                   const SizedBox(height: 16),
@@ -557,8 +556,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   Row(
                     children: [
                       OutlinedButton.icon(
-                        onPressed:
-                            _translating ? null : () => _translate(settings),
+                        onPressed: _translating
+                            ? null
+                            : () => _translate(settings),
                         icon: _translating
                             ? const SizedBox(
                                 width: 16,
@@ -576,13 +576,12 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           _translating
                               ? _localized(settings, 'Translating…', 'Перевод…')
                               : showTranslated
-                                  ? _localized(
-                                      settings,
-                                      'Show original',
-                                      'Показать оригинал',
-                                    )
-                                  : _localized(
-                                      settings, 'Translate', 'Перевести'),
+                              ? _localized(
+                                  settings,
+                                  'Show original',
+                                  'Показать оригинал',
+                                )
+                              : _localized(settings, 'Translate', 'Перевести'),
                         ),
                       ),
                     ],
@@ -680,9 +679,8 @@ class _DetailTitle extends StatelessWidget {
         child: RichText(
           overflow: TextOverflow.ellipsis,
           text: TextSpan(
-            style: DefaultTextStyle.of(
-              context,
-            ).style.copyWith(fontSize: 16, height: 1),
+            style: DefaultTextStyle.of(context).style
+                .copyWith(fontSize: 16, height: 1),
             children: [
               TextSpan(
                 text: '#${listing.publicId} ',
@@ -731,8 +729,9 @@ class _SpecTable extends StatelessWidget {
   /// "Yes 500" / "Yes 50%" / just "Yes"/"No" when no figure known.
   String _costLabel(String base, num? amount, num? percent) {
     if (percent != null) {
-      final p =
-          percent % 1 == 0 ? percent.toInt().toString() : percent.toString();
+      final p = percent % 1 == 0
+          ? percent.toInt().toString()
+          : percent.toString();
       return '$base $p%';
     }
     if (amount != null) return '$base ${amount.round()}';
@@ -740,13 +739,13 @@ class _SpecTable extends StatelessWidget {
   }
 
   String? _conditionLabel(String? condition) => switch (condition) {
-        'needs_renovation' => s.t('condNeeds'),
-        'basic' => s.t('condBasic'),
-        'good' => s.t('condGood'),
-        'modern' => s.t('condModern'),
-        'luxury' => s.t('condLuxury'),
-        _ => null,
-      };
+    'needs_renovation' => s.t('condNeeds'),
+    'basic' => s.t('condBasic'),
+    'good' => s.t('condGood'),
+    'modern' => s.t('condModern'),
+    'luxury' => s.t('condLuxury'),
+    _ => null,
+  };
 
   String? _money(MoneyAmount? value) {
     if (value == null) return null;
@@ -767,10 +766,10 @@ class _SpecTable extends StatelessWidget {
   List<(String, List<_SpecRow>)> _groups() {
     final l = listing;
     List<_SpecRow> pick(List<(IconData, String, String?)> items) => [
-          for (final (icon, key, value) in items)
-            if (value != null && value.isNotEmpty)
-              _SpecRow(icon, s.t('spec${_capitalize(key)}'), value),
-        ];
+      for (final (icon, key, value) in items)
+        if (value != null && value.isNotEmpty)
+          _SpecRow(icon, s.t('spec${_capitalize(key)}'), value),
+    ];
 
     final advert = pick([
       (Icons.sell_outlined, 'deal', dealTypeLabel(l.dealType, s)),
@@ -811,7 +810,7 @@ class _SpecTable extends StatelessWidget {
         l.district == null
             ? null
             : (country?.locationLabel(l.city, l.district!, kind: 'district') ??
-                l.district),
+                  l.district),
       ),
       (
         Icons.grid_view_outlined,
@@ -819,7 +818,7 @@ class _SpecTable extends StatelessWidget {
         l.kvartal == null
             ? null
             : (country?.locationLabel(l.city, l.kvartal!, kind: 'quartal') ??
-                l.kvartal),
+                  l.kvartal),
       ),
       (
         Icons.directions_subway_outlined,
@@ -827,7 +826,7 @@ class _SpecTable extends StatelessWidget {
         l.metro == null
             ? null
             : (country?.locationLabel(l.city, l.metro!, kind: 'metro') ??
-                l.metro),
+                  l.metro),
       ),
       (Icons.location_on_outlined, 'address', l.address),
       (
@@ -905,8 +904,8 @@ class _SpecTable extends StatelessWidget {
         l.commission == null && l.commissionAmount == null
             ? null
             : l.commissionAmount != null
-                ? '${_yesNo(l.commission ?? true)} ${_money(l.commissionAmount)}'
-                : _costLabel(_yesNo(l.commission)!, null, l.commissionPercent),
+            ? '${_yesNo(l.commission ?? true)} ${_money(l.commissionAmount)}'
+            : _costLabel(_yesNo(l.commission)!, null, l.commissionPercent),
       ),
       (Icons.call_split_outlined, 'communal', _yesNo(l.communalSeparated)),
       (Icons.receipt_long_outlined, 'utilAmount', _money(l.utilitiesAmount)),
@@ -1108,18 +1107,13 @@ List<String> _listingContacts(Listing listing, String? callingCode) {
 /// can reach the poster in one tap. A @handle opens Telegram; a phone number
 /// opens the dialer.
 class _ContactCard extends StatelessWidget {
-  const _ContactCard({
-    required this.contact,
-    required this.s,
-    this.callingCode,
-  });
+  const _ContactCard({required this.contact, required this.s});
 
   final String contact;
-  final String? callingCode;
   final AppStrings s;
 
   bool get _isHandle => contact.startsWith('@');
-  String get _displayContact => _contactWithCountryCode(contact, callingCode);
+  String get _displayContact => contact;
 
   Uri? get _uri {
     if (_isHandle) return Uri.parse('https://t.me/${contact.substring(1)}');
@@ -1172,7 +1166,7 @@ class _ContactCard extends StatelessWidget {
                 onPressed: uri == null
                     ? null
                     : () =>
-                        launchUrl(uri, mode: LaunchMode.externalApplication),
+                          launchUrl(uri, mode: LaunchMode.externalApplication),
                 icon: Icon(_isHandle ? Icons.send : Icons.call, size: 18),
                 label: Text(_isHandle ? s.t('message') : s.t('call')),
               ),
@@ -1291,29 +1285,29 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
   }
 
   Widget _pill(Widget child) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.black54,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: child,
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: child,
+  );
 
   Widget _navButton(IconData icon, bool enabled, VoidCallback onTap) => Opacity(
-        opacity: enabled ? 1 : 0.3,
-        child: Material(
-          color: Colors.black38,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: enabled ? onTap : null,
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Icon(icon, color: Colors.white, size: 28),
-            ),
-          ),
+    opacity: enabled ? 1 : 0.3,
+    child: Material(
+      color: Colors.black38,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? onTap : null,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(icon, color: Colors.white, size: 28),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 /// Fullscreen, pinch/scroll-zoomable photo viewer with page navigation.
@@ -1434,18 +1428,18 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
   }
 
   Widget _navButton(IconData icon, bool enabled, VoidCallback onTap) => Opacity(
-        opacity: enabled ? 1 : 0.25,
-        child: Material(
-          color: Colors.white24,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: enabled ? onTap : null,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Icon(icon, color: Colors.white, size: 32),
-            ),
-          ),
+    opacity: enabled ? 1 : 0.25,
+    child: Material(
+      color: Colors.white24,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: enabled ? onTap : null,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, color: Colors.white, size: 32),
         ),
-      );
+      ),
+    ),
+  );
 }

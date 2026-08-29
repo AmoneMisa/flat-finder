@@ -58,18 +58,17 @@ class DistrictZone {
   }
 
   factory DistrictZone.fromJson(Map<String, dynamic> j) => DistrictZone(
-        id: j['id']?.toString() ?? '',
-        parentId: j['parentId']?.toString(),
-        type: j['type']?.toString() ?? '',
-        name: j['name']?.toString() ?? '',
-        label: j['label']?.toString() ?? j['name']?.toString() ?? '',
-        lat: (j['lat'] as num).toDouble(),
-        lng: (j['lng'] as num).toDouble(),
-        radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
-        colorHex: j['color']?.toString() ?? '#e0679a',
-        boundaryRings:
-            _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
-      );
+    id: j['id']?.toString() ?? '',
+    parentId: j['parentId']?.toString(),
+    type: j['type']?.toString() ?? '',
+    name: j['name']?.toString() ?? '',
+    label: j['label']?.toString() ?? j['name']?.toString() ?? '',
+    lat: (j['lat'] as num).toDouble(),
+    lng: (j['lng'] as num).toDouble(),
+    radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
+    colorHex: j['color']?.toString() ?? '#e0679a',
+    boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
+  );
 }
 
 /// All canonical map-zone layers for one city. The legacy `*Markers` names are
@@ -82,6 +81,9 @@ class MapZones {
   final List<DistrictZone> quartalMarkers; // mahallas
   final List<DistrictZone> areaZones;
   final List<DistrictZone> metroStations;
+  final List<DistrictZone> parks;
+  final List<DistrictZone> shoppingMalls;
+  final List<DistrictZone> universities;
   final DistrictZone? cityZone;
 
   const MapZones({
@@ -90,6 +92,9 @@ class MapZones {
     this.quartalMarkers = const [],
     this.areaZones = const [],
     this.metroStations = const [],
+    this.parks = const [],
+    this.shoppingMalls = const [],
+    this.universities = const [],
     this.cityZone,
   });
 
@@ -100,6 +105,9 @@ class MapZones {
     yield* quartalMarkers;
     yield* areaZones;
     yield* metroStations;
+    yield* parks;
+    yield* shoppingMalls;
+    yield* universities;
   }
 
   DistrictZone? byId(String? id) {
@@ -120,6 +128,9 @@ class MapZones {
       quartalMarkers: list('quartalMarkers'),
       areaZones: list('areaZones'),
       metroStations: list('metroStations'),
+      parks: list('parks'),
+      shoppingMalls: list('shoppingMalls'),
+      universities: list('universities'),
       cityZone: j['cityZone'] is Map
           ? DistrictZone.fromJson(
               Map<String, dynamic>.from(j['cityZone'] as Map),
