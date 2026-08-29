@@ -7,6 +7,7 @@ on:
       - .github/workflows/apply-location-i18n.yml
       - .github/scripts/apply-location-i18n.py
       - .github/scripts/apply-mobile-polish.py
+      - .github/scripts/apply-deal-pills.py
       - .github/scripts/apply-stats-percent.py
 
 permissions:
@@ -37,6 +38,7 @@ jobs:
           PY
           python3 .github/scripts/apply-location-i18n.py
           python3 .github/scripts/apply-mobile-polish.py
+          python3 .github/scripts/apply-deal-pills.py
           python3 .github/scripts/apply-stats-percent.py
 
       - name: Set up Flutter
@@ -75,8 +77,8 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/scripts/apply-location-i18n.py .github/scripts/apply-mobile-polish.py .github/scripts/apply-stats-percent.py .github/workflows/apply-location-i18n.yml
+          git rm -f .github/scripts/apply-location-i18n.py .github/scripts/apply-mobile-polish.py .github/scripts/apply-deal-pills.py .github/scripts/apply-stats-percent.py .github/workflows/apply-location-i18n.yml
           git add app backend
           git diff --cached --check
-          git commit -m "fix(app): localize geography, tighten mobile UI, show deal shares"
+          git commit -m "fix(app): polish mobile filters, map clusters, localization and statistics"
           git push origin master
