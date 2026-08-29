@@ -3,9 +3,26 @@ import {cityLocations} from './locations.js';
 import {getAvailableListingLocations} from './db.js';
 import {getRates} from './fx.js';
 import {mapZonesFor} from './district-zones.js';
+import {geographyDisplayName} from '@whiteslove/parsing-lexicon/geography-display';
+
+/** {raw name -> localized label}, only for names that actually translate. */
+function labelMap(names, locale, kind) {
+  const map = {};
+  for (const name of names) {
+    const label = geographyDisplayName(name, locale, kind);
+    if (label && label !== name) map[name] = label;
+  }
+  return map;
+}
 
 export function installCatalogRoutes(app) {
-  app.get('/api/countries', async (_req, res) => {
+  app.get('/api/countries', async (req, res) => {
+    // Clients (the app in particular) render raw geography names as-is by
+    // default — OK for Romania/Kazakhstan/Uzbekistan's small Latin-script
+    // lists, wrong for a Russian-language UI. Locale is opt-in via query
+    // param rather than always computed, since it's extra work for every
+    // city/district/metro/microdistrict/quartal/area name in every country.
+    const locale = String(req.query.locale || '').trim();
     try {
       const result = await Promise.all(
         COUNTRY_CODES.map(async (code) => {
@@ -51,14 +68,25 @@ export function installCatalogRoutes(app) {
             location.microdistricts = zones.microdistrictMarkers.map((item) => item.name);
             location.quartals = zones.quartalMarkers.map((item) => item.name);
             location.areas = zones.areaZones.map((item) => item.name);
+
+            if (locale) {
+              location.districtLabels = labelMap(location.districts, locale, 'district');
+              location.metroLabels = labelMap(location.metro, locale, 'metro');
+              location.microdistrictLabels = labelMap(location.microdistricts, locale, 'any');
+              location.quartalLabels = labelMap(location.quartals, locale, 'any');
+              location.areaLabels = labelMap(location.areas, locale, 'any');
+            }
           }
+
+          const citiesList = [...cities].sort((a, b) => a.localeCompare(b, 'uk'));
 
           return {
             code: country.code,
             name: country.name,
             currency: country.currency,
             center: country.center,
-            cities: [...cities].sort((a, b) => a.localeCompare(b, 'uk')),
+            cities: citiesList,
+            ...(locale ? {cityLabels: labelMap(citiesList, locale, 'city')} : {}),
             locations,
           };
         }),

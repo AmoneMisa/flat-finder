@@ -3,6 +3,50 @@ import 'package:intl/intl.dart';
 import '../l10n/strings.dart';
 import '../models/listing.dart';
 
+/// Russian names for the backend's Romania/Kazakhstan/Uzbekistan city lists
+/// (21 cities total, always Latin-script from the backend). Covers every
+/// city those three countries currently return, so it's complete for them —
+/// unlike Ukraine's ~326-city list, which mixes Ukrainian-Cyrillic and Latin
+/// spellings inconsistently at the source and isn't attempted here; a
+/// correct fix belongs server-side (a real geography translation table, like
+/// the one whiteslove.me's own site draws from), not a client dictionary
+/// that would cover a handful of cities and silently leave the rest
+/// untranslated.
+const _cityNamesRu = {
+  // Romania
+  'Brasov': 'Брашов',
+  'Bucharest': 'Бухарест',
+  'Cluj-Napoca': 'Клуж-Напока',
+  'Constanta': 'Констанца',
+  'Iasi': 'Яссы',
+  'Oradea': 'Орадя',
+  'Timisoara': 'Тимишоара',
+  // Kazakhstan
+  'Aktobe': 'Актобе',
+  'Almaty': 'Алматы',
+  'Astana': 'Астана',
+  'Atyrau': 'Атырау',
+  'Karaganda': 'Караганда',
+  'Oral': 'Уральск',
+  'Shymkent': 'Шымкент',
+  // Uzbekistan
+  'Andijan': 'Андижан',
+  'Bukhara': 'Бухара',
+  'Fergana': 'Фергана',
+  'Namangan': 'Наманган',
+  'Nukus': 'Нукус',
+  'Samarkand': 'Самарканд',
+  'Tashkent': 'Ташкент',
+};
+
+/// Localizes a city name for [locale] where we have a translation; returns
+/// the original string otherwise (covers Ukraine's list, and anything new
+/// the backend adds before this dictionary is updated).
+String cityLabel(String city, String locale) {
+  if (!locale.toLowerCase().startsWith('ru')) return city;
+  return _cityNamesRu[city] ?? city;
+}
+
 /// Formats a listing's price, optionally converting it into [displayCurrency]
 /// using [rates] (units of currency per 1 USD, as returned by /api/rates).
 /// Falls back to the listing's native currency when conversion isn't possible.

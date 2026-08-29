@@ -10,7 +10,9 @@ import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/presets.dart';
 import '../state/settings.dart';
+import '../utils/format.dart';
 import '../utils/share_link.dart';
+import 'searchable_dropdown.dart';
 
 /// Bottom sheet that edits a working copy of the filters and returns it on Apply.
 class FilterSheet extends StatefulWidget {
@@ -762,11 +764,12 @@ class _FilterSheetState extends State<FilterSheet> {
                       ),
                       const SizedBox(height: 16),
                       _label(s.t('city')),
-                      _searchableDropdown(
+                      SearchableDropdown(
                         key: ValueKey('city-${_countries.join(',')}'),
                         hint: s.t('anyCity'),
                         options: _cityOptions,
                         value: _city,
+                        labelOf: (city) => cityLabel(city, s.lang),
                         onChanged: (v) => setState(() {
                           _city = v;
                           _district =
@@ -779,7 +782,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           _cityLoc!.districts.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         _label(s.t('district')),
-                        _searchableDropdown(
+                        SearchableDropdown(
                           key: ValueKey('district-$_city'),
                           hint: s.t('anyDistrict'),
                           options: _cityLoc!.districts,
@@ -790,7 +793,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       if (_cityLoc != null && _cityLoc!.metro.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         _label(s.t('metro')),
-                        _searchableDropdown(
+                        SearchableDropdown(
                           key: ValueKey('metro-$_city'),
                           hint: s.t('anyStation'),
                           options: _cityLoc!.metro,
@@ -801,7 +804,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       const SizedBox(height: 16),
                       _label(s.t('microdistrict')),
                       _cityLoc != null && _cityLoc!.microdistricts.isNotEmpty
-                          ? _searchableDropdown(
+                          ? SearchableDropdown(
                               key: ValueKey('microdistrict-$_city'),
                               hint: s.t('anyMicrodistrict'),
                               options: _cityLoc!.microdistricts,
@@ -822,7 +825,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       const SizedBox(height: 16),
                       _label(s.t('quartal')),
                       _cityLoc != null && _cityLoc!.quartals.isNotEmpty
-                          ? _searchableDropdown(
+                          ? SearchableDropdown(
                               key: ValueKey('quartal-$_city'),
                               hint: s.t('quartalPlaceholder'),
                               options: _cityLoc!.quartals,
@@ -842,7 +845,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       const SizedBox(height: 16),
                       _label(s.t('areaName')),
                       _cityLoc != null && _cityLoc!.areas.isNotEmpty
-                          ? _searchableDropdown(
+                          ? SearchableDropdown(
                               key: ValueKey('area-$_city'),
                               hint: s.t('areaPlaceholder'),
                               options: _cityLoc!.areas,
@@ -1382,83 +1385,6 @@ class _FilterSheetState extends State<FilterSheet> {
     child: Text(t, style: const TextStyle(fontWeight: FontWeight.w600)),
   );
 
-  /// A type-to-search field over a fixed option list. Empty text = "any"
-  /// (null). Keyed by the parent so it resets when the city/country changes.
-  Widget _searchableDropdown({
-    Key? key,
-    required String hint,
-    required List<String> options,
-    required String? value,
-    required ValueChanged<String?> onChanged,
-    ValueChanged<String>? onTextChanged,
-  }) {
-    return Autocomplete<String>(
-      key: key,
-      initialValue: TextEditingValue(text: value ?? ''),
-      optionsBuilder: (t) {
-        final q = t.text.trim().toLowerCase();
-        if (q.isEmpty) return options;
-        return options.where((o) => o.toLowerCase().contains(q));
-      },
-      onSelected: onChanged,
-      fieldViewBuilder: (context, ctl, focus, onSubmit) => TextField(
-        controller: ctl,
-        focusNode: focus,
-        decoration: InputDecoration(
-          hintText: hint,
-          border: const OutlineInputBorder(),
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: ctl.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    ctl.clear();
-                    onChanged(null);
-                  },
-                ),
-        ),
-        onChanged: (t) {
-          onTextChanged?.call(t);
-          final trimmed = t.trim();
-          if (trimmed.isEmpty) {
-            onChanged(null);
-            return;
-          }
-          // Commit as soon as the text exactly matches a known option, so the
-          // choice sticks even if the user doesn't tap the suggestion.
-          for (final o in options) {
-            if (o.toLowerCase() == trimmed.toLowerCase()) {
-              onChanged(o);
-              return;
-            }
-          }
-        },
-      ),
-      optionsViewBuilder: (context, onSelected, opts) => Align(
-        alignment: Alignment.topLeft,
-        child: Material(
-          elevation: 4,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
-            child: ListView(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              children: opts
-                  .map(
-                    (o) => ListTile(
-                      dense: true,
-                      title: Text(o),
-                      onTap: () => onSelected(o),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _minMaxRow(
     SettingsState s,

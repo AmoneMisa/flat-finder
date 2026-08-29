@@ -129,33 +129,29 @@ class ListingCard extends StatelessWidget {
               child: _WarningBadge(text: s.t('potentiallyUnsafe')),
             ),
           ),
-        Positioned(
-          top: 8,
-          right: 8,
-          child: Row(
-            children: [
-              if (onShowOnMap != null && listing.hasLocation) ...[
-                _CardActionButton(
-                  icon: Icons.pin_drop_outlined,
-                  tooltip: s.t('showOnMap'),
-                  onPressed: onShowOnMap,
-                ),
-                const SizedBox(width: 6),
-              ],
-              _FavButton(
-                isFav: isFav,
-                tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
-                onPressed: () => favorites.toggle(listing),
-              ),
-            ],
-          ),
-        ),
         if (isViewed)
-          Positioned(
-            top: 8,
-            right: onShowOnMap != null && listing.hasLocation ? 84 : 46,
-            child: _ViewedIcon(tooltip: s.t('viewedTag')),
+          Positioned(top: 8, right: 8, child: _ViewedIcon(tooltip: s.t('viewedTag'))),
+      ],
+    );
+
+    // Map-pin/favorite actions used to float on top of the photo, where they
+    // crowded and overlapped the deal badge on the narrow mobile thumbnail
+    // (~42% card width). Rendered inline in the meta panel instead, next to
+    // the price, where there's always room.
+    final actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (onShowOnMap != null && listing.hasLocation)
+          _CardActionButton(
+            icon: Icons.pin_drop_outlined,
+            tooltip: s.t('showOnMap'),
+            onPressed: onShowOnMap,
           ),
+        _FavButton(
+          isFav: isFav,
+          tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
+          onPressed: () => favorites.toggle(listing),
+        ),
       ],
     );
 
@@ -195,6 +191,7 @@ class ListingCard extends StatelessWidget {
                           rates: appState.rates,
                           displayCurrency: settings.displayCurrency,
                           priceState: priceState,
+                          actions: actions,
                           compact: true,
                         ),
                       ),
@@ -215,6 +212,7 @@ class ListingCard extends StatelessWidget {
                     rates: appState.rates,
                     displayCurrency: settings.displayCurrency,
                     priceState: priceState,
+                    actions: actions,
                     compact: grid,
                   ),
                 ],
@@ -230,6 +228,7 @@ class ListingCard extends StatelessWidget {
     required Map<String, double> rates,
     required String? displayCurrency,
     required PriceTone priceState,
+    required Widget actions,
     bool compact = false,
   }) {
     final badges = _contextBadges(filters, s);
@@ -245,13 +244,20 @@ class ListingCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _PriceLine(
-            listing: listing,
-            rates: rates,
-            displayCurrency: displayCurrency,
-            state: priceState,
-            s: s,
-            compact: compact,
+          Row(
+            children: [
+              Expanded(
+                child: _PriceLine(
+                  listing: listing,
+                  rates: rates,
+                  displayCurrency: displayCurrency,
+                  state: priceState,
+                  s: s,
+                  compact: compact,
+                ),
+              ),
+              actions,
+            ],
           ),
           SizedBox(height: compact ? 2 : 6),
           Text(

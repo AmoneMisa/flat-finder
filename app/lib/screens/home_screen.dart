@@ -18,6 +18,7 @@ import '../utils/sort.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/listing_card.dart';
 import '../widgets/map_view.dart';
+import '../widgets/searchable_dropdown.dart';
 import '../widgets/stats_sheet.dart';
 import 'favorites_screen.dart';
 import 'history_screen.dart';
@@ -644,19 +645,12 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: DropdownButtonFormField<String>(
+                  child: SearchableDropdown(
+                    key: ValueKey('quick-city-$selectedCountry'),
+                    hint: s.t('anyCity'),
+                    options: cities,
                     value: selectedCity,
-                    isExpanded: true,
-                    decoration: InputDecoration(labelText: s.t('city')),
-                    hint: Text(s.t('anyCity')),
-                    items: cities
-                        .map(
-                          (city) => DropdownMenuItem(
-                            value: city,
-                            child: Text(city, overflow: TextOverflow.ellipsis),
-                          ),
-                        )
-                        .toList(),
+                    labelOf: (city) => cityLabel(city, s.lang),
                     onChanged: (value) => _schedule(
                       _withTextValues().copyWith(
                         city: value ?? '',
