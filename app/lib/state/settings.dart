@@ -40,31 +40,31 @@ class BrandColors {
 }
 
 InputDecorationTheme _brandInputTheme(Color accent) => InputDecorationTheme(
-  filled: true,
-  fillColor: BrandColors.bgPanel,
-  hintStyle: const TextStyle(color: BrandColors.textMuted),
-  labelStyle: const TextStyle(color: BrandColors.textSoft),
-  // The label always sits on the border, like a Dropdown's label always
-  // does once it has a value — otherwise an empty TextField's label sits
-  // centered like a placeholder, only jumping to the border on focus,
-  // which read as an inconsistent field style next to the dropdowns.
-  floatingLabelBehavior: FloatingLabelBehavior.always,
-  isDense: true,
-  constraints: const BoxConstraints.tightFor(height: 48),
-  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-  border: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(BrandColors.radius),
-    borderSide: const BorderSide(color: BrandColors.line),
-  ),
-  enabledBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(BrandColors.radius),
-    borderSide: const BorderSide(color: BrandColors.line),
-  ),
-  focusedBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(BrandColors.radius),
-    borderSide: BorderSide(color: accent, width: 2),
-  ),
-);
+      filled: true,
+      fillColor: BrandColors.bgPanel,
+      hintStyle: const TextStyle(color: BrandColors.textMuted),
+      labelStyle: const TextStyle(color: BrandColors.textSoft),
+      // The label always sits on the border, like a Dropdown's label always
+      // does once it has a value — otherwise an empty TextField's label sits
+      // centered like a placeholder, only jumping to the border on focus,
+      // which read as an inconsistent field style next to the dropdowns.
+      floatingLabelBehavior: FloatingLabelBehavior.always,
+      isDense: true,
+      constraints: const BoxConstraints.tightFor(height: 48),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(BrandColors.radius),
+        borderSide: const BorderSide(color: BrandColors.line),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(BrandColors.radius),
+        borderSide: const BorderSide(color: BrandColors.line),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(BrandColors.radius),
+        borderSide: BorderSide(color: accent, width: 2),
+      ),
+    );
 
 /// Build the [ThemeData] for a named theme (see [kThemeOptions]). Kept as a
 /// free function so [main] can drive `MaterialApp.theme` from the current
@@ -73,29 +73,28 @@ ThemeData buildTheme(String name) {
   switch (name) {
     case 'dark':
       // The site's actual palette: navy/near-black with a single pink accent.
-      final scheme =
-          ColorScheme.fromSeed(
-            seedColor: BrandColors.primary,
-            brightness: Brightness.dark,
-            secondary: BrandColors.secondary,
-          ).copyWith(
-            primary: BrandColors.primary,
-            secondary: BrandColors.secondary,
-            surface: BrandColors.bgPanel,
-            // Material 3 auto-derives these tonal surfaces from the seed
-            // color, which comes out as a muddy brown against this navy
-            // palette (cards, SegmentedButton's selected segment, etc. all
-            // read it) — pin every one to the app's own panel/pink tones.
-            surfaceContainerHighest: BrandColors.bgPanel2,
-            surfaceContainerHigh: BrandColors.bgPanel2,
-            surfaceContainer: BrandColors.bgPanel,
-            surfaceContainerLow: BrandColors.bgPanel,
-            surfaceContainerLowest: BrandColors.bgDeep,
-            secondaryContainer: BrandColors.primary,
-            onSecondaryContainer: Colors.white,
-            onSurface: BrandColors.textPrimary,
-            outline: BrandColors.line,
-          );
+      final scheme = ColorScheme.fromSeed(
+        seedColor: BrandColors.primary,
+        brightness: Brightness.dark,
+        secondary: BrandColors.secondary,
+      ).copyWith(
+        primary: BrandColors.primary,
+        secondary: BrandColors.secondary,
+        surface: BrandColors.bgPanel,
+        // Material 3 auto-derives these tonal surfaces from the seed
+        // color, which comes out as a muddy brown against this navy
+        // palette (cards, SegmentedButton's selected segment, etc. all
+        // read it) — pin every one to the app's own panel/pink tones.
+        surfaceContainerHighest: BrandColors.bgPanel2,
+        surfaceContainerHigh: BrandColors.bgPanel2,
+        surfaceContainer: BrandColors.bgPanel,
+        surfaceContainerLow: BrandColors.bgPanel,
+        surfaceContainerLowest: BrandColors.bgDeep,
+        secondaryContainer: BrandColors.primary,
+        onSecondaryContainer: Colors.white,
+        onSurface: BrandColors.textPrimary,
+        outline: BrandColors.line,
+      );
       return ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
@@ -144,25 +143,24 @@ ThemeData buildTheme(String name) {
     case 'darkBlue':
       // Same dark surfaces, blue accent instead of pink — an on-brand
       // alternative to the site's default rather than an unrelated hue.
-      final scheme =
-          ColorScheme.fromSeed(
-            seedColor: BrandColors.accentBlue,
-            brightness: Brightness.dark,
-            secondary: BrandColors.secondary,
-          ).copyWith(
-            primary: BrandColors.accentBlue,
-            secondary: BrandColors.secondary,
-            surface: BrandColors.bgPanel,
-            surfaceContainerHighest: BrandColors.bgPanel2,
-            surfaceContainerHigh: BrandColors.bgPanel2,
-            surfaceContainer: BrandColors.bgPanel,
-            surfaceContainerLow: BrandColors.bgPanel,
-            surfaceContainerLowest: BrandColors.bgDeep,
-            secondaryContainer: BrandColors.accentBlue,
-            onSecondaryContainer: Colors.white,
-            onSurface: BrandColors.textPrimary,
-            outline: BrandColors.line,
-          );
+      final scheme = ColorScheme.fromSeed(
+        seedColor: BrandColors.accentBlue,
+        brightness: Brightness.dark,
+        secondary: BrandColors.secondary,
+      ).copyWith(
+        primary: BrandColors.accentBlue,
+        secondary: BrandColors.secondary,
+        surface: BrandColors.bgPanel,
+        surfaceContainerHighest: BrandColors.bgPanel2,
+        surfaceContainerHigh: BrandColors.bgPanel2,
+        surfaceContainer: BrandColors.bgPanel,
+        surfaceContainerLow: BrandColors.bgPanel,
+        surfaceContainerLowest: BrandColors.bgDeep,
+        secondaryContainer: BrandColors.accentBlue,
+        onSecondaryContainer: Colors.white,
+        onSurface: BrandColors.textPrimary,
+        outline: BrandColors.line,
+      );
       return ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
@@ -212,15 +210,14 @@ ThemeData buildTheme(String name) {
     default:
       // The site itself is dark-only; this is the same pink/purple brand
       // hues carried onto a light surface for users who prefer light mode.
-      final scheme =
-          ColorScheme.fromSeed(
-            seedColor: BrandColors.primary,
-            brightness: Brightness.light,
-            secondary: BrandColors.primaryAlt,
-          ).copyWith(
-            primary: BrandColors.primary,
-            secondary: BrandColors.primaryAlt,
-          );
+      final scheme = ColorScheme.fromSeed(
+        seedColor: BrandColors.primary,
+        brightness: Brightness.light,
+        secondary: BrandColors.primaryAlt,
+      ).copyWith(
+        primary: BrandColors.primary,
+        secondary: BrandColors.primaryAlt,
+      );
       return ThemeData(
         useMaterial3: true,
         colorScheme: scheme,

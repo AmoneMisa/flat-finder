@@ -111,22 +111,24 @@ class CityLocations {
   });
 
   factory CityLocations.fromJson(Map<String, dynamic> j) => CityLocations(
-    districts:
-        (j['districts'] as List?)?.map((e) => e.toString()).toList() ??
-        const [],
-    metro: (j['metro'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-    microdistricts:
-        (j['microdistricts'] as List?)?.map((e) => e.toString()).toList() ??
-        const [],
-    quartals:
-        (j['quartals'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-    areas: (j['areas'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-    districtLabels: _stringMap(j['districtLabels']),
-    metroLabels: _stringMap(j['metroLabels']),
-    microdistrictLabels: _stringMap(j['microdistrictLabels']),
-    quartalLabels: _stringMap(j['quartalLabels']),
-    areaLabels: _stringMap(j['areaLabels']),
-  );
+        districts:
+            (j['districts'] as List?)?.map((e) => e.toString()).toList() ??
+                const [],
+        metro: (j['metro'] as List?)?.map((e) => e.toString()).toList() ??
+            const [],
+        microdistricts:
+            (j['microdistricts'] as List?)?.map((e) => e.toString()).toList() ??
+                const [],
+        quartals: (j['quartals'] as List?)?.map((e) => e.toString()).toList() ??
+            const [],
+        areas: (j['areas'] as List?)?.map((e) => e.toString()).toList() ??
+            const [],
+        districtLabels: _stringMap(j['districtLabels']),
+        metroLabels: _stringMap(j['metroLabels']),
+        microdistrictLabels: _stringMap(j['microdistrictLabels']),
+        quartalLabels: _stringMap(j['quartalLabels']),
+        areaLabels: _stringMap(j['areaLabels']),
+      );
 
   String labelFor(String value, {String? kind}) {
     final typed = switch (kind) {
@@ -156,6 +158,7 @@ class Country {
   final String code;
   final String name;
   final String currency;
+  final String? callingCode;
   final double centerLat;
   final double centerLng;
   final List<String> cities;
@@ -166,6 +169,7 @@ class Country {
     required this.code,
     required this.name,
     required this.currency,
+    this.callingCode,
     required this.centerLat,
     required this.centerLng,
     this.cities = const [],
@@ -178,8 +182,11 @@ class Country {
   /// name unchanged.
   String cityLabel(String city) => cityLabels[city] ?? city;
 
-  String locationLabel(String city, String value, {String? kind}) =>
-      locations[city]?.labelFor(value, kind: kind) ?? value;
+  String locationLabel(String city, String value, {String? kind}) {
+    final direct = locations[city]?.labelFor(value, kind: kind);
+    if (direct != null && direct != value) return direct;
+    return locationLabelAnyCity(value, kind: kind);
+  }
 
   String locationLabelAnyCity(String value, {String? kind}) {
     for (final location in locations.values) {
@@ -190,21 +197,22 @@ class Country {
   }
 
   factory Country.fromJson(Map<String, dynamic> j) => Country(
-    code: j['code'],
-    name: j['name'],
-    currency: j['currency'] ?? '',
-    centerLat: (j['center']?['lat'] as num?)?.toDouble() ?? 0,
-    centerLng: (j['center']?['lng'] as num?)?.toDouble() ?? 0,
-    cities:
-        (j['cities'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-    locations: ((j['locations'] as Map?) ?? const {}).map(
-      (k, v) => MapEntry(
-        k.toString(),
-        CityLocations.fromJson(Map<String, dynamic>.from(v)),
-      ),
-    ),
-    cityLabels: _stringMap(j['cityLabels']),
-  );
+        code: j['code'],
+        name: j['name'],
+        currency: j['currency'] ?? '',
+        callingCode: j['callingCode']?.toString(),
+        centerLat: (j['center']?['lat'] as num?)?.toDouble() ?? 0,
+        centerLng: (j['center']?['lng'] as num?)?.toDouble() ?? 0,
+        cities: (j['cities'] as List?)?.map((e) => e.toString()).toList() ??
+            const [],
+        locations: ((j['locations'] as Map?) ?? const {}).map(
+          (k, v) => MapEntry(
+            k.toString(),
+            CityLocations.fromJson(Map<String, dynamic>.from(v)),
+          ),
+        ),
+        cityLabels: _stringMap(j['cityLabels']),
+      );
 }
 
 class Filters {
@@ -306,10 +314,10 @@ class Filters {
     this.noCommission = false,
     this.maxAgeDays,
     this.sort = SortBy.relevance,
-  }) : countries = _singleCountry(countries),
-       sources = sources ?? {...kAllSources},
-       customSources = customSources ?? [],
-       amenities = amenities ?? {};
+  })  : countries = _singleCountry(countries),
+        sources = sources ?? {...kAllSources},
+        customSources = customSources ?? [],
+        amenities = amenities ?? {};
 
   Filters copyWith({
     Set<String>? countries,
@@ -395,40 +403,34 @@ class Filters {
       audience: audience ?? this.audience,
       priceMin: clearPriceMin ? null : (priceMin ?? this.priceMin),
       priceMax: clearPriceMax ? null : (priceMax ?? this.priceMax),
-      priceTolerance: clearPriceTolerance
-          ? null
-          : (priceTolerance ?? this.priceTolerance),
+      priceTolerance:
+          clearPriceTolerance ? null : (priceTolerance ?? this.priceTolerance),
       roomsMin: clearRoomsMin ? null : (roomsMin ?? this.roomsMin),
       roomsMax: clearRoomsMax ? null : (roomsMax ?? this.roomsMax),
       bedroomsMin: clearBedroomsMin ? null : (bedroomsMin ?? this.bedroomsMin),
       bedroomsMax: clearBedroomsMax ? null : (bedroomsMax ?? this.bedroomsMax),
       floorMin: clearFloorMin ? null : (floorMin ?? this.floorMin),
       floorMax: clearFloorMax ? null : (floorMax ?? this.floorMax),
-      totalFloorsMin: clearTotalFloorsMin
-          ? null
-          : (totalFloorsMin ?? this.totalFloorsMin),
-      totalFloorsMax: clearTotalFloorsMax
-          ? null
-          : (totalFloorsMax ?? this.totalFloorsMax),
+      totalFloorsMin:
+          clearTotalFloorsMin ? null : (totalFloorsMin ?? this.totalFloorsMin),
+      totalFloorsMax:
+          clearTotalFloorsMax ? null : (totalFloorsMax ?? this.totalFloorsMax),
       yearMin: clearYearMin ? null : (yearMin ?? this.yearMin),
       yearMax: clearYearMax ? null : (yearMax ?? this.yearMax),
       areaMin: clearAreaMin ? null : (areaMin ?? this.areaMin),
       areaMax: clearAreaMax ? null : (areaMax ?? this.areaMax),
-      pricePerSqmMin: clearPricePerSqmMin
-          ? null
-          : (pricePerSqmMin ?? this.pricePerSqmMin),
-      pricePerSqmMax: clearPricePerSqmMax
-          ? null
-          : (pricePerSqmMax ?? this.pricePerSqmMax),
+      pricePerSqmMin:
+          clearPricePerSqmMin ? null : (pricePerSqmMin ?? this.pricePerSqmMin),
+      pricePerSqmMax:
+          clearPricePerSqmMax ? null : (pricePerSqmMax ?? this.pricePerSqmMax),
       commissionPercentMin: clearCommissionPercentMin
           ? null
           : (commissionPercentMin ?? this.commissionPercentMin),
       commissionPercentMax: clearCommissionPercentMax
           ? null
           : (commissionPercentMax ?? this.commissionPercentMax),
-      priceCurrency: clearPriceCurrency
-          ? null
-          : (priceCurrency ?? this.priceCurrency),
+      priceCurrency:
+          clearPriceCurrency ? null : (priceCurrency ?? this.priceCurrency),
       metroMaxM: clearMetroMaxM ? null : (metroMaxM ?? this.metroMaxM),
       nearbyMaxM: clearNearbyMaxM ? null : (nearbyMaxM ?? this.nearbyMaxM),
       nearbyKind: clearNearbyKind ? null : (nearbyKind ?? this.nearbyKind),
@@ -456,55 +458,55 @@ class Filters {
   /// Serialize the user's selections so they survive app restarts. Only the
   /// fields the user actively picks are stored (not derived/UI state).
   Map<String, dynamic> toJson() => {
-    'countries': countries.toList(),
-    'sources': sources.toList(),
-    'customSources': customSources,
-    'propertyType': propertyType.name,
-    'dealType': dealType.name,
-    'agency': agency.name,
-    'audience': audience.name,
-    'priceMin': priceMin,
-    'priceMax': priceMax,
-    'priceTolerance': priceTolerance,
-    'roomsMin': roomsMin,
-    'roomsMax': roomsMax,
-    'bedroomsMin': bedroomsMin,
-    'bedroomsMax': bedroomsMax,
-    'floorMin': floorMin,
-    'floorMax': floorMax,
-    'totalFloorsMin': totalFloorsMin,
-    'totalFloorsMax': totalFloorsMax,
-    'yearMin': yearMin,
-    'yearMax': yearMax,
-    'areaMin': areaMin,
-    'areaMax': areaMax,
-    'pricePerSqmMin': pricePerSqmMin,
-    'pricePerSqmMax': pricePerSqmMax,
-    'commissionPercentMin': commissionPercentMin,
-    'commissionPercentMax': commissionPercentMax,
-    'priceCurrency': priceCurrency,
-    'metroMaxM': metroMaxM,
-    'nearbyMaxM': nearbyMaxM,
-    'nearbyKind': nearbyKind,
-    'withPhotos': withPhotos,
-    'city': city,
-    'district': district,
-    'microdistrict': microdistrict,
-    'quartal': quartal,
-    'area': area,
-    'metro': metro,
-    'query': query,
-    'pets': pets,
-    'children': children,
-    'roomOnly': roomOnly,
-    'amenities': amenities.toList(),
-    'noElevator': noElevator,
-    'noDeposit': noDeposit,
-    'communalIncluded': communalIncluded,
-    'noCommission': noCommission,
-    'maxAgeDays': maxAgeDays,
-    'sort': sort.name,
-  };
+        'countries': countries.toList(),
+        'sources': sources.toList(),
+        'customSources': customSources,
+        'propertyType': propertyType.name,
+        'dealType': dealType.name,
+        'agency': agency.name,
+        'audience': audience.name,
+        'priceMin': priceMin,
+        'priceMax': priceMax,
+        'priceTolerance': priceTolerance,
+        'roomsMin': roomsMin,
+        'roomsMax': roomsMax,
+        'bedroomsMin': bedroomsMin,
+        'bedroomsMax': bedroomsMax,
+        'floorMin': floorMin,
+        'floorMax': floorMax,
+        'totalFloorsMin': totalFloorsMin,
+        'totalFloorsMax': totalFloorsMax,
+        'yearMin': yearMin,
+        'yearMax': yearMax,
+        'areaMin': areaMin,
+        'areaMax': areaMax,
+        'pricePerSqmMin': pricePerSqmMin,
+        'pricePerSqmMax': pricePerSqmMax,
+        'commissionPercentMin': commissionPercentMin,
+        'commissionPercentMax': commissionPercentMax,
+        'priceCurrency': priceCurrency,
+        'metroMaxM': metroMaxM,
+        'nearbyMaxM': nearbyMaxM,
+        'nearbyKind': nearbyKind,
+        'withPhotos': withPhotos,
+        'city': city,
+        'district': district,
+        'microdistrict': microdistrict,
+        'quartal': quartal,
+        'area': area,
+        'metro': metro,
+        'query': query,
+        'pets': pets,
+        'children': children,
+        'roomOnly': roomOnly,
+        'amenities': amenities.toList(),
+        'noElevator': noElevator,
+        'noDeposit': noDeposit,
+        'communalIncluded': communalIncluded,
+        'noCommission': noCommission,
+        'maxAgeDays': maxAgeDays,
+        'sort': sort.name,
+      };
 
   factory Filters.fromJson(Map<String, dynamic> j) {
     T byName<T extends Enum>(List<T> values, dynamic name, T fallback) {
@@ -516,15 +518,14 @@ class Filters {
 
     Set<String> strSet(dynamic v, Set<String> fallback) =>
         (v is List && v.isNotEmpty)
-        ? v.map((e) => e.toString()).toSet()
-        : fallback;
+            ? v.map((e) => e.toString()).toSet()
+            : fallback;
     num? n(dynamic v) => v == null ? null : (v as num);
 
     return Filters(
       countries: strSet(j['countries'], {'RO'}),
       sources: strSet(j['sources'], {...kAllSources}),
-      customSources:
-          (j['customSources'] as List?)
+      customSources: (j['customSources'] as List?)
               ?.map((e) => e.toString())
               .where((e) => e.isNotEmpty)
               .toList() ??
@@ -571,8 +572,7 @@ class Filters {
       pets: j['pets'] == true,
       children: j['children'] == true,
       roomOnly: j['roomOnly'] == true,
-      amenities:
-          (j['amenities'] as List?)
+      amenities: (j['amenities'] as List?)
               ?.map((e) => e.toString())
               .where(kAmenityFilters.contains)
               .toSet() ??
@@ -639,14 +639,12 @@ class Filters {
       pricePerSqmMax: n(q['pricePerSqmMax']),
       commissionPercentMin: n(q['commissionPercentMin']),
       commissionPercentMax: n(q['commissionPercentMax']),
-      priceCurrency: (q['priceCurrency']?.isNotEmpty ?? false)
-          ? q['priceCurrency']
-          : null,
+      priceCurrency:
+          (q['priceCurrency']?.isNotEmpty ?? false) ? q['priceCurrency'] : null,
       metroMaxM: n(q['metroMaxM']),
       nearbyMaxM: n(q['nearbyMaxM']),
-      nearbyKind: (q['nearbyKind']?.isNotEmpty ?? false)
-          ? q['nearbyKind']
-          : null,
+      nearbyKind:
+          (q['nearbyKind']?.isNotEmpty ?? false) ? q['nearbyKind'] : null,
       withPhotos: q['withPhotos'] == 'true',
       city: (q['city'] ?? '').trim(),
       district: (q['district'] ?? '').trim(),

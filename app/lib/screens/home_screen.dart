@@ -196,22 +196,22 @@ class _HomeScreenState extends State<HomeScreen> {
     ).push(MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)));
   }
 
-  void _showMapPreview(Listing l) async {
-    Listing? full;
-    for (final item in context.read<AppState>().listings) {
+  void _showMapPreview(Listing l) {
+    final state = context.read<AppState>();
+    var initial = l;
+    for (final item in state.listings) {
       if (item.id == l.id && item.source == l.source) {
-        full = item;
+        initial = item;
         break;
       }
     }
-    full ??= await _api.reloadListing(l) ?? l;
-    if (!mounted) return;
-    final resolved = full;
+
     showModalBottomSheet(
       context: context,
-      builder: (_) => ListingCard(
-        listing: resolved,
-        onTap: () {
+      builder: (_) => _MapListingPreview(
+        api: _api,
+        initial: initial,
+        onOpen: (resolved) {
           Navigator.pop(context);
           _openListing(resolved);
         },
@@ -250,8 +250,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final settings = context.watch<SettingsState>();
     final hidden = context.watch<HiddenState>();
     final headerActionStyle = IconButton.styleFrom(
-      minimumSize: const Size(28, 38),
-      maximumSize: const Size(28, 38),
+      minimumSize: const Size(30, 38),
+      maximumSize: const Size(30, 38),
       padding: EdgeInsets.zero,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
@@ -608,8 +608,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return active.toList();
       case _ViewTab.fresh:
         final cutoff = DateTime.now().toUtc().subtract(
-          const Duration(hours: 24),
-        );
+              const Duration(hours: 24),
+            );
         return active
             .where(
               (l) =>
@@ -622,10 +622,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _emptyLabel(SettingsState settings) => switch (_tab) {
-    _ViewTab.fresh => settings.t('noFreshHere'),
-    _ViewTab.hidden => settings.t('noHiddenHere'),
-    _ViewTab.all => settings.t('noListings'),
-  };
+        _ViewTab.fresh => settings.t('noFreshHere'),
+        _ViewTab.hidden => settings.t('noHiddenHere'),
+        _ViewTab.all => settings.t('noListings'),
+      };
 
   /// Column count from the available width: 1 on phones, up to 4 on wide
   /// desktop windows.
@@ -635,6 +635,73 @@ class _HomeScreenState extends State<HomeScreen> {
     if (width >= 700) return 2;
     return 1;
   }
+}
+
+class _MapListingPreview extends StatefulWidget {
+  const _MapListingPreview({
+    required this.api,
+    required this.initial,
+    required this.onOpen,
+  });
+
+  final ApiService api;
+  final Listing initial;
+  final ValueChanged<Listing> onOpen;
+
+  @override
+  State<_MapListingPreview> createState() => _MapListingPreviewState();
+}
+
+class _MapListingPreviewState extends State<_MapListingPreview> {
+  late Listing _listing = widget.initial;
+  bool _hydrating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final needsHydration = _listing.marketComparison == null ||
+        _listing.city.isEmpty ||
+        (_listing.photos.isEmpty && _listing.photo == null);
+    if (needsHydration) _hydrate();
+  }
+
+  Future<void> _hydrate() async {
+    if (_hydrating) return;
+    _hydrating = true;
+    Listing? full;
+    try {
+      final publicId = _listing.publicId;
+      if (publicId != null) {
+        full = await widget.api.fetchListingByPublicId(publicId);
+      }
+    } catch (_) {
+      // The preview is already usable from the map point; hydration is best effort.
+    }
+    if (!mounted) return;
+    setState(() {
+      if (full != null) _listing = full!;
+      _hydrating = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: Stack(
+          children: [
+            ListingCard(
+              listing: _listing,
+              onTap: () => widget.onOpen(_listing),
+            ),
+            if (_hydrating)
+              const Positioned(
+                left: 8,
+                right: 8,
+                top: 0,
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+          ],
+        ),
+      );
 }
 
 /// The primary web filters stay visible on phones. Advanced filters remain in
@@ -753,9 +820,8 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
       selectedCountry ?? '',
       country?.cities ?? const <String>[],
     );
-    final selectedCity = cities.contains(widget.filters.city)
-        ? widget.filters.city
-        : null;
+    final selectedCity =
+        cities.contains(widget.filters.city) ? widget.filters.city : null;
 
     final compactInputTheme = theme.inputDecorationTheme.copyWith(
       isDense: true,
@@ -904,42 +970,46 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                       },
                     ),
                   ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: DropdownButtonFormField<_QuickDeal>(
+                      value: _quickDealFor(widget.filters),
+                      isExpanded: true,
+                      isDense: true,
+                      decoration: InputDecoration(labelText: s.t('dealType')),
+                      items: [
+                        DropdownMenuItem(
+                          value: _QuickDeal.any,
+                          child: Text(s.t('any')),
+                        ),
+                        DropdownMenuItem(
+                          value: _QuickDeal.sale,
+                          child: Text(s.t('sale')),
+                        ),
+                        DropdownMenuItem(
+                          value: _QuickDeal.longRent,
+                          child: Text(s.t('longTerm')),
+                        ),
+                        DropdownMenuItem(
+                          value: _QuickDeal.room,
+                          child: Text(s.t('roomOnly')),
+                        ),
+                        DropdownMenuItem(
+                          value: _QuickDeal.shortRent,
+                          child: Text(s.t('shortTerm')),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        _schedule(
+                          _withQuickDeal(_withTextValues(), value),
+                          immediate: true,
+                        );
+                      },
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 5),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Wrap(
-                  spacing: 5,
-                  runSpacing: 4,
-                  children: [
-                    for (final deal in _QuickDeal.values)
-                      ChoiceChip(
-                        label: Text(switch (deal) {
-                          _QuickDeal.any => s.t('any'),
-                          _QuickDeal.sale => s.t('sale'),
-                          _QuickDeal.longRent => s.t('longTerm'),
-                          _QuickDeal.room => s.t('roomOnly'),
-                          _QuickDeal.shortRent => s.t('shortTerm'),
-                        }, style: const TextStyle(fontSize: 11.5)),
-                        selected: _quickDealFor(widget.filters) == deal,
-                        showCheckmark: false,
-                        visualDensity: const VisualDensity(
-                          horizontal: -3,
-                          vertical: -3,
-                        ),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        labelPadding: const EdgeInsets.symmetric(horizontal: 3),
-                        padding: const EdgeInsets.symmetric(horizontal: 5),
-                        onSelected: (_) => _schedule(
-                          _withQuickDeal(_withTextValues(), deal),
-                          immediate: true,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-
               const SizedBox(height: 5),
               Row(
                 children: [
@@ -986,18 +1056,19 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
   }
 
   Filters _withQuickDeal(Filters f, _QuickDeal deal) => switch (deal) {
-    _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
-    _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
-    _QuickDeal.longRent => f.copyWith(
-      dealType: DealType.longRent,
-      roomOnly: false,
-    ),
-    _QuickDeal.room => f.copyWith(dealType: DealType.longRent, roomOnly: true),
-    _QuickDeal.shortRent => f.copyWith(
-      dealType: DealType.shortRent,
-      roomOnly: false,
-    ),
-  };
+        _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
+        _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
+        _QuickDeal.longRent => f.copyWith(
+            dealType: DealType.longRent,
+            roomOnly: false,
+          ),
+        _QuickDeal.room =>
+          f.copyWith(dealType: DealType.longRent, roomOnly: true),
+        _QuickDeal.shortRent => f.copyWith(
+            dealType: DealType.shortRent,
+            roomOnly: false,
+          ),
+      };
 }
 
 /// The quick-filter deal-type segments: room-share rent is stored as

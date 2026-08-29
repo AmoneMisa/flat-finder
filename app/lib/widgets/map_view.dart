@@ -127,8 +127,7 @@ class _MapViewState extends State<MapView> {
     if (old.center != widget.center || old.centerZoom != widget.centerZoom) {
       _controller.move(widget.center, widget.centerZoom);
     }
-    final geographyChanged =
-        old.country != widget.country ||
+    final geographyChanged = old.country != widget.country ||
         old.city != widget.city ||
         old.locale != widget.locale;
     if (geographyChanged) {
@@ -187,8 +186,7 @@ class _MapViewState extends State<MapView> {
     for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       final xi = poly[i].longitude, yi = poly[i].latitude;
       final xj = poly[j].longitude, yj = poly[j].latitude;
-      final intersect =
-          ((yi > p.latitude) != (yj > p.latitude)) &&
+      final intersect = ((yi > p.latitude) != (yj > p.latitude)) &&
           (p.longitude < (xj - xi) * (p.latitude - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
     }
@@ -210,9 +208,8 @@ class _MapViewState extends State<MapView> {
   /// feed once and cap the initial zoom at 14.
   void _fitToPoints() {
     if (_isFocused) return;
-    final located = widget.listings
-        .where((listing) => listing.hasLocation)
-        .toList();
+    final located =
+        widget.listings.where((listing) => listing.hasLocation).toList();
     if (located.isEmpty) return;
     final keys = located.map(_listingKey).toList()..sort();
     final signature = keys.join(',');
@@ -239,8 +236,7 @@ class _MapViewState extends State<MapView> {
     final lat = point.latitude.clamp(-85.05112878, 85.05112878).toDouble();
     final sinLat = math.sin(lat * math.pi / 180);
     final x = (point.longitude + 180) / 360 * worldSize;
-    final y =
-        (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
+    final y = (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
         worldSize;
     return Offset(x, y);
   }
@@ -303,25 +299,6 @@ class _MapViewState extends State<MapView> {
 
   String? _expandedGroupKey;
 
-  bool _hasRealSpread(_PinGroup group) {
-    final first = group.listings.first;
-    return group.listings
-        .skip(1)
-        .any((listing) => listing.lat != first.lat || listing.lng != first.lng);
-  }
-
-  double _zoomForRadialCapacity(_PinGroup group) {
-    var candidate = _zoom + 0.5;
-    while (candidate <= _clusterZoomMax + 0.001) {
-      final groups = _groupsFor(group.listings, zoom: candidate);
-      if (groups.every((item) => item.listings.length <= _radialCapacity)) {
-        return candidate;
-      }
-      candidate += 0.5;
-    }
-    return _clusterZoomMax;
-  }
-
   /// A price pill is wider than a point. Show it only when its complete
   /// screen rectangle cannot intersect any neighbouring standalone pill or
   /// cluster marker. Otherwise render the normal 16px point.
@@ -333,12 +310,10 @@ class _MapViewState extends State<MapView> {
       final otherPoint = _worldPixel(other.point);
       final dx = _wrappedDx(point.dx, otherPoint.dx);
       final dy = (point.dy - otherPoint.dy).abs();
-      final otherHalfWidth = other.listings.length == 1
-          ? _priceMarkerWidth / 2
-          : 16.0;
-      final otherHalfHeight = other.listings.length == 1
-          ? _priceMarkerHeight / 2
-          : 16.0;
+      final otherHalfWidth =
+          other.listings.length == 1 ? _priceMarkerWidth / 2 : 16.0;
+      final otherHalfHeight =
+          other.listings.length == 1 ? _priceMarkerHeight / 2 : 16.0;
       if (dx < _priceMarkerWidth / 2 + otherHalfWidth + 4 &&
           dy < _priceMarkerHeight / 2 + otherHalfHeight + 4) {
         return false;
@@ -352,12 +327,12 @@ class _MapViewState extends State<MapView> {
       widget.onTapListing(group.listings.first);
       return;
     }
-    if (group.listings.length > _radialCapacity &&
-        _hasRealSpread(group) &&
-        _zoom < _clusterZoomMax - 0.01) {
-      final targetZoom = _zoomForRadialCapacity(group);
-      setState(() => _expandedGroupKey = null);
-      _controller.move(group.point, targetZoom);
+    if (group.listings.length > _radialCapacity) {
+      if (_zoom < _clusterZoomMax - 0.01) {
+        final targetZoom = math.min(_zoom + 1.0, _clusterZoomMax);
+        setState(() => _expandedGroupKey = null);
+        _controller.move(group.point, targetZoom);
+      }
       return;
     }
     setState(() => _expandedGroupKey = group.key);
@@ -518,8 +493,7 @@ class _MapViewState extends State<MapView> {
                   for (final zone in _zones.districtZones)
                     for (final ring in _ringsFor(zone))
                       () {
-                        final dimmed =
-                            _selectedDistrictId != null &&
+                        final dimmed = _selectedDistrictId != null &&
                             zone.id != _selectedDistrictId;
                         final base = _parseHexColor(zone.colorHex);
                         final color = dimmed ? _desaturate(base, 0.85) : base;
@@ -553,8 +527,7 @@ class _MapViewState extends State<MapView> {
                               color: Colors.black.withValues(alpha: 0.55),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color:
-                                    (_selectedDistrictId != null &&
+                                color: (_selectedDistrictId != null &&
                                         zone.id != _selectedDistrictId)
                                     ? _desaturate(
                                         _parseHexColor(zone.colorHex),
@@ -567,8 +540,7 @@ class _MapViewState extends State<MapView> {
                               zone.label,
                               style: TextStyle(
                                 color: Colors.white.withValues(
-                                  alpha:
-                                      (_selectedDistrictId != null &&
+                                  alpha: (_selectedDistrictId != null &&
                                           zone.id != _selectedDistrictId)
                                       ? 0.55
                                       : 1,
@@ -627,7 +599,9 @@ class _MapViewState extends State<MapView> {
                     points: _area,
                     borderStrokeWidth: 2,
                     borderColor: Theme.of(context).colorScheme.primary,
-                    color: Theme.of(context).colorScheme.primary
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
                         .withValues(alpha: 0.15),
                   ),
                 ],
@@ -821,9 +795,8 @@ class _ZoneToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: active
-                ? scheme.primary
-                : Colors.black.withValues(alpha: 0.55),
+            color:
+                active ? scheme.primary : Colors.black.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: active ? scheme.primary : Colors.white24),
           ),
@@ -854,9 +827,8 @@ class _ZoneDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: _parseHexColor(colorHex),
         shape: shape,
-        borderRadius: shape == BoxShape.rectangle
-            ? BorderRadius.circular(3)
-            : null,
+        borderRadius:
+            shape == BoxShape.rectangle ? BorderRadius.circular(3) : null,
         border: Border.all(color: Colors.white, width: 1.5),
         boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 2)],
       ),

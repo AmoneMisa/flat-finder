@@ -29,10 +29,8 @@ String buildListingShareUrl(int publicId) {
 /// straight into the app instead, no chooser prompt.
 const kWebListingUrl = 'https://whiteslove.me/flat-finder';
 
-String buildListingWebShareUrl(int publicId) =>
-    Uri.parse(kWebListingUrl)
-        .replace(queryParameters: {'adv': '$publicId'})
-        .toString();
+String buildListingWebShareUrl(int publicId) => Uri.parse(kWebListingUrl)
+    .replace(queryParameters: {'adv': '$publicId'}).toString();
 
 /// Decode a single-listing deep link into its `publicId` — accepts both our
 /// own `flatfinder://listing?id=` scheme and the site's

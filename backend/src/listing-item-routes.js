@@ -7,6 +7,8 @@ import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateCustomSource} from './custom-source-queue.js';
 import {checkRate} from './request-rate-limit.js';
 import {pool} from './db.js';
+import {getRates} from './fx.js';
+import {attachMarketComparisons} from './market-comparison.js';
 
 export function installListingItemRoutes(app) {
   // The listings.id BIGSERIAL is stamped onto every row's data->>'publicId' by
@@ -30,11 +32,22 @@ export function installListingItemRoutes(app) {
       const row = result.rows[0];
       if (!row) return res.status(404).json({error: 'Listing not found'});
 
+      let listing = {
+        ...(row.data || {}),
+        id: String(row.source_id || row.data?.id || ''),
+        source: row.source,
+        country: row.country,
+        publicId: Number(row.id),
+      };
+      try {
+        const {rates} = await getRates();
+        [listing] = await attachMarketComparisons([listing], rates);
+      } catch (err) {
+        console.warn('[listing-item] market comparison failed:', err?.message ?? err);
+      }
+
       return res.json({
-        listing: {
-          ...(row.data || {}),
-          publicId: Number(row.id),
-        },
+        listing,
         source: row.source,
         country: row.country,
         sourceId: row.source_id,

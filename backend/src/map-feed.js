@@ -23,6 +23,17 @@ function mapPointFromListing(listing) {
     title: String(listing?.title || ''),
     price: listing?.price != null && Number.isFinite(Number(listing.price)) ? Number(listing.price) : null,
     currency: String(listing?.currency || ''),
+    publicId: Number.isInteger(Number(listing?.publicId)) ? Number(listing.publicId) : null,
+    city: String(listing?.city || ''),
+    district: listing?.district ? String(listing.district) : null,
+    dealType: listing?.dealType ? String(listing.dealType) : null,
+    roomOnly: listing?.roomOnly === true,
+    byAgency: listing?.byAgency === true,
+    propertyType: String(listing?.propertyType || 'flat'),
+    rooms: listing?.rooms == null ? null : Number(listing.rooms),
+    areaSqm: listing?.areaSqm == null ? null : Number(listing.areaSqm),
+    photo: listing?.photo ? String(listing.photo) : null,
+    createdAt: listing?.createdAt || null,
   };
 }
 

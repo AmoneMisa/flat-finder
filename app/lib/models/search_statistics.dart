@@ -20,13 +20,13 @@ class DealTypeStat {
   });
 
   factory DealTypeStat.fromJson(Map<String, dynamic> j) => DealTypeStat(
-    key: j['key']?.toString() ?? '',
-    count: (j['count'] as num?)?.toInt() ?? 0,
-    medianUsd: (j['medianUsd'] as num?)?.toDouble(),
-    averageUsd: (j['averageUsd'] as num?)?.toDouble(),
-    minUsd: (j['minUsd'] as num?)?.toDouble(),
-    maxUsd: (j['maxUsd'] as num?)?.toDouble(),
-  );
+        key: j['key']?.toString() ?? '',
+        count: (j['count'] as num?)?.toInt() ?? 0,
+        medianUsd: (j['medianUsd'] as num?)?.toDouble(),
+        averageUsd: (j['averageUsd'] as num?)?.toDouble(),
+        minUsd: (j['minUsd'] as num?)?.toDouble(),
+        maxUsd: (j['maxUsd'] as num?)?.toDouble(),
+      );
 }
 
 class GeoStat {
@@ -47,13 +47,13 @@ class GeoStat {
   });
 
   factory GeoStat.fromJson(Map<String, dynamic> j) => GeoStat(
-    label: j['label']?.toString() ?? '',
-    count: (j['count'] as num?)?.toInt() ?? 0,
-    medianUsd: (j['medianUsd'] as num?)?.toDouble(),
-    priceCount: (j['priceCount'] as num?)?.toInt() ?? 0,
-    minUsd: (j['minUsd'] as num?)?.toDouble(),
-    maxUsd: (j['maxUsd'] as num?)?.toDouble(),
-  );
+        label: j['label']?.toString() ?? '',
+        count: (j['count'] as num?)?.toInt() ?? 0,
+        medianUsd: (j['medianUsd'] as num?)?.toDouble(),
+        priceCount: (j['priceCount'] as num?)?.toInt() ?? 0,
+        minUsd: (j['minUsd'] as num?)?.toDouble(),
+        maxUsd: (j['maxUsd'] as num?)?.toDouble(),
+      );
 }
 
 class PriceBandStat {
@@ -61,9 +61,9 @@ class PriceBandStat {
   final int count;
   const PriceBandStat({required this.key, required this.count});
   factory PriceBandStat.fromJson(Map<String, dynamic> j) => PriceBandStat(
-    key: j['key']?.toString() ?? '',
-    count: (j['count'] as num?)?.toInt() ?? 0,
-  );
+        key: j['key']?.toString() ?? '',
+        count: (j['count'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class ActivityStat {
@@ -71,9 +71,9 @@ class ActivityStat {
   final int count;
   const ActivityStat({required this.date, required this.count});
   factory ActivityStat.fromJson(Map<String, dynamic> j) => ActivityStat(
-    date: DateTime.tryParse(j['date']?.toString() ?? '') ?? DateTime(1970),
-    count: (j['count'] as num?)?.toInt() ?? 0,
-  );
+        date: DateTime.tryParse(j['date']?.toString() ?? '') ?? DateTime(1970),
+        count: (j['count'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class QualityStat {
@@ -81,9 +81,9 @@ class QualityStat {
   final int suspectedFake;
   const QualityStat({this.duplicatesRejected = 0, this.suspectedFake = 0});
   factory QualityStat.fromJson(Map<String, dynamic>? j) => QualityStat(
-    duplicatesRejected: (j?['duplicatesRejected'] as num?)?.toInt() ?? 0,
-    suspectedFake: (j?['suspectedFake'] as num?)?.toInt() ?? 0,
-  );
+        duplicatesRejected: (j?['duplicatesRejected'] as num?)?.toInt() ?? 0,
+        suspectedFake: (j?['suspectedFake'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class OwnershipStat {
@@ -100,11 +100,11 @@ class OwnershipStat {
   });
 
   factory OwnershipStat.fromJson(Map<String, dynamic>? j) => OwnershipStat(
-    owners: (j?['owners'] as num?)?.toInt() ?? 0,
-    agencies: (j?['agencies'] as num?)?.toInt() ?? 0,
-    commission: (j?['commission'] as num?)?.toInt() ?? 0,
-    noCommission: (j?['noCommission'] as num?)?.toInt() ?? 0,
-  );
+        owners: (j?['owners'] as num?)?.toInt() ?? 0,
+        agencies: (j?['agencies'] as num?)?.toInt() ?? 0,
+        commission: (j?['commission'] as num?)?.toInt() ?? 0,
+        noCommission: (j?['noCommission'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class SearchStatistics {
@@ -113,7 +113,7 @@ class SearchStatistics {
   final String currency;
   final List<DealTypeStat> dealTypes;
   final Map<String, List<GeoStat>>
-  geographies; // by dimension: country/city/district/...
+      geographies; // by dimension: country/city/district/...
   final OwnershipStat ownership;
   final Map<String, Map<String, List<GeoStat>>> geographiesByDeal;
   final Map<String, List<PriceBandStat>> priceBandsByDeal;
@@ -136,51 +136,53 @@ class SearchStatistics {
   });
 
   factory SearchStatistics.fromJson(Map<String, dynamic> j) => SearchStatistics(
-    total: (j['total'] as num?)?.toInt() ?? 0,
-    rawTotal:
-        (j['rawTotal'] as num?)?.toInt() ?? (j['total'] as num?)?.toInt() ?? 0,
-    currency: j['currency']?.toString() ?? 'USD',
-    dealTypes: ((j['dealTypes'] as List?) ?? const [])
-        .map((e) => DealTypeStat.fromJson(e as Map<String, dynamic>))
-        .toList(),
-    geographies: ((j['geographies'] as Map?) ?? const {}).map(
-      (k, v) => MapEntry(
-        k.toString(),
-        ((v as List?) ?? const [])
-            .map((e) => GeoStat.fromJson(e as Map<String, dynamic>))
+        total: (j['total'] as num?)?.toInt() ?? 0,
+        rawTotal: (j['rawTotal'] as num?)?.toInt() ??
+            (j['total'] as num?)?.toInt() ??
+            0,
+        currency: j['currency']?.toString() ?? 'USD',
+        dealTypes: ((j['dealTypes'] as List?) ?? const [])
+            .map((e) => DealTypeStat.fromJson(e as Map<String, dynamic>))
             .toList(),
-      ),
-    ),
-    ownership: OwnershipStat.fromJson(j['ownership'] as Map<String, dynamic>?),
-    geographiesByDeal: ((j['geographiesByDeal'] as Map?) ?? const {}).map(
-      (deal, dimensions) => MapEntry(
-        deal.toString(),
-        ((dimensions as Map?) ?? const {}).map(
-          (dimension, rows) => MapEntry(
-            dimension.toString(),
-            ((rows as List?) ?? const [])
+        geographies: ((j['geographies'] as Map?) ?? const {}).map(
+          (k, v) => MapEntry(
+            k.toString(),
+            ((v as List?) ?? const [])
                 .map((e) => GeoStat.fromJson(e as Map<String, dynamic>))
                 .toList(),
           ),
         ),
-      ),
-    ),
-    priceBandsByDeal: ((j['priceBandsByDeal'] as Map?) ?? const {}).map(
-      (deal, rows) => MapEntry(
-        deal.toString(),
-        ((rows as List?) ?? const [])
-            .map((e) => PriceBandStat.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      ),
-    ),
-    priceBandSamplesByDeal: ((j['priceBandSamplesByDeal'] as Map?) ?? const {})
-        .map(
+        ownership:
+            OwnershipStat.fromJson(j['ownership'] as Map<String, dynamic>?),
+        geographiesByDeal: ((j['geographiesByDeal'] as Map?) ?? const {}).map(
+          (deal, dimensions) => MapEntry(
+            deal.toString(),
+            ((dimensions as Map?) ?? const {}).map(
+              (dimension, rows) => MapEntry(
+                dimension.toString(),
+                ((rows as List?) ?? const [])
+                    .map((e) => GeoStat.fromJson(e as Map<String, dynamic>))
+                    .toList(),
+              ),
+            ),
+          ),
+        ),
+        priceBandsByDeal: ((j['priceBandsByDeal'] as Map?) ?? const {}).map(
+          (deal, rows) => MapEntry(
+            deal.toString(),
+            ((rows as List?) ?? const [])
+                .map((e) => PriceBandStat.fromJson(e as Map<String, dynamic>))
+                .toList(),
+          ),
+        ),
+        priceBandSamplesByDeal:
+            ((j['priceBandSamplesByDeal'] as Map?) ?? const {}).map(
           (deal, count) =>
               MapEntry(deal.toString(), (count as num?)?.toInt() ?? 0),
         ),
-    activity: ((j['activity'] as List?) ?? const [])
-        .map((e) => ActivityStat.fromJson(e as Map<String, dynamic>))
-        .toList(),
-    quality: QualityStat.fromJson(j['quality'] as Map<String, dynamic>?),
-  );
+        activity: ((j['activity'] as List?) ?? const [])
+            .map((e) => ActivityStat.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        quality: QualityStat.fromJson(j['quality'] as Map<String, dynamic>?),
+      );
 }

@@ -53,13 +53,10 @@ class AppState extends ChangeNotifier {
     await _loadFilters();
 
     // Rates are non-critical: fetch best-effort so a failure never blocks search.
-    _api
-        .fetchRates()
-        .then((r) {
-          rates = r;
-          notifyListeners();
-        })
-        .catchError((_) {});
+    _api.fetchRates().then((r) {
+      rates = r;
+      notifyListeners();
+    }).catchError((_) {});
     try {
       countries = await _api.fetchCountries();
       if (countries.isNotEmpty && filters.countries.isEmpty) {
@@ -127,9 +124,8 @@ class AppState extends ChangeNotifier {
   /// Validate a candidate custom-source URL against the backend (uses the first
   /// selected country for currency/context).
   Future<SourceValidation> validateSource(String url) {
-    final country = filters.countries.isNotEmpty
-        ? filters.countries.first
-        : null;
+    final country =
+        filters.countries.isNotEmpty ? filters.countries.first : null;
     return _api.validateSource(url, country: country);
   }
 

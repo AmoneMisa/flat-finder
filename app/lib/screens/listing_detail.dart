@@ -79,10 +79,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       // null with no exception means the source confirmed the advert is
       // gone (a network/rate-limit failure throws instead, handled below).
       context.read<AppState>().removeListing(
-        listing.source,
-        listing.country,
-        listing.id,
-      );
+            listing.source,
+            listing.country,
+            listing.id,
+          );
       setState(() => _unavailable = true);
       _snack(context.read<SettingsState>().s.t('listingUnavailableTitle'));
     } catch (_) {
@@ -143,9 +143,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     setState(() => _translating = true);
     try {
       final translated = await context.read<AppState>().translateText(
-        sourceText,
-        targetLanguage: lang,
-      );
+            sourceText,
+            targetLanguage: lang,
+          );
       if (!mounted) return;
       setState(() {
         _translatedText = translated;
@@ -210,7 +210,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       );
     }
     if (info.isNotEmpty) b.writeln(info.join(' · '));
-    if (listing.contact != null) b.writeln(listing.contact!);
+    if (listing.contact != null) {
+      b.writeln(
+          _contactWithCountryCode(listing.contact!, country?.callingCode));
+    }
     if (listing.url.isNotEmpty) b.writeln(listing.url);
     if (listing.publicId != null)
       b.writeln(buildListingWebShareUrl(listing.publicId!));
@@ -230,8 +233,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final link = listing.publicId != null
         ? buildListingWebShareUrl(listing.publicId!)
         : listing.url.isNotEmpty
-        ? listing.url
-        : _shareText(s, rates, displayCurrency);
+            ? listing.url
+            : _shareText(s, rates, displayCurrency);
     await Clipboard.setData(ClipboardData(text: link));
     if (mounted) {
       ScaffoldMessenger.of(context)
@@ -256,9 +259,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       return;
     }
     try {
-      final boundary =
-          _shareKey.currentContext?.findRenderObject()
-              as RenderRepaintBoundary?;
+      final boundary = _shareKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
       if (boundary != null) {
         final image = await boundary.toImage(pixelRatio: 2);
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -291,12 +293,23 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final hasTranslation =
         _translatedText != null && _translatedLang == settings.lang;
     final showTranslated = hasTranslation && _showTranslated;
-    final hasTranslatableText =
-        listing.description.trim().isNotEmpty ||
+    final hasTranslatableText = listing.description.trim().isNotEmpty ||
         listing.title.trim().isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 44,
+        leadingWidth: 40,
+        titleSpacing: 0,
+        centerTitle: false,
+        actionsPadding: EdgeInsets.zero,
+        leading: IconButton(
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 40, height: 44),
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.maybePop(context),
+        ),
         title: _DetailTitle(
           listing: listing,
           rates: rates,
@@ -307,6 +320,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
           if (listing.source == 'olx')
             IconButton(
               tooltip: s.t('reloadThis'),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 44),
               icon: _reloading
                   ? const SizedBox(
                       width: 18,
@@ -360,9 +375,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                 onPressed: _unavailable || listing.url.isEmpty
                     ? null
                     : () => launchUrl(
-                        Uri.parse(listing.url),
-                        mode: LaunchMode.externalApplication,
-                      ),
+                          Uri.parse(listing.url),
+                          mode: LaunchMode.externalApplication,
+                        ),
                 icon: const Icon(Icons.open_in_new),
                 label: Text(s.t('openOriginal')),
               ),
@@ -404,7 +419,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (listing.photos.isNotEmpty)
-                    _PhotoGallery(photos: listing.photos, listing: listing)
+                    _PhotoGallery(photos: listing.photos)
                   else if (listing.photo != null)
                     CachedNetworkImage(
                       imageUrl: listing.photo!,
@@ -508,7 +523,11 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (listing.contact != null) ...[
-                  _ContactCard(contact: listing.contact!, s: s),
+                  _ContactCard(
+                    contact: listing.contact!,
+                    callingCode: country?.callingCode,
+                    s: s,
+                  ),
                   const SizedBox(height: 16),
                 ],
                 if (listing.nearby.isNotEmpty) ...[
@@ -536,9 +555,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   Row(
                     children: [
                       OutlinedButton.icon(
-                        onPressed: _translating
-                            ? null
-                            : () => _translate(settings),
+                        onPressed:
+                            _translating ? null : () => _translate(settings),
                         icon: _translating
                             ? const SizedBox(
                                 width: 16,
@@ -556,12 +574,13 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           _translating
                               ? _localized(settings, 'Translating…', 'Перевод…')
                               : showTranslated
-                              ? _localized(
-                                  settings,
-                                  'Show original',
-                                  'Показать оригинал',
-                                )
-                              : _localized(settings, 'Translate', 'Перевести'),
+                                  ? _localized(
+                                      settings,
+                                      'Show original',
+                                      'Показать оригинал',
+                                    )
+                                  : _localized(
+                                      settings, 'Translate', 'Перевести'),
                         ),
                       ),
                     ],
@@ -639,24 +658,38 @@ class _DetailTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     if (listing.publicId == null) {
       final city = country?.cityLabel(listing.city) ?? listing.city;
-      return Text('${countryFlags[listing.country] ?? ''} $city');
+      return SizedBox(
+        height: 44,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text('${countryFlags[listing.country] ?? ''} $city'),
+        ),
+      );
     }
     final color = priceToneColor(listingPriceTone(listing, rates));
     final subtitle = [
       _dealText,
       country?.cityLabel(listing.city) ?? listing.city,
     ].where((e) => e.isNotEmpty).join(', ');
-    return RichText(
-      overflow: TextOverflow.ellipsis,
-      text: TextSpan(
-        style: DefaultTextStyle.of(context).style.copyWith(fontSize: 16),
-        children: [
-          TextSpan(
-            text: '#${listing.publicId} ',
-            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+    return SizedBox(
+      height: 44,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: RichText(
+          overflow: TextOverflow.ellipsis,
+          text: TextSpan(
+            style: DefaultTextStyle.of(
+              context,
+            ).style.copyWith(fontSize: 16, height: 1),
+            children: [
+              TextSpan(
+                text: '#${listing.publicId} ',
+                style: TextStyle(color: color, fontWeight: FontWeight.w800),
+              ),
+              if (subtitle.isNotEmpty) TextSpan(text: subtitle),
+            ],
           ),
-          if (subtitle.isNotEmpty) TextSpan(text: subtitle),
-        ],
+        ),
       ),
     );
   }
@@ -696,9 +729,8 @@ class _SpecTable extends StatelessWidget {
   /// "Yes 500" / "Yes 50%" / just "Yes"/"No" when no figure known.
   String _costLabel(String base, num? amount, num? percent) {
     if (percent != null) {
-      final p = percent % 1 == 0
-          ? percent.toInt().toString()
-          : percent.toString();
+      final p =
+          percent % 1 == 0 ? percent.toInt().toString() : percent.toString();
       return '$base $p%';
     }
     if (amount != null) return '$base ${amount.round()}';
@@ -706,13 +738,13 @@ class _SpecTable extends StatelessWidget {
   }
 
   String? _conditionLabel(String? condition) => switch (condition) {
-    'needs_renovation' => s.t('condNeeds'),
-    'basic' => s.t('condBasic'),
-    'good' => s.t('condGood'),
-    'modern' => s.t('condModern'),
-    'luxury' => s.t('condLuxury'),
-    _ => null,
-  };
+        'needs_renovation' => s.t('condNeeds'),
+        'basic' => s.t('condBasic'),
+        'good' => s.t('condGood'),
+        'modern' => s.t('condModern'),
+        'luxury' => s.t('condLuxury'),
+        _ => null,
+      };
 
   String? _money(MoneyAmount? value) {
     if (value == null) return null;
@@ -733,10 +765,10 @@ class _SpecTable extends StatelessWidget {
   List<(String, List<_SpecRow>)> _groups() {
     final l = listing;
     List<_SpecRow> pick(List<(IconData, String, String?)> items) => [
-      for (final (icon, key, value) in items)
-        if (value != null && value.isNotEmpty)
-          _SpecRow(icon, s.t('spec${_capitalize(key)}'), value),
-    ];
+          for (final (icon, key, value) in items)
+            if (value != null && value.isNotEmpty)
+              _SpecRow(icon, s.t('spec${_capitalize(key)}'), value),
+        ];
 
     final advert = pick([
       (Icons.sell_outlined, 'deal', dealTypeLabel(l.dealType, s)),
@@ -777,7 +809,7 @@ class _SpecTable extends StatelessWidget {
         l.district == null
             ? null
             : (country?.locationLabel(l.city, l.district!, kind: 'district') ??
-                  l.district),
+                l.district),
       ),
       (
         Icons.grid_view_outlined,
@@ -785,7 +817,7 @@ class _SpecTable extends StatelessWidget {
         l.kvartal == null
             ? null
             : (country?.locationLabel(l.city, l.kvartal!, kind: 'quartal') ??
-                  l.kvartal),
+                l.kvartal),
       ),
       (
         Icons.directions_subway_outlined,
@@ -793,7 +825,7 @@ class _SpecTable extends StatelessWidget {
         l.metro == null
             ? null
             : (country?.locationLabel(l.city, l.metro!, kind: 'metro') ??
-                  l.metro),
+                l.metro),
       ),
       (Icons.location_on_outlined, 'address', l.address),
       (
@@ -871,8 +903,8 @@ class _SpecTable extends StatelessWidget {
         l.commission == null && l.commissionAmount == null
             ? null
             : l.commissionAmount != null
-            ? '${_yesNo(l.commission ?? true)} ${_money(l.commissionAmount)}'
-            : _costLabel(_yesNo(l.commission)!, null, l.commissionPercent),
+                ? '${_yesNo(l.commission ?? true)} ${_money(l.commissionAmount)}'
+                : _costLabel(_yesNo(l.commission)!, null, l.commissionPercent),
       ),
       (Icons.call_split_outlined, 'communal', _yesNo(l.communalSeparated)),
       (Icons.receipt_long_outlined, 'utilAmount', _money(l.utilitiesAmount)),
@@ -1002,20 +1034,53 @@ class _SpecTable extends StatelessWidget {
   }
 }
 
+String _contactWithCountryCode(String raw, String? callingCode) {
+  final value = raw.trim();
+  if (value.isEmpty || value.startsWith('@') || value.contains('+'))
+    return value;
+
+  var digits = value.replaceAll(RegExp(r'\D'), '');
+  if (digits.length < 6) return value;
+
+  final prefix = callingCode?.trim() ?? '';
+  final prefixDigits = prefix.replaceAll(RegExp(r'\D'), '');
+  if (prefixDigits.isEmpty) return value;
+
+  if (digits.startsWith('00') && digits.length > 4) {
+    return '+${digits.substring(2)}';
+  }
+  if (digits.startsWith(prefixDigits)) return '+$digits';
+
+  // Strip the common domestic trunk prefix before appending an E.164 country
+  // code. Kazakhstan commonly writes national mobile numbers as 8XXXXXXXXXX.
+  if (prefixDigits == '7' && digits.length == 11 && digits.startsWith('8')) {
+    digits = digits.substring(1);
+  } else if (digits.length > 7 && digits.startsWith('0')) {
+    digits = digits.substring(1);
+  }
+  return '+$prefixDigits$digits';
+}
+
 /// Prominent contact card shown near the top of the detail screen so the user
 /// can reach the poster in one tap. A @handle opens Telegram; a phone number
 /// opens the dialer.
 class _ContactCard extends StatelessWidget {
-  const _ContactCard({required this.contact, required this.s});
+  const _ContactCard({
+    required this.contact,
+    required this.s,
+    this.callingCode,
+  });
 
   final String contact;
+  final String? callingCode;
   final AppStrings s;
 
   bool get _isHandle => contact.startsWith('@');
+  String get _displayContact => _contactWithCountryCode(contact, callingCode);
 
   Uri? get _uri {
     if (_isHandle) return Uri.parse('https://t.me/${contact.substring(1)}');
-    final digits = contact.replaceAll(RegExp(r'[^\d+]'), '');
+    final digits = _displayContact.replaceAll(RegExp(r'[^\d+]'), '');
     return digits.isEmpty ? null : Uri.parse('tel:$digits');
   }
 
@@ -1051,7 +1116,7 @@ class _ContactCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      contact,
+                      _displayContact,
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: theme.colorScheme.onPrimaryContainer,
                         fontWeight: FontWeight.bold,
@@ -1064,7 +1129,7 @@ class _ContactCard extends StatelessWidget {
                 onPressed: uri == null
                     ? null
                     : () =>
-                          launchUrl(uri, mode: LaunchMode.externalApplication),
+                        launchUrl(uri, mode: LaunchMode.externalApplication),
                 icon: Icon(_isHandle ? Icons.send : Icons.call, size: 18),
                 label: Text(_isHandle ? s.t('message') : s.t('call')),
               ),
@@ -1080,9 +1145,8 @@ class _ContactCard extends StatelessWidget {
 /// photo opens a fullscreen, zoomable viewer. Left/right arrows allow navigation
 /// with a mouse on desktop where swiping isn't obvious.
 class _PhotoGallery extends StatefulWidget {
-  const _PhotoGallery({required this.photos, required this.listing});
+  const _PhotoGallery({required this.photos});
   final List<String> photos;
-  final Listing listing;
 
   @override
   State<_PhotoGallery> createState() => _PhotoGalleryState();
@@ -1120,8 +1184,6 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
   @override
   Widget build(BuildContext context) {
     final multi = widget.photos.length > 1;
-    final favorites = context.watch<FavoritesState>();
-    final isFav = favorites.isFavorite(widget.listing.id);
     return SizedBox(
       height: 220,
       child: Stack(
@@ -1169,74 +1231,46 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
               ),
             ),
           ],
-          // Photo counter (when there's more than one) with the favorite toggle
-          // stacked directly beneath it, bottom-right.
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (multi) ...[
-                  _pill(
-                    Text(
-                      '${_index + 1} / ${widget.photos.length}',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                ],
-                _favButton(isFav, () => favorites.toggle(widget.listing)),
-              ],
+          if (multi)
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: _pill(
+                Text(
+                  '${_index + 1} / ${widget.photos.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _favButton(bool isFav, VoidCallback onTap) => Material(
-    color: Colors.black54,
-    shape: const CircleBorder(),
-    child: InkWell(
-      customBorder: const CircleBorder(),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Icon(
-          isFav ? Icons.favorite : Icons.favorite_border,
-          color: isFav ? Colors.red : Colors.white,
-          size: 20,
-        ),
-      ),
-    ),
-  );
-
   Widget _pill(Widget child) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-    decoration: BoxDecoration(
-      color: Colors.black54,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: child,
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: child,
+      );
 
   Widget _navButton(IconData icon, bool enabled, VoidCallback onTap) => Opacity(
-    opacity: enabled ? 1 : 0.3,
-    child: Material(
-      color: Colors.black38,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: enabled ? onTap : null,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(icon, color: Colors.white, size: 28),
+        opacity: enabled ? 1 : 0.3,
+        child: Material(
+          color: Colors.black38,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: enabled ? onTap : null,
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Icon(icon, color: Colors.white, size: 28),
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 }
 
 /// Fullscreen, pinch/scroll-zoomable photo viewer with page navigation.
@@ -1309,18 +1343,13 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
         children: [
           GestureDetector(
             onDoubleTapDown: _toggleZoom,
-            onHorizontalDragEnd: (details) {
-              if (_transform.value.getMaxScaleOnAxis() > 1.05) return;
-              final velocity = details.primaryVelocity ?? 0;
-              if (velocity < -250) _go(_index + 1);
-              if (velocity > 250) _go(_index - 1);
-            },
             child: InteractiveViewer(
               transformationController: _transform,
               minScale: 1,
               maxScale: 6,
               panEnabled: true,
               scaleEnabled: true,
+              trackpadScrollCausesScale: true,
               clipBehavior: Clip.none,
               boundaryMargin: const EdgeInsets.all(80),
               child: SizedBox.expand(
@@ -1362,18 +1391,18 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
   }
 
   Widget _navButton(IconData icon, bool enabled, VoidCallback onTap) => Opacity(
-    opacity: enabled ? 1 : 0.25,
-    child: Material(
-      color: Colors.white24,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: enabled ? onTap : null,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Icon(icon, color: Colors.white, size: 32),
+        opacity: enabled ? 1 : 0.25,
+        child: Material(
+          color: Colors.white24,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: enabled ? onTap : null,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(icon, color: Colors.white, size: 32),
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 }

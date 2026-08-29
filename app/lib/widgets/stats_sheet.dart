@@ -43,21 +43,21 @@ class _StatsSheetState extends State<StatsSheet> {
   }
 
   String _dealLabel(AppStrings s, String key) => switch (key) {
-    'sale' => s.t('sale'),
-    'longRent' => s.t('longTerm'),
-    'shortRent' => s.t('shortTerm'),
-    'roomRent' => s.t('roomOnly'),
-    _ => key,
-  };
+        'sale' => s.t('sale'),
+        'longRent' => s.t('longTerm'),
+        'shortRent' => s.t('shortTerm'),
+        'roomRent' => s.t('roomOnly'),
+        _ => key,
+      };
 
   String _geoLabel(AppStrings s, String key) => switch (key) {
-    'country' => s.t('country'),
-    'city' => s.t('city'),
-    'district' => s.t('district'),
-    'microdistrict' => s.t('microdistrict'),
-    'metro' => s.t('metro'),
-    _ => key,
-  };
+        'country' => s.t('country'),
+        'city' => s.t('city'),
+        'district' => s.t('district'),
+        'microdistrict' => s.t('microdistrict'),
+        'metro' => s.t('metro'),
+        _ => key,
+      };
 
   String _localizedGeographyLabel(
     AppState state,
@@ -127,16 +127,14 @@ class _StatsSheetState extends State<StatsSheet> {
         ? s.t('notSpecified')
         : '${number.format(usd.round())} ${stats.currency}';
     final cutoff = DateTime.now().subtract(Duration(days: _activityDays));
-    final activity = stats.activity
-        .where((row) => row.date.isAfter(cutoff))
-        .toList();
+    final activity =
+        stats.activity.where((row) => row.date.isAfter(cutoff)).toList();
     final scopedGeo = stats.geographiesByDeal[_dealScope]?[_geoDimension];
-    final geography =
-        (scopedGeo?.isNotEmpty == true
-                ? scopedGeo!
-                : stats.geographies[_geoDimension] ?? const <GeoStat>[])
-            .take(8)
-            .toList();
+    final geography = (scopedGeo?.isNotEmpty == true
+            ? scopedGeo!
+            : stats.geographies[_geoDimension] ?? const <GeoStat>[])
+        .take(8)
+        .toList();
     final bands = stats.priceBandsByDeal[_dealScope] ?? const <PriceBandStat>[];
 
     return ListView(
@@ -299,28 +297,26 @@ class _StatsSheetState extends State<StatsSheet> {
   }
 
   Widget _activityDayPills() => Wrap(
-    spacing: 6,
-    runSpacing: 5,
-    children: [
-      for (final days in const [7, 14, 21])
-        ChoiceChip(
-          label: Text('$days'),
-          selected: _activityDays == days,
-          showCheckmark: false,
-          visualDensity: const VisualDensity(horizontal: -3, vertical: -3),
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          onSelected: (_) => setState(() => _activityDays = days),
-        ),
-    ],
-  );
+        spacing: 6,
+        runSpacing: 5,
+        children: [
+          for (final days in const [7, 14, 21])
+            ChoiceChip(
+              label: Text('$days', textAlign: TextAlign.center),
+              selected: _activityDays == days,
+              showCheckmark: false,
+              visualDensity: const VisualDensity(horizontal: -3, vertical: -3),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              onSelected: (_) => setState(() => _activityDays = days),
+            ),
+        ],
+      );
 
   Widget _dealSegments(SearchStatistics stats, AppStrings s) {
-    final values = stats.dealTypes
-        .where((e) => e.count > 0)
-        .map((e) => e.key)
-        .toList();
+    final values =
+        stats.dealTypes.where((e) => e.count > 0).map((e) => e.key).toList();
     if (values.isEmpty) return const SizedBox.shrink();
     final selected = values.contains(_dealScope) ? _dealScope : values.first;
     return _segments<String>(
@@ -336,72 +332,77 @@ class _StatsSheetState extends State<StatsSheet> {
     T selected,
     String Function(T) label,
     ValueChanged<T> onChanged,
-  ) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: SegmentedButton<T>(
-      segments: [
-        for (final v in values) ButtonSegment(value: v, label: Text(label(v))),
-      ],
-      selected: {selected},
-      showSelectedIcon: false,
-      onSelectionChanged: (values) => onChanged(values.first),
-    ),
-  );
+  ) =>
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SegmentedButton<T>(
+          segments: [
+            for (final v in values)
+              ButtonSegment(
+                  value: v, label: Text(label(v), textAlign: TextAlign.center)),
+          ],
+          selected: {selected},
+          showSelectedIcon: false,
+          onSelectionChanged: (values) => onChanged(values.first),
+        ),
+      );
 
   Widget _card(String title, {Widget? trailing, required Widget child}) => Card(
-    // Material 3's auto-derived surfaceContainer tone (from the pink seed)
-    // reads as a muddy brown on this dark theme — pin it to the app's own
-    // panel color like every other card/section in the app.
-    color: Theme.of(context).colorScheme.surface,
-    margin: const EdgeInsets.only(bottom: 12),
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Title always sits on its own line above the stat block; a
-          // trailing segmented control gets its own full-width line below
-          // it instead of being squeezed beside the title, where it used
-          // to get clipped.
-          Text(
-            title.toUpperCase(),
-            style: Theme.of(context).textTheme.labelSmall,
+        // Material 3's auto-derived surfaceContainer tone (from the pink seed)
+        // reads as a muddy brown on this dark theme — pin it to the app's own
+        // panel color like every other card/section in the app.
+        color: Theme.of(context).colorScheme.surface,
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title always sits on its own line above the stat block; a
+              // trailing segmented control gets its own full-width line below
+              // it instead of being squeezed beside the title, where it used
+              // to get clipped.
+              Text(
+                title.toUpperCase(),
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+              if (trailing != null) ...[const SizedBox(height: 8), trailing],
+              const SizedBox(height: 12),
+              child,
+            ],
           ),
-          if (trailing != null) ...[const SizedBox(height: 8), trailing],
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 
   Widget _metric(String label, String value, [String? detail]) => Container(
-    // A fixed minHeight (not just minWidth) so cards in the same row/wrap
-    // stay the same size even when one label wraps to more lines than
-    // another (e.g. "Долгосрочно" vs "Только комната (подселение)").
-    constraints: BoxConstraints(
-      minWidth: 130,
-      minHeight: detail != null ? 92 : 72,
-    ),
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      border: Border.all(color: Theme.of(context).dividerColor),
-      borderRadius: BorderRadius.circular(9),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(color: const Color(0xffe0679a)),
+        // A fixed minHeight (not just minWidth) so cards in the same row/wrap
+        // stay the same size even when one label wraps to more lines than
+        // another (e.g. "Долгосрочно" vs "Только комната (подселение)").
+        constraints: BoxConstraints(
+          minWidth: 130,
+          minHeight: detail != null ? 92 : 72,
         ),
-        if (detail != null)
-          Text(detail, style: Theme.of(context).textTheme.labelSmall),
-      ],
-    ),
-  );
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          border: Border.all(color: Theme.of(context).dividerColor),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              value,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(color: const Color(0xffe0679a)),
+            ),
+            if (detail != null)
+              Text(detail, style: Theme.of(context).textTheme.labelSmall),
+          ],
+        ),
+      );
 }
 
 class _BarRow {
@@ -476,14 +477,15 @@ class _LineChartPainter extends CustomPainter {
     double size = 9,
     FontWeight weight = FontWeight.w500,
     Color color = Colors.white70,
-  }) => TextPainter(
-    text: TextSpan(
-      text: value,
-      style: TextStyle(fontSize: size, fontWeight: weight, color: color),
-    ),
-    textDirection: ui.TextDirection.ltr,
-    maxLines: 1,
-  )..layout();
+  }) =>
+      TextPainter(
+        text: TextSpan(
+          text: value,
+          style: TextStyle(fontSize: size, fontWeight: weight, color: color),
+        ),
+        textDirection: ui.TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -558,8 +560,8 @@ class _LineChartPainter extends CustomPainter {
     final xStep = rows.length <= 7
         ? 1
         : rows.length <= 14
-        ? 2
-        : 3;
+            ? 2
+            : 3;
 
     for (var i = 0; i < points.length; i++) {
       final point = points[i];

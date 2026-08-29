@@ -60,7 +60,6 @@ class SearchableDropdown extends StatelessWidget {
             horizontal: 10,
             vertical: 8,
           ),
-          constraints: const BoxConstraints(minHeight: 42),
           // A floating label (not a hint) so this reads the same as every
           // other field — always sitting on the border, matching the
           // dropdowns next to it instead of behaving like a placeholder.

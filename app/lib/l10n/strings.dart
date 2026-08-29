@@ -263,7 +263,8 @@ class AppStrings {
       'badgeMen': 'Men only',
       'verifyListing': 'Verify listing',
       'potentiallyUnsafe': 'Potentially unsafe',
-      'potentiallyUnsafeHint': 'Unusually low-price room share seeking one woman. Verify the landlord and terms before meeting or paying.',
+      'potentiallyUnsafeHint':
+          'Unusually low-price room share seeking one woman. Verify the landlord and terms before meeting or paying.',
       'language': 'Language',
       'displayCurrency': 'Display currency',
       'nativeCurrency': 'Native (as listed)',
@@ -314,7 +315,8 @@ class AppStrings {
       'quartals': 'Quartals',
       'areas': 'Areas',
       'customSources': 'Custom sources',
-      'customSourcesHint': 'Add a Telegram channel (t.me/…), a subreddit (reddit.com/r/…), a listing page, or an RSS feed. Sites needing login (Facebook, Instagram, Airbnb, Booking) can\'t be read.',
+      'customSourcesHint':
+          'Add a Telegram channel (t.me/…), a subreddit (reddit.com/r/…), a listing page, or an RSS feed. Sites needing login (Facebook, Instagram, Airbnb, Booking) can\'t be read.',
       'addSource': 'Add source',
       'validateAdd': 'Check & add',
       'remove': 'Remove',
@@ -658,7 +660,8 @@ class AppStrings {
       'badgeMen': 'Только мужчины',
       'verifyListing': 'Проверьте объявление',
       'potentiallyUnsafe': 'Потенциально опасное',
-      'potentiallyUnsafeHint': 'Подселение по необычно низкой цене с поиском одной женщины. Проверьте арендодателя и условия до встречи или оплаты.',
+      'potentiallyUnsafeHint':
+          'Подселение по необычно низкой цене с поиском одной женщины. Проверьте арендодателя и условия до встречи или оплаты.',
       'language': 'Язык',
       'displayCurrency': 'Валюта отображения',
       'nativeCurrency': 'Как в объявлении',
@@ -709,7 +712,8 @@ class AppStrings {
       'quartals': 'Махалли',
       'areas': 'Локации',
       'customSources': 'Свои источники',
-      'customSourcesHint': 'Добавьте Telegram-канал (t.me/…), сабреддит (reddit.com/r/…), страницу объявления или RSS-ленту. Сайты со входом (Facebook, Instagram, Airbnb, Booking) не поддерживаются.',
+      'customSourcesHint':
+          'Добавьте Telegram-канал (t.me/…), сабреддит (reddit.com/r/…), страницу объявления или RSS-ленту. Сайты со входом (Facebook, Instagram, Airbnb, Booking) не поддерживаются.',
       'addSource': 'Добавить источник',
       'validateAdd': 'Проверить и добавить',
       'remove': 'Удалить',
@@ -769,7 +773,8 @@ class AppStrings {
       'deposit': 'Залог',
       'commission': 'Комиссия',
       'favorites': 'Избранное',
-      'noFavorites': 'Пока нет сохранённых объявлений. Нажмите на сердечко, чтобы сохранить.',
+      'noFavorites':
+          'Пока нет сохранённых объявлений. Нажмите на сердечко, чтобы сохранить.',
       'otherCity': 'Другое',
       'history': 'Недавно просмотренные',
       'noHistory': 'Пока нет недавно просмотренных объявлений.',

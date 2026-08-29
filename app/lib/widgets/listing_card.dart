@@ -184,8 +184,8 @@ class ListingCard extends StatelessWidget {
           color: listing.potentiallyUnsafe
               ? const Color(0x8FF2B86B)
               : isFav
-              ? const Color(0x85E0679A)
-              : Theme.of(context).dividerColor.withValues(alpha: .65),
+                  ? const Color(0x85E0679A)
+                  : Theme.of(context).dividerColor.withValues(alpha: .65),
         ),
       ),
       margin: grid
@@ -386,8 +386,7 @@ class ListingCard extends StatelessWidget {
 
   List<String> _contextBadges(Filters filters, AppStrings s, Country? country) {
     final result = <String>[];
-    final geoFiltered =
-        filters.district.trim().isNotEmpty ||
+    final geoFiltered = filters.district.trim().isNotEmpty ||
         filters.metro.trim().isNotEmpty ||
         filters.microdistrict.trim().isNotEmpty ||
         filters.quartal.trim().isNotEmpty ||
@@ -505,8 +504,8 @@ class _PriceLine extends StatelessWidget {
     }
 
     final f = NumberFormat.decimalPattern();
-    final native = '${f.format(listing.price!.round())} ${listing.currency}'
-        .trim();
+    final native =
+        '${f.format(listing.price!.round())} ${listing.currency}'.trim();
     String? secondary;
     final target = displayCurrency;
     final fromRate = rates[listing.currency];
@@ -543,10 +542,10 @@ class _PriceLine extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).hintColor,
-                fontSize: compact ? 9.5 : 12,
-                fontWeight: FontWeight.w500,
-              ),
+                    color: Theme.of(context).hintColor,
+                    fontSize: compact ? 9.5 : 12,
+                    fontWeight: FontWeight.w500,
+                  ),
             ),
           ),
         ],
@@ -609,32 +608,33 @@ class _WarningBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-    decoration: BoxDecoration(
-      color: BrandColors.toneOrange.withValues(alpha: .18),
-      border: Border.all(color: BrandColors.toneOrange.withValues(alpha: .75)),
-      borderRadius: BorderRadius.circular(7),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(
-          Icons.warning_amber_rounded,
-          color: BrandColors.toneOrange,
-          size: 12,
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: BrandColors.toneOrange.withValues(alpha: .18),
+          border:
+              Border.all(color: BrandColors.toneOrange.withValues(alpha: .75)),
+          borderRadius: BorderRadius.circular(7),
         ),
-        const SizedBox(width: 4),
-        Text(
-          text,
-          style: const TextStyle(
-            color: BrandColors.toneOrange,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: BrandColors.toneOrange,
+              size: 12,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              text,
+              style: const TextStyle(
+                color: BrandColors.toneOrange,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
-      ],
-    ),
-  );
+      );
 }
 
 class _CardPhotoCarousel extends StatefulWidget {
@@ -662,9 +662,9 @@ class _CardPhotoCarouselState extends State<_CardPhotoCarousel> {
   }
 
   Widget get _placeholder => const ColoredBox(
-    color: Color(0x11000000),
-    child: Icon(Icons.home_outlined, size: 56, color: Colors.black26),
-  );
+        color: Color(0x11000000),
+        child: Icon(Icons.home_outlined, size: 56, color: Colors.black26),
+      );
 
   @override
   Widget build(BuildContext context) {

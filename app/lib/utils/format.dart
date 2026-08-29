@@ -53,8 +53,7 @@ String formatPrice(
 
   final from = rates?[l.currency];
   final to = displayCurrency == null ? null : rates?[displayCurrency];
-  final canConvert =
-      displayCurrency != null &&
+  final canConvert = displayCurrency != null &&
       displayCurrency != l.currency &&
       from != null &&
       to != null &&
@@ -69,14 +68,14 @@ String formatPrice(
 /// Short currency symbol for a code, falling back to the code itself
 /// (e.g. UZS/KZT have no widely-recognised single glyph).
 String currencySymbol(String code) => switch (code.toUpperCase()) {
-  'USD' => '\$',
-  'EUR' => '€',
-  'UAH' => '₴',
-  'RON' => 'lei',
-  'RUB' => '₽',
-  'GBP' => '£',
-  _ => code,
-};
+      'USD' => '\$',
+      'EUR' => '€',
+      'UAH' => '₴',
+      'RON' => 'lei',
+      'RUB' => '₽',
+      'GBP' => '£',
+      _ => code,
+    };
 
 /// Compact price for a map pin: converts into [displayCurrency] when possible,
 /// then renders "<symbol><short number>" (e.g. "$45K", "1.2M сум"). Returns "—"
@@ -151,11 +150,11 @@ String? floorLabel(Listing l, [AppStrings? s]) {
 
 /// Human label for a listing's stated tenant restriction, or null.
 String? audienceLabel(String? audience, [AppStrings? s]) => switch (audience) {
-  'women' => s?.t('women') ?? 'Girls only',
-  'men' => s?.t('men') ?? 'Men only',
-  'family' => s?.t('family') ?? 'Family',
-  _ => null,
-};
+      'women' => s?.t('women') ?? 'Girls only',
+      'men' => s?.t('men') ?? 'Men only',
+      'family' => s?.t('family') ?? 'Family',
+      _ => null,
+    };
 
 /// Relative "posted N ago" label from a listing's createdAt, or null.
 String? postedLabel(DateTime? createdAt, [AppStrings? s]) {
@@ -223,18 +222,18 @@ const _tagKeys = <String, String>{
 const countryFlags = {'RO': '🇷🇴', 'UA': '🇺🇦', 'KZ': '🇰🇿', 'UZ': '🇺🇿'};
 
 String sourceLabel(String source, [AppStrings? s]) => switch (source) {
-  'olx' => 'OLX',
-  'reddit' => 'Reddit',
-  'telegram' => 'Telegram',
-  'threads' => 'Threads',
-  'mock' => s?.t('demo') ?? 'Demo',
-  _ => source,
-};
+      'olx' => 'OLX',
+      'reddit' => 'Reddit',
+      'telegram' => 'Telegram',
+      'threads' => 'Threads',
+      'mock' => s?.t('demo') ?? 'Demo',
+      _ => source,
+    };
 
 /// Short human label for a listing's deal type, or null when unknown.
 String? dealTypeLabel(String? dealType, [AppStrings? s]) => switch (dealType) {
-  'sale' => s?.t('saleLong') ?? 'Sale',
-  'longRent' => s?.t('longRentLong') ?? 'Long-term rent',
-  'shortRent' => s?.t('shortRentLong') ?? 'Short-term rent',
-  _ => null,
-};
+      'sale' => s?.t('saleLong') ?? 'Sale',
+      'longRent' => s?.t('longRentLong') ?? 'Long-term rent',
+      'shortRent' => s?.t('shortRentLong') ?? 'Short-term rent',
+      _ => null,
+    };

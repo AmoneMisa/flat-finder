@@ -18,10 +18,10 @@ class SourceError {
   SourceError({required this.source, this.url, required this.message});
 
   factory SourceError.fromJson(Map<String, dynamic> j) => SourceError(
-    source: (j['source'] ?? 'source').toString(),
-    url: j['url']?.toString(),
-    message: (j['error'] ?? 'Failed').toString(),
-  );
+        source: (j['source'] ?? 'source').toString(),
+        url: j['url']?.toString(),
+        message: (j['error'] ?? 'Failed').toString(),
+      );
 }
 
 class ListingsResult {
@@ -165,8 +165,8 @@ class ApiService {
     final params = Map<String, String>.from(filters.toQueryParams());
     if (force) params['refresh'] = '1';
     if (cursor != null && cursor.isNotEmpty) params['cursor'] = cursor;
-    final uri = Uri.parse('$baseUrl/api/listings')
-        .replace(queryParameters: params);
+    final uri =
+        Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
     final res = await http.get(uri).timeout(const Duration(seconds: 30));
     if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
     if (res.statusCode != 200) {
@@ -198,8 +198,8 @@ class ApiService {
   Future<List<Listing>> fetchMapListings(Filters filters) async {
     final params = Map<String, String>.from(filters.toQueryParams())
       ..['mapOnly'] = 'true';
-    final uri = Uri.parse('$baseUrl/api/listings')
-        .replace(queryParameters: params);
+    final uri =
+        Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
     final res = await http.get(uri).timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) return const [];
     final json = jsonDecode(res.body) as Map<String, dynamic>;
@@ -366,8 +366,8 @@ class ApiService {
     final params = Map<String, String>.from(filters.toQueryParams());
     params['includeStats'] = 'true';
     params['statsOnly'] = 'true';
-    final uri = Uri.parse('$baseUrl/api/listings')
-        .replace(queryParameters: params);
+    final uri =
+        Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
     final res = await http.get(uri).timeout(const Duration(seconds: 20));
     if (res.statusCode != 200) return null;
     final json = jsonDecode(res.body) as Map<String, dynamic>;

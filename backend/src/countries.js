@@ -18,6 +18,7 @@ import {countryByCode} from '@whiteslove/parsing-lexicon/countries';
 const SOURCE_COUNTRIES = {
   RO: {
     code: 'RO',
+    callingCode: '+40',
     center: { lat: 44.4268, lng: 26.1025 }, // Bucharest
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.ro',
@@ -30,6 +31,7 @@ const SOURCE_COUNTRIES = {
   },
   UA: {
     code: 'UA',
+    callingCode: '+380',
     center: { lat: 50.4501, lng: 30.5234 }, // Kyiv
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.ua',
@@ -195,6 +197,7 @@ const SOURCE_COUNTRIES = {
   },
   KZ: {
     code: 'KZ',
+    callingCode: '+7',
     center: { lat: 43.222, lng: 76.8512 }, // Almaty
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.kz',
@@ -207,6 +210,7 @@ const SOURCE_COUNTRIES = {
   },
   UZ: {
     code: 'UZ',
+    callingCode: '+998',
     center: { lat: 41.2995, lng: 69.2401 }, // Tashkent
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.uz',

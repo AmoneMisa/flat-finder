@@ -10,13 +10,13 @@ import '../state/settings.dart';
 enum PriceTone { green, blue, pink, orange, yellow, red }
 
 Color priceToneColor(PriceTone tone) => switch (tone) {
-  PriceTone.green => BrandColors.toneGreen,
-  PriceTone.blue => BrandColors.toneBlue,
-  PriceTone.pink => BrandColors.tonePink,
-  PriceTone.orange => BrandColors.toneOrange,
-  PriceTone.yellow => BrandColors.toneYellow,
-  PriceTone.red => BrandColors.toneRed,
-};
+      PriceTone.green => BrandColors.toneGreen,
+      PriceTone.blue => BrandColors.toneBlue,
+      PriceTone.pink => BrandColors.tonePink,
+      PriceTone.orange => BrandColors.toneOrange,
+      PriceTone.yellow => BrandColors.toneYellow,
+      PriceTone.red => BrandColors.toneRed,
+    };
 
 /// Same bands as `priceToneFromRatio` in priceTone.ts.
 PriceTone priceToneFromRatio(double ratio) {

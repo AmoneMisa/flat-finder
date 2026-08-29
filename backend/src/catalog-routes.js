@@ -103,29 +103,27 @@ export function installCatalogRoutes(app) {
           const locations = cityLocations(code);
           const cities = new Set(country.crawlCities ?? []);
 
-          if (code === 'UA') {
-            try {
-              const rows = await getAvailableListingLocations(code);
+          try {
+            const rows = await getAvailableListingLocations(code);
 
-              for (const row of rows) {
-                const city = canonicalCityName(code, row.city);
-                if (!city) continue;
+            for (const row of rows) {
+              const city = canonicalCityName(code, row.city);
+              if (!city) continue;
 
-                cities.add(city);
-                if (!locations[city]) {
-                  locations[city] = {districts: [], metro: []};
-                }
-
-                const district = String(row.district ?? '').trim();
-                if (district && !locations[city].districts.includes(district)) {
-                  locations[city].districts.push(district);
-                }
+              cities.add(city);
+              if (!locations[city]) {
+                locations[city] = {districts: [], metro: []};
               }
-            } catch (err) {
-              console.warn(
-                `[locations] ${code} dynamic locations failed: ${err?.message ?? err}`,
-              );
+
+              const district = String(row.district ?? '').trim();
+              if (district && !locations[city].districts.includes(district)) {
+                locations[city].districts.push(district);
+              }
             }
+          } catch (err) {
+            console.warn(
+              `[locations] ${code} dynamic locations failed: ${err?.message ?? err}`,
+            );
           }
 
           for (const [cityName, location] of Object.entries(locations)) {
@@ -157,6 +155,7 @@ export function installCatalogRoutes(app) {
             code: country.code,
             name: country.name,
             currency: country.currency,
+            callingCode: country.callingCode ?? null,
             center: country.center,
             cities: citiesList,
             ...(locale ? {cityLabels: labelMap(citiesList, locale, 'city')} : {}),

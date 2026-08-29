@@ -52,15 +52,16 @@ class DistrictZone {
   }
 
   factory DistrictZone.fromJson(Map<String, dynamic> j) => DistrictZone(
-    id: j['id']?.toString() ?? '',
-    name: j['name']?.toString() ?? '',
-    label: j['label']?.toString() ?? j['name']?.toString() ?? '',
-    lat: (j['lat'] as num).toDouble(),
-    lng: (j['lng'] as num).toDouble(),
-    radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
-    colorHex: j['color']?.toString() ?? '#e0679a',
-    boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
-  );
+        id: j['id']?.toString() ?? '',
+        name: j['name']?.toString() ?? '',
+        label: j['label']?.toString() ?? j['name']?.toString() ?? '',
+        lat: (j['lat'] as num).toDouble(),
+        lng: (j['lng'] as num).toDouble(),
+        radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
+        colorHex: j['color']?.toString() ?? '#e0679a',
+        boundaryRings:
+            _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
+      );
 }
 
 /// All four of a city's map zone layers — mirrors the site's
