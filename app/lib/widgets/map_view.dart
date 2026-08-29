@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -66,6 +67,12 @@ class _MapViewState extends State<MapView> {
   // Freeform search area the user outlines by tapping the map.
   bool _drawing = false;
   final List<LatLng> _area = [];
+
+  // Which page of photo cards is showing for each clustered pin group,
+  // matching the site's map: a crowded point fans out into a page of photo
+  // cards with a center counter + arrows to flip to the next page.
+  static const _pageSize = 8;
+  final Map<String, int> _groupPage = {};
 
   // Colour overlay layers, matching the site's map + its toolbar toggles.
   MapZones _zones = const MapZones();
@@ -164,18 +171,104 @@ class _MapViewState extends State<MapView> {
 
   /// Groups listings that share (almost) the same coordinate, matching the
   /// site's map markers: a lone listing gets a plain price pin, a cluster
-  /// gets one circular bubble that pages through its members with arrows
-  /// instead of scattering separate pins on top of each other.
-  List<_PinGroup> _spread(List<Listing> located) {
+  /// fans its current page of photo cards out around the point with a
+  /// center counter + arrows to flip pages, instead of stacking pins.
+  List<_PinGroup> _groupsFor(List<Listing> located) {
     final groups = <String, List<Listing>>{};
     for (final l in located) {
       final key = '${l.lat!.toStringAsFixed(3)},${l.lng!.toStringAsFixed(3)}';
       groups.putIfAbsent(key, () => []).add(l);
     }
     return [
-      for (final group in groups.values)
-        _PinGroup(group, LatLng(group.first.lat!, group.first.lng!)),
+      for (final entry in groups.entries)
+        _PinGroup(
+          entry.key,
+          entry.value,
+          LatLng(entry.value.first.lat!, entry.value.first.lng!),
+        ),
     ];
+  }
+
+  /// All markers (fanned photo cards + a center page-counter pill) for one
+  /// clustered pin group's currently active page.
+  List<Marker> _markersForGroup(_PinGroup group) {
+    if (group.listings.length == 1) {
+      final l = group.listings.first;
+      return [
+        Marker(
+          point: group.point,
+          width: 76,
+          height: 32,
+          child: GestureDetector(
+            onTap: () => widget.onTapListing(l),
+            child: _PricePin(
+              listing: l,
+              rates: widget.rates,
+              displayCurrency: widget.displayCurrency,
+            ),
+          ),
+        ),
+      ];
+    }
+
+    final pages = <List<Listing>>[];
+    for (var i = 0; i < group.listings.length; i += _pageSize) {
+      pages.add(
+        group.listings.sublist(
+          i,
+          math.min(i + _pageSize, group.listings.length),
+        ),
+      );
+    }
+    final pageIndex = (_groupPage[group.key] ?? 0).clamp(0, pages.length - 1);
+    final page = pages[pageIndex];
+
+    const cardW = 84.0, cardH = 100.0;
+    final radius = 0.0011 * (1 + page.length / 10);
+    final markers = <Marker>[
+      for (var i = 0; i < page.length; i++)
+        () {
+          final l = page[i];
+          final angle = 2 * math.pi * i / page.length;
+          final dLat = radius * math.cos(angle);
+          final dLng =
+              radius * math.sin(angle) / math.cos(group.point.latitude * math.pi / 180);
+          return Marker(
+            point: LatLng(
+              group.point.latitude + dLat,
+              group.point.longitude + dLng,
+            ),
+            width: cardW,
+            height: cardH,
+            child: GestureDetector(
+              onTap: () => widget.onTapListing(l),
+              child: _MapPhotoCard(
+                listing: l,
+                rates: widget.rates,
+                displayCurrency: widget.displayCurrency,
+              ),
+            ),
+          );
+        }(),
+      if (pages.length > 1)
+        Marker(
+          point: group.point,
+          width: 96,
+          height: 36,
+          child: _PagePill(
+            index: pageIndex,
+            total: pages.length,
+            onPrev: () => setState(
+              () => _groupPage[group.key] =
+                  (pageIndex - 1 + pages.length) % pages.length,
+            ),
+            onNext: () => setState(
+              () => _groupPage[group.key] = (pageIndex + 1) % pages.length,
+            ),
+          ),
+        ),
+    ];
+    return markers;
   }
 
   void _onMapTap(LatLng point) {
@@ -387,18 +480,8 @@ class _MapViewState extends State<MapView> {
               ),
             MarkerLayer(
               markers: [
-                for (final group in _spread(visible))
-                  Marker(
-                    point: group.point,
-                    width: group.listings.length > 1 ? 96 : 76,
-                    height: 32,
-                    child: _PricePinBubble(
-                      listings: group.listings,
-                      rates: widget.rates,
-                      displayCurrency: widget.displayCurrency,
-                      onTapListing: widget.onTapListing,
-                    ),
-                  ),
+                for (final group in _groupsFor(visible))
+                  ..._markersForGroup(group),
               ],
             ),
             const RichAttributionWidget(
@@ -574,113 +657,169 @@ class _ZoneDot extends StatelessWidget {
 }
 
 /// Listings that share (almost) the same coordinate, plus the point the
-/// group's marker is drawn at.
+/// group's markers are drawn around. [key] is stable across rebuilds so the
+/// active page survives (matches [_MapViewState._groupPage]'s keys).
 class _PinGroup {
-  const _PinGroup(this.listings, this.point);
+  const _PinGroup(this.key, this.listings, this.point);
+  final String key;
   final List<Listing> listings;
   final LatLng point;
 }
 
-/// A circular price bubble, matching the site's map marker style. A single
-/// listing renders as a plain pill; a cluster renders as a circle with the
-/// current member's price and left/right arrows to page through the group.
-class _PricePinBubble extends StatefulWidget {
-  const _PricePinBubble({
-    required this.listings,
-    required this.onTapListing,
-    this.rates,
-    this.displayCurrency,
-  });
-
-  final List<Listing> listings;
-  final void Function(Listing) onTapListing;
+/// A plain price pill for a lone (unclustered) listing.
+class _PricePin extends StatelessWidget {
+  const _PricePin({required this.listing, this.rates, this.displayCurrency});
+  final Listing listing;
   final Map<String, double>? rates;
   final String? displayCurrency;
 
   @override
-  State<_PricePinBubble> createState() => _PricePinBubbleState();
-}
-
-class _PricePinBubbleState extends State<_PricePinBubble> {
-  int _index = 0;
-
-  void _page(int delta) {
-    setState(
-      () => _index = (_index + delta) % widget.listings.length < 0
-          ? widget.listings.length - 1
-          : (_index + delta) % widget.listings.length,
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final listing = widget.listings[_index];
     final color = listing.byAgency
         ? BrandColors.toneOrange
         : Theme.of(context).colorScheme.primary;
     final label = pinPriceLabel(
       listing,
-      rates: widget.rates,
-      displayCurrency: widget.displayCurrency,
+      rates: rates,
+      displayCurrency: displayCurrency,
     );
-
-    if (widget.listings.length == 1) {
-      return GestureDetector(
-        onTap: () => widget.onTapListing(listing),
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
-          ),
+    return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
         ),
-      );
-    }
+      ),
+    );
+  }
+}
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _PinArrow(icon: Icons.chevron_left, onTap: () => _page(-1)),
-        GestureDetector(
-          onTap: () => widget.onTapListing(listing),
-          child: Container(
-            width: 44,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 3),
-              ],
-            ),
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 9,
+/// One photo card in a fanned-out cluster, matching the site's map: a
+/// thumbnail with the price pinned to the bottom, or a generic placeholder
+/// tile for a listing with no photo.
+class _MapPhotoCard extends StatelessWidget {
+  const _MapPhotoCard({required this.listing, this.rates, this.displayCurrency});
+
+  final Listing listing;
+  final Map<String, double>? rates;
+  final String? displayCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = pinPriceLabel(
+      listing,
+      rates: rates,
+      displayCurrency: displayCurrency,
+    );
+    final photo = listing.photos.isNotEmpty
+        ? listing.photos.first
+        : listing.photo;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 4)],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (photo != null)
+            CachedNetworkImage(
+              imageUrl: photo,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => const ColoredBox(color: Color(0xFF1B2340)),
+              errorWidget: (_, __, ___) => const _PhotoPlaceholder(),
+            )
+          else
+            const _PhotoPlaceholder(),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              color: const Color(0xFF0D1128),
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                ),
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PhotoPlaceholder extends StatelessWidget {
+  const _PhotoPlaceholder();
+
+  @override
+  Widget build(BuildContext context) => const ColoredBox(
+    color: Color(0xFF1B2340),
+    child: Icon(Icons.home_outlined, size: 32, color: Colors.white38),
+  );
+}
+
+/// The center pill sitting on a crowded pin's true point once its listings
+/// span more than one page — shows "current/total" with arrows to flip.
+class _PagePill extends StatelessWidget {
+  const _PagePill({
+    required this.index,
+    required this.total,
+    required this.onPrev,
+    required this.onNext,
+  });
+
+  final int index;
+  final int total;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _PinArrow(icon: Icons.chevron_left, onTap: onPrev),
+        Container(
+          width: 44,
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primary,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)],
+          ),
+          child: Text(
+            '${index + 1}/$total',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 11,
+            ),
+          ),
         ),
-        _PinArrow(icon: Icons.chevron_right, onTap: () => _page(1)),
+        _PinArrow(icon: Icons.chevron_right, onTap: onNext),
       ],
     );
   }

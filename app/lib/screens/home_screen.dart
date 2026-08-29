@@ -783,6 +783,33 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<DealType>(
+                segments: [
+                  ButtonSegment(value: DealType.any, label: Text(s.t('any'))),
+                  ButtonSegment(
+                    value: DealType.sale,
+                    label: Text(s.t('sale')),
+                  ),
+                  ButtonSegment(
+                    value: DealType.longRent,
+                    label: Text(s.t('longTerm')),
+                  ),
+                  ButtonSegment(
+                    value: DealType.shortRent,
+                    label: Text(s.t('shortTerm')),
+                  ),
+                ],
+                selected: {widget.filters.dealType},
+                showSelectedIcon: false,
+                onSelectionChanged: (v) => _schedule(
+                  _withTextValues().copyWith(dealType: v.first),
+                  immediate: true,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -821,6 +848,7 @@ class _ViewTabBar extends StatelessWidget {
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
                 selected: current == tab,
+                showCheckmark: false,
                 avatar: Icon(icon, size: 16),
                 label: Text(settings.t(key)),
                 onSelected: (_) => onChanged(tab),

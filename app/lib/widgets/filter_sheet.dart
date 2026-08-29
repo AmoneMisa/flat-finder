@@ -6,8 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/filters.dart';
-import '../services/api_service.dart';
-import '../state/app_state.dart';
 import '../state/presets.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
@@ -546,91 +544,6 @@ class _FilterSheetState extends State<FilterSheet> {
     }
   }
 
-  /// Prompt for a URL, validate it against the backend, and add it if it yields
-  /// listings. Anything unreachable/unsupported is reported inline.
-  Future<void> _promptAddCustomSource(SettingsState s) async {
-    final appState = context.read<AppState>();
-    final ctl = TextEditingController();
-    final added = await showDialog<String>(
-      context: context,
-      builder: (dialogCtx) {
-        String? error;
-        bool busy = false;
-        return StatefulBuilder(
-          builder: (dialogCtx, setDialog) => AlertDialog(
-            title: Text(s.t('addSource')),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: ctl,
-                  autofocus: true,
-                  keyboardType: TextInputType.url,
-                  decoration: InputDecoration(
-                    hintText: 'https://…',
-                    border: const OutlineInputBorder(),
-                    errorText: error,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  s.t('customSourcesHint'),
-                  style: Theme.of(dialogCtx).textTheme.bodySmall,
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: busy ? null : () => Navigator.pop(dialogCtx),
-                child: Text(s.t('cancel')),
-              ),
-              FilledButton(
-                onPressed: busy
-                    ? null
-                    : () async {
-                        final url = ctl.text.trim();
-                        if (!RegExp(r'^https?://').hasMatch(url)) {
-                          setDialog(() => error = s.t('invalidUrl'));
-                          return;
-                        }
-                        if (_customSources.contains(url)) {
-                          setDialog(() => error = s.t('sourceExists'));
-                          return;
-                        }
-                        setDialog(() {
-                          busy = true;
-                          error = null;
-                        });
-                        final SourceValidation r = await appState
-                            .validateSource(url);
-                        if (!dialogCtx.mounted) return;
-                        if (r.ok) {
-                          Navigator.pop(dialogCtx, url);
-                        } else {
-                          setDialog(() {
-                            busy = false;
-                            error = r.error ?? s.t('sourceUnreadable');
-                          });
-                        }
-                      },
-                child: busy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(s.t('validateAdd')),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    ctl.dispose();
-    if (added != null) setState(() => _customSources.add(added));
-  }
-
   String _audienceLabel(SettingsState s, Audience a) => switch (a) {
     Audience.any => s.t('any'),
     Audience.women => s.t('women'),
@@ -688,7 +601,7 @@ class _FilterSheetState extends State<FilterSheet> {
                     s.t('filters'),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
                   // The keyword search is the single most-used field — kept above
                   // every category instead of buried at the bottom of the sheet.
                   TextField(
@@ -699,7 +612,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       prefixIcon: const Icon(Icons.search),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
                   Builder(
                     builder: (context) {
                       final presets = context.watch<PresetsState>().presets;
@@ -770,7 +683,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           );
                         }).toList(),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('city')),
                       SearchableDropdown(
                         key: ValueKey('city-${_countries.join(',')}'),
@@ -790,7 +703,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       // District & metro inputs only appear when the picked city has data.
                       if (_cityLoc != null &&
                           _cityLoc!.districts.isNotEmpty) ...[
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
                         _label(s.t('district')),
                         SearchableDropdown(
                           key: ValueKey('district-$_city'),
@@ -802,7 +715,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                       ],
                       if (_cityLoc != null && _cityLoc!.metro.isNotEmpty) ...[
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
                         _label(s.t('metro')),
                         SearchableDropdown(
                           key: ValueKey('metro-$_city'),
@@ -813,7 +726,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           onChanged: (v) => setState(() => _metro = v),
                         ),
                       ],
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('microdistrict')),
                       _cityLoc != null && _cityLoc!.microdistricts.isNotEmpty
                           ? SearchableDropdown(
@@ -836,7 +749,7 @@ class _FilterSheetState extends State<FilterSheet> {
                                 border: const OutlineInputBorder(),
                               ),
                             ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('quartal')),
                       _cityLoc != null && _cityLoc!.quartals.isNotEmpty
                           ? SearchableDropdown(
@@ -857,7 +770,7 @@ class _FilterSheetState extends State<FilterSheet> {
                                 border: const OutlineInputBorder(),
                               ),
                             ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('areaName')),
                       _cityLoc != null && _cityLoc!.areas.isNotEmpty
                           ? SearchableDropdown(
@@ -878,7 +791,7 @@ class _FilterSheetState extends State<FilterSheet> {
                                 border: const OutlineInputBorder(),
                               ),
                             ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('metroDistance')),
                       TextField(
                         controller: _metroMaxMCtl,
@@ -889,7 +802,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           border: const OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('nearbyDistance')),
                       DropdownButtonFormField<String?>(
                         initialValue: _nearbyKind,
@@ -927,49 +840,6 @@ class _FilterSheetState extends State<FilterSheet> {
                   ),
                   _section(
                     context,
-                    icon: Icons.travel_explore_outlined,
-                    // The site never exposes a "which scrapers to use"
-                    // toggle — it always searches every built-in source, so
-                    // that choice was dropped from the app to match. Adding
-                    // your own extra source (a Telegram channel, RSS feed,
-                    // etc.) is a mobile-only feature kept here.
-                    title: s.t('sectionCustomSources'),
-                    children: [
-                      _label(s.t('customSources')),
-                      Text(
-                        s.t('customSourcesHint'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
-                      for (final url in _customSources)
-                        ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.link, size: 20),
-                          title: Text(
-                            url,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.close, size: 20),
-                            tooltip: s.t('remove'),
-                            onPressed: () =>
-                                setState(() => _customSources.remove(url)),
-                          ),
-                        ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.add, size: 18),
-                          label: Text(s.t('addSource')),
-                          onPressed: () => _promptAddCustomSource(s),
-                        ),
-                      ),
-                    ],
-                  ),
-                  _section(
-                    context,
                     icon: Icons.home_work_outlined,
                     title: s.t('sectionProperty'),
                     children: [
@@ -993,7 +863,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         onSelectionChanged: (v) =>
                             setState(() => _type = v.first),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('dealType')),
                       // A 4-way SegmentedButton squeezes long Russian labels ("Долгосрочно",
                       // "Посуточно") into equal-width slots too narrow to fit, forcing an
@@ -1014,7 +884,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             )
                             .toList(),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('realEstateAgency')),
                       SegmentedButton<AgencyFilter>(
                         segments: [
@@ -1035,7 +905,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         onSelectionChanged: (v) =>
                             setState(() => _agency = v.first),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('audience')),
                       SegmentedButton<Audience>(
                         segments: Audience.values
@@ -1145,7 +1015,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           onChanged: (v) => setState(() => _priceCurrency = v),
                         ),
                       ],
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('pricePerSqm')),
                       _minMaxRow(s, _pricePerSqmMinCtl, _pricePerSqmMaxCtl),
                     ],
@@ -1157,19 +1027,19 @@ class _FilterSheetState extends State<FilterSheet> {
                     children: [
                       _label(s.t('rooms')),
                       _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('bedrooms')),
                       _minMaxRow(s, _bedroomsMinCtl, _bedroomsMaxCtl),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('floor')),
                       _minMaxRow(s, _floorMinCtl, _floorMaxCtl),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('totalFloors')),
                       _minMaxRow(s, _totalFloorsMinCtl, _totalFloorsMaxCtl),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('buildingYear')),
                       _minMaxRow(s, _yearMinCtl, _yearMaxCtl),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('areaSqm')),
                       _minMaxRow(s, _areaMinCtl, _areaMaxCtl),
                     ],
@@ -1302,7 +1172,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         ],
                         onChanged: (v) => setState(() => _maxAgeDays = v),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _label(s.t('sortBy')),
                       DropdownButtonFormField<SortBy>(
                         initialValue: _sort,
@@ -1359,25 +1229,39 @@ class _FilterSheetState extends State<FilterSheet> {
     required String title,
     required List<Widget> children,
   }) {
+    final theme = Theme.of(context);
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(12),
+        color: theme.colorScheme.surface,
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(10),
       ),
       clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        key: PageStorageKey<String>('filter-$title'),
-        initiallyExpanded: true,
-        leading: Icon(
-          icon,
-          size: 18,
-          color: Theme.of(context).colorScheme.primary,
+      child: ExpansionTileTheme(
+        // Material 3's default surfaceTint washes the tile a mismatched
+        // maroon/lavender when expanded on this app's dark navy theme —
+        // pin both states to the same background instead.
+        data: ExpansionTileThemeData(
+          backgroundColor: theme.colorScheme.surface,
+          collapsedBackgroundColor: theme.colorScheme.surface,
+          iconColor: theme.colorScheme.primary,
+          collapsedIconColor: theme.colorScheme.primary,
         ),
-        title: Text(title, style: Theme.of(context).textTheme.titleSmall),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        children: children,
+        child: ExpansionTile(
+          key: PageStorageKey<String>('filter-$title'),
+          initiallyExpanded: true,
+          leading: Icon(icon, size: 18, color: theme.colorScheme.primary),
+          title: Text(title, style: theme.textTheme.titleSmall),
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          tilePadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 0,
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+          children: children,
+        ),
       ),
     );
   }

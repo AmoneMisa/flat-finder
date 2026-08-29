@@ -83,28 +83,39 @@ class SearchableDropdown extends StatelessWidget {
           }
         },
       ),
-      optionsViewBuilder: (context, onSelected, opts) => Align(
-        alignment: Alignment.topLeft,
-        child: Material(
-          elevation: 4,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
-            child: ListView(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              children: opts
-                  .map(
-                    (o) => ListTile(
-                      dense: true,
-                      title: Text(_label(o)),
-                      onTap: () => onSelected(o),
-                    ),
-                  )
-                  .toList(),
+      optionsViewBuilder: (context, onSelected, opts) {
+        final theme = Theme.of(context);
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            color: theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(8),
+            clipBehavior: Clip.antiAlias,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
+              child: ListView(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                children: opts
+                    .map(
+                      (o) => ListTile(
+                        dense: true,
+                        title: Text(
+                          _label(o),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        onTap: () => onSelected(o),
+                      ),
+                    )
+                    .toList(),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

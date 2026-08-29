@@ -244,20 +244,13 @@ class ListingCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _PriceLine(
-                  listing: listing,
-                  rates: rates,
-                  displayCurrency: displayCurrency,
-                  state: priceState,
-                  s: s,
-                  compact: compact,
-                ),
-              ),
-              actions,
-            ],
+          _PriceLine(
+            listing: listing,
+            rates: rates,
+            displayCurrency: displayCurrency,
+            state: priceState,
+            s: s,
+            compact: compact,
           ),
           SizedBox(height: compact ? 2 : 6),
           Text(
@@ -326,6 +319,10 @@ class ListingCard extends StatelessWidget {
               ),
             ],
           ),
+          // Actions sit at the very bottom of the card, clear of the photo,
+          // badge, and viewed icon so nothing overlaps on narrow mobile cards.
+          SizedBox(height: compact ? 4 : 8),
+          Align(alignment: Alignment.centerRight, child: actions),
         ],
       ),
     );
