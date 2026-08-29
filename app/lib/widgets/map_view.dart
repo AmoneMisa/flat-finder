@@ -191,11 +191,13 @@ class _MapViewState extends State<MapView> {
     }
     // Tapping a district selects it (dimming the rest); tapping empty map
     // clears the selection — same behavior as the site's map.
-    if (_showDistricts) for (final zone in _zones.districtZones) {
-      for (final ring in _ringsFor(zone)) {
-        if (_pointInPolygon(point, ring)) {
-          _onDistrictTap(zone.id);
-          return;
+    if (_showDistricts) {
+      for (final zone in _zones.districtZones) {
+        for (final ring in _ringsFor(zone)) {
+          if (_pointInPolygon(point, ring)) {
+            _onDistrictTap(zone.id);
+            return;
+          }
         }
       }
     }

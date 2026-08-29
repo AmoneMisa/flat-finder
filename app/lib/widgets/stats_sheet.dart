@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/strings.dart';
 import '../models/filters.dart';
 import '../models/search_statistics.dart';
 import '../services/api_service.dart';
@@ -30,14 +31,14 @@ class _StatsSheetState extends State<StatsSheet> {
     _future = widget.api.fetchSearchStatistics(widget.filters);
   }
 
-  String _dealLabel(SettingsState s, String key) => switch (key) {
+  String _dealLabel(AppStrings s, String key) => switch (key) {
         'sale' => s.t('sale'),
         'longRent' => s.t('longTerm'),
         'shortRent' => s.t('shortTerm'),
         _ => key,
       };
 
-  String _geoDimensionLabel(SettingsState s, String key) => switch (key) {
+  String _geoDimensionLabel(AppStrings s, String key) => switch (key) {
         'district' => s.t('district'),
         'city' => s.t('city'),
         'metro' => s.t('metro'),
