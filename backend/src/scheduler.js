@@ -20,7 +20,9 @@ const MANUAL_REFRESH_COOLDOWN_SECONDS = Math.max(
 
 let dispatching = false;
 let placesRunning = false;
+let promotingGeo = false;
 let lastRun = null;
+let lastGeoPromote = null;
 
 // Preserve the existing refresh command used by clients, but keep execution in
 // worker.js. The queue transaction globally prevents duplicate generations and
@@ -94,6 +96,41 @@ export async function refreshPlaces(force = false) {
   } finally {
     placesRunning = false;
   }
+}
+
+/**
+ * On-demand promotion of learned_geo rows into @whiteslove/geo-catalog,
+ * independent of refreshPlaces' places-table freshness gate. Guarded by its
+ * own lock (not placesRunning) so a manual trigger never has to wait behind
+ * an in-flight places sync, and vice versa.
+ */
+export async function refreshGeoPromote(reason = 'manual') {
+  if (promotingGeo) return lastGeoPromote;
+  promotingGeo = true;
+
+  try {
+    const result = await promoteLearnedGeo();
+    lastGeoPromote = {
+      at: new Date().toISOString(),
+      reason,
+      ...result,
+    };
+    return lastGeoPromote;
+  } catch (error) {
+    lastGeoPromote = {
+      at: new Date().toISOString(),
+      reason,
+      ok: false,
+      error: error?.message || String(error),
+    };
+    throw error;
+  } finally {
+    promotingGeo = false;
+  }
+}
+
+export function getLastGeoPromote() {
+  return lastGeoPromote;
 }
 
 export function getLastRun() {

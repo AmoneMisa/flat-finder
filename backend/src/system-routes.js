@@ -1,7 +1,7 @@
 import { dbHealth, getDbStats } from './db.js';
 import { elasticsearchHealth } from './elasticsearch.js';
 import { requireInternal } from './internal-auth.js';
-import { getLastRun, refreshAll } from './scheduler.js';
+import { getLastGeoPromote, getLastRun, refreshAll, refreshGeoPromote } from './scheduler.js';
 
 function requireOps(req, res) {
   return requireInternal(req, res, {
@@ -66,6 +66,29 @@ export function installSystemRoutes(app) {
 
     try {
       const result = await refreshAll('manual');
+      res.json({ ok: true, result });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err?.message ?? String(err),
+      });
+    }
+  });
+
+  // Promotes pending learned_geo rows (see learned-geo-export.js) into
+  // @whiteslove/geo-catalog's static catalog on demand, instead of waiting
+  // for refreshPlaces' once-a-day interval. Requires GEO_CATALOG_GITHUB_TOKEN
+  // to be configured — see promoteLearnedGeo's own skip check for that case.
+  app.get('/internal/geo-promote', (req, res) => {
+    if (!requireOps(req, res)) return;
+    res.json({ lastRun: getLastGeoPromote() });
+  });
+
+  app.post('/internal/geo-promote', async (req, res) => {
+    if (!requireOps(req, res)) return;
+
+    try {
+      const result = await refreshGeoPromote('manual');
       res.json({ ok: true, result });
     } catch (err) {
       res.status(500).json({

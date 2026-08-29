@@ -1,12 +1,24 @@
 // nearestAddressToMetro/nearestMetroToAddress ship in @whiteslove/geo-catalog
 // from the claude/poi-lexicon-update-00zhrs branch onward; bump the
 // package.json range once that branch merges and CI auto-publishes past 0.4.0.
-import {
-  resolveLexiconGeoEntity,
-  nearestAddressToMetro as libNearestAddressToMetro,
-  nearestMetroToAddress as libNearestMetroToAddress,
-} from '@whiteslove/geo-catalog';
+// Imported as a namespace (not named imports) so an older installed version
+// missing those two exports fails at call time with a clear message instead
+// of a hard SyntaxError at module load that would take down the whole process.
+import * as geoCatalog from '@whiteslove/geo-catalog';
 import { pool } from './db.js';
+
+const { resolveLexiconGeoEntity } = geoCatalog;
+
+function requireLibFn(name) {
+  const fn = geoCatalog[name];
+  if (typeof fn !== 'function') {
+    throw new Error(
+      `The installed @whiteslove/geo-catalog does not export ${name} yet — ` +
+      'bump the dependency once the geo-catalog resolver branch merges and publishes.',
+    );
+  }
+  return fn;
+}
 
 const DEFAULT_MAX_DISTANCE_KM = 3;
 const DEFAULT_ROW_LIMIT = 500;
@@ -76,7 +88,7 @@ export async function nearestAddressToMetro(
   const addresses = await loadLearnedAddressesNear(country, station.center, maxDistanceKm, limit);
   if (!addresses.length) return null;
 
-  return libNearestAddressToMetro({ country, city, canonical }, addresses, { maxDistanceKm });
+  return requireLibFn('nearestAddressToMetro')({ country, city, canonical }, addresses, { maxDistanceKm });
 }
 
 /**
@@ -95,5 +107,5 @@ export async function nearestMetroToAddress(lookupKey, { country, maxDistanceKm 
   if (!row) return null;
 
   const point = { lat: Number(row.lat), lng: Number(row.lng) };
-  return libNearestMetroToAddress(point, { country, maxDistanceKm });
+  return requireLibFn('nearestMetroToAddress')(point, { country, maxDistanceKm });
 }
