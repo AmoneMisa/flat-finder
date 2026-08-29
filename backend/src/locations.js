@@ -115,7 +115,13 @@ export function parseLocation(text, countryCode, preferredCity = null) {
   result.developmentAreas = [...(dictionary.developmentAreas || [])];
   result.searchClusters = [...(dictionary.searchClusters || [])];
   result.locationEntities = [...(dictionary.locationEntities || [])];
-  if (dictionary.landmark) result.nearby.push(dictionary.landmark);
+  // The housing-transit catalogue and the general POI catalogue both cover
+  // Tashkent's railway stations, sometimes under different canonical names for
+  // the same phrase (e.g. "Ташкент Северный вокзал"). Defer adding a railway
+  // landmark until the explicit-metro check below has a chance to claim it,
+  // so a listing doesn't end up with two conflicting station names.
+  const dictionaryLandmarkIsRailway = dictionary.landmark && dictionary.landmarkCategory === 'railway';
+  if (dictionary.landmark && !dictionaryLandmarkIsRailway) result.nearby.push(dictionary.landmark);
 
   // Tashkent's colloquial area resolver keeps only ambiguity/district policy;
   // all place names and spelling variants come from the shared package.
@@ -134,6 +140,8 @@ export function parseLocation(text, countryCode, preferredCity = null) {
     if (explicitMetro) {
       result.metro = explicitMetro;
       result.nearby = result.nearby.filter((name) => name !== explicitMetro && !(explicitMetro === 'Tashkent North Railway Station' && name === 'Railway station'));
+    } else if (dictionaryLandmarkIsRailway && !result.nearby.includes(dictionary.landmark)) {
+      result.nearby.push(dictionary.landmark);
     }
     if (result.metro === 'Chilonzor' && matchTashkentNumberedArea(text, 'Chilanzar') && explicitMetro !== 'Chilonzor') {
       result.metro = null;
@@ -143,6 +151,8 @@ export function parseLocation(text, countryCode, preferredCity = null) {
       result.city ||= 'Tashkent';
       if (!result.nearby.includes(landmark.name)) result.nearby.push(landmark.name);
     }
+  } else if (dictionaryLandmarkIsRailway && !result.nearby.includes(dictionary.landmark)) {
+    result.nearby.push(dictionary.landmark);
   }
 
   applyPoiAdministrativeContext(result, text, countryCode, preferredCity);

@@ -2,6 +2,7 @@ import { FULL_TASHKENT_AREAS, normalizeForMatch } from '@whiteslove/parsing-lexi
 import {
   hasExplicitTashkentDistrict,
   hasTashkentAreaAlias,
+  matchTashkentHousingLandmarks,
   matchTashkentNumberedArea,
 } from '@whiteslove/parsing-lexicon/tashkent-housing-geography';
 
@@ -24,6 +25,13 @@ const result = (areaName, district, confidence = 1, ambiguous = false) => ({
 });
 
 const latinSuffix = (value) => ({ А: 'A', Д: 'D' }[String(value || '').toUpperCase()] || String(value || '').toUpperCase());
+
+// Housing landmarks parsing-lexicon deliberately keeps out of TASHKENT_AREAS
+// (they're POIs, not residential areas) but each sits in exactly one district.
+const LANDMARK_DISTRICTS = Object.freeze({
+  'Sergeli Car Bazaar': 'Sergeli',
+  Glinka: 'Yakkasaray',
+});
 
 export function resolveTashkentArea(value) {
   const text = normalize(value);
@@ -72,6 +80,13 @@ export function resolveTashkentArea(value) {
   for (const candidate of STATIC_MATCHERS) {
     if (phraseIn(text, candidate.alias)) return result(candidate.area, candidate.district);
   }
+
+  // These street-scale housing landmarks each sit unambiguously in one
+  // district, so their presence resolves the district the way an explicit
+  // district suffix would, even though they aren't areas themselves.
+  const landmarkMatch = matchTashkentHousingLandmarks(value)
+    .find((entry) => LANDMARK_DISTRICTS[entry.name]);
+  if (landmarkMatch) return result(landmarkMatch.name, LANDMARK_DISTRICTS[landmarkMatch.name]);
 
   if (hasExplicitTashkentDistrict(value, 'Sergeli')) return result('Sergeli', 'Sergeli');
   if (hasTashkentAreaAlias(value, 'Sergeli')) return result('Sergeli', null, 0.35, true);
