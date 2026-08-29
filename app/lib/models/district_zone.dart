@@ -80,6 +80,7 @@ class MapZones {
   final List<DistrictZone> microdistrictMarkers;
   final List<DistrictZone> quartalMarkers; // mahallas
   final List<DistrictZone> areaZones;
+  final List<DistrictZone> metroStations;
   final DistrictZone? cityZone;
 
   const MapZones({
@@ -87,6 +88,7 @@ class MapZones {
     this.microdistrictMarkers = const [],
     this.quartalMarkers = const [],
     this.areaZones = const [],
+    this.metroStations = const [],
     this.cityZone,
   });
 
@@ -96,6 +98,7 @@ class MapZones {
     yield* microdistrictMarkers;
     yield* quartalMarkers;
     yield* areaZones;
+    yield* metroStations;
   }
 
   DistrictZone? byId(String? id) {
@@ -115,6 +118,7 @@ class MapZones {
       microdistrictMarkers: list('microdistrictMarkers'),
       quartalMarkers: list('quartalMarkers'),
       areaZones: list('areaZones'),
+      metroStations: list('metroStations'),
       cityZone: j['cityZone'] is Map
           ? DistrictZone.fromJson(
               Map<String, dynamic>.from(j['cityZone'] as Map),
