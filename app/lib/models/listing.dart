@@ -58,6 +58,7 @@ class Listing {
   final String? district; // intra-city district / neighbourhood | null
   final String? metro; // nearest metro/transit station | null
   final List<String> nearby; // nearby landmarks
+  final List<String> nearbyShops; // named shop/mall chains mentioned
   final bool? petsAllowed; // true/false/null (unstated)
   final bool? childrenAllowed; // true/false/null (unstated)
   final bool roomOnly; // renting a single room, not the whole flat
@@ -65,6 +66,29 @@ class Listing {
   final num? depositAmount; // stated deposit amount, if any
   final bool? commission; // agency commission charged?
   final num? commissionPercent; // stated commission %, if any
+  final bool? negotiable; // price open to negotiation?
+  final bool? smokingAllowed;
+  final bool? newBuilding;
+  final bool? communalSeparated; // utilities billed separately from rent?
+  final String? condition; // needs_renovation | basic | good | modern | luxury
+  final int? bathrooms;
+  final String? address;
+  final String? residenceComplex; // named residential complex
+  final String? kvartal; // city sub-area / quarter
+  // Amenity/feature booleans — spec-table rows, same fields the site's
+  // UiSpecTable amenities group shows.
+  final bool? parking;
+  final bool? elevator;
+  final bool? furnished;
+  final bool? balcony;
+  final bool? terrace;
+  final bool? privateYard;
+  final bool? dishwasher;
+  final bool? airConditioner;
+  final bool? gas;
+  final bool? heating;
+  final bool? hotWater;
+  final bool? internet;
   final String city;
   final double? lat;
   final double? lng;
@@ -75,6 +99,10 @@ class Listing {
   final String description;
   final List<String> tags;
   final MarketComparison? marketComparison;
+  /// Stable, source-independent id (the listings table's BIGSERIAL, stamped
+  /// onto every row by a DB trigger) used for single-listing share links —
+  /// `source`+`id` alone isn't enough since `id` is source-specific.
+  final int? publicId;
 
   Listing({
     required this.id,
@@ -97,6 +125,7 @@ class Listing {
     required this.district,
     required this.metro,
     required this.nearby,
+    this.nearbyShops = const [],
     this.petsAllowed,
     this.childrenAllowed,
     this.roomOnly = false,
@@ -104,6 +133,27 @@ class Listing {
     this.depositAmount,
     this.commission,
     this.commissionPercent,
+    this.negotiable,
+    this.smokingAllowed,
+    this.newBuilding,
+    this.communalSeparated,
+    this.condition,
+    this.bathrooms,
+    this.address,
+    this.residenceComplex,
+    this.kvartal,
+    this.parking,
+    this.elevator,
+    this.furnished,
+    this.balcony,
+    this.terrace,
+    this.privateYard,
+    this.dishwasher,
+    this.airConditioner,
+    this.gas,
+    this.heating,
+    this.hotWater,
+    this.internet,
     required this.city,
     required this.lat,
     required this.lng,
@@ -114,6 +164,7 @@ class Listing {
     required this.description,
     required this.tags,
     this.marketComparison,
+    this.publicId,
   });
 
   bool get hasLocation => lat != null && lng != null;
@@ -145,6 +196,7 @@ class Listing {
               ?.map((e) => _capitalizeFirstLetter(e.toString()))
               .toList() ??
           const [],
+      nearbyShops: (j['nearbyShops'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       petsAllowed: j['petsAllowed'] as bool?,
       childrenAllowed: j['childrenAllowed'] as bool?,
       roomOnly: j['roomOnly'] == true,
@@ -152,6 +204,27 @@ class Listing {
       depositAmount: j['depositAmount'] as num?,
       commission: j['commission'] as bool?,
       commissionPercent: j['commissionPercent'] as num?,
+      negotiable: j['negotiable'] as bool?,
+      smokingAllowed: j['smokingAllowed'] as bool?,
+      newBuilding: j['newBuilding'] as bool?,
+      communalSeparated: j['communalSeparated'] as bool?,
+      condition: (j['condition'] ?? j['propertyCondition']) as String?,
+      bathrooms: (j['bathrooms'] as num?)?.toInt(),
+      address: j['address'] as String?,
+      residenceComplex: j['residenceComplex'] as String?,
+      kvartal: (j['kvartal'] ?? j['area']) as String?,
+      parking: j['parking'] as bool?,
+      elevator: j['elevator'] as bool?,
+      furnished: j['furnished'] as bool?,
+      balcony: j['balcony'] as bool?,
+      terrace: j['terrace'] as bool?,
+      privateYard: j['privateYard'] as bool?,
+      dishwasher: j['dishwasher'] as bool?,
+      airConditioner: j['airConditioner'] as bool?,
+      gas: j['gas'] as bool?,
+      heating: j['heating'] as bool?,
+      hotWater: j['hotWater'] as bool?,
+      internet: j['internet'] as bool?,
       city: j['city'] ?? '',
       lat: toD(j['lat']),
       lng: toD(j['lng']),
@@ -165,6 +238,7 @@ class Listing {
       marketComparison: market is Map
           ? MarketComparison.fromJson(Map<String, dynamic>.from(market))
           : null,
+      publicId: (j['publicId'] as num?)?.toInt(),
     );
   }
 
@@ -190,6 +264,7 @@ class Listing {
         'district': district,
         'metro': metro,
         'nearby': nearby,
+        'nearbyShops': nearbyShops,
         'petsAllowed': petsAllowed,
         'childrenAllowed': childrenAllowed,
         'roomOnly': roomOnly,
@@ -197,6 +272,27 @@ class Listing {
         'depositAmount': depositAmount,
         'commission': commission,
         'commissionPercent': commissionPercent,
+        'negotiable': negotiable,
+        'smokingAllowed': smokingAllowed,
+        'newBuilding': newBuilding,
+        'communalSeparated': communalSeparated,
+        'condition': condition,
+        'bathrooms': bathrooms,
+        'address': address,
+        'residenceComplex': residenceComplex,
+        'kvartal': kvartal,
+        'parking': parking,
+        'elevator': elevator,
+        'furnished': furnished,
+        'balcony': balcony,
+        'terrace': terrace,
+        'privateYard': privateYard,
+        'dishwasher': dishwasher,
+        'airConditioner': airConditioner,
+        'gas': gas,
+        'heating': heating,
+        'hotWater': hotWater,
+        'internet': internet,
         'city': city,
         'lat': lat,
         'lng': lng,
@@ -207,5 +303,6 @@ class Listing {
         'description': description,
         'tags': tags,
         if (marketComparison != null) 'marketComparison': marketComparison!.toJson(),
+        if (publicId != null) 'publicId': publicId,
       };
 }

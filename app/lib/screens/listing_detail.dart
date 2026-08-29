@@ -18,6 +18,8 @@ import '../state/favorites.dart';
 import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
+import '../utils/price_tone.dart';
+import '../utils/share_link.dart';
 
 class ListingDetailScreen extends StatefulWidget {
   const ListingDetailScreen({super.key, required this.listing});
@@ -145,14 +147,21 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     if (info.isNotEmpty) b.writeln(info.join(' · '));
     if (listing.contact != null) b.writeln(listing.contact!);
     if (listing.url.isNotEmpty) b.writeln(listing.url);
+    if (listing.publicId != null) b.writeln(buildListingShareUrl(listing.publicId!));
     return b.toString().trim();
   }
 
   /// Desktop "Share": OS share sheets are unreliable on Windows, so put a
-  /// shareable link (the original listing URL, falling back to the full
-  /// details) on the clipboard and confirm with a SnackBar.
+  /// shareable link on the clipboard and confirm with a SnackBar. Same
+  /// priority as the site's own share button: the app's own stable link
+  /// (opens straight to this listing) over the original ad, over the full
+  /// details as a last resort.
   Future<void> _shareLink(AppStrings s, Map<String, double> rates, String? displayCurrency) async {
-    final link = listing.url.isNotEmpty ? listing.url : _shareText(s, rates, displayCurrency);
+    final link = listing.publicId != null
+        ? buildListingShareUrl(listing.publicId!)
+        : listing.url.isNotEmpty
+            ? listing.url
+            : _shareText(s, rates, displayCurrency);
     await Clipboard.setData(ClipboardData(text: link));
     if (mounted) {
       ScaffoldMessenger.of(context)
@@ -208,7 +217,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${countryFlags[listing.country] ?? ''} ${listing.city}'),
+        title: _DetailTitle(listing: listing, rates: rates, s: s),
         actions: [
           if (listing.source == 'olx')
             IconButton(
@@ -329,6 +338,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                             _chip(Icons.source_outlined, sourceLabel(listing.source, s)),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        _SpecTable(listing: listing, s: s),
                       ],
                     ),
                   ),
@@ -451,6 +462,167 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     }
     if (amount != null) return '$base ${amount.round()}';
     return base;
+  }
+}
+
+/// Same "#12345 Long-term rent, Kyiv" title as the site's detail popup — the
+/// public id colored by the same price-vs-median tone as the price itself
+/// (falling back to pink when there's no market comparison, matching
+/// useFlatDetailsTitle.ts's `?? "pink"`), followed by a deal/city summary.
+class _DetailTitle extends StatelessWidget {
+  const _DetailTitle({required this.listing, required this.rates, required this.s});
+
+  final Listing listing;
+  final Map<String, double> rates;
+  final AppStrings s;
+
+  String get _dealText {
+    if (listing.roomOnly) return s.t('roomOnly');
+    if (listing.dealType == 'sale') return s.t('sale');
+    if (listing.dealType == 'shortRent') return s.t('shortTerm');
+    if (listing.dealType == 'longRent') return s.t('longTerm');
+    return '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (listing.publicId == null) {
+      return Text('${countryFlags[listing.country] ?? ''} ${listing.city}');
+    }
+    final color = priceToneColor(listingPriceTone(listing, rates));
+    final subtitle = [_dealText, listing.city].where((e) => e.isNotEmpty).join(', ');
+    return RichText(
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        style: DefaultTextStyle.of(context).style,
+        children: [
+          TextSpan(
+            text: '#${listing.publicId} ',
+            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+          ),
+          if (subtitle.isNotEmpty) TextSpan(text: subtitle),
+        ],
+      ),
+    );
+  }
+}
+
+/// Grouped label/value spec table — same fields and grouping as the site's
+/// `UiSpecTable`/`specRows` (advert/property/location/amenities/terms/costs),
+/// collapsed to one column since the app is narrow rather than the site's
+/// desktop 3-column layout. Empty rows are hidden so the table doesn't pad
+/// itself out with "Not specified" for every field a listing lacks.
+class _SpecTable extends StatelessWidget {
+  const _SpecTable({required this.listing, required this.s});
+
+  final Listing listing;
+  final AppStrings s;
+
+  String? _yesNo(bool? value) {
+    if (value == null) return null;
+    return value ? s.t('yes') : s.t('no');
+  }
+
+  /// "Yes 500" / "Yes 50%" / just "Yes"/"No" when no figure known.
+  String _costLabel(String base, num? amount, num? percent) {
+    if (percent != null) {
+      final p = percent % 1 == 0 ? percent.toInt().toString() : percent.toString();
+      return '$base $p%';
+    }
+    if (amount != null) return '$base ${amount.round()}';
+    return base;
+  }
+
+  String? _conditionLabel(String? condition) => switch (condition) {
+        'needs_renovation' => s.t('condNeeds'),
+        'basic' => s.t('condBasic'),
+        'good' => s.t('condGood'),
+        'modern' => s.t('condModern'),
+        'luxury' => s.t('condLuxury'),
+        _ => null,
+      };
+
+  List<(String, String)> _rows() {
+    final l = listing;
+    final rows = <(String, String?)>[
+      (s.t('specDeal'), dealTypeLabel(l.dealType, s)),
+      (s.t('specType'), propertyLabel(l.propertyType, s)),
+      (s.t('specListedBy'), l.byAgency ? s.t('agency') : s.t('privateOwner')),
+      (s.t('specSource'), sourceLabel(l.source, s)),
+      (s.t('specRooms'), l.rooms?.toString()),
+      (s.t('specBedrooms'), l.bedrooms?.toString()),
+      (s.t('specBathrooms'), l.bathrooms?.toString()),
+      (s.t('specArea'), l.areaSqm != null ? '${l.areaSqm} m²' : null),
+      (s.t('specFloor'), floorLabel(l, s)),
+      (s.t('specYear'), l.buildingYear?.toString()),
+      (s.t('specNewBuilding'), _yesNo(l.newBuilding)),
+      (s.t('specCondition'), _conditionLabel(l.condition)),
+      (s.t('specComplex'), l.residenceComplex),
+      (s.t('specCity'), l.city.isNotEmpty ? l.city : null),
+      (s.t('specDistrict'), l.district),
+      (s.t('specKvartal'), l.kvartal),
+      (s.t('specMetro'), l.metro),
+      (s.t('specAddress'), l.address),
+      (s.t('specShops'), l.nearbyShops.isNotEmpty ? l.nearbyShops.join(', ') : null),
+      (s.t('specNearby'), l.nearby.isNotEmpty ? l.nearby.join(', ') : null),
+      (s.t('specParking'), _yesNo(l.parking)),
+      (s.t('specElevator'), _yesNo(l.elevator)),
+      (s.t('specFurnished'), _yesNo(l.furnished)),
+      (s.t('specBalcony'), _yesNo(l.balcony)),
+      (s.t('specTerrace'), _yesNo(l.terrace)),
+      (s.t('specPrivateYard'), _yesNo(l.privateYard)),
+      (s.t('specDishwasher'), _yesNo(l.dishwasher)),
+      (s.t('specAC'), _yesNo(l.airConditioner)),
+      (s.t('specGas'), _yesNo(l.gas)),
+      (s.t('specHeating'), _yesNo(l.heating)),
+      (s.t('specHotWater'), _yesNo(l.hotWater)),
+      (s.t('specInternet'), _yesNo(l.internet)),
+      (s.t('specPets'), _yesNo(l.petsAllowed)),
+      (s.t('specChildren'), _yesNo(l.childrenAllowed)),
+      (s.t('specSmoking'), _yesNo(l.smokingAllowed)),
+      (s.t('specAudience'), audienceLabel(l.audience, s)),
+      (s.t('specRoomShare'), l.roomOnly ? s.t('yes') : null),
+      (s.t('specNegotiable'), _yesNo(l.negotiable)),
+      (s.t('specDeposit'), l.deposit == null
+          ? null
+          : _costLabel(_yesNo(l.deposit)!, l.depositAmount, null)),
+      (s.t('specCommission'), l.commission == null
+          ? null
+          : _costLabel(_yesNo(l.commission)!, null, l.commissionPercent)),
+      (s.t('specCommunal'), _yesNo(l.communalSeparated)),
+    ];
+    return [for (final (label, value) in rows) if (value != null && value.isNotEmpty) (label, value)];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = _rows();
+    if (rows.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(s.t('specifications'), style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Table(
+          columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()},
+          children: [
+            for (final (label, value) in rows)
+              TableRow(children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                  child: Text(label,
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                  child: Text(value, style: theme.textTheme.bodyMedium),
+                ),
+              ]),
+          ],
+        ),
+      ],
+    );
   }
 }
 

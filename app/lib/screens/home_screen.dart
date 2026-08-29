@@ -67,12 +67,33 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _applyLink(Uri uri) {
+    final publicId = parseListingLink(uri);
+    if (publicId != null) {
+      _openSharedListing(publicId);
+      return;
+    }
     final filters = parseSearchUrl(uri);
     if (filters == null || !mounted) return;
     final state = context.read<AppState>();
     state.updateFilters(filters);
     state.search();
     setState(() => _mapMode = false);
+  }
+
+  /// Opens a listing shared via `flatfinder://listing?id=<publicId>`. A
+  /// listing scraped moments ago may not be indexed yet, so retry a few
+  /// times before giving up — same fallback the site's `?adv=` link uses.
+  Future<void> _openSharedListing(int publicId) async {
+    for (var attempt = 0; attempt < 5; attempt++) {
+      if (!mounted) return;
+      final listing = await _api.fetchListingByPublicId(publicId);
+      if (listing != null) {
+        if (!mounted) return;
+        _openListing(listing);
+        return;
+      }
+      if (attempt < 4) await Future.delayed(const Duration(milliseconds: 1500));
+    }
   }
 
   Future<void> _openFilters(AppState state) async {

@@ -5,6 +5,28 @@ import '../models/filters.dart';
 const kAppLinkScheme = 'flatfinder';
 const kAppLinkHost = 'search';
 
+/// Deep link to one specific listing by its stable `publicId` — mirrors the
+/// site's `?adv=<publicId>` query param, since `source`+`id` alone isn't a
+/// stable enough key to share (see Listing.publicId).
+/// Example link: `flatfinder://listing?id=12345`.
+const kListingLinkHost = 'listing';
+
+String buildListingShareUrl(int publicId) {
+  final uri = Uri(
+    scheme: kAppLinkScheme,
+    host: kListingLinkHost,
+    queryParameters: {'id': '$publicId'},
+  );
+  return uri.toString();
+}
+
+/// Decode a single-listing deep link into its `publicId`; null for links
+/// that aren't ours or aren't a listing link.
+int? parseListingLink(Uri uri) {
+  if (uri.scheme != kAppLinkScheme || uri.host != kListingLinkHost) return null;
+  return int.tryParse(uri.queryParameters['id'] ?? '');
+}
+
 /// Build a shareable deep link that encodes a search. Opening it launches the
 /// app (where the scheme is registered) with these filters applied.
 String buildSearchUrl(Filters filters) {

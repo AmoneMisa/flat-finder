@@ -11,6 +11,7 @@ import '../state/favorites.dart';
 import '../state/history.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
+import '../utils/price_tone.dart';
 
 /// Deal-type badge colours, matching the site's `.flat-card__deal_*` tones.
 enum _DealTone { sale, rent, room, shortTerm }
@@ -62,7 +63,7 @@ class ListingCard extends StatelessWidget {
     final s = settings.s;
     final isFav = favorites.isFavorite(listing.id);
     final isViewed = history.isViewed(listing.id);
-    final priceState = _priceState(listing, appState.rates);
+    final priceState = listingPriceTone(listing, appState.rates);
 
     final dealTone = _dealTone(listing);
     final photo = Stack(
@@ -147,7 +148,7 @@ class ListingCard extends StatelessWidget {
     required Filters filters,
     required Map<String, double> rates,
     required String? displayCurrency,
-    required _PriceState priceState,
+    required PriceTone priceState,
     bool compact = false,
   }) {
     final badges = _contextBadges(filters, s);
@@ -294,41 +295,6 @@ class ListingCard extends StatelessWidget {
   }
 }
 
-enum _PriceTier { low, belowAverage, average, high, veryHigh, unknown }
-
-class _PriceState {
-  const _PriceState(this.tier, this.ratio);
-  final _PriceTier tier;
-  final double? ratio;
-
-  // whiteslove.me's own `--flat-tone-*` status palette (green/yellow/orange/
-  // red), so a listing's price tier reads with the same colors as the site.
-  Color get color => switch (tier) {
-        _PriceTier.low => BrandColors.toneGreen,
-        _PriceTier.belowAverage =>
-          Color.lerp(BrandColors.toneGreen, BrandColors.toneYellow, 0.5)!,
-        _PriceTier.average => BrandColors.textPrimary,
-        _PriceTier.high => BrandColors.toneOrange,
-        _PriceTier.veryHigh => BrandColors.toneRed,
-        _PriceTier.unknown => BrandColors.textMuted,
-      };
-}
-
-_PriceState _priceState(Listing listing, Map<String, double> rates) {
-  final price = listing.price?.toDouble();
-  final median = listing.marketComparison?.medianUsd?.toDouble();
-  final rate = rates[listing.currency];
-  if (price == null || median == null || median <= 0 || rate == null || rate <= 0) {
-    return const _PriceState(_PriceTier.unknown, null);
-  }
-  final ratio = (price / rate) / median;
-  if (ratio <= 0.80) return _PriceState(_PriceTier.low, ratio);
-  if (ratio < 0.95) return _PriceState(_PriceTier.belowAverage, ratio);
-  if (ratio <= 1.05) return _PriceState(_PriceTier.average, ratio);
-  if (ratio <= 1.20) return _PriceState(_PriceTier.high, ratio);
-  return _PriceState(_PriceTier.veryHigh, ratio);
-}
-
 class _PriceLine extends StatelessWidget {
   const _PriceLine({
     required this.listing,
@@ -341,16 +307,17 @@ class _PriceLine extends StatelessWidget {
   final Listing listing;
   final Map<String, double> rates;
   final String? displayCurrency;
-  final _PriceState state;
+  final PriceTone state;
   final AppStrings s;
 
   @override
   Widget build(BuildContext context) {
+    final color = priceToneColor(state);
     if (listing.price == null) {
       return Text(
         s.t('priceOnRequest'),
         maxLines: 1,
-        style: TextStyle(color: state.color, fontSize: 18, fontWeight: FontWeight.w800),
+        style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w800),
       );
     }
 
@@ -378,7 +345,7 @@ class _PriceLine extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: state.color,
+              color: color,
               fontSize: 18,
               fontWeight: FontWeight.w800,
             ),

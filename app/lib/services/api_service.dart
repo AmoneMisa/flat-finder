@@ -165,6 +165,21 @@ class ApiService {
     return Listing.fromJson(_absolutizePhotos(j as Map<String, dynamic>));
   }
 
+  /// Look up a listing by its stable [publicId] (the `#12345` shown in the
+  /// detail title / used for single-listing share links) rather than its
+  /// source+id pair. Returns null if it's gone or the id doesn't exist —
+  /// callers that expect a freshly-scraped listing may need to retry for a
+  /// few seconds while it's indexed, same as the site's polling fallback.
+  Future<Listing?> fetchListingByPublicId(int publicId) async {
+    final uri = Uri.parse('$baseUrl/api/listing/by-public-id/$publicId');
+    final res = await http.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) return null;
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final j = json['listing'];
+    if (j == null) return null;
+    return Listing.fromJson(_absolutizePhotos(j as Map<String, dynamic>));
+  }
+
   /// Ask the backend to fetch and validate a custom-source URL before the user
   /// commits to adding it. Returns how many listings it could read, or an error.
   Future<SourceValidation> validateSource(String url, {String? country}) async {
