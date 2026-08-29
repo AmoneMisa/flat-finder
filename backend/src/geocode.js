@@ -43,19 +43,25 @@ async function throttle() {
   lastCallAt = Date.now()
 }
 
-function geoKey(query) {
-  return `geo:v2:${query.toLowerCase().replace(/\s+/g, ' ').trim()}`
+function geoKey(query, countryCode) {
+  return `geo:v3:${countryCode ? countryCode.toLowerCase() + ':' : ''}${query.toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
-async function getCachedGeo(query) {
-  const cached = await cacheGet(geoKey(query))
+async function getCachedGeo(query, countryCode) {
+  const cached = await cacheGet(geoKey(query, countryCode))
   return cached ? cached.coords : undefined
 }
 
-async function fetchGeo(query) {
+// Without `countrycodes`, Nominatim's global relevance ranking can outrank a
+// correct-but-obscure local match with an unrelated same-named place abroad
+// (e.g. a Tashkent mahalla query once resolved to "Agram", a mountain pass in
+// Afghanistan). The candidate query text already carries city/country as
+// words, which isn't a hard constraint the way this param is.
+async function fetchGeo(query, countryCode) {
   await throttle()
   try {
     const params = new URLSearchParams({ q: query, format: 'json', limit: '1' })
+    if (countryCode) params.set('countrycodes', countryCode.toLowerCase())
     const res = await fetch(`${NOMINATIM_URL}?${params}`, {
       headers: { 'User-Agent': UA, 'Accept-Language': 'en' },
       signal: AbortSignal.timeout(10_000),
@@ -64,19 +70,19 @@ async function fetchGeo(query) {
     const data = await res.json()
     const first = Array.isArray(data) ? data[0] : null
     const coords = first ? { lat: Number(first.lat), lng: Number(first.lon) } : null
-    await cacheSet(geoKey(query), { coords }, coords ? HIT_TTL_MS : MISS_TTL_MS)
+    await cacheSet(geoKey(query, countryCode), { coords }, coords ? HIT_TTL_MS : MISS_TTL_MS)
     return coords
   } catch {
-    await cacheSet(geoKey(query), { coords: null }, ERR_TTL_MS)
+    await cacheSet(geoKey(query, countryCode), { coords: null }, ERR_TTL_MS)
     return null
   }
 }
 
-export async function geocodeQuery(query) {
+export async function geocodeQuery(query, countryCode) {
   if (!query) return null
-  const cached = await getCachedGeo(query)
+  const cached = await getCachedGeo(query, countryCode)
   if (cached !== undefined) return cached
-  return fetchGeo(query)
+  return fetchGeo(query, countryCode)
 }
 
 export async function geocodeBbox(query) {
@@ -417,10 +423,10 @@ export async function geocodeListings(listings, country) {
 
   async function lookup(candidate) {
     if (!candidate?.q) return null
-    let coords = await getCachedGeo(candidate.q)
+    let coords = await getCachedGeo(candidate.q, country.code)
     if (coords === undefined) {
       if (budget <= 0) return null
-      coords = await fetchGeo(candidate.q)
+      coords = await fetchGeo(candidate.q, country.code)
       budget--
     }
     return coords || null

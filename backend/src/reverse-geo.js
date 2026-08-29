@@ -105,6 +105,16 @@ export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN
     const address = await reverseGeocode(listing.lat, listing.lng);
     if (!address) continue;
 
+    // A coordinate that reverse-geocodes to a different country than the
+    // crawl's own context is almost certainly a bad/mismatched forward-geocode
+    // result upstream (e.g. a district name ambiguously matched abroad), not a
+    // legitimate cross-border listing. Trusting it produced nonsense like a
+    // Tashkent listing's address showing an Afghan mountain pass's road name.
+    if (countryCode && address.country_code && String(address.country_code).toUpperCase() !== countryCode) {
+      console.warn(`[geocode] reverse geo country mismatch for listing ${listing.id}: expected ${countryCode}, got ${String(address.country_code).toUpperCase()} at ${listing.lat},${listing.lng}`);
+      continue;
+    }
+
     const parts = [
       address.neighbourhood,
       address.quarter,

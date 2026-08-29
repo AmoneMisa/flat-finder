@@ -103,7 +103,7 @@ async function tryExactCandidate(listing, country, candidate, budget) {
   }
 
   budget.value -= 1;
-  const coords = await geocodeQuery(candidate.q);
+  const coords = await geocodeQuery(candidate.q, country?.code);
   if (!coords) return { placed: false, usedBudget: true, deferred: false };
 
   applyCandidate(listing, candidate, coords);
