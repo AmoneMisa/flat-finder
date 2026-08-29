@@ -81,18 +81,21 @@ export function districtZonesFor(countryCode, cityName, districtOptions = []) {
 
 /**
  * All of a city's map zone layers at once: administrative districts,
- * microdistricts, mahallas ("quartals"), and local/development areas —
- * matching useDistrictZones.ts's four computed layers exactly, so the app
- * can offer the same show/hide toggles as the site's map toolbar.
- *
- * Every zone also carries its canonical `type` and `parentId`. Flutter uses
- * that hierarchy to apply nested scopes (district + microdistrict + mahalla)
- * without replacing a broader active filter with a narrower one.
+ * microdistricts, mahallas ("quartals"), local/development areas, and metro
+ * stations. Every canonical entity carries its catalog `type` and `parentId`
+ * so Flutter can apply nested scopes without replacing broader filters.
  */
 export function mapZonesFor(countryCode, cityName, districtOptions = []) {
   const country = String(countryCode || '').toUpperCase();
   if (!country || !cityName) {
-    return {districtZones: [], microdistrictMarkers: [], quartalMarkers: [], areaZones: [], cityZone: null};
+    return {
+      districtZones: [],
+      microdistrictMarkers: [],
+      quartalMarkers: [],
+      areaZones: [],
+      metroStations: [],
+      cityZone: null,
+    };
   }
 
   const cityEntity = resolveLexiconGeoEntity({country, type: 'city', canonical: cityName});
@@ -116,6 +119,18 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
     700,
   );
 
+  // Metro proximity rings are a Flat Finder presentation concern; station
+  // identity and coordinates remain canonical geo-catalog data.
+  const metroStations = descendantsOf(cityId, country, 'metro')
+    .map((entity, index) => zoneFromEntity(entity, index));
+
   const cityZone = cityEntity ? zoneFromEntity(cityEntity, 0) : null;
-  return {districtZones, microdistrictMarkers, quartalMarkers, areaZones, cityZone};
+  return {
+    districtZones,
+    microdistrictMarkers,
+    quartalMarkers,
+    areaZones,
+    metroStations,
+    cityZone,
+  };
 }
