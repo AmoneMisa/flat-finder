@@ -156,8 +156,7 @@ class AppState extends ChangeNotifier {
     final before = listings.length;
     listings = listings
         .where(
-          (l) =>
-              !(l.source == source && l.country == country && l.id == id),
+          (l) => !(l.source == source && l.country == country && l.id == id),
         )
         .toList();
     if (listings.length != before) notifyListeners();

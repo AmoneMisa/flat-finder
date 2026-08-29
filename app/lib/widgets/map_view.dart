@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -42,6 +41,7 @@ class MapView extends StatefulWidget {
     this.displayCurrency,
     this.country = '',
     this.city = '',
+    this.locale = '',
     this.centerZoom = 6,
     this.onExpand,
   });
@@ -53,6 +53,7 @@ class MapView extends StatefulWidget {
   final String? displayCurrency;
   final String country;
   final String city;
+  final String locale;
 
   /// Shows a "view full-screen" button (top-right, next to the draw
   /// controls) when set — the compact in-page map passes a callback that
@@ -77,12 +78,11 @@ class _MapViewState extends State<MapView> {
   final List<LatLng> _area = [];
 
   // Same marker behaviour as Personal Site.
-  static const _pageSize = 9;
+  static const _radialCapacity = 10;
   static const _clusterRadiusPx = 38.0;
   static const _clusterZoomMax = 19.0;
   static const _priceMarkerWidth = 76.0;
   static const _priceMarkerHeight = 28.0;
-  final Map<String, int> _groupPage = {};
 
   double _zoom = 6;
   String _lastFitSignature = '';
@@ -107,7 +107,11 @@ class _MapViewState extends State<MapView> {
 
   Future<void> _loadZones() async {
     if (widget.country.isEmpty || widget.city.isEmpty) return;
-    final zones = await _api.fetchMapZones(widget.country, widget.city);
+    final zones = await _api.fetchMapZones(
+      widget.country,
+      widget.city,
+      locale: widget.locale,
+    );
     if (!mounted) return;
     setState(() => _zones = zones);
     // The web map frames the actual map feed first. The city centroid is
@@ -124,7 +128,9 @@ class _MapViewState extends State<MapView> {
       _controller.move(widget.center, widget.centerZoom);
     }
     final geographyChanged =
-        old.country != widget.country || old.city != widget.city;
+        old.country != widget.country ||
+        old.city != widget.city ||
+        old.locale != widget.locale;
     if (geographyChanged) {
       _selectedDistrictId = null;
       _zones = const MapZones();
@@ -227,8 +233,9 @@ class _MapViewState extends State<MapView> {
     }
   }
 
-  Offset _worldPixel(LatLng point) {
-    final worldSize = 256.0 * math.pow(2, _zoom).toDouble();
+  Offset _worldPixel(LatLng point, [double? zoom]) {
+    final z = zoom ?? _zoom;
+    final worldSize = 256.0 * math.pow(2, z).toDouble();
     final lat = point.latitude.clamp(-85.05112878, 85.05112878).toDouble();
     final sinLat = math.sin(lat * math.pi / 180);
     final x = (point.longitude + 180) / 360 * worldSize;
@@ -238,22 +245,23 @@ class _MapViewState extends State<MapView> {
     return Offset(x, y);
   }
 
-  double _wrappedDx(double a, double b) {
-    final worldSize = 256.0 * math.pow(2, _zoom).toDouble();
+  double _wrappedDx(double a, double b, [double? zoom]) {
+    final z = zoom ?? _zoom;
+    final worldSize = 256.0 * math.pow(2, z).toDouble();
     final raw = (a - b).abs();
     return math.min(raw, worldSize - raw);
   }
 
   /// Greedy screen-space clustering, equivalent to FlatMap.client.vue's
   /// latLngToContainerPoint + 38px distance check.
-  List<_PinGroup> _groupsFor(List<Listing> located) {
+  List<_PinGroup> _groupsFor(List<Listing> located, {double? zoom}) {
     if (located.isEmpty) return const [];
     final clusters = <_ClusterAccumulator>[];
     for (final listing in located) {
-      final point = _worldPixel(LatLng(listing.lat!, listing.lng!));
+      final point = _worldPixel(LatLng(listing.lat!, listing.lng!), zoom);
       _ClusterAccumulator? target;
       for (final cluster in clusters) {
-        final dx = _wrappedDx(cluster.x, point.dx);
+        final dx = _wrappedDx(cluster.x, point.dx, zoom);
         final dy = cluster.y - point.dy;
         if (dx * dx + dy * dy <= _clusterRadiusPx * _clusterRadiusPx) {
           target = cluster;
@@ -302,6 +310,18 @@ class _MapViewState extends State<MapView> {
         .any((listing) => listing.lat != first.lat || listing.lng != first.lng);
   }
 
+  double _zoomForRadialCapacity(_PinGroup group) {
+    var candidate = _zoom + 0.5;
+    while (candidate <= _clusterZoomMax + 0.001) {
+      final groups = _groupsFor(group.listings, zoom: candidate);
+      if (groups.every((item) => item.listings.length <= _radialCapacity)) {
+        return candidate;
+      }
+      candidate += 0.5;
+    }
+    return _clusterZoomMax;
+  }
+
   /// A price pill is wider than a point. Show it only when its complete
   /// screen rectangle cannot intersect any neighbouring standalone pill or
   /// cluster marker. Otherwise render the normal 16px point.
@@ -332,26 +352,15 @@ class _MapViewState extends State<MapView> {
       widget.onTapListing(group.listings.first);
       return;
     }
-    if (_hasRealSpread(group) && _zoom < _clusterZoomMax - 0.01) {
+    if (group.listings.length > _radialCapacity &&
+        _hasRealSpread(group) &&
+        _zoom < _clusterZoomMax - 0.01) {
+      final targetZoom = _zoomForRadialCapacity(group);
       setState(() => _expandedGroupKey = null);
-      try {
-        _controller.fitCamera(
-          CameraFit.bounds(
-            bounds: LatLngBounds.fromPoints([
-              for (final listing in group.listings)
-                LatLng(listing.lat!, listing.lng!),
-            ]),
-            padding: const EdgeInsets.all(40),
-            maxZoom: _clusterZoomMax,
-          ),
-        );
-      } catch (_) {}
+      _controller.move(group.point, targetZoom);
       return;
     }
-    setState(() {
-      _expandedGroupKey = group.key;
-      _groupPage[group.key] = 0;
-    });
+    setState(() => _expandedGroupKey = group.key);
   }
 
   List<Marker> _markersForGroup(_PinGroup group, List<_PinGroup> groups) {
@@ -400,34 +409,17 @@ class _MapViewState extends State<MapView> {
   }
 
   Marker _radialMarkerForGroup(_PinGroup group) {
-    final pageCount = (group.listings.length / _pageSize).ceil();
-    final current = _groupPage[group.key] ?? 0;
-    final pageIndex = current % pageCount;
-    final start = pageIndex * _pageSize;
-    final end = math.min(start + _pageSize, group.listings.length);
     return Marker(
       point: group.point,
       width: 280,
       height: 280,
+      alignment: Alignment.center,
       child: _RadialClusterMarker(
-        items: group.listings.sublist(start, end),
-        pageIndex: pageIndex,
-        pageCount: pageCount,
+        items: group.listings.take(_radialCapacity).toList(),
         rates: widget.rates,
         displayCurrency: widget.displayCurrency,
         onTapListing: widget.onTapListing,
         onClose: () => setState(() => _expandedGroupKey = null),
-        onPrev: pageCount <= 1
-            ? null
-            : () => setState(
-                () => _groupPage[group.key] =
-                    (pageIndex - 1 + pageCount) % pageCount,
-              ),
-        onNext: pageCount <= 1
-            ? null
-            : () => setState(
-                () => _groupPage[group.key] = (pageIndex + 1) % pageCount,
-              ),
       ),
     );
   }
@@ -572,7 +564,7 @@ class _MapViewState extends State<MapView> {
                               ),
                             ),
                             child: Text(
-                              zone.name,
+                              zone.label,
                               style: TextStyle(
                                 color: Colors.white.withValues(
                                   alpha:
@@ -601,7 +593,7 @@ class _MapViewState extends State<MapView> {
                       width: 14,
                       height: 14,
                       child: GestureDetector(
-                        onTap: () => _showZoneName(zone.name),
+                        onTap: () => _showZoneName(zone.label),
                         child: _ZoneDot(
                           colorHex: zone.colorHex,
                           shape: BoxShape.circle,
@@ -619,7 +611,7 @@ class _MapViewState extends State<MapView> {
                       width: 14,
                       height: 14,
                       child: GestureDetector(
-                        onTap: () => _showZoneName(zone.name),
+                        onTap: () => _showZoneName(zone.label),
                         child: _ZoneDot(
                           colorHex: zone.colorHex,
                           shape: BoxShape.rectangle,
@@ -1003,31 +995,27 @@ class _FocusMarker extends StatelessWidget {
 class _RadialClusterMarker extends StatelessWidget {
   const _RadialClusterMarker({
     required this.items,
-    required this.pageIndex,
-    required this.pageCount,
     required this.rates,
     required this.displayCurrency,
     required this.onTapListing,
     required this.onClose,
-    this.onPrev,
-    this.onNext,
   });
 
   final List<Listing> items;
-  final int pageIndex;
-  final int pageCount;
   final Map<String, double>? rates;
   final String? displayCurrency;
   final void Function(Listing) onTapListing;
   final VoidCallback onClose;
-  final VoidCallback? onPrev;
-  final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
     const size = 280.0;
     const center = size / 2;
-    final radius = items.length <= 4 ? 72.0 : 94.0;
+    final radius = switch (items.length) {
+      <= 4 => 66.0,
+      <= 7 => 84.0,
+      _ => 104.0,
+    };
     return SizedBox(
       width: size,
       height: size,
@@ -1039,9 +1027,9 @@ class _RadialClusterMarker extends StatelessWidget {
               final angle =
                   (-90 + (360 / math.max(1, items.length)) * i) * math.pi / 180;
               return Positioned(
-                left: center + math.cos(angle) * radius - 38,
-                top: center + math.sin(angle) * radius - 32,
-                child: _RadialTab(
+                left: center + math.cos(angle) * radius - 24,
+                top: center + math.sin(angle) * radius - 24,
+                child: _RadialPriceDot(
                   listing: items[i],
                   rates: rates,
                   displayCurrency: displayCurrency,
@@ -1050,14 +1038,9 @@ class _RadialClusterMarker extends StatelessWidget {
               );
             }(),
           Positioned(
-            left: center - 26,
-            top: center - 26,
-            child: _RadialHub(
-              label: '${pageIndex + 1}/$pageCount',
-              onClose: onClose,
-              onPrev: onPrev,
-              onNext: onNext,
-            ),
+            left: center - 18,
+            top: center - 18,
+            child: _RadialHub(onClose: onClose),
           ),
         ],
       ),
@@ -1066,81 +1049,37 @@ class _RadialClusterMarker extends StatelessWidget {
 }
 
 class _RadialHub extends StatelessWidget {
-  const _RadialHub({
-    required this.label,
-    required this.onClose,
-    this.onPrev,
-    this.onNext,
-  });
+  const _RadialHub({required this.onClose});
 
-  final String label;
   final VoidCallback onClose;
-  final VoidCallback? onPrev;
-  final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Row(
-        children: [
-          _RadialArrow(icon: Icons.chevron_left, onTap: onPrev),
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onClose,
-              child: Center(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
+    return Material(
+      color: color,
+      shape: const CircleBorder(),
+      elevation: 8,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onClose,
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
           ),
-          _RadialArrow(icon: Icons.chevron_right, onTap: onNext),
-        ],
-      ),
-    );
-  }
-}
-
-class _RadialArrow extends StatelessWidget {
-  const _RadialArrow({required this.icon, this.onTap});
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: onTap == null ? 0.35 : 1,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: 15,
-          height: 52,
-          child: Icon(icon, size: 20, color: Colors.white),
+          child: const Icon(Icons.close, size: 18, color: Colors.white),
         ),
       ),
     );
   }
 }
 
-class _RadialTab extends StatelessWidget {
-  const _RadialTab({
+class _RadialPriceDot extends StatelessWidget {
+  const _RadialPriceDot({
     required this.listing,
     required this.rates,
     required this.displayCurrency,
@@ -1154,66 +1093,41 @@ class _RadialTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final photo =
-        listing.photo ??
-        (listing.photos.isNotEmpty ? listing.photos.first : null);
+    final ratesOrEmpty = rates ?? const <String, double>{};
+    final color = priceToneColor(listingPriceTone(listing, ratesOrEmpty));
     final price = pinPriceLabel(
       listing,
       rates: rates,
       displayCurrency: displayCurrency,
     );
     return Material(
-      color: scheme.surface,
-      borderRadius: BorderRadius.circular(7),
-      clipBehavior: Clip.antiAlias,
+      color: color.withValues(alpha: 0.97),
+      shape: const CircleBorder(),
       elevation: 6,
       child: InkWell(
+        customBorder: const CircleBorder(),
         onTap: onTap,
-        child: SizedBox(
-          width: 76,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 76,
-                height: 46,
-                child: photo == null
-                    ? Icon(
-                        Icons.home_outlined,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
-                      )
-                    : CachedNetworkImage(
-                        imageUrl: photo,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            ColoredBox(color: scheme.surfaceContainerHighest),
-                        errorWidget: (_, __, ___) => Icon(
-                          Icons.home_outlined,
-                          color: scheme.onSurfaceVariant.withValues(
-                            alpha: 0.45,
-                          ),
-                        ),
-                      ),
+        child: Container(
+          width: 48,
+          height: 48,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              price,
+              maxLines: 1,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                shadows: [Shadow(color: Colors.black38, blurRadius: 2)],
               ),
-              SizedBox(
-                height: 18,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Center(
-                    child: Text(
-                      price,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

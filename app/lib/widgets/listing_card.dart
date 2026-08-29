@@ -70,6 +70,7 @@ class ListingCard extends StatelessWidget {
     final isHidden = hidden.isHidden(listing.id);
     final priceState = listingPriceTone(listing, appState.rates);
     final mobile = !grid && MediaQuery.sizeOf(context).width < 700;
+    final geographyCountry = appState.countryByCode(listing.country);
 
     final dealTone = _dealTone(listing);
     final photo = Stack(
@@ -209,7 +210,9 @@ class ListingCard extends StatelessWidget {
                           displayCurrency: settings.displayCurrency,
                           priceState: priceState,
                           actions: actions,
+                          geographyCountry: geographyCountry,
                           compact: true,
+                          pinActionsBottom: true,
                         ),
                       ),
                     ],
@@ -230,6 +233,7 @@ class ListingCard extends StatelessWidget {
                     displayCurrency: settings.displayCurrency,
                     priceState: priceState,
                     actions: actions,
+                    geographyCountry: geographyCountry,
                     compact: grid,
                   ),
                 ],
@@ -246,10 +250,12 @@ class ListingCard extends StatelessWidget {
     required String? displayCurrency,
     required PriceTone priceState,
     required Widget actions,
+    required Country? geographyCountry,
     bool compact = false,
+    bool pinActionsBottom = false,
   }) {
-    final badges = _contextBadges(filters, s);
-    final location = _locationLabel(s);
+    final badges = _contextBadges(filters, s, geographyCountry);
+    final location = _locationLabel(geographyCountry);
     final date = postedLabel(listing.createdAt, s);
     final source = sourceLabel(listing.source, s);
 
@@ -338,7 +344,10 @@ class ListingCard extends StatelessWidget {
           ),
           // Actions sit at the very bottom of the card, clear of the photo,
           // badge, and viewed icon so nothing overlaps on narrow mobile cards.
-          SizedBox(height: (compact ? 4 : 8) + 4),
+          if (pinActionsBottom)
+            const Spacer()
+          else
+            SizedBox(height: (compact ? 4 : 8) + 4),
           Align(alignment: Alignment.centerRight, child: actions),
         ],
       ),
@@ -362,16 +371,20 @@ class ListingCard extends StatelessWidget {
     return parts.join(' · ');
   }
 
-  String _locationLabel(AppStrings s) {
+  String _locationLabel(Country? country) {
     final parts = <String>[];
     final city = listing.city.trim();
-    if (city.isNotEmpty) parts.add(cityLabel(city, s.lang));
+    if (city.isNotEmpty) parts.add(country?.cityLabel(city) ?? city);
     final district = listing.district?.trim();
-    if (district != null && district.isNotEmpty) parts.add(district);
+    if (district != null && district.isNotEmpty) {
+      parts.add(
+        country?.locationLabel(city, district, kind: 'district') ?? district,
+      );
+    }
     return parts.isEmpty ? '—' : parts.join(', ');
   }
 
-  List<String> _contextBadges(Filters filters, AppStrings s) {
+  List<String> _contextBadges(Filters filters, AppStrings s, Country? country) {
     final result = <String>[];
     final geoFiltered =
         filters.district.trim().isNotEmpty ||
@@ -398,9 +411,14 @@ class ListingCard extends StatelessWidget {
       final district = listing.district?.trim();
       final metro = listing.metro?.trim();
       if (district != null && district.isNotEmpty) {
-        add(district);
+        add(
+          country?.locationLabel(listing.city, district, kind: 'district') ??
+              district,
+        );
       } else if (metro != null && metro.isNotEmpty) {
-        add(metro);
+        add(
+          country?.locationLabel(listing.city, metro, kind: 'metro') ?? metro,
+        );
       } else if (listing.nearby.isNotEmpty) {
         add(s.nearbyLabel(listing.nearby.first));
       }

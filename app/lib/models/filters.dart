@@ -127,6 +127,29 @@ class CityLocations {
     quartalLabels: _stringMap(j['quartalLabels']),
     areaLabels: _stringMap(j['areaLabels']),
   );
+
+  String labelFor(String value, {String? kind}) {
+    final typed = switch (kind) {
+      'district' => districtLabels[value],
+      'metro' => metroLabels[value],
+      'microdistrict' => microdistrictLabels[value],
+      'quartal' || 'mahalla' => quartalLabels[value],
+      'area' || 'local_area' => areaLabels[value],
+      _ => null,
+    };
+    if (typed != null && typed.isNotEmpty) return typed;
+    for (final labels in [
+      districtLabels,
+      microdistrictLabels,
+      quartalLabels,
+      areaLabels,
+      metroLabels,
+    ]) {
+      final label = labels[value];
+      if (label != null && label.isNotEmpty) return label;
+    }
+    return value;
+  }
 }
 
 class Country {
@@ -154,6 +177,17 @@ class Country {
   /// fetched with a `locale` and a translation exists, otherwise the raw
   /// name unchanged.
   String cityLabel(String city) => cityLabels[city] ?? city;
+
+  String locationLabel(String city, String value, {String? kind}) =>
+      locations[city]?.labelFor(value, kind: kind) ?? value;
+
+  String locationLabelAnyCity(String value, {String? kind}) {
+    for (final location in locations.values) {
+      final label = location.labelFor(value, kind: kind);
+      if (label != value) return label;
+    }
+    return value;
+  }
 
   factory Country.fromJson(Map<String, dynamic> j) => Country(
     code: j['code'],

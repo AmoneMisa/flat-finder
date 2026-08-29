@@ -3,49 +3,11 @@ import 'package:intl/intl.dart';
 import '../l10n/strings.dart';
 import '../models/listing.dart';
 
-/// Russian names for the backend's Romania/Kazakhstan/Uzbekistan city lists
-/// (21 cities total, always Latin-script from the backend). Covers every
-/// city those three countries currently return, so it's complete for them —
-/// unlike Ukraine's ~326-city list, which mixes Ukrainian-Cyrillic and Latin
-/// spellings inconsistently at the source and isn't attempted here; a
-/// correct fix belongs server-side (a real geography translation table, like
-/// the one whiteslove.me's own site draws from), not a client dictionary
-/// that would cover a handful of cities and silently leave the rest
-/// untranslated.
-const _cityNamesRu = {
-  // Romania
-  'Brasov': 'Брашов',
-  'Bucharest': 'Бухарест',
-  'Cluj-Napoca': 'Клуж-Напока',
-  'Constanta': 'Констанца',
-  'Iasi': 'Яссы',
-  'Oradea': 'Орадя',
-  'Timisoara': 'Тимишоара',
-  // Kazakhstan
-  'Aktobe': 'Актобе',
-  'Almaty': 'Алматы',
-  'Astana': 'Астана',
-  'Atyrau': 'Атырау',
-  'Karaganda': 'Караганда',
-  'Oral': 'Уральск',
-  'Shymkent': 'Шымкент',
-  // Uzbekistan
-  'Andijan': 'Андижан',
-  'Bukhara': 'Бухара',
-  'Fergana': 'Фергана',
-  'Namangan': 'Наманган',
-  'Nukus': 'Нукус',
-  'Samarkand': 'Самарканд',
-  'Tashkent': 'Ташкент',
-};
-
-/// Localizes a city name for [locale] where we have a translation; returns
-/// the original string otherwise (covers Ukraine's list, and anything new
-/// the backend adds before this dictionary is updated).
-String cityLabel(String city, String locale) {
-  if (!locale.toLowerCase().startsWith('ru')) return city;
-  return _cityNamesRu[city] ?? city;
-}
+/// Geography display labels are supplied by /api/countries from
+/// @whiteslove/parsing-lexicon. This compatibility helper deliberately does
+/// not own a second city dictionary; UI code should prefer Country.cityLabel.
+@Deprecated('Use Country.cityLabel from localized country metadata')
+String cityLabel(String city, String locale) => city;
 
 /// The handful of cities worth surfacing first in a country's city list —
 /// its major/capital cities, so they don't get lost below hundreds of towns
@@ -62,10 +24,17 @@ List<String> withPinnedCities(String countryCode, List<String> cities) {
   final pins = _pinnedCities[countryCode.toUpperCase()];
   if (pins == null || pins.isEmpty) return cities;
   final present = cities.toSet();
-  final front = [for (final p in pins) if (present.contains(p)) p];
+  final front = [
+    for (final p in pins)
+      if (present.contains(p)) p,
+  ];
   if (front.isEmpty) return cities;
   final frontSet = front.toSet();
-  return [...front, for (final c in cities) if (!frontSet.contains(c)) c];
+  return [
+    ...front,
+    for (final c in cities)
+      if (!frontSet.contains(c)) c,
+  ];
 }
 
 /// Formats a listing's price, optionally converting it into [displayCurrency]

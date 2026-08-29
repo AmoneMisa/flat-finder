@@ -56,6 +56,11 @@ class SearchableDropdown extends StatelessWidget {
         focusNode: focus,
         decoration: InputDecoration(
           isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
+          ),
+          constraints: const BoxConstraints(minHeight: 42),
           // A floating label (not a hint) so this reads the same as every
           // other field — always sitting on the border, matching the
           // dropdowns next to it instead of behaving like a placeholder.
@@ -71,11 +76,11 @@ class SearchableDropdown extends StatelessWidget {
           // than a plain Dropdown's own (unconstrained) trailing arrow,
           // which was the field's last remaining extra height.
           prefixIconConstraints: const BoxConstraints(
-            minWidth: 26,
+            minWidth: 30,
             minHeight: 20,
           ),
           suffixIconConstraints: const BoxConstraints(
-            minWidth: 26,
+            minWidth: 30,
             minHeight: 20,
           ),
           suffixIcon: ctl.text.isEmpty

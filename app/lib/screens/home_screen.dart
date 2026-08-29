@@ -157,6 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
             displayCurrency: settings.displayCurrency,
             country: country,
             city: state.filters.city,
+            locale: settings.lang,
           ),
         ),
       ),
@@ -248,6 +249,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final state = context.watch<AppState>();
     final settings = context.watch<SettingsState>();
     final hidden = context.watch<HiddenState>();
+    final headerActionStyle = IconButton.styleFrom(
+      minimumSize: const Size(28, 38),
+      maximumSize: const Size(28, 38),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
     // Cheap no-op once already fetched for this language; re-fetches with
     // localized city/district/metro names once settings finish loading (or
     // whenever the language changes).
@@ -255,18 +262,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 46,
+        toolbarHeight: 38,
         title: Text(
           settings.t('appTitle'),
           style: const TextStyle(fontSize: 18),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 1),
+        actionsPadding: EdgeInsets.zero,
         actions: [
           IconButton(
             tooltip: _mapMode ? settings.t('listView') : settings.t('mapView'),
             iconSize: 20,
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-            constraints: const BoxConstraints(),
+            padding: EdgeInsets.zero,
+            style: headerActionStyle,
             icon: Icon(_mapMode ? Icons.view_list : Icons.map_outlined),
             onPressed: () {
               setState(() => _mapMode = !_mapMode);
@@ -279,7 +286,8 @@ class _HomeScreenState extends State<HomeScreen> {
           // more often than any other filter.
           PopupMenuButton<SortBy>(
             tooltip: settings.t('sortBy'),
-            padding: const EdgeInsets.symmetric(horizontal: 1),
+            padding: EdgeInsets.zero,
+            style: headerActionStyle,
             icon: Icon(
               Icons.sort,
               size: 20,
@@ -303,7 +311,8 @@ class _HomeScreenState extends State<HomeScreen> {
           // header's icons instead of carrying its own text label.
           PopupMenuButton<String?>(
             tooltip: settings.t('displayCurrency'),
-            padding: const EdgeInsets.symmetric(horizontal: 1),
+            padding: EdgeInsets.zero,
+            style: headerActionStyle,
             icon: Icon(
               Icons.currency_exchange,
               size: 20,
@@ -323,14 +332,15 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: settings.t('statistics'),
             iconSize: 20,
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-            constraints: const BoxConstraints(),
+            padding: EdgeInsets.zero,
+            style: headerActionStyle,
             icon: const Icon(Icons.bar_chart_outlined),
             onPressed: () => _openStats(state),
           ),
           PopupMenuButton<String>(
             tooltip: settings.t('more'),
-            padding: const EdgeInsets.symmetric(horizontal: 1),
+            padding: EdgeInsets.zero,
+            style: headerActionStyle,
             icon: const Icon(Icons.more_vert, size: 20),
             onSelected: (value) {
               switch (value) {
@@ -491,6 +501,7 @@ class _HomeScreenState extends State<HomeScreen> {
         displayCurrency: settings.displayCurrency,
         country: mapCountry,
         city: state.filters.city,
+        locale: settings.lang,
         onExpand: () => _openFullScreenMap(
           state,
           settings,
@@ -746,27 +757,40 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
         ? widget.filters.city
         : null;
 
+    final compactInputTheme = theme.inputDecorationTheme.copyWith(
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      constraints: const BoxConstraints.tightFor(height: 42),
+      border: const OutlineInputBorder(),
+    );
     return Theme(
-      data: theme.copyWith(textTheme: inputTextTheme),
+      data: theme.copyWith(
+        textTheme: inputTextTheme,
+        inputDecorationTheme: compactInputTheme,
+      ),
       child: Material(
         color: theme.colorScheme.surface,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
           child: Column(
             children: [
               TextField(
                 controller: _query,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search),
-                  labelText: s.t('keyword'),
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 20,
+                  ),
+                  labelText: s.t('quickSearch'),
                   hintText: s.t('keywordHint'),
                 ),
                 onChanged: (_) => _schedule(_withTextValues()),
                 onSubmitted: (_) =>
                     _schedule(_withTextValues(), immediate: true),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 5),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -779,7 +803,9 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                       value: selectedCountry,
                       isExpanded: true,
                       isDense: true,
-                      decoration: InputDecoration(labelText: s.t('country')),
+                      decoration: InputDecoration(
+                        labelText: s.t('quickCountry'),
+                      ),
                       selectedItemBuilder: (context) => widget.countries
                           .map(
                             (item) => Align(
@@ -819,15 +845,15 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 5),
                   Expanded(
                     child: SearchableDropdown(
                       key: ValueKey('quick-city-$selectedCountry'),
-                      hint: s.t('anyCity'),
+                      hint: s.t('quickCity'),
+                      placeholder: s.t('anyCity'),
                       options: cities,
                       value: selectedCity,
-                      labelOf: (city) =>
-                          country?.cityLabel(city) ?? cityLabel(city, s.lang),
+                      labelOf: (city) => country?.cityLabel(city) ?? city,
                       onChanged: (value) => _schedule(
                         _withTextValues().copyWith(
                           city: value ?? '',
@@ -843,7 +869,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 5),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -853,7 +879,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                       isExpanded: true,
                       isDense: true,
                       decoration: InputDecoration(
-                        labelText: s.t('realEstateAgency'),
+                        labelText: s.t('quickAgency'),
                       ),
                       items: [
                         DropdownMenuItem(
@@ -878,51 +904,43 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  // A select (not a bordered SegmentedButton row) so it reads
-                  // as one more field alongside Country/City/Agency, with a
-                  // placeholder like the others instead of always showing
-                  // "Any".
-                  Expanded(
-                    child: DropdownButtonFormField<_QuickDeal>(
-                      value: _quickDealFor(widget.filters),
-                      isExpanded: true,
-                      isDense: true,
-                      decoration: InputDecoration(labelText: s.t('dealType')),
-                      items: [
-                        DropdownMenuItem(
-                          value: _QuickDeal.any,
-                          child: Text(s.t('any')),
-                        ),
-                        DropdownMenuItem(
-                          value: _QuickDeal.sale,
-                          child: Text(s.t('sale')),
-                        ),
-                        DropdownMenuItem(
-                          value: _QuickDeal.longRent,
-                          child: Text(s.t('longTerm')),
-                        ),
-                        DropdownMenuItem(
-                          value: _QuickDeal.room,
-                          child: Text(s.t('roomOnly')),
-                        ),
-                        DropdownMenuItem(
-                          value: _QuickDeal.shortRent,
-                          child: Text(s.t('shortTerm')),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        _schedule(
-                          _withQuickDeal(_withTextValues(), value),
-                          immediate: true,
-                        );
-                      },
-                    ),
-                  ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 5),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 5,
+                  runSpacing: 4,
+                  children: [
+                    for (final deal in _QuickDeal.values)
+                      ChoiceChip(
+                        label: Text(switch (deal) {
+                          _QuickDeal.any => s.t('any'),
+                          _QuickDeal.sale => s.t('sale'),
+                          _QuickDeal.longRent => s.t('longTerm'),
+                          _QuickDeal.room => s.t('roomOnly'),
+                          _QuickDeal.shortRent => s.t('shortTerm'),
+                        }, style: const TextStyle(fontSize: 11.5)),
+                        selected: _quickDealFor(widget.filters) == deal,
+                        showCheckmark: false,
+                        visualDensity: const VisualDensity(
+                          horizontal: -3,
+                          vertical: -3,
+                        ),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        labelPadding: const EdgeInsets.symmetric(horizontal: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        onSelected: (_) => _schedule(
+                          _withQuickDeal(_withTextValues(), deal),
+                          immediate: true,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 5),
               Row(
                 children: [
                   Expanded(
@@ -930,19 +948,19 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                       controller: _priceMin,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
-                        labelText: s.t('priceFrom'),
+                        labelText: s.t('quickPriceMin'),
                         hintText: s.t('minPlaceholder'),
                       ),
                       onChanged: (_) => _schedule(_withTextValues()),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 5),
                   Expanded(
                     child: TextField(
                       controller: _priceMax,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
-                        labelText: s.t('priceTo'),
+                        labelText: s.t('quickPriceMax'),
                         hintText: s.t('maxPlaceholder'),
                       ),
                       onChanged: (_) => _schedule(_withTextValues()),

@@ -179,6 +179,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     Map<String, double> rates,
     String? displayCurrency,
   ) {
+    final country = context.read<AppState>().countryByCode(listing.country);
     final b = StringBuffer()
       ..writeln(listing.title)
       ..writeln(
@@ -195,8 +196,19 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     if (listing.areaSqm != null) info.add('${listing.areaSqm} m²');
     final fl = floorLabel(listing, s);
     if (fl != null) info.add(fl);
-    if (listing.city.isNotEmpty) info.add(listing.city);
-    if (listing.district != null) info.add(listing.district!);
+    if (listing.city.isNotEmpty) {
+      info.add(country?.cityLabel(listing.city) ?? listing.city);
+    }
+    if (listing.district != null) {
+      info.add(
+        country?.locationLabel(
+              listing.city,
+              listing.district!,
+              kind: 'district',
+            ) ??
+            listing.district!,
+      );
+    }
     if (info.isNotEmpty) b.writeln(info.join(' · '));
     if (listing.contact != null) b.writeln(listing.contact!);
     if (listing.url.isNotEmpty) b.writeln(listing.url);
@@ -268,7 +280,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final settings = context.watch<SettingsState>();
-    final rates = context.watch<AppState>().rates;
+    final appState = context.watch<AppState>();
+    final rates = appState.rates;
+    final country = appState.countryByCode(listing.country);
     final favorites = context.watch<FavoritesState>();
     final hidden = context.watch<HiddenState>();
     final s = settings.s;
@@ -283,7 +297,12 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: _DetailTitle(listing: listing, rates: rates, s: s),
+        title: _DetailTitle(
+          listing: listing,
+          rates: rates,
+          s: s,
+          country: country,
+        ),
         actions: [
           if (listing.source == 'olx')
             IconButton(
@@ -309,7 +328,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
               IconButton(
                 tooltip: isHidden ? s.t('restoreListing') : s.t('hideListing'),
                 icon: Icon(
-                  isHidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  isHidden
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
                 ),
                 onPressed: () => hidden.toggle(listing),
               ),
@@ -473,13 +494,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                           style: theme.textTheme.titleMedium,
                         ),
                         const SizedBox(height: 16),
-                        _SpecTable(
-                          listing: listing,
-                          s: s,
-                          country: context.watch<AppState>().countryByCode(
-                            listing.country,
-                          ),
-                        ),
+                        _SpecTable(listing: listing, s: s, country: country),
                       ],
                     ),
                   ),
@@ -593,7 +608,6 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       ),
     );
   }
-
 }
 
 /// Same "#12345 Long-term rent, Kyiv" title as the site's detail popup — the
@@ -605,11 +619,13 @@ class _DetailTitle extends StatelessWidget {
     required this.listing,
     required this.rates,
     required this.s,
+    this.country,
   });
 
   final Listing listing;
   final Map<String, double> rates;
   final AppStrings s;
+  final Country? country;
 
   String get _dealText {
     if (listing.roomOnly) return s.t('roomOnly');
@@ -622,19 +638,18 @@ class _DetailTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (listing.publicId == null) {
-      return Text('${countryFlags[listing.country] ?? ''} ${listing.city}');
+      final city = country?.cityLabel(listing.city) ?? listing.city;
+      return Text('${countryFlags[listing.country] ?? ''} $city');
     }
     final color = priceToneColor(listingPriceTone(listing, rates));
     final subtitle = [
       _dealText,
-      listing.city,
+      country?.cityLabel(listing.city) ?? listing.city,
     ].where((e) => e.isNotEmpty).join(', ');
     return RichText(
       overflow: TextOverflow.ellipsis,
       text: TextSpan(
-        style: DefaultTextStyle.of(
-          context,
-        ).style.copyWith(fontSize: 16),
+        style: DefaultTextStyle.of(context).style.copyWith(fontSize: 16),
         children: [
           TextSpan(
             text: '#${listing.publicId} ',
@@ -666,13 +681,12 @@ class _SpecTable extends StatelessWidget {
 
   final Listing listing;
   final AppStrings s;
+
   /// The listing's country record (fetched with the UI's locale), used to
   /// translate its city/district/metro/microdistrict/quartal/area names —
   /// unlike the client-only [cityLabel] dict, this covers every city, not
   /// just RO/KZ/UZ.
   final Country? country;
-
-  CityLocations? get _cityLoc => country?.locations[listing.city];
 
   String? _yesNo(bool? value) {
     if (value == null) return null;
@@ -755,24 +769,31 @@ class _SpecTable extends StatelessWidget {
       (
         Icons.map_outlined,
         'city',
-        l.city.isNotEmpty
-            ? (country?.cityLabel(l.city) ?? cityLabel(l.city, s.lang))
-            : null,
+        l.city.isNotEmpty ? (country?.cityLabel(l.city) ?? l.city) : null,
       ),
       (
         Icons.person_pin_circle_outlined,
         'district',
-        l.district == null ? null : (_cityLoc?.districtLabels[l.district] ?? l.district),
+        l.district == null
+            ? null
+            : (country?.locationLabel(l.city, l.district!, kind: 'district') ??
+                  l.district),
       ),
       (
         Icons.grid_view_outlined,
         'kvartal',
-        l.kvartal == null ? null : (_cityLoc?.quartalLabels[l.kvartal] ?? l.kvartal),
+        l.kvartal == null
+            ? null
+            : (country?.locationLabel(l.city, l.kvartal!, kind: 'quartal') ??
+                  l.kvartal),
       ),
       (
         Icons.directions_subway_outlined,
         'metro',
-        l.metro == null ? null : (_cityLoc?.metroLabels[l.metro] ?? l.metro),
+        l.metro == null
+            ? null
+            : (country?.locationLabel(l.city, l.metro!, kind: 'metro') ??
+                  l.metro),
       ),
       (Icons.location_on_outlined, 'address', l.address),
       (
@@ -818,11 +839,7 @@ class _SpecTable extends StatelessWidget {
 
     final conditions = pick([
       (Icons.groups_outlined, 'audience', audienceLabel(l.audience, s)),
-      (
-        Icons.child_care_outlined,
-        'children',
-        _yesNo(l.childrenAllowed),
-      ),
+      (Icons.child_care_outlined, 'children', _yesNo(l.childrenAllowed)),
       (Icons.pets_outlined, 'pets', _yesNo(l.petsAllowed)),
       (Icons.smoking_rooms_outlined, 'smoking', _yesNo(l.smokingAllowed)),
       (Icons.meeting_room, 'roomShare', l.roomOnly ? s.t('yes') : null),
@@ -859,11 +876,7 @@ class _SpecTable extends StatelessWidget {
       ),
       (Icons.call_split_outlined, 'communal', _yesNo(l.communalSeparated)),
       (Icons.receipt_long_outlined, 'utilAmount', _money(l.utilitiesAmount)),
-      (
-        Icons.person_pin_outlined,
-        'perPersonPrice',
-        _money(l.perPersonPrice),
-      ),
+      (Icons.person_pin_outlined, 'perPersonPrice', _money(l.perPersonPrice)),
     ]);
 
     return [

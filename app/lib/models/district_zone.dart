@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 class DistrictZone {
   final String id;
   final String name;
+  final String label;
   final double lat;
   final double lng;
   final double radiusM;
@@ -19,6 +20,7 @@ class DistrictZone {
   const DistrictZone({
     required this.id,
     required this.name,
+    required this.label,
     required this.lat,
     required this.lng,
     required this.radiusM,
@@ -52,6 +54,7 @@ class DistrictZone {
   factory DistrictZone.fromJson(Map<String, dynamic> j) => DistrictZone(
     id: j['id']?.toString() ?? '',
     name: j['name']?.toString() ?? '',
+    label: j['label']?.toString() ?? j['name']?.toString() ?? '',
     lat: (j['lat'] as num).toDouble(),
     lng: (j['lng'] as num).toDouble(),
     radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,

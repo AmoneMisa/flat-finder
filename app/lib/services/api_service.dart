@@ -133,9 +133,8 @@ class ApiService {
   /// website uses. Pass '' (or omit) to skip that extra work server-side
   /// when only the raw names are needed.
   Future<List<Country>> fetchCountries({String locale = ''}) async {
-    final uri = Uri.parse(
-      '$baseUrl/api/countries',
-    ).replace(queryParameters: locale.isEmpty ? null : {'locale': locale});
+    final uri = Uri.parse('$baseUrl/api/countries')
+        .replace(queryParameters: locale.isEmpty ? null : {'locale': locale});
     final res = await http.get(uri);
     if (res.statusCode != 200) {
       throw Exception('countries HTTP ${res.statusCode}');
@@ -381,10 +380,19 @@ class ApiService {
   /// mahallas, areas), same palette/boundaries as the site's map. Empty
   /// zones when the backend has no data for this country/city rather than
   /// throwing, so callers can just skip the overlay.
-  Future<MapZones> fetchMapZones(String country, String city) async {
+  Future<MapZones> fetchMapZones(
+    String country,
+    String city, {
+    String locale = '',
+  }) async {
     if (country.isEmpty || city.isEmpty) return const MapZones();
-    final uri = Uri.parse('$baseUrl/api/district-zones')
-        .replace(queryParameters: {'country': country, 'city': city});
+    final uri = Uri.parse('$baseUrl/api/district-zones').replace(
+      queryParameters: {
+        'country': country,
+        'city': city,
+        if (locale.isNotEmpty) 'locale': locale,
+      },
+    );
     final res = await http.get(uri).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return const MapZones();
     return MapZones.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
