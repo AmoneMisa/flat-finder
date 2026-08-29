@@ -12,7 +12,8 @@ import '../utils/share_link.dart';
 
 /// Bottom sheet that edits a working copy of the filters and returns it on Apply.
 class FilterSheet extends StatefulWidget {
-  const FilterSheet({super.key, required this.initial, required this.countries});
+  const FilterSheet(
+      {super.key, required this.initial, required this.countries});
 
   final Filters initial;
   final List<Country> countries;
@@ -92,39 +93,59 @@ class _FilterSheetState extends State<FilterSheet> {
     _noCommission = widget.initial.noCommission;
     _maxAgeDays = widget.initial.maxAgeDays;
     _sort = widget.initial.sort;
-    _city = widget.initial.city.trim().isEmpty ? null : widget.initial.city.trim();
-    _district = widget.initial.district.trim().isEmpty ? null : widget.initial.district.trim();
-    _metro = widget.initial.metro.trim().isEmpty ? null : widget.initial.metro.trim();
-    _minCtl = TextEditingController(text: widget.initial.priceMin?.toString() ?? '');
-    _maxCtl = TextEditingController(text: widget.initial.priceMax?.toString() ?? '');
+    _city =
+        widget.initial.city.trim().isEmpty ? null : widget.initial.city.trim();
+    _district = widget.initial.district.trim().isEmpty
+        ? null
+        : widget.initial.district.trim();
+    _metro = widget.initial.metro.trim().isEmpty
+        ? null
+        : widget.initial.metro.trim();
+    _minCtl =
+        TextEditingController(text: widget.initial.priceMin?.toString() ?? '');
+    _maxCtl =
+        TextEditingController(text: widget.initial.priceMax?.toString() ?? '');
     _tolerance = (widget.initial.priceTolerance ?? 0) > 0;
-    _toleranceCtl =
-        TextEditingController(text: widget.initial.priceTolerance?.toString() ?? '');
-    _roomsMinCtl = TextEditingController(text: widget.initial.roomsMin?.toString() ?? '');
-    _roomsMaxCtl = TextEditingController(text: widget.initial.roomsMax?.toString() ?? '');
-    _bedroomsMinCtl = TextEditingController(text: widget.initial.bedroomsMin?.toString() ?? '');
-    _bedroomsMaxCtl = TextEditingController(text: widget.initial.bedroomsMax?.toString() ?? '');
-    _floorMinCtl = TextEditingController(text: widget.initial.floorMin?.toString() ?? '');
-    _floorMaxCtl = TextEditingController(text: widget.initial.floorMax?.toString() ?? '');
-    _totalFloorsMinCtl =
-        TextEditingController(text: widget.initial.totalFloorsMin?.toString() ?? '');
-    _totalFloorsMaxCtl =
-        TextEditingController(text: widget.initial.totalFloorsMax?.toString() ?? '');
-    _yearMinCtl = TextEditingController(text: widget.initial.yearMin?.toString() ?? '');
-    _yearMaxCtl = TextEditingController(text: widget.initial.yearMax?.toString() ?? '');
-    _areaMinCtl = TextEditingController(text: widget.initial.areaMin?.toString() ?? '');
-    _areaMaxCtl = TextEditingController(text: widget.initial.areaMax?.toString() ?? '');
-    _pricePerSqmMinCtl =
-        TextEditingController(text: widget.initial.pricePerSqmMin?.toString() ?? '');
-    _pricePerSqmMaxCtl =
-        TextEditingController(text: widget.initial.pricePerSqmMax?.toString() ?? '');
-    _commissionPercentMinCtl =
-        TextEditingController(text: widget.initial.commissionPercentMin?.toString() ?? '');
-    _commissionPercentMaxCtl =
-        TextEditingController(text: widget.initial.commissionPercentMax?.toString() ?? '');
-    _metroMaxMCtl = TextEditingController(text: widget.initial.metroMaxM?.toString() ?? '');
-    _nearbyMaxMCtl = TextEditingController(text: widget.initial.nearbyMaxM?.toString() ?? '');
-    _microdistrictCtl = TextEditingController(text: widget.initial.microdistrict);
+    _toleranceCtl = TextEditingController(
+        text: widget.initial.priceTolerance?.toString() ?? '');
+    _roomsMinCtl =
+        TextEditingController(text: widget.initial.roomsMin?.toString() ?? '');
+    _roomsMaxCtl =
+        TextEditingController(text: widget.initial.roomsMax?.toString() ?? '');
+    _bedroomsMinCtl = TextEditingController(
+        text: widget.initial.bedroomsMin?.toString() ?? '');
+    _bedroomsMaxCtl = TextEditingController(
+        text: widget.initial.bedroomsMax?.toString() ?? '');
+    _floorMinCtl =
+        TextEditingController(text: widget.initial.floorMin?.toString() ?? '');
+    _floorMaxCtl =
+        TextEditingController(text: widget.initial.floorMax?.toString() ?? '');
+    _totalFloorsMinCtl = TextEditingController(
+        text: widget.initial.totalFloorsMin?.toString() ?? '');
+    _totalFloorsMaxCtl = TextEditingController(
+        text: widget.initial.totalFloorsMax?.toString() ?? '');
+    _yearMinCtl =
+        TextEditingController(text: widget.initial.yearMin?.toString() ?? '');
+    _yearMaxCtl =
+        TextEditingController(text: widget.initial.yearMax?.toString() ?? '');
+    _areaMinCtl =
+        TextEditingController(text: widget.initial.areaMin?.toString() ?? '');
+    _areaMaxCtl =
+        TextEditingController(text: widget.initial.areaMax?.toString() ?? '');
+    _pricePerSqmMinCtl = TextEditingController(
+        text: widget.initial.pricePerSqmMin?.toString() ?? '');
+    _pricePerSqmMaxCtl = TextEditingController(
+        text: widget.initial.pricePerSqmMax?.toString() ?? '');
+    _commissionPercentMinCtl = TextEditingController(
+        text: widget.initial.commissionPercentMin?.toString() ?? '');
+    _commissionPercentMaxCtl = TextEditingController(
+        text: widget.initial.commissionPercentMax?.toString() ?? '');
+    _metroMaxMCtl =
+        TextEditingController(text: widget.initial.metroMaxM?.toString() ?? '');
+    _nearbyMaxMCtl = TextEditingController(
+        text: widget.initial.nearbyMaxM?.toString() ?? '');
+    _microdistrictCtl =
+        TextEditingController(text: widget.initial.microdistrict);
     _quartalCtl = TextEditingController(text: widget.initial.quartal);
     _areaNameCtl = TextEditingController(text: widget.initial.area);
     _queryCtl = TextEditingController(text: widget.initial.query);
@@ -552,519 +573,598 @@ class _FilterSheetState extends State<FilterSheet> {
       initialChildSize: 0.8,
       maxChildSize: 0.95,
       builder: (context, scroll) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
-          controller: scroll,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        // Apply sits outside the scroll area so it's always reachable
+        // without hunting for it at the bottom of a long filter list.
+        child: Column(
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Text(s.t('filters'), style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
-            // The keyword search is the single most-used field — kept above
-            // every category instead of buried at the bottom of the sheet.
-            TextField(
-              controller: _queryCtl,
-              decoration: InputDecoration(
-                hintText: s.t('keywordHint'),
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.search),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Builder(builder: (context) {
-              final presets = context.watch<PresetsState>().presets;
-              return Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
+            Expanded(
+              child: ListView(
+                controller: scroll,
                 children: [
-                  for (final p in presets)
-                    InputChip(
-                      label: Text(p.name),
-                      // Tap applies; the edit icon opens rename/update/share/delete.
-                      onPressed: () => _loadPreset(p.filters),
-                      avatar: GestureDetector(
-                        onTap: () => _editPreset(s, p),
-                        child: const Icon(Icons.edit, size: 16),
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(2),
                       ),
-                      onDeleted: () => context.read<PresetsState>().remove(p.name),
                     ),
-                  ActionChip(
-                    avatar: const Icon(Icons.bookmark_add_outlined, size: 18),
-                    label: Text(s.t('savePreset')),
-                    onPressed: () => _savePreset(s),
                   ),
-                  ActionChip(
-                    avatar: const Icon(Icons.share_outlined, size: 18),
-                    label: Text(s.t('shareSearch')),
-                    onPressed: () => _shareFilters(s, _currentFilters()),
+                  Text(s.t('filters'),
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  // The keyword search is the single most-used field — kept above
+                  // every category instead of buried at the bottom of the sheet.
+                  TextField(
+                    controller: _queryCtl,
+                    decoration: InputDecoration(
+                      hintText: s.t('keywordHint'),
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.search),
+                    ),
                   ),
-                  ActionChip(
-                    avatar: const Icon(Icons.filter_alt_off_outlined, size: 18),
-                    label: Text(s.t('clearFilters')),
-                    onPressed: () => _loadPreset(Filters()),
-                  ),
-                ],
-              );
-            }),
-            _section(
-              context,
-              icon: Icons.public,
-              title: s.t('sectionLocation'),
-              children: [
-                // One country at a time: the sources and cities differ per country.
-                _label(s.t('country')),
-                Wrap(
-                  spacing: 8,
-                  children: widget.countries.map((c) {
-                    final selected = _countries.contains(c.code);
-                    return ChoiceChip(
-                      label: Text(c.name),
-                      selected: selected,
-                      onSelected: (v) => setState(() {
-                        if (!v) return; // can't deselect the only country
-                        _countries = {c.code};
-                        _city = null; // city/district/metro belong to a country
-                        _district = null;
-                        _metro = null;
-                      }),
+                  const SizedBox(height: 10),
+                  Builder(builder: (context) {
+                    final presets = context.watch<PresetsState>().presets;
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        for (final p in presets)
+                          InputChip(
+                            label: Text(p.name),
+                            // Tap applies; the edit icon opens rename/update/share/delete.
+                            onPressed: () => _loadPreset(p.filters),
+                            avatar: GestureDetector(
+                              onTap: () => _editPreset(s, p),
+                              child: const Icon(Icons.edit, size: 16),
+                            ),
+                            onDeleted: () =>
+                                context.read<PresetsState>().remove(p.name),
+                          ),
+                        ActionChip(
+                          avatar:
+                              const Icon(Icons.bookmark_add_outlined, size: 18),
+                          label: Text(s.t('savePreset')),
+                          onPressed: () => _savePreset(s),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.share_outlined, size: 18),
+                          label: Text(s.t('shareSearch')),
+                          onPressed: () => _shareFilters(s, _currentFilters()),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.filter_alt_off_outlined,
+                              size: 18),
+                          label: Text(s.t('clearFilters')),
+                          onPressed: () => _loadPreset(Filters()),
+                        ),
+                      ],
                     );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('city')),
-                _searchableDropdown(
-                  key: ValueKey('city-${_countries.join(',')}'),
-                  hint: s.t('anyCity'),
-                  options: _cityOptions,
-                  value: _city,
-                  onChanged: (v) => setState(() {
-                    _city = v;
-                    _district = null; // district/metro depend on the chosen city
-                    _metro = null;
                   }),
-                ),
-                // District & metro inputs only appear when the picked city has data.
-                if (_cityLoc != null && _cityLoc!.districts.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _label(s.t('district')),
-                  _searchableDropdown(
-                    key: ValueKey('district-$_city'),
-                    hint: s.t('anyDistrict'),
-                    options: _cityLoc!.districts,
-                    value: _district,
-                    onChanged: (v) => setState(() => _district = v),
-                  ),
-                ],
-                if (_cityLoc != null && _cityLoc!.metro.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _label(s.t('metro')),
-                  _searchableDropdown(
-                    key: ValueKey('metro-$_city'),
-                    hint: s.t('anyStation'),
-                    options: _cityLoc!.metro,
-                    value: _metro,
-                    onChanged: (v) => setState(() => _metro = v),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                _label(s.t('microdistrict')),
-                TextField(
-                  controller: _microdistrictCtl,
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('quartal')),
-                TextField(
-                  controller: _quartalCtl,
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('areaName')),
-                TextField(
-                  controller: _areaNameCtl,
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('metroDistance')),
-                TextField(
-                  controller: _metroMaxMCtl,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    hintText: s.t('metroDistanceHint'),
-                    suffixText: 'm',
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('nearbyDistance')),
-                DropdownButtonFormField<String?>(
-                  initialValue: _nearbyKind,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                      labelText: s.t('nearbyKind'), border: const OutlineInputBorder()),
-                  items: [
-                    DropdownMenuItem<String?>(value: null, child: Text(s.t('any'))),
-                    for (final kind in kNearbyKinds)
-                      DropdownMenuItem<String?>(
-                          value: kind, child: Text(s.t('nearbyKind_$kind'))),
-                  ],
-                  onChanged: (v) => setState(() => _nearbyKind = v),
-                ),
-                if (_nearbyKind != null) ...[
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _nearbyMaxMCtl,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: s.t('nearbyDistance'),
-                      suffixText: 'm',
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            _section(
-              context,
-              icon: Icons.travel_explore_outlined,
-              title: s.t('sectionSources'),
-              children: [
-                _label(s.t('sources')),
-                Wrap(
-                  spacing: 8,
-                  children: kAllSources.map((src) {
-                    final selected = _sources.contains(src);
-                    return FilterChip(
-                      label: Text(kSourceLabels[src] ?? src),
-                      selected: selected,
-                      onSelected: (v) => setState(() {
-                        if (v) {
-                          _sources.add(src);
-                        } else {
-                          _sources.remove(src);
-                        }
-                      }),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('customSources')),
-                Text(s.t('customSourcesHint'),
-                    style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(height: 8),
-                for (final url in _customSources)
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.link, size: 20),
-                    title: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.close, size: 20),
-                      tooltip: s.t('remove'),
-                      onPressed: () => setState(() => _customSources.remove(url)),
-                    ),
-                  ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(s.t('addSource')),
-                    onPressed: () => _promptAddCustomSource(s),
-                  ),
-                ),
-              ],
-            ),
-            _section(
-              context,
-              icon: Icons.home_work_outlined,
-              title: s.t('sectionProperty'),
-              children: [
-                _label(s.t('propertyType')),
-                SegmentedButton<PropertyType>(
-                  segments: [
-                    ButtonSegment(value: PropertyType.any, label: Text(s.t('any'))),
-                    ButtonSegment(value: PropertyType.flat, label: Text(s.t('apartment'))),
-                    ButtonSegment(value: PropertyType.house, label: Text(s.t('house'))),
-                  ],
-                  selected: {_type},
-                  onSelectionChanged: (v) => setState(() => _type = v.first),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('dealType')),
-                // A 4-way SegmentedButton squeezes long Russian labels ("Долгосрочно",
-                // "Посуточно") into equal-width slots too narrow to fit, forcing an
-                // ugly mid-word wrap. Chips wrap onto a new line instead of breaking
-                // a word in half.
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: DealType.values
-                      .map((d) => ChoiceChip(
-                            label: Text(_dealLabel(s, d)),
-                            selected: _deal == d,
-                            onSelected: (v) {
-                              if (v) setState(() => _deal = d);
-                            },
-                          ))
-                      .toList(),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('realEstateAgency')),
-                SegmentedButton<AgencyFilter>(
-                  segments: [
-                    ButtonSegment(value: AgencyFilter.any, label: Text(s.t('any'))),
-                    ButtonSegment(value: AgencyFilter.owner, label: Text(s.t('owner'))),
-                    ButtonSegment(value: AgencyFilter.agency, label: Text(s.t('agency'))),
-                  ],
-                  selected: {_agency},
-                  onSelectionChanged: (v) => setState(() => _agency = v.first),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('audience')),
-                SegmentedButton<Audience>(
-                  segments: Audience.values
-                      .map((a) => ButtonSegment(value: a, label: Text(_audienceLabel(s, a))))
-                      .toList(),
-                  selected: {_audience},
-                  onSelectionChanged: (v) => setState(() => _audience = v.first),
-                ),
-              ],
-            ),
-            _section(
-              context,
-              icon: Icons.payments_outlined,
-              title: s.t('sectionPrice'),
-              children: [
-                _label(s.t('priceRange')),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _minCtl,
+                  _section(
+                    context,
+                    icon: Icons.public,
+                    title: s.t('sectionLocation'),
+                    children: [
+                      // One country at a time: the sources and cities differ per country.
+                      _label(s.t('country')),
+                      Wrap(
+                        spacing: 8,
+                        children: widget.countries.map((c) {
+                          final selected = _countries.contains(c.code);
+                          return ChoiceChip(
+                            label: Text(c.name),
+                            selected: selected,
+                            onSelected: (v) => setState(() {
+                              if (!v) return; // can't deselect the only country
+                              _countries = {c.code};
+                              _city =
+                                  null; // city/district/metro belong to a country
+                              _district = null;
+                              _metro = null;
+                            }),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('city')),
+                      _searchableDropdown(
+                        key: ValueKey('city-${_countries.join(',')}'),
+                        hint: s.t('anyCity'),
+                        options: _cityOptions,
+                        value: _city,
+                        onChanged: (v) => setState(() {
+                          _city = v;
+                          _district =
+                              null; // district/metro depend on the chosen city
+                          _metro = null;
+                        }),
+                      ),
+                      // District & metro inputs only appear when the picked city has data.
+                      if (_cityLoc != null &&
+                          _cityLoc!.districts.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        _label(s.t('district')),
+                        _searchableDropdown(
+                          key: ValueKey('district-$_city'),
+                          hint: s.t('anyDistrict'),
+                          options: _cityLoc!.districts,
+                          value: _district,
+                          onChanged: (v) => setState(() => _district = v),
+                        ),
+                      ],
+                      if (_cityLoc != null && _cityLoc!.metro.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        _label(s.t('metro')),
+                        _searchableDropdown(
+                          key: ValueKey('metro-$_city'),
+                          hint: s.t('anyStation'),
+                          options: _cityLoc!.metro,
+                          value: _metro,
+                          onChanged: (v) => setState(() => _metro = v),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      _label(s.t('microdistrict')),
+                      TextField(
+                        controller: _microdistrictCtl,
+                        decoration: InputDecoration(
+                          hintText: s.t('microdistrictHint'),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('quartal')),
+                      TextField(
+                        controller: _quartalCtl,
+                        decoration: InputDecoration(
+                          hintText: s.t('quartalHint'),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('areaName')),
+                      TextField(
+                        controller: _areaNameCtl,
+                        decoration: InputDecoration(
+                          hintText: s.t('areaNameHint'),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('metroDistance')),
+                      TextField(
+                        controller: _metroMaxMCtl,
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
-                            labelText: s.t('min'), border: const OutlineInputBorder()),
+                          hintText: s.t('metroDistanceHint'),
+                          suffixText: 'm',
+                          border: const OutlineInputBorder(),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: _maxCtl,
-                        keyboardType: TextInputType.number,
-                        // Tolerance only makes sense once a max price is set —
-                        // rebuild to show/hide that checkbox as this changes.
-                        onChanged: (_) => setState(() {}),
+                      const SizedBox(height: 10),
+                      _label(s.t('nearbyDistance')),
+                      DropdownButtonFormField<String?>(
+                        initialValue: _nearbyKind,
+                        isExpanded: true,
                         decoration: InputDecoration(
-                            labelText: s.t('max'), border: const OutlineInputBorder()),
+                            labelText: s.t('nearbyKind'),
+                            border: const OutlineInputBorder()),
+                        items: [
+                          DropdownMenuItem<String?>(
+                              value: null, child: Text(s.t('any'))),
+                          for (final kind in kNearbyKinds)
+                            DropdownMenuItem<String?>(
+                                value: kind,
+                                child: Text(s.t('nearbyKind_$kind'))),
+                        ],
+                        onChanged: (v) => setState(() => _nearbyKind = v),
                       ),
-                    ),
-                  ],
-                ),
-                if (_maxCtl.text.trim().isNotEmpty)
-                  CheckboxListTile(
-                    value: _tolerance,
-                    onChanged: (v) => setState(() => _tolerance = v ?? false),
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: Text(s.t('priceTolerance')),
-                    subtitle: Text(s.t('priceToleranceHint'),
-                        style: Theme.of(context).textTheme.bodySmall),
-                  ),
-                if (_tolerance && _maxCtl.text.trim().isNotEmpty)
-                  TextField(
-                    controller: _toleranceCtl,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: '+ ${s.t('max')}',
-                      prefixText: '+ ',
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                if (_countries.length == 1 &&
-                    widget.countries
-                        .firstWhere((c) => c.code == _countries.first,
-                            orElse: () => const Country(
-                                code: '', name: '', currency: '', centerLat: 0, centerLng: 0))
-                        .currency
-                        .isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String?>(
-                    initialValue: _priceCurrency,
-                    decoration: InputDecoration(
-                        labelText: s.t('priceCurrency'), border: const OutlineInputBorder()),
-                    items: [
-                      DropdownMenuItem<String?>(
-                          value: null, child: Text(s.t('nativeCurrency'))),
-                      for (final code in SettingsState.currencyOptions)
-                        if (code != null)
-                          DropdownMenuItem<String?>(value: code, child: Text(code)),
+                      if (_nearbyKind != null) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _nearbyMaxMCtl,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: s.t('nearbyDistance'),
+                            suffixText: 'm',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
                     ],
-                    onChanged: (v) => setState(() => _priceCurrency = v),
                   ),
+                  _section(
+                    context,
+                    icon: Icons.travel_explore_outlined,
+                    title: s.t('sectionSources'),
+                    children: [
+                      _label(s.t('sources')),
+                      Wrap(
+                        spacing: 8,
+                        children: kAllSources.map((src) {
+                          final selected = _sources.contains(src);
+                          return FilterChip(
+                            label: Text(kSourceLabels[src] ?? src),
+                            selected: selected,
+                            onSelected: (v) => setState(() {
+                              if (v) {
+                                _sources.add(src);
+                              } else {
+                                _sources.remove(src);
+                              }
+                            }),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('customSources')),
+                      Text(s.t('customSourcesHint'),
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: 8),
+                      for (final url in _customSources)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.link, size: 20),
+                          title: Text(url,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            tooltip: s.t('remove'),
+                            onPressed: () =>
+                                setState(() => _customSources.remove(url)),
+                          ),
+                        ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.add, size: 18),
+                          label: Text(s.t('addSource')),
+                          onPressed: () => _promptAddCustomSource(s),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _section(
+                    context,
+                    icon: Icons.home_work_outlined,
+                    title: s.t('sectionProperty'),
+                    children: [
+                      _label(s.t('propertyType')),
+                      SegmentedButton<PropertyType>(
+                        segments: [
+                          ButtonSegment(
+                              value: PropertyType.any, label: Text(s.t('any'))),
+                          ButtonSegment(
+                              value: PropertyType.flat,
+                              label: Text(s.t('apartment'))),
+                          ButtonSegment(
+                              value: PropertyType.house,
+                              label: Text(s.t('house'))),
+                        ],
+                        selected: {_type},
+                        onSelectionChanged: (v) =>
+                            setState(() => _type = v.first),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('dealType')),
+                      // A 4-way SegmentedButton squeezes long Russian labels ("Долгосрочно",
+                      // "Посуточно") into equal-width slots too narrow to fit, forcing an
+                      // ugly mid-word wrap. Chips wrap onto a new line instead of breaking
+                      // a word in half.
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: DealType.values
+                            .map((d) => ChoiceChip(
+                                  label: Text(_dealLabel(s, d)),
+                                  selected: _deal == d,
+                                  onSelected: (v) {
+                                    if (v) setState(() => _deal = d);
+                                  },
+                                ))
+                            .toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('realEstateAgency')),
+                      SegmentedButton<AgencyFilter>(
+                        segments: [
+                          ButtonSegment(
+                              value: AgencyFilter.any, label: Text(s.t('any'))),
+                          ButtonSegment(
+                              value: AgencyFilter.owner,
+                              label: Text(s.t('owner'))),
+                          ButtonSegment(
+                              value: AgencyFilter.agency,
+                              label: Text(s.t('agency'))),
+                        ],
+                        selected: {_agency},
+                        onSelectionChanged: (v) =>
+                            setState(() => _agency = v.first),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('audience')),
+                      SegmentedButton<Audience>(
+                        segments: Audience.values
+                            .map((a) => ButtonSegment(
+                                value: a, label: Text(_audienceLabel(s, a))))
+                            .toList(),
+                        selected: {_audience},
+                        onSelectionChanged: (v) =>
+                            setState(() => _audience = v.first),
+                      ),
+                    ],
+                  ),
+                  _section(
+                    context,
+                    icon: Icons.payments_outlined,
+                    title: s.t('sectionPrice'),
+                    children: [
+                      _label(s.t('priceRange')),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _minCtl,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                  labelText: s.t('min'),
+                                  border: const OutlineInputBorder()),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: _maxCtl,
+                              keyboardType: TextInputType.number,
+                              // Tolerance only makes sense once a max price is set —
+                              // rebuild to show/hide that checkbox as this changes.
+                              onChanged: (_) => setState(() {}),
+                              decoration: InputDecoration(
+                                  labelText: s.t('max'),
+                                  border: const OutlineInputBorder()),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_maxCtl.text.trim().isNotEmpty)
+                        CheckboxListTile(
+                          value: _tolerance,
+                          onChanged: (v) =>
+                              setState(() => _tolerance = v ?? false),
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: Text(s.t('priceTolerance')),
+                          subtitle: Text(s.t('priceToleranceHint'),
+                              style: Theme.of(context).textTheme.bodySmall),
+                        ),
+                      if (_tolerance && _maxCtl.text.trim().isNotEmpty)
+                        TextField(
+                          controller: _toleranceCtl,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: '+ ${s.t('max')}',
+                            prefixText: '+ ',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      if (_countries.length == 1 &&
+                          widget.countries
+                              .firstWhere((c) => c.code == _countries.first,
+                                  orElse: () => const Country(
+                                      code: '',
+                                      name: '',
+                                      currency: '',
+                                      centerLat: 0,
+                                      centerLng: 0))
+                              .currency
+                              .isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String?>(
+                          initialValue: _priceCurrency,
+                          decoration: InputDecoration(
+                              labelText: s.t('priceCurrency'),
+                              border: const OutlineInputBorder()),
+                          items: [
+                            DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text(s.t('nativeCurrency'))),
+                            for (final code in SettingsState.currencyOptions)
+                              if (code != null)
+                                DropdownMenuItem<String?>(
+                                    value: code, child: Text(code)),
+                          ],
+                          onChanged: (v) => setState(() => _priceCurrency = v),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      _label(s.t('pricePerSqm')),
+                      _minMaxRow(s, _pricePerSqmMinCtl, _pricePerSqmMaxCtl),
+                    ],
+                  ),
+                  _section(
+                    context,
+                    icon: Icons.straighten_outlined,
+                    title: s.t('sectionSize'),
+                    children: [
+                      _label(s.t('rooms')),
+                      _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl),
+                      const SizedBox(height: 10),
+                      _label(s.t('bedrooms')),
+                      _minMaxRow(s, _bedroomsMinCtl, _bedroomsMaxCtl),
+                      const SizedBox(height: 10),
+                      _label(s.t('floor')),
+                      _minMaxRow(s, _floorMinCtl, _floorMaxCtl),
+                      const SizedBox(height: 10),
+                      _label(s.t('totalFloors')),
+                      _minMaxRow(s, _totalFloorsMinCtl, _totalFloorsMaxCtl),
+                      const SizedBox(height: 10),
+                      _label(s.t('buildingYear')),
+                      _minMaxRow(s, _yearMinCtl, _yearMaxCtl),
+                      const SizedBox(height: 10),
+                      _label(s.t('areaSqm')),
+                      _minMaxRow(s, _areaMinCtl, _areaMaxCtl),
+                    ],
+                  ),
+                  _section(
+                    context,
+                    icon: Icons.checklist_outlined,
+                    title: s.t('sectionAmenities'),
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: kAmenityFilters.map((key) {
+                          final selected = _amenities.contains(key);
+                          return FilterChip(
+                            label: Text(s.t('amenity_$key')),
+                            selected: selected,
+                            onSelected: (v) => setState(() {
+                              if (v) {
+                                _amenities.add(key);
+                              } else {
+                                _amenities.remove(key);
+                              }
+                            }),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        value: _withPhotos,
+                        onChanged: (v) => setState(() => _withPhotos = v),
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(s.t('withPhotos')),
+                      ),
+                    ],
+                  ),
+                  _section(
+                    context,
+                    icon: Icons.handshake_outlined,
+                    title: s.t('sectionTenantsAndCosts'),
+                    children: [
+                      SwitchListTile(
+                        value: _pets,
+                        onChanged: (v) => setState(() => _pets = v),
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(s.t('petsAllowed')),
+                      ),
+                      SwitchListTile(
+                        value: _children,
+                        onChanged: (v) => setState(() => _children = v),
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(s.t('childrenAllowed')),
+                      ),
+                      SwitchListTile(
+                        value: _roomOnly,
+                        onChanged: (v) => setState(() => _roomOnly = v),
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(s.t('roomOnly')),
+                        subtitle: Text(s.t('roomOnlyHint'),
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                      SwitchListTile(
+                        value: _noElevator,
+                        onChanged: (v) => setState(() => _noElevator = v),
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(s.t('noElevator')),
+                      ),
+                      SwitchListTile(
+                        value: _noDeposit,
+                        onChanged: (v) => setState(() => _noDeposit = v),
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(s.t('noDeposit')),
+                      ),
+                      SwitchListTile(
+                        value: _communalIncluded,
+                        onChanged: (v) => setState(() => _communalIncluded = v),
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(s.t('communalIncluded')),
+                      ),
+                      SwitchListTile(
+                        value: _noCommission,
+                        onChanged: (v) => setState(() => _noCommission = v),
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        title: Text(s.t('noCommission')),
+                      ),
+                      const SizedBox(height: 8),
+                      _label(s.t('commissionPercentRange')),
+                      _minMaxRow(s, _commissionPercentMinCtl,
+                          _commissionPercentMaxCtl),
+                    ],
+                  ),
+                  _section(
+                    context,
+                    icon: Icons.sort,
+                    title: s.t('sectionSortAndTiming'),
+                    children: [
+                      _label(s.t('postedWithin')),
+                      DropdownButtonFormField<int?>(
+                        initialValue: _maxAgeDays,
+                        isExpanded: true,
+                        decoration:
+                            const InputDecoration(border: OutlineInputBorder()),
+                        items: [
+                          DropdownMenuItem<int?>(
+                              value: null, child: Text(s.t('anyTime'))),
+                          DropdownMenuItem<int?>(
+                              value: 1, child: Text(s.t('lastDay'))),
+                          DropdownMenuItem<int?>(
+                              value: 3, child: Text(s.t('last3Days'))),
+                          DropdownMenuItem<int?>(
+                              value: 7, child: Text(s.t('lastWeek'))),
+                          DropdownMenuItem<int?>(
+                              value: 31, child: Text(s.t('lastMonth'))),
+                        ],
+                        onChanged: (v) => setState(() => _maxAgeDays = v),
+                      ),
+                      const SizedBox(height: 10),
+                      _label(s.t('sortBy')),
+                      DropdownButtonFormField<SortBy>(
+                        initialValue: _sort,
+                        isExpanded: true,
+                        decoration:
+                            const InputDecoration(border: OutlineInputBorder()),
+                        items: SortBy.values
+                            .map((v) => DropdownMenuItem(
+                                value: v, child: Text(_sortLabel(s, v))))
+                            .toList(),
+                        onChanged: (v) =>
+                            setState(() => _sort = v ?? SortBy.relevance),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                 ],
-                const SizedBox(height: 16),
-                _label(s.t('pricePerSqm')),
-                _minMaxRow(s, _pricePerSqmMinCtl, _pricePerSqmMaxCtl),
-              ],
+              ),
             ),
-            _section(
-              context,
-              icon: Icons.straighten_outlined,
-              title: s.t('sectionSize'),
-              children: [
-                _label(s.t('rooms')),
-                _minMaxRow(s, _roomsMinCtl, _roomsMaxCtl),
-                const SizedBox(height: 16),
-                _label(s.t('bedrooms')),
-                _minMaxRow(s, _bedroomsMinCtl, _bedroomsMaxCtl),
-                const SizedBox(height: 16),
-                _label(s.t('floor')),
-                _minMaxRow(s, _floorMinCtl, _floorMaxCtl),
-                const SizedBox(height: 16),
-                _label(s.t('totalFloors')),
-                _minMaxRow(s, _totalFloorsMinCtl, _totalFloorsMaxCtl),
-                const SizedBox(height: 16),
-                _label(s.t('buildingYear')),
-                _minMaxRow(s, _yearMinCtl, _yearMaxCtl),
-                const SizedBox(height: 16),
-                _label(s.t('areaSqm')),
-                _minMaxRow(s, _areaMinCtl, _areaMaxCtl),
-              ],
-            ),
-            _section(
-              context,
-              icon: Icons.checklist_outlined,
-              title: s.t('sectionAmenities'),
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: kAmenityFilters.map((key) {
-                    final selected = _amenities.contains(key);
-                    return FilterChip(
-                      label: Text(s.t('amenity_$key')),
-                      selected: selected,
-                      onSelected: (v) => setState(() {
-                        if (v) {
-                          _amenities.add(key);
-                        } else {
-                          _amenities.remove(key);
-                        }
-                      }),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  value: _withPhotos,
-                  onChanged: (v) => setState(() => _withPhotos = v),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(s.t('withPhotos')),
-                ),
-              ],
-            ),
-            _section(
-              context,
-              icon: Icons.handshake_outlined,
-              title: s.t('sectionTenantsAndCosts'),
-              children: [
-                SwitchListTile(
-                  value: _pets,
-                  onChanged: (v) => setState(() => _pets = v),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(s.t('petsAllowed')),
-                ),
-                SwitchListTile(
-                  value: _children,
-                  onChanged: (v) => setState(() => _children = v),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(s.t('childrenAllowed')),
-                ),
-                SwitchListTile(
-                  value: _roomOnly,
-                  onChanged: (v) => setState(() => _roomOnly = v),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(s.t('roomOnly')),
-                  subtitle: Text(s.t('roomOnlyHint'),
-                      style: Theme.of(context).textTheme.bodySmall),
-                ),
-                SwitchListTile(
-                  value: _noElevator,
-                  onChanged: (v) => setState(() => _noElevator = v),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(s.t('noElevator')),
-                ),
-                SwitchListTile(
-                  value: _noDeposit,
-                  onChanged: (v) => setState(() => _noDeposit = v),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(s.t('noDeposit')),
-                ),
-                SwitchListTile(
-                  value: _communalIncluded,
-                  onChanged: (v) => setState(() => _communalIncluded = v),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(s.t('communalIncluded')),
-                ),
-                SwitchListTile(
-                  value: _noCommission,
-                  onChanged: (v) => setState(() => _noCommission = v),
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(s.t('noCommission')),
-                ),
-                const SizedBox(height: 8),
-                _label(s.t('commissionPercentRange')),
-                _minMaxRow(s, _commissionPercentMinCtl, _commissionPercentMaxCtl),
-              ],
-            ),
-            _section(
-              context,
-              icon: Icons.sort,
-              title: s.t('sectionSortAndTiming'),
-              children: [
-                _label(s.t('postedWithin')),
-                DropdownButtonFormField<int?>(
-                  initialValue: _maxAgeDays,
-                  isExpanded: true,
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                  items: [
-                    DropdownMenuItem<int?>(value: null, child: Text(s.t('anyTime'))),
-                    DropdownMenuItem<int?>(value: 1, child: Text(s.t('lastDay'))),
-                    DropdownMenuItem<int?>(value: 3, child: Text(s.t('last3Days'))),
-                    DropdownMenuItem<int?>(value: 7, child: Text(s.t('lastWeek'))),
-                    DropdownMenuItem<int?>(value: 31, child: Text(s.t('lastMonth'))),
-                  ],
-                  onChanged: (v) => setState(() => _maxAgeDays = v),
-                ),
-                const SizedBox(height: 16),
-                _label(s.t('sortBy')),
-                DropdownButtonFormField<SortBy>(
-                  initialValue: _sort,
-                  isExpanded: true,
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                  items: SortBy.values
-                      .map((v) => DropdownMenuItem(value: v, child: Text(_sortLabel(s, v))))
-                      .toList(),
-                  onChanged: (v) => setState(() => _sort = v ?? SortBy.relevance),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: (_countries.isEmpty || _sources.isEmpty) ? null : _apply,
+            SafeArea(
+              top: false,
               child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(s.t('applyFilters')),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: FilledButton(
+                  onPressed:
+                      (_countries.isEmpty || _sources.isEmpty) ? null : _apply,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(s.t('applyFilters')),
+                  ),
+                ),
               ),
             ),
           ],
@@ -1082,23 +1182,24 @@ class _FilterSheetState extends State<FilterSheet> {
     required List<Widget> children,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(width: 8),
+              Icon(icon,
+                  size: 16, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 6),
               Text(title, style: Theme.of(context).textTheme.titleSmall),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           ...children,
         ],
       ),
@@ -1106,8 +1207,9 @@ class _FilterSheetState extends State<FilterSheet> {
   }
 
   Widget _label(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(t, style: const TextStyle(fontWeight: FontWeight.w600)),
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(t,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
       );
 
   /// A type-to-search field over a fixed option list. Empty text = "any"
@@ -1184,14 +1286,16 @@ class _FilterSheetState extends State<FilterSheet> {
     );
   }
 
-  Widget _minMaxRow(SettingsState s, TextEditingController min, TextEditingController max) => Row(
+  Widget _minMaxRow(SettingsState s, TextEditingController min,
+          TextEditingController max) =>
+      Row(
         children: [
           Expanded(
             child: TextField(
               controller: min,
               keyboardType: TextInputType.number,
-              decoration:
-                  InputDecoration(labelText: s.t('min'), border: const OutlineInputBorder()),
+              decoration: InputDecoration(
+                  labelText: s.t('min'), border: const OutlineInputBorder()),
             ),
           ),
           const SizedBox(width: 12),
@@ -1199,8 +1303,8 @@ class _FilterSheetState extends State<FilterSheet> {
             child: TextField(
               controller: max,
               keyboardType: TextInputType.number,
-              decoration:
-                  InputDecoration(labelText: s.t('max'), border: const OutlineInputBorder()),
+              decoration: InputDecoration(
+                  labelText: s.t('max'), border: const OutlineInputBorder()),
             ),
           ),
         ],
