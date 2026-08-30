@@ -75,4 +75,31 @@ test('scoped cursor is accepted only for its exact query scope', () => {
 test('invalid cursors are rejected instead of reaching SQL builders', () => {
   assert.equal(prepareCursorForScope('not-a-cursor', 'scope-a'), '');
   assert.equal(attachScopeToCursor(null, 'scope-a'), null);
+
+  for (const cursor of [
+    {v: 1, sort: 'newest', t: null, id: 'not-a-bigint', c: 3, s: 'scope-a'},
+    {v: 1, sort: 'newest', t: null, id: '-1', c: 3, s: 'scope-a'},
+    {v: 1, sort: 'newest', t: null, id: '9223372036854775808', c: 3, s: 'scope-a'},
+    {v: 1, sort: 'newest', t: 'not-a-date', id: '123', c: 3, s: 'scope-a'},
+    {v: 1, sort: 'priceAsc', t: null, id: '123', c: 3, s: 'scope-a'},
+  ]) {
+    assert.equal(prepareCursorForScope(encodeCursor(cursor), 'scope-a'), '');
+  }
+});
+
+test('invalid carried count keeps a valid scoped position but forces recount', () => {
+  const scoped = encodeCursor({
+    v: 1,
+    sort: 'newest',
+    t: '2026-08-30T12:00:00Z',
+    id: '123',
+    c: 'not-a-count',
+    s: 'scope-a',
+  });
+  const prepared = decodeCursor(prepareCursorForScope(scoped, 'scope-a'));
+
+  assert.equal(prepared.id, '123');
+  assert.equal(prepared.t, '2026-08-30T12:00:00.000Z');
+  assert.equal(prepared.s, 'scope-a');
+  assert.equal('c' in prepared, false);
 });
