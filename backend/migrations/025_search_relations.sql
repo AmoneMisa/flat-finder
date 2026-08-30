@@ -36,22 +36,26 @@ BEGIN
   DELETE FROM listing_location_terms WHERE listing_id = NEW.id;
   DELETE FROM listing_nearby_places WHERE listing_id = NEW.id;
 
+  -- These tables are derived acceleration structures. Bound upstream labels at
+  -- materialization time so an unexpectedly verbose enrichment value cannot
+  -- make the canonical listing INSERT/UPDATE fail merely because the helper
+  -- index uses a narrower schema contract.
   INSERT INTO listing_location_terms(listing_id, term_type, normalized_name)
   SELECT DISTINCT NEW.id, term_type, normalized_name
   FROM (
-    SELECT 'microdistrict'::text AS term_type, LOWER(BTRIM(NEW.data->>'microdistrict')) AS normalized_name
+    SELECT 'microdistrict'::text AS term_type, LEFT(LOWER(BTRIM(NEW.data->>'microdistrict')), 512) AS normalized_name
     WHERE NULLIF(BTRIM(NEW.data->>'microdistrict'), '') IS NOT NULL
 
     UNION ALL
-    SELECT 'quartal', LOWER(BTRIM(NEW.data->>'kvartal'))
+    SELECT 'quartal', LEFT(LOWER(BTRIM(NEW.data->>'kvartal')), 512)
     WHERE NULLIF(BTRIM(NEW.data->>'kvartal'), '') IS NOT NULL
 
     UNION ALL
-    SELECT 'area', LOWER(BTRIM(NEW.data->>'area'))
+    SELECT 'area', LEFT(LOWER(BTRIM(NEW.data->>'area')), 512)
     WHERE NULLIF(BTRIM(NEW.data->>'area'), '') IS NOT NULL
 
     UNION ALL
-    SELECT 'local_area', LOWER(BTRIM(value))
+    SELECT 'local_area', LEFT(LOWER(BTRIM(value)), 512)
     FROM jsonb_array_elements_text(
       CASE WHEN jsonb_typeof(NEW.data->'localAreas') = 'array'
         THEN NEW.data->'localAreas' ELSE '[]'::jsonb END
@@ -59,7 +63,7 @@ BEGIN
     WHERE NULLIF(BTRIM(value), '') IS NOT NULL
 
     UNION ALL
-    SELECT 'development_area', LOWER(BTRIM(value))
+    SELECT 'development_area', LEFT(LOWER(BTRIM(value)), 512)
     FROM jsonb_array_elements_text(
       CASE WHEN jsonb_typeof(NEW.data->'developmentAreas') = 'array'
         THEN NEW.data->'developmentAreas' ELSE '[]'::jsonb END
@@ -67,7 +71,7 @@ BEGIN
     WHERE NULLIF(BTRIM(value), '') IS NOT NULL
 
     UNION ALL
-    SELECT 'informal_area', LOWER(BTRIM(value))
+    SELECT 'informal_area', LEFT(LOWER(BTRIM(value)), 512)
     FROM jsonb_array_elements_text(
       CASE WHEN jsonb_typeof(NEW.data->'informalAreas') = 'array'
         THEN NEW.data->'informalAreas' ELSE '[]'::jsonb END
@@ -76,8 +80,8 @@ BEGIN
 
     UNION ALL
     SELECT
-      LOWER(BTRIM(entity->>'type')),
-      LOWER(BTRIM(entity->>'name'))
+      LEFT(LOWER(BTRIM(entity->>'type')), 64),
+      LEFT(LOWER(BTRIM(entity->>'name')), 512)
     FROM jsonb_array_elements(
       CASE WHEN jsonb_typeof(NEW.data->'locationEntities') = 'array'
         THEN NEW.data->'locationEntities' ELSE '[]'::jsonb END
@@ -91,7 +95,7 @@ BEGIN
   SELECT
     NEW.id,
     (ordinality - 1)::integer,
-    NULLIF(LOWER(BTRIM(place->>'kind')), ''),
+    NULLIF(LEFT(LOWER(BTRIM(place->>'kind')), 64), ''),
     CASE WHEN jsonb_typeof(place->'distanceM') = 'number'
       THEN (place->>'distanceM')::double precision
       ELSE NULL
@@ -134,26 +138,27 @@ WHEN (
 )
 EXECUTE FUNCTION sync_listing_search_relations();
 
--- Backfill current rows once. Use the same semantic sources as the trigger.
+-- Backfill current rows once. Use the same semantic sources and the same
+-- materialization bounds as the trigger.
 INSERT INTO listing_location_terms(listing_id, term_type, normalized_name)
 SELECT DISTINCT listing_id, term_type, normalized_name
 FROM (
-  SELECT l.id AS listing_id, 'microdistrict'::text AS term_type, LOWER(BTRIM(l.data->>'microdistrict')) AS normalized_name
+  SELECT l.id AS listing_id, 'microdistrict'::text AS term_type, LEFT(LOWER(BTRIM(l.data->>'microdistrict')), 512) AS normalized_name
   FROM listings l
   WHERE NULLIF(BTRIM(l.data->>'microdistrict'), '') IS NOT NULL
 
   UNION ALL
-  SELECT l.id, 'quartal', LOWER(BTRIM(l.data->>'kvartal'))
+  SELECT l.id, 'quartal', LEFT(LOWER(BTRIM(l.data->>'kvartal')), 512)
   FROM listings l
   WHERE NULLIF(BTRIM(l.data->>'kvartal'), '') IS NOT NULL
 
   UNION ALL
-  SELECT l.id, 'area', LOWER(BTRIM(l.data->>'area'))
+  SELECT l.id, 'area', LEFT(LOWER(BTRIM(l.data->>'area')), 512)
   FROM listings l
   WHERE NULLIF(BTRIM(l.data->>'area'), '') IS NOT NULL
 
   UNION ALL
-  SELECT l.id, 'local_area', LOWER(BTRIM(value))
+  SELECT l.id, 'local_area', LEFT(LOWER(BTRIM(value)), 512)
   FROM listings l
   CROSS JOIN LATERAL jsonb_array_elements_text(
     CASE WHEN jsonb_typeof(l.data->'localAreas') = 'array'
@@ -162,7 +167,7 @@ FROM (
   WHERE NULLIF(BTRIM(value), '') IS NOT NULL
 
   UNION ALL
-  SELECT l.id, 'development_area', LOWER(BTRIM(value))
+  SELECT l.id, 'development_area', LEFT(LOWER(BTRIM(value)), 512)
   FROM listings l
   CROSS JOIN LATERAL jsonb_array_elements_text(
     CASE WHEN jsonb_typeof(l.data->'developmentAreas') = 'array'
@@ -171,7 +176,7 @@ FROM (
   WHERE NULLIF(BTRIM(value), '') IS NOT NULL
 
   UNION ALL
-  SELECT l.id, 'informal_area', LOWER(BTRIM(value))
+  SELECT l.id, 'informal_area', LEFT(LOWER(BTRIM(value)), 512)
   FROM listings l
   CROSS JOIN LATERAL jsonb_array_elements_text(
     CASE WHEN jsonb_typeof(l.data->'informalAreas') = 'array'
@@ -180,7 +185,7 @@ FROM (
   WHERE NULLIF(BTRIM(value), '') IS NOT NULL
 
   UNION ALL
-  SELECT l.id, LOWER(BTRIM(entity->>'type')), LOWER(BTRIM(entity->>'name'))
+  SELECT l.id, LEFT(LOWER(BTRIM(entity->>'type')), 64), LEFT(LOWER(BTRIM(entity->>'name')), 512)
   FROM listings l
   CROSS JOIN LATERAL jsonb_array_elements(
     CASE WHEN jsonb_typeof(l.data->'locationEntities') = 'array'
@@ -196,7 +201,7 @@ INSERT INTO listing_nearby_places(listing_id, place_index, kind, distance_m)
 SELECT
   l.id,
   (ordinality - 1)::integer,
-  NULLIF(LOWER(BTRIM(place->>'kind')), ''),
+  NULLIF(LEFT(LOWER(BTRIM(place->>'kind')), 64), ''),
   CASE WHEN jsonb_typeof(place->'distanceM') = 'number'
     THEN (place->>'distanceM')::double precision
     ELSE NULL
