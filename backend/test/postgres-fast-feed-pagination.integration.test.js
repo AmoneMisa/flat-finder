@@ -7,6 +7,7 @@ import {searchPostgresListings} from '../src/postgres-search-fast.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 const SOURCE = 'fast-feed-pagination-test';
+const COUNTRY = 'QX';
 
 function decodeCursor(value) {
   return JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
@@ -21,7 +22,7 @@ test('fast default feed carries count and avoids an empty terminal cursor page',
     {
       id: 'fast-feed-1',
       source: SOURCE,
-      country: 'ZZ',
+      country: COUNTRY,
       title: 'Fast feed pagination one',
       description: 'Unique fast feed pagination fixture one.',
       propertyType: 'flat',
@@ -35,7 +36,7 @@ test('fast default feed carries count and avoids an empty terminal cursor page',
     {
       id: 'fast-feed-2',
       source: SOURCE,
-      country: 'ZZ',
+      country: COUNTRY,
       title: 'Fast feed pagination two',
       description: 'Unique fast feed pagination fixture two.',
       propertyType: 'flat',
@@ -49,7 +50,7 @@ test('fast default feed carries count and avoids an empty terminal cursor page',
     {
       id: 'fast-feed-3',
       source: SOURCE,
-      country: 'ZZ',
+      country: COUNTRY,
       title: 'Fast feed pagination three',
       description: 'Unique fast feed pagination fixture three.',
       propertyType: 'flat',
@@ -74,7 +75,7 @@ test('fast default feed carries count and avoids an empty terminal cursor page',
     maxAgeDays: 14,
   };
 
-  const first = await searchPostgresListings({filters, countries: ['ZZ'], rates: {USD: 1}});
+  const first = await searchPostgresListings({filters, countries: [COUNTRY], rates: {USD: 1}});
   assert.equal(first.searchPath, 'postgres-feed-members');
   assert.equal(first.count, 3);
   assert.equal(first.listings.length, 1);
@@ -84,7 +85,7 @@ test('fast default feed carries count and avoids an empty terminal cursor page',
 
   const second = await searchPostgresListings({
     filters: {...filters, cursor: first.nextCursor, offset: 999},
-    countries: ['ZZ'],
+    countries: [COUNTRY],
     rates: {USD: 1},
   });
   assert.equal(second.count, 3);
@@ -95,7 +96,7 @@ test('fast default feed carries count and avoids an empty terminal cursor page',
 
   const third = await searchPostgresListings({
     filters: {...filters, cursor: second.nextCursor, offset: 999},
-    countries: ['ZZ'],
+    countries: [COUNTRY],
     rates: {USD: 1},
   });
   assert.equal(third.count, 3);
