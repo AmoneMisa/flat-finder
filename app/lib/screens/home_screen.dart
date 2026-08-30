@@ -34,7 +34,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 /// Quick views layered on top of the active filters/search results.
-enum _ViewTab { all, fresh, hidden }
+enum _ViewTab { all, hidden }
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _mapMode = false;
@@ -48,8 +48,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _initDeepLinks();
-    _pushListingSub =
-        PushService.instance.listingOpens.listen(_openSharedListing);
+    _pushListingSub = PushService.instance.listingOpens.listen(
+      _openSharedListing,
+    );
     _resultsScroll.addListener(_loadMoreNearEnd);
   }
 
@@ -275,11 +276,31 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         toolbarHeight: 52,
         titleSpacing: 8,
-        title: Image.asset(
-          'assets/logo.png',
-          height: 36,
-          fit: BoxFit.contain,
-          semanticLabel: settings.t('appTitle'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/icon/icon.png',
+              width: 30,
+              height: 30,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Icon(
+                Icons.home_work_outlined,
+                size: 28,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                settings.t('appTitle'),
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
         ),
         actionsPadding: EdgeInsets.zero,
         actions: [
@@ -360,8 +381,6 @@ class _HomeScreenState extends State<HomeScreen> {
               switch (value) {
                 case 'view_all':
                   setState(() => _tab = _ViewTab.all);
-                case 'view_fresh':
-                  setState(() => _tab = _ViewTab.fresh);
                 case 'view_hidden':
                   setState(() => _tab = _ViewTab.hidden);
                 case 'history':
@@ -383,7 +402,6 @@ class _HomeScreenState extends State<HomeScreen> {
               // entries.
               const views = <(_ViewTab, String, String, IconData)>[
                 (_ViewTab.all, 'view_all', 'tabAll', Icons.list),
-                (_ViewTab.fresh, 'view_fresh', 'tabFresh', Icons.bolt),
                 (
                   _ViewTab.hidden,
                   'view_hidden',
@@ -430,8 +448,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 PopupMenuItem(
                   value: 'presets',
                   child: ListTile(
-                    leading:
-                        const Icon(Icons.playlist_add_check_circle_outlined),
+                    leading: const Icon(
+                      Icons.playlist_add_check_circle_outlined,
+                    ),
                     title: Text(settings.t('presetHousingTitle')),
                   ),
                 ),
@@ -630,26 +649,15 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (_tab) {
       case _ViewTab.all:
         return active.toList();
-      case _ViewTab.fresh:
-        final cutoff = DateTime.now().toUtc().subtract(
-              const Duration(hours: 24),
-            );
-        return active
-            .where(
-              (l) =>
-                  l.createdAt != null && l.createdAt!.toUtc().isAfter(cutoff),
-            )
-            .toList();
       case _ViewTab.hidden:
         return const []; // unreachable, handled above
     }
   }
 
   String _emptyLabel(SettingsState settings) => switch (_tab) {
-        _ViewTab.fresh => settings.t('noFreshHere'),
-        _ViewTab.hidden => settings.t('noHiddenHere'),
-        _ViewTab.all => settings.t('noListings'),
-      };
+    _ViewTab.hidden => settings.t('noHiddenHere'),
+    _ViewTab.all => settings.t('noListings'),
+  };
 
   /// Column count from the available width: 1 on phones, up to 4 on wide
   /// desktop windows.
@@ -683,7 +691,8 @@ class _MapListingPreviewState extends State<_MapListingPreview> {
   @override
   void initState() {
     super.initState();
-    final needsHydration = _listing.marketComparison == null ||
+    final needsHydration =
+        _listing.marketComparison == null ||
         _listing.city.isEmpty ||
         (_listing.photos.isEmpty && _listing.photo == null);
     if (needsHydration) _hydrate();
@@ -710,20 +719,19 @@ class _MapListingPreviewState extends State<_MapListingPreview> {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-        child: Stack(
-          children: [
-            ListingCard(
-                listing: _listing, onTap: () => widget.onOpen(_listing)),
-            if (_hydrating)
-              const Positioned(
-                left: 8,
-                right: 8,
-                top: 0,
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
-          ],
-        ),
-      );
+    child: Stack(
+      children: [
+        ListingCard(listing: _listing, onTap: () => widget.onOpen(_listing)),
+        if (_hydrating)
+          const Positioned(
+            left: 8,
+            right: 8,
+            top: 0,
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+      ],
+    ),
+  );
 }
 
 /// The primary web filters stay visible on phones. Advanced filters remain in
@@ -843,8 +851,9 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
       selectedCountry ?? '',
       country?.cities ?? const <String>[],
     );
-    final selectedCity =
-        cities.contains(widget.filters.city) ? widget.filters.city : null;
+    final selectedCity = cities.contains(widget.filters.city)
+        ? widget.filters.city
+        : null;
 
     final compactInputTheme = theme.inputDecorationTheme.copyWith(
       isDense: true,
@@ -1063,22 +1072,21 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   ],
                 ),
               ],
-              SizedBox(
-                height: 24,
-                child: IconButton(
-                  tooltip:
-                      s.t(_collapsed ? 'expandFilters' : 'collapseFilters'),
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints.tightFor(width: 44, height: 24),
-                  visualDensity: VisualDensity.compact,
+              Center(
+                child: TextButton.icon(
                   onPressed: () => setState(() => _collapsed = !_collapsed),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    visualDensity: VisualDensity.compact,
+                  ),
                   icon: Icon(
                     _collapsed
                         ? Icons.keyboard_arrow_down
                         : Icons.keyboard_arrow_up,
-                    size: 22,
+                    size: 20,
                   ),
+                  label: Text(s.t(_collapsed ? 'showFilters' : 'hideFilters')),
                 ),
               ),
             ],
@@ -1099,19 +1107,18 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
   }
 
   Filters _withQuickDeal(Filters f, _QuickDeal deal) => switch (deal) {
-        _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
-        _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
-        _QuickDeal.longRent => f.copyWith(
-            dealType: DealType.longRent,
-            roomOnly: false,
-          ),
-        _QuickDeal.room =>
-          f.copyWith(dealType: DealType.longRent, roomOnly: true),
-        _QuickDeal.shortRent => f.copyWith(
-            dealType: DealType.shortRent,
-            roomOnly: false,
-          ),
-      };
+    _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
+    _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
+    _QuickDeal.longRent => f.copyWith(
+      dealType: DealType.longRent,
+      roomOnly: false,
+    ),
+    _QuickDeal.room => f.copyWith(dealType: DealType.longRent, roomOnly: true),
+    _QuickDeal.shortRent => f.copyWith(
+      dealType: DealType.shortRent,
+      roomOnly: false,
+    ),
+  };
 }
 
 /// The quick-filter deal-type segments: room-share rent is stored as

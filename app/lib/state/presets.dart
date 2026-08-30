@@ -30,29 +30,28 @@ class FilterPreset {
     Filters? filters,
     bool? enabled,
     bool? notificationsEnabled,
-  }) =>
-      FilterPreset(
-        id: id,
-        name: name ?? this.name,
-        filters: filters ?? this.filters,
-        enabled: enabled ?? this.enabled,
-        notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
-      );
+  }) => FilterPreset(
+    id: id,
+    name: name ?? this.name,
+    filters: filters ?? this.filters,
+    enabled: enabled ?? this.enabled,
+    notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'filters': filters.toJson(),
-        'enabled': enabled,
-        'notificationsEnabled': notificationsEnabled,
-      };
+    'id': id,
+    'name': name,
+    'filters': filters.toJson(),
+    'enabled': enabled,
+    'notificationsEnabled': notificationsEnabled,
+  };
 }
 
 /// Saved filters remain local. Only enabled notification presets are mirrored
 /// to the Flat Finder backend using an anonymous, locally generated device ID.
 class PresetsState extends ChangeNotifier {
   PresetsState(this._api, {PushService? push})
-      : _push = push ?? PushService.instance;
+    : _push = push ?? PushService.instance;
 
   static const _kPresets = 'filterPresets';
   static const _kPushMaster = 'filterPresetPushMaster';
@@ -80,22 +79,24 @@ class PresetsState extends ChangeNotifier {
         final list = jsonDecode(raw) as List;
         _presets
           ..clear()
-          ..addAll(list.map((entry) {
-            final m = Map<String, dynamic>.from(entry as Map);
-            final id = m['id']?.toString().trim();
-            if (id == null || id.isEmpty) migrated = true;
-            return FilterPreset(
-              id: id == null || id.isEmpty ? _newId() : id,
-              name: m['name']?.toString() ?? '',
-              filters: Filters.fromJson(
-                Map<String, dynamic>.from(m['filters'] as Map),
-              ),
-              enabled: m['enabled'] is bool ? m['enabled'] as bool : true,
-              notificationsEnabled: m['notificationsEnabled'] is bool
-                  ? m['notificationsEnabled'] as bool
-                  : false,
-            );
-          }));
+          ..addAll(
+            list.map((entry) {
+              final m = Map<String, dynamic>.from(entry as Map);
+              final id = m['id']?.toString().trim();
+              if (id == null || id.isEmpty) migrated = true;
+              return FilterPreset(
+                id: id == null || id.isEmpty ? _newId() : id,
+                name: m['name']?.toString() ?? '',
+                filters: Filters.fromJson(
+                  Map<String, dynamic>.from(m['filters'] as Map),
+                ),
+                enabled: m['enabled'] is bool ? m['enabled'] as bool : true,
+                notificationsEnabled: m['notificationsEnabled'] is bool
+                    ? m['notificationsEnabled'] as bool
+                    : false,
+              );
+            }),
+          );
       }
       if (migrated) await _persist();
       notifyListeners();
@@ -109,9 +110,10 @@ class PresetsState extends ChangeNotifier {
 
   static String _newId() {
     final random = Random.secure();
-    return List<int>.generate(24, (_) => random.nextInt(256))
-        .map((v) => v.toRadixString(16).padLeft(2, '0'))
-        .join();
+    return List<int>.generate(
+      24,
+      (_) => random.nextInt(256),
+    ).map((v) => v.toRadixString(16).padLeft(2, '0')).join();
   }
 
   /// Overwriting a preset by name preserves its ID and notification toggles.
@@ -131,7 +133,7 @@ class PresetsState extends ChangeNotifier {
     }
     notifyListeners();
     await _persist();
-    await syncPushSubscriptions();
+    unawaited(syncPushSubscriptions());
     return preset;
   }
 
@@ -225,8 +227,9 @@ class PresetsState extends ChangeNotifier {
         await prefs.setString(_kDeviceId, deviceId);
       }
 
-      final active =
-          pushMasterEnabled ? _activePushPresets : const <FilterPreset>[];
+      final active = pushMasterEnabled
+          ? _activePushPresets
+          : const <FilterPreset>[];
       String token = '';
       if (active.isNotEmpty) {
         if (!_push.configured) {

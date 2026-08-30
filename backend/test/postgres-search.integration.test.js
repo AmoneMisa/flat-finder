@@ -40,6 +40,7 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
     listing('usd-500', 500, 'USD', 'Odesa', true, 3),
     listing('kyiv-200', 200, 'USD', 'Kyiv', true, 4),
     listing('no-ac', 200, 'USD', 'Odesa', false, 5),
+    {...listing('room-share', 210, 'USD', 'Odesa', true, 6), roomOnly: true},
   ]);
 
   const filters = {
@@ -73,6 +74,15 @@ test('PostgreSQL fast path filters mixed-currency listings and paginates with a 
   assert.equal(first.statistics.dealTypes[0]?.key, 'longRent');
   assert.equal(first.statistics.dealTypes[0]?.count, 2);
   assert.equal(first.statistics.geographies.city[0]?.label, 'Odesa');
+  assert.ok(!first.listings.some((item) => item.id === 'room-share'));
+
+  const roomOnly = await searchPostgresListings({
+    filters: {...filters, roomOnly: true, priceMax: null, limit: 20, cursor: '', offset: 0},
+    countries: ['UA'],
+    rates: {USD: 1, UAH: 40},
+  });
+  assert.equal(roomOnly.count, 1);
+  assert.equal(roomOnly.listings[0]?.id, 'room-share');
 
   await upsertListings([
     listing('kyiv-ru', 600, 'USD', 'Киев', true, 6),

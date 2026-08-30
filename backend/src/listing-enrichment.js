@@ -1,5 +1,33 @@
 import { parseHousingListingEnrichment } from '@whiteslove/parsing-lexicon/housing-listing-enrichment';
 
+function locationName(value) {
+  if (value == null) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const name = locationName(item);
+      if (name) return name;
+    }
+    return null;
+  }
+  if (typeof value === 'object') {
+    for (const key of ['name', 'canonicalName', 'label', 'station', 'value']) {
+      const name = locationName(value[key]);
+      if (name) return name;
+    }
+    return null;
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  if (text.startsWith('{') || text.startsWith('[')) {
+    try {
+      const decoded = JSON.parse(text);
+      const name = locationName(decoded);
+      if (name) return name;
+    } catch (_) {}
+  }
+  return text;
+}
+
 function boundedCount(value, max = 20) {
   const number = Number(value);
   return Number.isInteger(number) && number >= 1 && number <= max ? number : null;
@@ -195,6 +223,8 @@ export function enrichListingDetails(listing) {
     transitRoutes: enrichment.transitRoutes ?? [],
     utilitiesAmount: enrichment.utilitiesAmount ?? null,
     nearby,
+    district: locationName(source.district) ?? enrichment.district ?? null,
+    metro: locationName(source.metro) ?? enrichment.metro ?? null,
   };
   enriched.potentiallyUnsafe = source.potentiallyUnsafe === true || classifyPotentiallyUnsafe(enriched, text, roomOnly);
   return enriched;

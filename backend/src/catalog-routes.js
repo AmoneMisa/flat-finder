@@ -35,6 +35,14 @@ function preferredLexiconAlias(entry, locale) {
     || null;
 }
 
+function numberedMicrodistrictLabel(name, locale) {
+  const raw = String(name || '').trim();
+  const match = raw.match(/^(.+?)[\s-]+(\d{1,2}[A-Za-zА-Яа-я]?)$/u);
+  if (!match) return null;
+  const base = geographyDisplayName(match[1], locale, 'district');
+  return base && base !== match[1] ? `${base}-${match[2]}` : null;
+}
+
 function lexiconLocationLabel(name, locale, kind, countryCode, cityName) {
   const raw = String(name || '').trim();
   if (!raw) return '';
@@ -43,6 +51,10 @@ function lexiconLocationLabel(name, locale, kind, countryCode, cityName) {
   if (kind === 'district' || kind === 'microdistrict' || kind === 'metro') {
     const direct = geographyDisplayName(raw, locale, kind);
     if (direct && direct !== raw) return direct;
+    if (kind === 'microdistrict') {
+      const numbered = numberedMicrodistrictLabel(raw, locale);
+      if (numbered) return numbered;
+    }
   }
 
   const dictionary = dictionaryFor(countryCode, cityName);

@@ -58,15 +58,21 @@ class _PresetListCard extends StatelessWidget {
       final key = state.pushError == 'firebase_not_configured'
           ? 'pushSetupRequired'
           : 'pushEnableFailed';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(settings.t(key))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(settings.t(key))));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final appState = context.watch<AppState>();
+    final countryCode = preset.filters.countries.isEmpty
+        ? null
+        : preset.filters.countries.first;
+    final country = countryCode == null
+        ? null
+        : appState.countryByCode(countryCode);
     return Card(
       margin: EdgeInsets.zero,
       child: InkWell(
@@ -98,7 +104,7 @@ class _PresetListCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        _filterSummary(preset.filters, settings),
+                        _filterSummary(preset.filters, settings, country),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -133,18 +139,34 @@ class _PresetListCard extends StatelessWidget {
     );
   }
 
-  String _filterSummary(Filters f, SettingsState s) {
+  String _filterSummary(Filters f, SettingsState s, Country? country) {
     final parts = <String>[];
-    if (f.city.isNotEmpty) parts.add(f.city);
-    if (f.district.isNotEmpty) parts.add(f.district);
-    if (f.microdistrict.isNotEmpty) parts.add(f.microdistrict);
+    if (f.city.isNotEmpty) parts.add(country?.cityLabel(f.city) ?? f.city);
+    if (f.district.isNotEmpty) {
+      parts.add(
+        country?.locationLabel(f.city, f.district, kind: 'district') ??
+            f.district,
+      );
+    }
+    if (f.microdistrict.isNotEmpty) {
+      parts.add(
+        country?.locationLabel(
+              f.city,
+              f.microdistrict,
+              kind: 'microdistrict',
+            ) ??
+            f.microdistrict,
+      );
+    }
     if (f.dealType != DealType.any) {
-      parts.add(s.t(switch (f.dealType) {
-        DealType.sale => 'sale',
-        DealType.longRent => f.roomOnly ? 'roomOnlyShort' : 'longTerm',
-        DealType.shortRent => 'shortTerm',
-        DealType.any => 'any',
-      }));
+      parts.add(
+        s.t(switch (f.dealType) {
+          DealType.sale => 'sale',
+          DealType.longRent => f.roomOnly ? 'roomOnlyShort' : 'longTerm',
+          DealType.shortRent => 'shortTerm',
+          DealType.any => 'any',
+        }),
+      );
     }
     if (f.priceMin != null || f.priceMax != null) {
       final min = f.priceMin == null ? '…' : '${f.priceMin}';

@@ -46,6 +46,7 @@ class AppState extends ChangeNotifier {
   }
 
   String _countriesLocale = '';
+  String? _countriesLocaleLoading;
 
   Future<void> init() async {
     // Restore the user's last-used filters (country, type, price, etc.) so the
@@ -53,10 +54,13 @@ class AppState extends ChangeNotifier {
     await _loadFilters();
 
     // Rates are non-critical: fetch best-effort so a failure never blocks search.
-    _api.fetchRates().then((r) {
-      rates = r;
-      notifyListeners();
-    }).catchError((_) {});
+    _api
+        .fetchRates()
+        .then((r) {
+          rates = r;
+          notifyListeners();
+        })
+        .catchError((_) {});
     try {
       countries = await _api.fetchCountries();
       if (countries.isNotEmpty && filters.countries.isEmpty) {
@@ -76,16 +80,23 @@ class AppState extends ChangeNotifier {
   /// with unlocalized (raw) names. Cheap to call from `build()`: no-ops once
   /// already fetched for this locale.
   Future<void> ensureCountriesLocale(String locale) async {
-    if (locale == _countriesLocale || countries.isEmpty) return;
-    _countriesLocale = locale;
+    if (locale == _countriesLocale ||
+        locale == _countriesLocaleLoading ||
+        countries.isEmpty) {
+      return;
+    }
+    _countriesLocaleLoading = locale;
     try {
       final localized = await _api.fetchCountries(locale: locale);
-      if (locale != _countriesLocale) return; // superseded by a newer call
+      if (locale != _countriesLocaleLoading) return; // superseded
       countries = localized;
+      _countriesLocale = locale;
       notifyListeners();
     } catch (_) {
-      // Keep the unlocalized list rather than surfacing an error for what's
-      // a display-only enhancement.
+      // Do not mark the locale as loaded after a transient failure. The next
+      // build can retry instead of leaving raw canonical names forever.
+    } finally {
+      if (_countriesLocaleLoading == locale) _countriesLocaleLoading = null;
     }
   }
 
@@ -124,8 +135,9 @@ class AppState extends ChangeNotifier {
   /// Validate a candidate custom-source URL against the backend (uses the first
   /// selected country for currency/context).
   Future<SourceValidation> validateSource(String url) {
-    final country =
-        filters.countries.isNotEmpty ? filters.countries.first : null;
+    final country = filters.countries.isNotEmpty
+        ? filters.countries.first
+        : null;
     return _api.validateSource(url, country: country);
   }
 

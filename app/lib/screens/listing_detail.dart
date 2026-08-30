@@ -531,26 +531,6 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                   ],
                   const SizedBox(height: 16),
                 ],
-                if (listing.nearby.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(s.t('nearby'), style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: listing.nearby
-                        .map(
-                          (n) => Chip(
-                            avatar: const Icon(Icons.place_outlined, size: 18),
-                            label: Text(s.nearbyLabel(n)),
-                            visualDensity: VisualDensity.compact,
-                            backgroundColor:
-                                theme.colorScheme.secondaryContainer,
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
                 if (hasTranslatableText) ...[
                   const SizedBox(height: 20),
                   Row(
@@ -833,11 +813,6 @@ class _SpecTable extends StatelessWidget {
         Icons.storefront_outlined,
         'shops',
         l.nearbyShops.isNotEmpty ? l.nearbyShops.join(', ') : null,
-      ),
-      (
-        Icons.place_outlined,
-        'nearby',
-        l.nearby.isNotEmpty ? l.nearby.join(', ') : null,
       ),
       (
         Icons.directions_bus_outlined,

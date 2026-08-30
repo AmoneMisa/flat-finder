@@ -113,7 +113,14 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
   where.push(`(l.created_at IS NULL OR l.created_at >= NOW() - (${add(ageDays)}::double precision * INTERVAL '1 day'))`);
 
   if (filters.propertyType && filters.propertyType !== 'any') where.push(`l.property_type = ${add(filters.propertyType)}`);
-  if (filters.dealType && filters.dealType !== 'any') where.push(`l.deal_type = ${add(filters.dealType)}`);
+  if (filters.dealType && filters.dealType !== 'any') {
+    where.push(`l.deal_type = ${add(filters.dealType)}`);
+    // Room shares are stored as longRent + roomOnly. A normal long-term rent
+    // query means the whole property; room-only is an explicit separate mode.
+    if (filters.dealType === 'longRent' && filters.roomOnly !== true) {
+      where.push(`NOT (l.data @> '{"roomOnly":true}'::jsonb)`);
+    }
+  }
   if (filters.agency === 'agency') where.push('l.by_agency = TRUE');
   if (filters.agency === 'owner') where.push('l.by_agency = FALSE');
 

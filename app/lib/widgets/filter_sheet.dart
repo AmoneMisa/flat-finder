@@ -101,8 +101,9 @@ class _FilterSheetState extends State<FilterSheet> {
     _noCommission = widget.initial.noCommission;
     _maxAgeDays = widget.initial.maxAgeDays;
     _sort = widget.initial.sort;
-    _city =
-        widget.initial.city.trim().isEmpty ? null : widget.initial.city.trim();
+    _city = widget.initial.city.trim().isEmpty
+        ? null
+        : widget.initial.city.trim();
     _district = widget.initial.district.trim().isEmpty
         ? null
         : widget.initial.district.trim();
@@ -189,32 +190,32 @@ class _FilterSheetState extends State<FilterSheet> {
   }
 
   List<TextEditingController> get _textControllers => [
-        _minCtl,
-        _maxCtl,
-        _toleranceCtl,
-        _roomsMinCtl,
-        _roomsMaxCtl,
-        _bedroomsMinCtl,
-        _bedroomsMaxCtl,
-        _floorMinCtl,
-        _floorMaxCtl,
-        _totalFloorsMinCtl,
-        _totalFloorsMaxCtl,
-        _yearMinCtl,
-        _yearMaxCtl,
-        _areaMinCtl,
-        _areaMaxCtl,
-        _pricePerSqmMinCtl,
-        _pricePerSqmMaxCtl,
-        _commissionPercentMinCtl,
-        _commissionPercentMaxCtl,
-        _metroMaxMCtl,
-        _nearbyMaxMCtl,
-        _microdistrictCtl,
-        _quartalCtl,
-        _areaNameCtl,
-        _queryCtl,
-      ];
+    _minCtl,
+    _maxCtl,
+    _toleranceCtl,
+    _roomsMinCtl,
+    _roomsMaxCtl,
+    _bedroomsMinCtl,
+    _bedroomsMaxCtl,
+    _floorMinCtl,
+    _floorMaxCtl,
+    _totalFloorsMinCtl,
+    _totalFloorsMaxCtl,
+    _yearMinCtl,
+    _yearMaxCtl,
+    _areaMinCtl,
+    _areaMaxCtl,
+    _pricePerSqmMinCtl,
+    _pricePerSqmMaxCtl,
+    _commissionPercentMinCtl,
+    _commissionPercentMaxCtl,
+    _metroMaxMCtl,
+    _nearbyMaxMCtl,
+    _microdistrictCtl,
+    _quartalCtl,
+    _areaNameCtl,
+    _queryCtl,
+  ];
 
   void _scheduleLiveApply() {
     _liveApplyTimer?.cancel();
@@ -382,12 +383,18 @@ class _FilterSheetState extends State<FilterSheet> {
       final presets = context.read<PresetsState>();
       final preset = await presets.save(name, _currentFilters());
       if (preset == null || !mounted) return;
+      // Let the naming dialog finish its route transition before opening the
+      // follow-up. The save itself is local and must never wait for backend sync.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!mounted) return;
       final enablePush = await showDialog<bool>(
         context: context,
+        barrierDismissible: false,
         builder: (dialogCtx) => AlertDialog(
           title: Text(s.t('enablePresetPushPromptTitle')),
-          content:
-              Text(s.t('enablePresetPushPromptBody', {'name': preset.name})),
+          content: Text(
+            s.t('enablePresetPushPromptBody', {'name': preset.name}),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogCtx, false),
@@ -407,9 +414,8 @@ class _FilterSheetState extends State<FilterSheet> {
           final key = presets.pushError == 'firebase_not_configured'
               ? 'pushSetupRequired'
               : 'pushEnableFailed';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(s.t(key))),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(s.t(key))));
         }
       }
     }
@@ -580,31 +586,31 @@ class _FilterSheetState extends State<FilterSheet> {
   }
 
   String _audienceLabel(SettingsState s, Audience a) => switch (a) {
-        Audience.any => s.t('any'),
-        Audience.women => s.t('women'),
-        Audience.men => s.t('men'),
-        Audience.family => s.t('family'),
-      };
+    Audience.any => s.t('any'),
+    Audience.women => s.t('women'),
+    Audience.men => s.t('men'),
+    Audience.family => s.t('family'),
+  };
 
   String _sortLabel(SettingsState s, SortBy v) => switch (v) {
-        SortBy.relevance => s.t('sortRelevance'),
-        SortBy.dateNew => s.t('sortDate'),
-        SortBy.dateOld => s.t('sortDateOld'),
-        SortBy.priceAsc => s.t('sortPriceAsc'),
-        SortBy.priceDesc => s.t('sortPriceDesc'),
-        SortBy.titleAsc => s.t('sortTitleAsc'),
-        SortBy.titleDesc => s.t('sortTitleDesc'),
-        SortBy.areaDesc => s.t('sortArea'),
-        SortBy.distanceCenter => s.t('sortCenter'),
-        SortBy.distanceMetro => s.t('sortMetro'),
-      };
+    SortBy.relevance => s.t('sortRelevance'),
+    SortBy.dateNew => s.t('sortDate'),
+    SortBy.dateOld => s.t('sortDateOld'),
+    SortBy.priceAsc => s.t('sortPriceAsc'),
+    SortBy.priceDesc => s.t('sortPriceDesc'),
+    SortBy.titleAsc => s.t('sortTitleAsc'),
+    SortBy.titleDesc => s.t('sortTitleDesc'),
+    SortBy.areaDesc => s.t('sortArea'),
+    SortBy.distanceCenter => s.t('sortCenter'),
+    SortBy.distanceMetro => s.t('sortMetro'),
+  };
 
   String _dealLabel(SettingsState s, DealType d) => switch (d) {
-        DealType.any => s.t('any'),
-        DealType.sale => s.t('sale'),
-        DealType.longRent => s.t('longTerm'),
-        DealType.shortRent => s.t('shortTerm'),
-      };
+    DealType.any => s.t('any'),
+    DealType.sale => s.t('sale'),
+    DealType.longRent => s.t('longTerm'),
+    DealType.shortRent => s.t('shortTerm'),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -716,8 +722,9 @@ class _FilterSheetState extends State<FilterSheet> {
                       children: [
                         // One country at a time: the sources and cities differ per country.
                         DropdownButtonFormField<String>(
-                          value:
-                              _countries.isNotEmpty ? _countries.first : null,
+                          value: _countries.isNotEmpty
+                              ? _countries.first
+                              : null,
                           isExpanded: true,
                           isDense: true,
                           decoration: InputDecoration(
@@ -735,8 +742,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             if (value == null) return;
                             setState(() {
                               _countries = {value};
-                              _city =
-                                  null; // city/district/metro belong to a country
+                              _city = null; // city/district/metro belong to a country
                               _district = null;
                               _metro = null;
                             });
@@ -753,8 +759,7 @@ class _FilterSheetState extends State<FilterSheet> {
                               cityLabel(city, s.lang),
                           onChanged: (v) => setState(() {
                             _city = v;
-                            _district =
-                                null; // district/metro depend on the chosen city
+                            _district = null; // district/metro depend on the chosen city
                             _metro = null;
                           }),
                         ),
@@ -1375,32 +1380,31 @@ class _FilterSheetState extends State<FilterSheet> {
     TextEditingController min,
     TextEditingController max,
     String label,
-  ) =>
-      Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: min,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: '$label ${s.t('min')}',
-                hintText: s.t('minPlaceholder'),
-                border: const OutlineInputBorder(),
-              ),
-            ),
+  ) => Row(
+    children: [
+      Expanded(
+        child: TextField(
+          controller: min,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: '$label ${s.t('min')}',
+            hintText: s.t('minPlaceholder'),
+            border: const OutlineInputBorder(),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: max,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: '$label ${s.t('max')}',
-                hintText: s.t('maxPlaceholder'),
-                border: const OutlineInputBorder(),
-              ),
-            ),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: TextField(
+          controller: max,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: '$label ${s.t('max')}',
+            hintText: s.t('maxPlaceholder'),
+            border: const OutlineInputBorder(),
           ),
-        ],
-      );
+        ),
+      ),
+    ],
+  );
 }

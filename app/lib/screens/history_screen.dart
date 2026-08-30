@@ -17,6 +17,31 @@ class HistoryScreen extends StatelessWidget {
     ).push(MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)));
   }
 
+  Future<void> _confirmClear(
+    BuildContext context,
+    SettingsState settings,
+    HistoryState history,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(settings.t('clearHistory')),
+        content: Text(settings.t('clearHistoryConfirm')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(settings.t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(settings.t('clearHistory')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await history.clear();
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsState>();
@@ -32,7 +57,7 @@ class HistoryScreen extends StatelessWidget {
             IconButton(
               tooltip: s.t('clearHistory'),
               icon: const Icon(Icons.delete_sweep_outlined),
-              onPressed: history.clear,
+              onPressed: () => _confirmClear(context, settings, history),
             ),
         ],
       ),
