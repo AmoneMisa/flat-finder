@@ -157,18 +157,14 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   if (filters.areaMin != null) where.push(`l.area_sqm >= ${add(Number(filters.areaMin))}`);
   if (filters.areaMax != null) where.push(`l.area_sqm <= ${add(Number(filters.areaMax))}`);
 
-  const bedroomsExpr = jsonNumber('l.data', 'bedrooms');
-  const floorExpr = jsonNumber('l.data', 'floor');
-  const totalFloorsExpr = jsonNumber('l.data', 'totalFloors');
-  const buildingYearExpr = jsonNumber('l.data', 'buildingYear');
-  if (filters.bedroomsMin != null) where.push(`${bedroomsExpr} >= ${add(Number(filters.bedroomsMin))}`);
-  if (filters.bedroomsMax != null) where.push(`${bedroomsExpr} <= ${add(Number(filters.bedroomsMax))}`);
-  if (filters.floorMin != null) where.push(`${floorExpr} >= ${add(Number(filters.floorMin))}`);
-  if (filters.floorMax != null) where.push(`${floorExpr} <= ${add(Number(filters.floorMax))}`);
-  if (filters.totalFloorsMin != null) where.push(`${totalFloorsExpr} >= ${add(Number(filters.totalFloorsMin))}`);
-  if (filters.totalFloorsMax != null) where.push(`${totalFloorsExpr} <= ${add(Number(filters.totalFloorsMax))}`);
-  if (filters.yearMin != null) where.push(`${buildingYearExpr} >= ${add(Number(filters.yearMin))}`);
-  if (filters.yearMax != null) where.push(`${buildingYearExpr} <= ${add(Number(filters.yearMax))}`);
+  if (filters.bedroomsMin != null) where.push(`l.bedrooms >= ${add(Number(filters.bedroomsMin))}`);
+  if (filters.bedroomsMax != null) where.push(`l.bedrooms <= ${add(Number(filters.bedroomsMax))}`);
+  if (filters.floorMin != null) where.push(`l.floor_number >= ${add(Number(filters.floorMin))}`);
+  if (filters.floorMax != null) where.push(`l.floor_number <= ${add(Number(filters.floorMax))}`);
+  if (filters.totalFloorsMin != null) where.push(`l.total_floors >= ${add(Number(filters.totalFloorsMin))}`);
+  if (filters.totalFloorsMax != null) where.push(`l.total_floors <= ${add(Number(filters.totalFloorsMax))}`);
+  if (filters.yearMin != null) where.push(`l.building_year >= ${add(Number(filters.yearMin))}`);
+  if (filters.yearMax != null) where.push(`l.building_year <= ${add(Number(filters.yearMax))}`);
 
   if (filters.pricePerSqmMin != null || filters.pricePerSqmMax != null) {
     where.push('l.price IS NOT NULL AND l.area_sqm IS NOT NULL AND l.area_sqm > 0');
@@ -214,64 +210,85 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   if (filters.noCommission === true) {
     where.push(`(
       l.data @> '{"commission":false}'::jsonb
-      OR (jsonb_typeof(l.data->'commissionPercent') = 'number' AND (l.data->>'commissionPercent')::numeric = 0)
+      OR l.commission_percent = 0
     )`);
   }
-  if (filters.commissionPercentMin != null || filters.commissionPercentMax != null) {
-    const pct = `(l.data->>'commissionPercent')::numeric`;
-    where.push(`jsonb_typeof(l.data->'commissionPercent') = 'number'`);
-    if (filters.commissionPercentMin != null) where.push(`${pct} >= ${add(Number(filters.commissionPercentMin))}`);
-    if (filters.commissionPercentMax != null) where.push(`${pct} <= ${add(Number(filters.commissionPercentMax))}`);
-  }
+  if (filters.commissionPercentMin != null) where.push(`l.commission_percent >= ${add(Number(filters.commissionPercentMin))}`);
+  if (filters.commissionPercentMax != null) where.push(`l.commission_percent <= ${add(Number(filters.commissionPercentMax))}`);
 
   if (filters.city) where.push(`l.city = ${add(String(filters.city))}`);
   if (filters.district) where.push(`LOWER(l.district) = ${add(String(filters.district).toLowerCase())}`);
   if (filters.microdistrict) {
-    const p = add(String(filters.microdistrict).toLowerCase());
-    where.push(`(
-      LOWER(COALESCE(l.data->>'microdistrict', '')) = ${p}
-      OR ${locationEntityMatches('l.data', p, ['microdistrict'])}
+    const p = add(String(filters.microdistrict).trim().toLowerCase());
+    where.push(`EXISTS (
+      SELECT 1 FROM listing_location_terms term
+      WHERE term.listing_id = l.id
+        AND term.normalized_name = ${p}
+        AND term.term_type = 'microdistrict'
     )`);
   }
   if (filters.quartal) {
-    const p = add(String(filters.quartal).toLowerCase());
-    where.push(`(
-      LOWER(COALESCE(l.data->>'kvartal', '')) = ${p}
-      OR ${jsonTextArrayContains('l.data', 'localAreas', p)}
-      OR ${locationEntityMatches('l.data', p, ['mahalla'])}
+    const p = add(String(filters.quartal).trim().toLowerCase());
+    where.push(`EXISTS (
+      SELECT 1 FROM listing_location_terms term
+      WHERE term.listing_id = l.id
+        AND term.normalized_name = ${p}
+        AND term.term_type IN ('quartal', 'local_area', 'mahalla')
     )`);
   }
   if (filters.area) {
-    const p = add(String(filters.area).toLowerCase());
-    where.push(`(
-      LOWER(COALESCE(l.data->>'area', '')) = ${p}
-      OR ${jsonTextArrayContains('l.data', 'localAreas', p)}
-      OR ${jsonTextArrayContains('l.data', 'developmentAreas', p)}
-      OR ${jsonTextArrayContains('l.data', 'informalAreas', p)}
-      OR ${locationEntityMatches('l.data', p, ['local_area', 'development_area', 'informal_area'])}
+    const p = add(String(filters.area).trim().toLowerCase());
+    where.push(`EXISTS (
+      SELECT 1 FROM listing_location_terms term
+      WHERE term.listing_id = l.id
+        AND term.normalized_name = ${p}
+        AND term.term_type IN ('area', 'local_area', 'development_area', 'informal_area')
     )`);
   }
   if (filters.metro) where.push(`LOWER(l.metro) = ${add(String(filters.metro).toLowerCase())}`);
 
-  if (filters.metroMaxM != null) {
-    const metroDistance = `COALESCE(${jsonNumber('l.data', 'metroDistanceM')}, ${jsonNumber("(l.data->'metroNearby'->0)", 'distanceM')})`;
-    where.push(`${metroDistance} <= ${add(Number(filters.metroMaxM))}`);
-  }
+  if (filters.metroMaxM != null) where.push(`l.metro_distance_m <= ${add(Number(filters.metroMaxM))}`);
 
   if (filters.nearbyKind || filters.nearbyMaxM != null) {
-    const placeChecks = [];
-    if (filters.nearbyKind) placeChecks.push(`LOWER(COALESCE(place->>'kind','')) = ${add(String(filters.nearbyKind).toLowerCase())}`);
-    if (filters.nearbyMaxM != null) placeChecks.push(`CASE WHEN jsonb_typeof(place->'distanceM') = 'number' THEN (place->>'distanceM')::double precision ELSE NULL END <= ${add(Number(filters.nearbyMaxM))}`);
-    where.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(l.data->'nearbyPlaces','[]'::jsonb)) AS place WHERE ${placeChecks.length ? placeChecks.join(' AND ') : 'TRUE'})`);
+    const placeChecks = ['place.listing_id = l.id'];
+    if (filters.nearbyKind) placeChecks.push(`place.kind = ${add(String(filters.nearbyKind).trim().toLowerCase())}`);
+    if (filters.nearbyMaxM != null) placeChecks.push(`place.distance_m <= ${add(Number(filters.nearbyMaxM))}`);
+    where.push(`EXISTS (
+      SELECT 1 FROM listing_nearby_places place
+      WHERE ${placeChecks.join(' AND ')}
+    )`);
   }
 
   if (Number.isFinite(filters.centerLat) && Number.isFinite(filters.centerLng)
     && Number.isFinite(filters.radiusM) && filters.centerLat >= -90 && filters.centerLat <= 90
     && filters.centerLng >= -180 && filters.centerLng <= 180 && filters.radiusM > 0) {
-    const lat = add(Number(filters.centerLat));
-    const lng = add(Number(filters.centerLng));
-    const radius = add(Math.min(Number(filters.radiusM), 200000));
-    where.push(`l.lat IS NOT NULL AND l.lng IS NOT NULL AND 6371000 * ACOS(LEAST(1, GREATEST(-1,
+    const centerLat = Number(filters.centerLat);
+    const centerLng = Number(filters.centerLng);
+    const radiusM = Math.min(Number(filters.radiusM), 200000);
+    const latDelta = radiusM / 111_320;
+    const minLat = Math.max(-90, centerLat - latDelta);
+    const maxLat = Math.min(90, centerLat + latDelta);
+    where.push(`l.lat IS NOT NULL AND l.lng IS NOT NULL`);
+    where.push(`l.lat BETWEEN ${add(minLat)} AND ${add(maxLat)}`);
+
+    const cosLat = Math.abs(Math.cos(centerLat * Math.PI / 180));
+    if (cosLat > 0.0001) {
+      const lngDelta = Math.min(180, radiusM / (111_320 * cosLat));
+      const minLng = centerLng - lngDelta;
+      const maxLng = centerLng + lngDelta;
+      if (minLng >= -180 && maxLng <= 180) {
+        where.push(`l.lng BETWEEN ${add(minLng)} AND ${add(maxLng)}`);
+      } else if (minLng < -180) {
+        where.push(`(l.lng >= ${add(minLng + 360)} OR l.lng <= ${add(maxLng)})`);
+      } else {
+        where.push(`(l.lng >= ${add(minLng)} OR l.lng <= ${add(maxLng - 360)})`);
+      }
+    }
+
+    const lat = add(centerLat);
+    const lng = add(centerLng);
+    const radius = add(radiusM);
+    where.push(`6371000 * ACOS(LEAST(1, GREATEST(-1,
       COS(RADIANS(${lat})) * COS(RADIANS(l.lat)) * COS(RADIANS(l.lng) - RADIANS(${lng}))
       + SIN(RADIANS(${lat})) * SIN(RADIANS(l.lat))))) <= ${radius}`);
   }
