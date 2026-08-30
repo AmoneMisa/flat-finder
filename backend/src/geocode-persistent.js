@@ -11,6 +11,7 @@ import {
   rememberLearnedGeo,
 } from './learned-geo.js';
 import { applyStructuredAddressFieldsBatch } from './structured-address.js';
+import { annotateNearbyTransport } from './transport-nearby.js';
 
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const EXACT_SOURCES = new Set(['address', 'street']);
@@ -213,9 +214,15 @@ export async function geocodeListingsPersistent(listings, country) {
   }
 
   // Existing pipeline handles unresolved exact/broad HTTP, spatial POI solving,
-  // reverse geocoding and place annotations. Rows already placed above are
-  // skipped by its coordinate guard but still receive the final annotations.
+  // reverse geocoding and POI annotations. Rows already placed above are skipped
+  // by its coordinate guard but still receive the final annotations.
   await geocodeListings(listings, country);
+
+  // Canonical transport topology belongs to geo-catalog. This enrichment is
+  // intentionally after reverse/POI annotation so every precise coordinate —
+  // whether sourced, addressed, street-resolved or POI-solved — gets the same
+  // complete nearby metro/public-transport arrays.
+  await annotateNearbyTransport(listings, country);
 
   // Exact results produced by the legacy pipeline are promoted to PostgreSQL.
   // Package-resolved rows are deliberately excluded so the staging table never
