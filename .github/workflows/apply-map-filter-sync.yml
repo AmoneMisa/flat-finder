@@ -20,42 +20,29 @@ jobs:
         with:
           flutter-version: '3.47.1'
           channel: stable
-      - name: Apply map selection filter sync
+      - name: Prevent stale text search after map selection
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          path = Path('app/lib/widgets/map_view.dart')
+          path = Path('app/lib/screens/home_screen.dart')
           text = path.read_text()
-          old = """    final current = state.filters;\n    final district = _ancestorOfType(zone, 'district');\n"""
-          new = """    final current = state.filters;\n    // A map geography pick becomes the new search scope. Text search is a\n    // competing free-form scope, so clear it before applying the canonical\n    // geographic filter. AppState notifies the compact filters immediately,\n    // and their controller sync clears the visible search input as well.\n    final scoped = current.copyWith(query: '');\n    final district = _ancestorOfType(zone, 'district');\n"""
+          old = """  void didUpdateWidget(covariant _MobilePrimaryFilters oldWidget) {\n    super.didUpdateWidget(oldWidget);\n    _sync(_query, widget.filters.query);\n    _sync(_priceMin, _numberText(widget.filters.priceMin));\n    _sync(_priceMax, _numberText(widget.filters.priceMax));\n  }\n"""
+          new = """  void didUpdateWidget(covariant _MobilePrimaryFilters oldWidget) {\n    super.didUpdateWidget(oldWidget);\n    // A map selection replaces the Filters object and may intentionally clear\n    // query while a 300 ms text-search debounce is still pending. Cancel only\n    // for an external filter replacement that disagrees with the local input;\n    // unrelated AppState notifications keep the same Filters instance, while a\n    // normal debounced search already has matching controller text.\n    if (!identical(oldWidget.filters, widget.filters) &&\n        _query.text != widget.filters.query) {\n      _debounce?.cancel();\n    }\n    _sync(_query, widget.filters.query);\n    _sync(_priceMin, _numberText(widget.filters.priceMin));\n    _sync(_priceMax, _numberText(widget.filters.priceMax));\n  }\n"""
           if old not in text:
-              raise SystemExit('map scope anchor not found')
-          text = text.replace(old, new, 1)
-          replacements = {
-              "'district' => current.copyWith(": "'district' => scoped.copyWith(",
-              "'microdistrict' => current.copyWith(": "'microdistrict' => scoped.copyWith(",
-              "'mahalla' => current.copyWith(": "'mahalla' => scoped.copyWith(",
-              "'local_area' => current.copyWith(": "'local_area' => scoped.copyWith(",
-              "'development_area' => current.copyWith(": "'development_area' => scoped.copyWith(",
-              "'metro' => current.copyWith(metro: zone.name)": "'metro' => scoped.copyWith(metro: zone.name)",
-          }
-          for before, after in replacements.items():
-              if before not in text:
-                  raise SystemExit(f'map scope branch not found: {before}')
-              text = text.replace(before, after, 1)
-          path.write_text(text)
+              raise SystemExit('mobile primary didUpdateWidget anchor not found')
+          path.write_text(text.replace(old, new, 1))
 
-          home = Path('app/lib/screens/home_screen.dart').read_text()
-          if "_sync(_query, widget.filters.query);" not in home:
-              raise SystemExit('compact search input is no longer synced from Filters.query')
-          patched = path.read_text()
-          if "final scoped = current.copyWith(query: '');" not in patched:
-              raise SystemExit('map query reset missing')
+          map_text = Path('app/lib/widgets/map_view.dart').read_text()
+          if "final scoped = current.copyWith(query: '');" not in map_text:
+              raise SystemExit('map selection no longer clears Filters.query')
           for branch in ['district', 'microdistrict', 'mahalla', 'local_area', 'development_area', 'metro']:
-              if f"'{branch}' => scoped.copyWith" not in patched:
-                  raise SystemExit(f'{branch} does not use query-cleared scope')
+              if f"'{branch}' => scoped.copyWith" not in map_text:
+                  raise SystemExit(f'{branch} map scope is not synchronized')
+          patched = path.read_text()
+          if "!identical(oldWidget.filters, widget.filters)" not in patched:
+              raise SystemExit('stale debounce cancellation guard missing')
           PY
       - name: Validate Flutter
         working-directory: app
@@ -68,6 +55,6 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add app/lib/widgets/map_view.dart
-          git commit -m "fix(app): sync map geography with search filters"
+          git add app/lib/screens/home_screen.dart
+          git commit -m "fix(app): cancel stale search after map filter change"
           git push origin HEAD:fix/map-filter-sync-query-clear-20260830
