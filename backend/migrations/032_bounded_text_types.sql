@@ -1,30 +1,17 @@
 -- TEXT and VARCHAR use the same PostgreSQL storage representation. These
--- changes are therefore about schema discipline and rejecting accidental huge
--- values, not about pretending VARCHAR is a storage/performance optimization.
--- Keep prose, URLs, free-form errors, JSON payloads and external identifiers
--- with genuinely unbounded contracts as TEXT.
+-- changes are about schema discipline and rejecting accidental huge values,
+-- not about storage/query-speed gains.
+--
+-- Do NOT alter the hot listings label columns here. city participates in the
+-- generated dedupe_key and district/metro have active indexes; ALTER TYPE can
+-- require dependency/index rebuilds under an ACCESS EXCLUSIVE lock. That work
+-- belongs in an explicit maintenance window after production measurements.
 --
 -- IMPORTANT: explicit casts to VARCHAR(n) can truncate. Validate first and fail
 -- loudly instead of silently modifying production data.
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM listings WHERE char_length(city) > 255) THEN
-    RAISE EXCEPTION 'Cannot bound listings.city to varchar(255): oversized values exist';
-  END IF;
-  IF EXISTS (SELECT 1 FROM listings WHERE char_length(district) > 255) THEN
-    RAISE EXCEPTION 'Cannot bound listings.district to varchar(255): oversized values exist';
-  END IF;
-  IF EXISTS (SELECT 1 FROM listings WHERE char_length(area) > 255) THEN
-    RAISE EXCEPTION 'Cannot bound listings.area to varchar(255): oversized values exist';
-  END IF;
-  IF EXISTS (SELECT 1 FROM listings WHERE char_length(metro) > 255) THEN
-    RAISE EXCEPTION 'Cannot bound listings.metro to varchar(255): oversized values exist';
-  END IF;
-  IF EXISTS (SELECT 1 FROM listings WHERE char_length(residence_complex) > 512) THEN
-    RAISE EXCEPTION 'Cannot bound listings.residence_complex to varchar(512): oversized values exist';
-  END IF;
-
   IF EXISTS (SELECT 1 FROM crawl_tasks WHERE char_length(crawl_generation) > 128) THEN
     RAISE EXCEPTION 'Cannot bound crawl_tasks.crawl_generation to varchar(128)';
   END IF;
@@ -43,19 +30,14 @@ BEGIN
   IF EXISTS (SELECT 1 FROM crawl_task_runs WHERE char_length(crawl_generation) > 128) THEN
     RAISE EXCEPTION 'Cannot bound crawl_task_runs.crawl_generation to varchar(128)';
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM crawl_tasks
+    WHERE lock_token IS NOT NULL
+      AND lock_token !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  ) THEN
+    RAISE EXCEPTION 'Cannot convert crawl_tasks.lock_token to uuid: invalid values exist';
+  END IF;
 
-  IF EXISTS (SELECT 1 FROM listing_public_feed_members WHERE char_length(country) > 8) THEN
-    RAISE EXCEPTION 'Cannot bound listing_public_feed_members.country to varchar(8)';
-  END IF;
-  IF EXISTS (SELECT 1 FROM listing_location_terms WHERE char_length(term_type) > 64) THEN
-    RAISE EXCEPTION 'Cannot bound listing_location_terms.term_type to varchar(64)';
-  END IF;
-  IF EXISTS (SELECT 1 FROM listing_location_terms WHERE char_length(normalized_name) > 512) THEN
-    RAISE EXCEPTION 'Cannot bound listing_location_terms.normalized_name to varchar(512)';
-  END IF;
-  IF EXISTS (SELECT 1 FROM listing_nearby_places WHERE char_length(kind) > 64) THEN
-    RAISE EXCEPTION 'Cannot bound listing_nearby_places.kind to varchar(64)';
-  END IF;
   IF EXISTS (SELECT 1 FROM listing_property_clusters WHERE char_length(cluster_id) > 128) THEN
     RAISE EXCEPTION 'Cannot bound listing_property_clusters.cluster_id to varchar(128)';
   END IF;
@@ -93,14 +75,6 @@ BEGIN
 END
 $$;
 
--- Listing geography is label-sized data, not prose. Keep address itself TEXT.
-ALTER TABLE listings
-  ALTER COLUMN city TYPE VARCHAR(255) USING city::VARCHAR(255),
-  ALTER COLUMN district TYPE VARCHAR(255) USING district::VARCHAR(255),
-  ALTER COLUMN area TYPE VARCHAR(255) USING area::VARCHAR(255),
-  ALTER COLUMN metro TYPE VARCHAR(255) USING metro::VARCHAR(255),
-  ALTER COLUMN residence_complex TYPE VARCHAR(512) USING residence_complex::VARCHAR(512);
-
 -- Queue values are generated internally and have explicit small domains.
 ALTER TABLE crawl_tasks
   ALTER COLUMN crawl_generation TYPE VARCHAR(128) USING crawl_generation::VARCHAR(128),
@@ -108,27 +82,17 @@ ALTER TABLE crawl_tasks
   ALTER COLUMN country TYPE VARCHAR(8) USING country::VARCHAR(8),
   ALTER COLUMN status TYPE VARCHAR(16) USING status::VARCHAR(16),
   ALTER COLUMN locked_by TYPE VARCHAR(200) USING locked_by::VARCHAR(200),
-  ALTER COLUMN lock_token TYPE UUID USING NULLIF(lock_token, '')::UUID;
+  ALTER COLUMN lock_token TYPE UUID USING lock_token::UUID;
 
 ALTER TABLE crawl_task_runs
   ALTER COLUMN crawl_generation TYPE VARCHAR(128) USING crawl_generation::VARCHAR(128);
 
--- Public-feed and normalized search dimensions are also bounded domains.
-ALTER TABLE listing_public_feed_members
-  ALTER COLUMN country TYPE VARCHAR(8) USING country::VARCHAR(8);
-
-ALTER TABLE listing_location_terms
-  ALTER COLUMN term_type TYPE VARCHAR(64) USING term_type::VARCHAR(64),
-  ALTER COLUMN normalized_name TYPE VARCHAR(512) USING normalized_name::VARCHAR(512);
-
-ALTER TABLE listing_nearby_places
-  ALTER COLUMN kind TYPE VARCHAR(64) USING kind::VARCHAR(64);
-
+-- Cluster ids are application-generated (`property:<short hash>`) and bounded.
 ALTER TABLE listing_property_clusters
   ALTER COLUMN cluster_id TYPE VARCHAR(128) USING cluster_id::VARCHAR(128);
 
 -- Learned geography has a mix of bounded metadata and genuinely free-form
--- geocoder text. query_text/canonical_name/street remain TEXT intentionally.
+-- geocoder text. query_text/canonical_name/street/provider_id remain TEXT.
 ALTER TABLE learned_geo
   ALTER COLUMN country TYPE VARCHAR(8) USING country::VARCHAR(8),
   ALTER COLUMN region TYPE VARCHAR(255) USING region::VARCHAR(255),
@@ -144,7 +108,6 @@ ALTER TABLE learned_geo
 ALTER TABLE subscriptions.mobile_subscriptions
   ALTER COLUMN name TYPE VARCHAR(120) USING name::VARCHAR(120);
 
-ANALYZE listings;
 ANALYZE crawl_tasks;
-ANALYZE listing_location_terms;
-ANALYZE listing_nearby_places;
+ANALYZE listing_property_clusters;
+ANALYZE learned_geo;
