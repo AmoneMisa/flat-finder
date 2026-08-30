@@ -8,17 +8,22 @@ function safeDate(value) {
   return Number.isFinite(time) ? new Date(time).toISOString() : null;
 }
 
+function boundedText(value, max) {
+  if (value == null) return null;
+  return String(value).slice(0, max);
+}
+
 function candidateRow(candidate, sourceHandle = '') {
   const data = candidate && typeof candidate === 'object' ? candidate : {};
   return {
     source: String(data.source || 'telegram').toLowerCase(),
     country: String(data.country || '').toUpperCase(),
     source_id: String(data.id || ''),
-    source_handle: String(sourceHandle || '').replace(/^@/, ''),
-    name: String(data.name || ''),
-    role: String(data.role || ''),
-    city: data.city == null ? null : String(data.city),
-    district: data.district == null ? null : String(data.district),
+    source_handle: boundedText(String(sourceHandle || '').replace(/^@/, ''), 255) || '',
+    name: boundedText(data.name || '', 200) || '',
+    role: boundedText(data.role || '', 200) || '',
+    city: boundedText(data.city, 160),
+    district: boundedText(data.district, 160),
     remote: data.remote == null ? null : Boolean(data.remote),
     experience_years: Number.isFinite(Number(data.experienceYears)) ? Number(data.experienceYears) : null,
     created_at: safeDate(data.createdAt),
@@ -36,11 +41,11 @@ export async function initHiringDb() {
         source VARCHAR(32) NOT NULL,
         country VARCHAR(8) NOT NULL,
         source_id TEXT NOT NULL,
-        source_handle TEXT NOT NULL DEFAULT '',
-        name TEXT NOT NULL DEFAULT '',
-        role TEXT NOT NULL DEFAULT '',
-        city TEXT,
-        district TEXT,
+        source_handle VARCHAR(255) NOT NULL DEFAULT '',
+        name VARCHAR(200) NOT NULL DEFAULT '',
+        role VARCHAR(200) NOT NULL DEFAULT '',
+        city VARCHAR(160),
+        district VARCHAR(160),
         remote BOOLEAN,
         experience_years DOUBLE PRECISION,
         created_at TIMESTAMPTZ NOT NULL,
@@ -58,7 +63,7 @@ export async function initHiringDb() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS hiring_source_runs (
         source VARCHAR(32) NOT NULL,
-        handle TEXT NOT NULL,
+        handle VARCHAR(255) NOT NULL,
         country VARCHAR(8) NOT NULL DEFAULT '',
         status VARCHAR(16) NOT NULL,
         fetched INTEGER NOT NULL DEFAULT 0,
@@ -189,7 +194,7 @@ export async function recordHiringSourceRun({
       updated_at = NOW();
   `, [
     String(source).toLowerCase(),
-    String(handle || '').replace(/^@/, ''),
+    boundedText(String(handle || '').replace(/^@/, ''), 255) || '',
     String(country || '').toUpperCase(),
     normalizedStatus,
     Math.max(0, Number(fetched) || 0),
