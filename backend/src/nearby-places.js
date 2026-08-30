@@ -24,7 +24,8 @@ const KIND_RADIUS_M = {
 };
 
 const DEFAULT_RADIUS_M = 1000;
-const DEFAULT_PER_KIND = 3;
+const LEGACY_PER_KIND = 3;
+const LEGACY_FLAT_LIMIT = 15;
 
 function toRadians(degrees) {
   return (degrees * Math.PI) / 180;
@@ -54,8 +55,8 @@ export function indexPlaces(rows) {
   return byKind;
 }
 
-/** The closest `limit` places of one kind, nearest first. */
-export function nearestOfKind(point, index, kind, { limit = DEFAULT_PER_KIND, radiusM } = {}) {
+/** The closest places of one kind, nearest first, within that kind's useful radius. */
+export function nearestOfKind(point, index, kind, { limit = Number.POSITIVE_INFINITY, radiusM } = {}) {
   const rows = index.get(kind) || [];
   const max = radiusM ?? KIND_RADIUS_M[kind] ?? DEFAULT_RADIUS_M;
   const hits = [];
@@ -68,26 +69,34 @@ export function nearestOfKind(point, index, kind, { limit = DEFAULT_PER_KIND, ra
 
     const distance = distanceM(point, row);
     if (distance <= max) {
-      hits.push({ name: row.name, nameRu: row.nameRu || null, kind, distanceM: Math.round(distance) });
+      hits.push({
+        name: row.name,
+        nameRu: row.nameRu || null,
+        kind,
+        distanceM: Math.round(distance),
+        source: row.source || null,
+        externalId: row.externalId || row.external_id || null,
+      });
     }
   }
 
-  // OSM carries a node per platform and per entrance, so one bus stop can
-  // appear three times under the same name. Keep the closest of each name.
+  // OSM carries a node per platform and per entrance, so one place can appear
+  // several times under the same name. Keep the closest representation.
   const byName = new Map();
   for (const hit of hits.sort((a, b) => a.distanceM - b.distanceM)) {
     const key = hit.name.toLowerCase();
     if (!byName.has(key)) byName.set(key, hit);
   }
 
-  return [...byName.values()].slice(0, limit);
+  const values = [...byName.values()];
+  return Number.isFinite(limit) ? values.slice(0, Math.max(0, Math.floor(limit))) : values;
 }
 
 /**
  * Everything worth naming around a point, grouped by kind and flattened into a
- * distance-sorted list for display.
+ * distance-sorted list for storage. Display callers can apply their own limit.
  */
-export function placesNear(point, index, { perKind = DEFAULT_PER_KIND, kinds } = {}) {
+export function placesNear(point, index, { perKind = Number.POSITIVE_INFINITY, kinds } = {}) {
   const wanted = kinds || [...index.keys()];
   const grouped = {};
   const flat = [];
@@ -103,15 +112,16 @@ export function placesNear(point, index, { perKind = DEFAULT_PER_KIND, kinds } =
 }
 
 /**
- * Annotates one listing with its surroundings. Metro keeps its own fields for
- * backwards compatibility: `metro` stays the single closest station, and never
- * overwrites a station the post itself named.
+ * Annotates one listing with its surroundings. Complete arrays are retained in
+ * `nearbyPoi`/`nearbyPoiByKind`; legacy fields stay bounded for older clients.
+ * Metro keeps its own compatibility fields until transport-catalog enrichment
+ * supplies the canonical metro arrays.
  */
-export function annotateListing(listing, index, { perKind = DEFAULT_PER_KIND } = {}) {
+export function annotateListing(listing, index) {
   if (!Number.isFinite(listing?.lat) || !Number.isFinite(listing?.lng)) return false;
   const point = { lat: listing.lat, lng: listing.lng };
 
-  const stations = nearestOfKind(point, index, 'metro', { limit: perKind });
+  const stations = nearestOfKind(point, index, 'metro');
   if (stations.length) {
     listing.metroNearby = stations.map(({ name, nameRu, distanceM: distance }) => ({
       name,
@@ -125,15 +135,22 @@ export function annotateListing(listing, index, { perKind = DEFAULT_PER_KIND } =
     }
   }
 
-  const { grouped, flat } = placesNear(point, index, {
-    perKind,
-    kinds: [...index.keys()].filter((kind) => kind !== 'metro'),
-  });
+  const poiKinds = [...index.keys()].filter((kind) => kind !== 'metro' && kind !== 'transport');
+  const { grouped, flat } = placesNear(point, index, { kinds: poiKinds });
 
   if (flat.length) {
-    listing.nearbyPlaces = flat.slice(0, 15);
-    listing.nearbyByKind = grouped;
-    listing.landmarksNearby = grouped.landmark || [];
+    listing.nearbyPoi = flat;
+    listing.nearbyPoiByKind = grouped;
+    listing.poiSource = 'coordinates';
+
+    // Backward-compatible bounded views for current clients.
+    const legacyGrouped = {};
+    for (const [kind, hits] of Object.entries(grouped)) {
+      legacyGrouped[kind] = hits.slice(0, LEGACY_PER_KIND);
+    }
+    listing.nearbyPlaces = flat.slice(0, LEGACY_FLAT_LIMIT);
+    listing.nearbyByKind = legacyGrouped;
+    listing.landmarksNearby = (grouped.landmark || []).slice(0, LEGACY_PER_KIND);
     listing.placesSource = 'coordinates';
   }
 
@@ -141,12 +158,12 @@ export function annotateListing(listing, index, { perKind = DEFAULT_PER_KIND } =
 }
 
 /** Annotates a whole batch from one loaded place list. */
-export function annotateListings(listings, rows, options) {
+export function annotateListings(listings, rows) {
   const index = indexPlaces(rows);
   if (!index.size) return 0;
   let annotated = 0;
   for (const listing of listings || []) {
-    if (annotateListing(listing, index, options)) annotated += 1;
+    if (annotateListing(listing, index)) annotated += 1;
   }
   return annotated;
 }
