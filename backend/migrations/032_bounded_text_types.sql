@@ -3,6 +3,95 @@
 -- values, not about pretending VARCHAR is a storage/performance optimization.
 -- Keep prose, URLs, free-form errors, JSON payloads and external identifiers
 -- with genuinely unbounded contracts as TEXT.
+--
+-- IMPORTANT: explicit casts to VARCHAR(n) can truncate. Validate first and fail
+-- loudly instead of silently modifying production data.
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM listings WHERE char_length(city) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound listings.city to varchar(255): oversized values exist';
+  END IF;
+  IF EXISTS (SELECT 1 FROM listings WHERE char_length(district) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound listings.district to varchar(255): oversized values exist';
+  END IF;
+  IF EXISTS (SELECT 1 FROM listings WHERE char_length(area) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound listings.area to varchar(255): oversized values exist';
+  END IF;
+  IF EXISTS (SELECT 1 FROM listings WHERE char_length(metro) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound listings.metro to varchar(255): oversized values exist';
+  END IF;
+  IF EXISTS (SELECT 1 FROM listings WHERE char_length(residence_complex) > 512) THEN
+    RAISE EXCEPTION 'Cannot bound listings.residence_complex to varchar(512): oversized values exist';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM crawl_tasks WHERE char_length(crawl_generation) > 128) THEN
+    RAISE EXCEPTION 'Cannot bound crawl_tasks.crawl_generation to varchar(128)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM crawl_tasks WHERE char_length(type) > 64) THEN
+    RAISE EXCEPTION 'Cannot bound crawl_tasks.type to varchar(64)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM crawl_tasks WHERE char_length(country) > 8) THEN
+    RAISE EXCEPTION 'Cannot bound crawl_tasks.country to varchar(8)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM crawl_tasks WHERE char_length(status) > 16) THEN
+    RAISE EXCEPTION 'Cannot bound crawl_tasks.status to varchar(16)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM crawl_tasks WHERE char_length(locked_by) > 200) THEN
+    RAISE EXCEPTION 'Cannot bound crawl_tasks.locked_by to varchar(200)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM crawl_task_runs WHERE char_length(crawl_generation) > 128) THEN
+    RAISE EXCEPTION 'Cannot bound crawl_task_runs.crawl_generation to varchar(128)';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM listing_public_feed_members WHERE char_length(country) > 8) THEN
+    RAISE EXCEPTION 'Cannot bound listing_public_feed_members.country to varchar(8)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM listing_location_terms WHERE char_length(term_type) > 64) THEN
+    RAISE EXCEPTION 'Cannot bound listing_location_terms.term_type to varchar(64)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM listing_location_terms WHERE char_length(normalized_name) > 512) THEN
+    RAISE EXCEPTION 'Cannot bound listing_location_terms.normalized_name to varchar(512)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM listing_nearby_places WHERE char_length(kind) > 64) THEN
+    RAISE EXCEPTION 'Cannot bound listing_nearby_places.kind to varchar(64)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM listing_property_clusters WHERE char_length(cluster_id) > 128) THEN
+    RAISE EXCEPTION 'Cannot bound listing_property_clusters.cluster_id to varchar(128)';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(country) > 8) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.country to varchar(8)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(region) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.region to varchar(255)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(city) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.city to varchar(255)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(district) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.district to varchar(255)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(house_number) > 64) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.house_number to varchar(64)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(building) > 128) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.building to varchar(128)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(entity_type) > 64) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.entity_type to varchar(64)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(provider) > 32) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.provider to varchar(32)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(provider_type) > 64) THEN
+    RAISE EXCEPTION 'Cannot bound learned_geo.provider_type to varchar(64)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM subscriptions.mobile_subscriptions WHERE char_length(name) > 120) THEN
+    RAISE EXCEPTION 'Cannot bound mobile_subscriptions.name to varchar(120)';
+  END IF;
+END
+$$;
 
 -- Listing geography is label-sized data, not prose. Keep address itself TEXT.
 ALTER TABLE listings
