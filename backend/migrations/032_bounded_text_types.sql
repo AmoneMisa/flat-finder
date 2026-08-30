@@ -38,6 +38,16 @@ BEGIN
     RAISE EXCEPTION 'Cannot convert crawl_tasks.lock_token to uuid: invalid values exist';
   END IF;
 
+  IF EXISTS (SELECT 1 FROM places WHERE char_length(city) > 160) THEN
+    RAISE EXCEPTION 'Cannot bound places.city to varchar(160)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM places WHERE char_length(name) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound places.name to varchar(255)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM places WHERE char_length(name_ru) > 255) THEN
+    RAISE EXCEPTION 'Cannot bound places.name_ru to varchar(255)';
+  END IF;
+
   IF EXISTS (SELECT 1 FROM listing_property_clusters WHERE char_length(cluster_id) > 128) THEN
     RAISE EXCEPTION 'Cannot bound listing_property_clusters.cluster_id to varchar(128)';
   END IF;
@@ -87,6 +97,13 @@ ALTER TABLE crawl_tasks
 ALTER TABLE crawl_task_runs
   ALTER COLUMN crawl_generation TYPE VARCHAR(128) USING crawl_generation::VARCHAR(128);
 
+-- Place ingestion already bounds these labels before writing. Upstream-owned
+-- external_id stays TEXT because its format is not controlled by Flat Finder.
+ALTER TABLE places
+  ALTER COLUMN city TYPE VARCHAR(160) USING city::VARCHAR(160),
+  ALTER COLUMN name TYPE VARCHAR(255) USING name::VARCHAR(255),
+  ALTER COLUMN name_ru TYPE VARCHAR(255) USING name_ru::VARCHAR(255);
+
 -- Cluster ids are application-generated (`property:<short hash>`) and bounded.
 ALTER TABLE listing_property_clusters
   ALTER COLUMN cluster_id TYPE VARCHAR(128) USING cluster_id::VARCHAR(128);
@@ -109,5 +126,6 @@ ALTER TABLE subscriptions.mobile_subscriptions
   ALTER COLUMN name TYPE VARCHAR(120) USING name::VARCHAR(120);
 
 ANALYZE crawl_tasks;
+ANALYZE places;
 ANALYZE listing_property_clusters;
 ANALYZE learned_geo;
