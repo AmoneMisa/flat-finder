@@ -8,10 +8,16 @@ import {searchPostgresListings} from '../src/postgres-search.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 const SOURCE = 'perf-hardening-test';
+const BOUNDARY_SOURCE = 'radius-boundary-test';
+const EARTH_RADIUS_M = 6_371_000;
+
+function latitudeAtDistance(centerLat, meters) {
+  return centerLat + (meters / EARTH_RADIUS_M) * 180 / Math.PI;
+}
 
 test('typed filters, normalized relations and radius prefilter preserve listing/map semantics', {skip: !enabled}, async () => {
   await assertDatabaseReady();
-  await pool.query('DELETE FROM listings WHERE source = $1', [SOURCE]);
+  await pool.query('DELETE FROM listings WHERE source = ANY($1::text[])', [[SOURCE, BOUNDARY_SOURCE]]);
 
   const now = new Date().toISOString();
   const base = {
@@ -110,8 +116,60 @@ test('typed filters, normalized relations and radius prefilter preserve listing/
     assert.equal(map.points[0].id, 'near');
     assert.equal(map.points[0].lat, base.lat);
     assert.equal(map.points[0].lng, base.lng);
+
+    // Regression for the bbox/exact-distance boundary. The old 111_320 m/°
+    // approximation was slightly narrower than the 6_371_000 m sphere used by
+    // the final Haversine predicate, so a valid 999 m point could be discarded
+    // before exact distance evaluation while a 1001 m point must stay excluded.
+    await upsertListings([
+      {
+        ...base,
+        source: BOUNDARY_SOURCE,
+        id: 'inside-999m',
+        title: 'Radius boundary inside',
+        description: 'Unique inside radius boundary fixture.',
+        lat: latitudeAtDistance(base.lat, 999),
+      },
+      {
+        ...base,
+        source: BOUNDARY_SOURCE,
+        id: 'outside-1001m',
+        title: 'Radius boundary outside',
+        description: 'Unique outside radius boundary fixture.',
+        lat: latitudeAtDistance(base.lat, 1001),
+      },
+    ]);
+
+    const boundaryFilters = {
+      propertyType: 'any',
+      dealType: 'any',
+      agency: 'any',
+      audience: 'any',
+      sources: [BOUNDARY_SOURCE],
+      city: 'Odesa',
+      centerLat: base.lat,
+      centerLng: base.lng,
+      radiusM: 1000,
+      sort: 'newest',
+      limit: 20,
+      offset: 0,
+    };
+    const boundary = await searchPostgresListings({
+      filters: boundaryFilters,
+      countries: ['UA'],
+      rates: {USD: 1},
+    });
+    assert.equal(boundary.count, 1);
+    assert.deepEqual(boundary.listings.map((item) => item.id), ['inside-999m']);
+
+    const boundaryMap = await searchPostgresMapPoints({
+      filters: boundaryFilters,
+      countries: ['UA'],
+      rates: {USD: 1},
+    });
+    assert.deepEqual(boundaryMap.points.map((point) => point.id), ['inside-999m']);
   } finally {
-    await pool.query('DELETE FROM listings WHERE source = $1', [SOURCE]);
+    await pool.query('DELETE FROM listings WHERE source = ANY($1::text[])', [[SOURCE, BOUNDARY_SOURCE]]);
     await closeDb();
   }
 });
