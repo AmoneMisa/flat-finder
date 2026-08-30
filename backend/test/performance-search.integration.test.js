@@ -7,7 +7,7 @@ import {searchPostgresMapPoints} from '../src/map-feed.js';
 import {searchPostgresListings} from '../src/postgres-search.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
-const SOURCE = 'perf-hardening-test';
+const SOURCE = 'performance-search-test';
 const BOUNDARY_SOURCE = 'radius-boundary-test';
 const EARTH_RADIUS_M = 6_371_000;
 
