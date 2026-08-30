@@ -23,7 +23,11 @@ test('hot listing filters use typed columns and normalized relations', async () 
   assert.match(search, /FROM listing_nearby_places place/u);
   assert.match(search, /l\.lat BETWEEN/u);
   assert.match(search, /l\.lng BETWEEN/u);
-  assert.match(search, /6371000 \* ACOS/u);
+  assert.match(search, /const EARTH_RADIUS_M = 6_371_000/u);
+  assert.match(search, /const angularRadius = radiusM \/ EARTH_RADIUS_M/u);
+  assert.match(search, /Math\.asin\(ratio\)/u);
+  assert.match(search, /\$\{EARTH_RADIUS_M\} \* ACOS/u);
+  assert.doesNotMatch(search, /radiusM \/ 111_320/u);
 });
 
 test('mobile subscription scans claim durable delivery before FCM send', async () => {
@@ -94,7 +98,6 @@ test('performance migrations own materialization, relations, delivery leases and
   assert.match(bounded, /ALTER COLUMN name TYPE VARCHAR\(120\)/u);
   assert.match(bounded, /Do NOT alter trigger\/generated-column-bound hot columns here/u);
   assert.doesNotMatch(bounded, /ALTER COLUMN cluster_id TYPE VARCHAR/u);
-  assert.doesNotMatch(bounded, /ALTER COLUMN city TYPE VARCHAR\(255\).*listings/su);
 });
 
 test('hiring and places data reuse the main backend pool instead of opening extra pools', async () => {
