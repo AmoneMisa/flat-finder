@@ -155,6 +155,8 @@ async function searchDefaultFeed({filters, countries}) {
 
   const sort = filters.sort || 'newest';
   const cursor = decodeCursor(filters.cursor);
+  const cursorCount = Number(cursor?.c);
+  const hasCursorCount = Number.isSafeInteger(cursorCount) && cursorCount >= 0;
   const pageWhere = [];
   let useCursor = false;
 
@@ -176,14 +178,15 @@ async function searchDefaultFeed({filters, countries}) {
   }
 
   const limit = Math.max(1, Math.min(Number(filters.limit) || 40, 60));
-  const limitParam = addPage(limit);
+  const fetchLimit = limit + 1;
+  const limitParam = addPage(fetchLimit);
   const offset = useCursor ? 0 : Math.max(0, Number(filters.offset) || 0);
   const offsetParam = addPage(offset);
   const orderBy = sort === 'oldest'
     ? 'd.created_at ASC NULLS LAST, d.db_id ASC'
     : 'd.created_at DESC NULLS LAST, d.db_id DESC';
 
-  const pageSql = `
+  const baseSql = `
     WITH deduped AS MATERIALIZED (
       SELECT DISTINCT ON (m.dedupe_key)
         m.listing_id AS db_id,
@@ -200,26 +203,39 @@ async function searchDefaultFeed({filters, countries}) {
       LIMIT ${limitParam}
       OFFSET ${offsetParam}
     )
-    SELECT totals.count, p.db_id, p.created_at, l.data
-    FROM (SELECT COUNT(*)::int AS count FROM deduped) totals
-    LEFT JOIN page p ON TRUE
-    LEFT JOIN listings l ON l.id = p.db_id
-    ORDER BY ${orderBy.replaceAll('d.', 'p.')}
   `;
+  const pageSql = hasCursorCount
+    ? `${baseSql}
+      SELECT p.db_id, p.created_at, l.data
+      FROM page p
+      LEFT JOIN listings l ON l.id = p.db_id
+      ORDER BY ${orderBy.replaceAll('d.', 'p.')}
+    `
+    : `${baseSql}
+      SELECT totals.count, p.db_id, p.created_at, l.data
+      FROM (SELECT COUNT(*)::int AS count FROM deduped) totals
+      LEFT JOIN page p ON TRUE
+      LEFT JOIN listings l ON l.id = p.db_id
+      ORDER BY ${orderBy.replaceAll('d.', 'p.')}
+    `;
 
   const pageTimed = await timedQuery(pageSql, pageParams);
 
-  const rows = pageTimed.result.rows.filter((row) => row.db_id != null);
+  const pageRows = pageTimed.result.rows.filter((row) => row.db_id != null);
+  const hasMore = pageRows.length > limit;
+  const rows = pageRows.slice(0, limit);
   const listings = rows.map((row) => row.data || {});
-  const count = Number(pageTimed.result.rows[0]?.count) || 0;
+  const count = hasCursorCount
+    ? cursorCount
+    : (Number(pageTimed.result.rows[0]?.count) || 0);
 
   let nextCursor = null;
-  if (rows.length === limit) {
+  if (hasMore) {
     const last = rows[rows.length - 1];
     const time = last.created_at instanceof Date
       ? last.created_at.toISOString()
       : (last.created_at ? new Date(last.created_at).toISOString() : null);
-    nextCursor = encodeCursor({v: CURSOR_VERSION, sort, t: time, id: String(last.db_id)});
+    nextCursor = encodeCursor({v: CURSOR_VERSION, sort, t: time, id: String(last.db_id), c: count});
   }
 
   return {
