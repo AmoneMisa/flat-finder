@@ -2,6 +2,7 @@ import { pool } from './db.js';
 
 const MAX_AGE_DAYS = 21;
 const CURSOR_VERSION = 1;
+const EARTH_RADIUS_M = 6_371_000;
 
 function safeRateEntries(rates) {
   return Object.entries(rates || {})
@@ -265,15 +266,20 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
     const centerLat = Number(filters.centerLat);
     const centerLng = Number(filters.centerLng);
     const radiusM = Math.min(Number(filters.radiusM), 200000);
-    const latDelta = radiusM / 111_320;
+    const centerLatRad = centerLat * Math.PI / 180;
+    const angularRadius = radiusM / EARTH_RADIUS_M;
+    const latDelta = angularRadius * 180 / Math.PI;
     const minLat = Math.max(-90, centerLat - latDelta);
     const maxLat = Math.min(90, centerLat + latDelta);
     where.push(`l.lat IS NOT NULL AND l.lng IS NOT NULL`);
     where.push(`l.lat BETWEEN ${add(minLat)} AND ${add(maxLat)}`);
 
-    const cosLat = Math.abs(Math.cos(centerLat * Math.PI / 180));
-    if (cosLat > 0.0001) {
-      const lngDelta = Math.min(180, radiusM / (111_320 * cosLat));
+    // Use the same spherical model as the exact Haversine predicate. A rough
+    // meters-per-degree constant can be slightly narrower than the exact cap
+    // and incorrectly drop valid points close to the requested radius.
+    if (Math.abs(centerLatRad) + angularRadius < Math.PI / 2) {
+      const ratio = Math.min(1, Math.sin(angularRadius) / Math.cos(centerLatRad));
+      const lngDelta = Math.asin(ratio) * 180 / Math.PI;
       const minLng = centerLng - lngDelta;
       const maxLng = centerLng + lngDelta;
       if (minLng >= -180 && maxLng <= 180) {
@@ -288,7 +294,7 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
     const lat = add(centerLat);
     const lng = add(centerLng);
     const radius = add(radiusM);
-    where.push(`6371000 * ACOS(LEAST(1, GREATEST(-1,
+    where.push(`${EARTH_RADIUS_M} * ACOS(LEAST(1, GREATEST(-1,
       COS(RADIANS(${lat})) * COS(RADIANS(l.lat)) * COS(RADIANS(l.lng) - RADIANS(${lng}))
       + SIN(RADIANS(${lat})) * SIN(RADIANS(l.lat))))) <= ${radius}`);
   }
@@ -478,7 +484,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const hasCursorCount = useCursor && Number.isInteger(cursorCount) && cursorCount >= 0;
 
   const limit = Math.max(1, Math.min(Number(filters.limit) || 40, 60));
-  const limitParam = addPage(limit);
+  const fetchLimit = filters.statsOnly ? limit : limit + 1;
+  const limitParam = addPage(fetchLimit);
   const offset = useCursor ? 0 : Math.max(0, Number(filters.offset) || 0);
   const offsetParam = addPage(offset);
   const orderBy = context.orderBy.replaceAll('m.rank', 'l.search_rank');
@@ -533,7 +540,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     ]);
   }
 
-  const rows = pageResult.rows;
+  const hasMore = !filters.statsOnly && pageResult.rows.length > limit;
+  const rows = filters.statsOnly ? [] : pageResult.rows.slice(0, limit);
   const listings = rows.map((row) => row.data || {});
   const statistics = filters.includeStats ? {
     total: Number(countOrStatsResult.rows[0]?.total) || 0,
@@ -551,7 +559,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const count = statistics?.total ?? (Number(countOrStatsResult.rows[0]?.count) || 0);
 
   let nextCursor = null;
-  if (!filters.statsOnly && rows.length === limit && ['newest', 'oldest'].includes(context.sort)) {
+  if (hasMore && ['newest', 'oldest'].includes(context.sort)) {
     const last = rows[rows.length - 1];
     const time = last.created_at instanceof Date ? last.created_at.toISOString() : (last.created_at ? new Date(last.created_at).toISOString() : null);
     nextCursor = encodeCursor({ v: CURSOR_VERSION, sort: context.sort, t: time, id: String(last.db_id), c: count });
