@@ -18,7 +18,8 @@ test('map feed uses one narrow PostgreSQL query instead of listing-page fanout',
 });
 
 test('cursor pages carry total and use limit plus one instead of repeated exact counts', async () => {
-  const source = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/postgres-search-core.js', import.meta.url), 'utf8');
+  const wrapper = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
 
   assert.match(source, /const cursorCount = Number\(cursor\?\.c\)/u);
   assert.match(source, /else if \(hasCursorCount\) \{[\s\S]*pageResult = await pool\.query\(pageSql, pageParams\)[\s\S]*count: cursorCount/u);
@@ -27,4 +28,6 @@ test('cursor pages carry total and use limit plus one instead of repeated exact 
   assert.match(source, /pageResult\.rows\.slice\(0, limit\)/u);
   assert.match(source, /if \(hasMore && \['newest', 'oldest'\]\.includes\(context\.sort\)\)/u);
   assert.match(source, /encodeCursor\(\{ v: CURSOR_VERSION, sort: context\.sort, t: time, id: String\(last\.db_id\), c: count \}\)/u);
+  assert.match(wrapper, /prepareCursorForScope/u);
+  assert.match(wrapper, /attachScopeToCursor/u);
 });
