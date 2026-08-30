@@ -249,47 +249,52 @@ class _MapViewState extends State<MapView> {
   Future<void> _applyZoneScope(DistrictZone zone) async {
     final state = context.read<AppState>();
     final current = state.filters;
+    // A map geography pick becomes the new search scope. Text search is a
+    // competing free-form scope, so clear it before applying the canonical
+    // geographic filter. AppState notifies the compact filters immediately,
+    // and their controller sync clears the visible search input as well.
+    final scoped = current.copyWith(query: '');
     final district = _ancestorOfType(zone, 'district');
     final microdistrict = _ancestorOfType(zone, 'microdistrict');
     final mahalla = _ancestorOfType(zone, 'mahalla');
 
     final next = switch (zone.type) {
-      'district' => current.copyWith(
+      'district' => scoped.copyWith(
         district: zone.name,
         microdistrict: '',
         quartal: '',
         area: '',
         metro: '',
       ),
-      'microdistrict' => current.copyWith(
+      'microdistrict' => scoped.copyWith(
         district: district?.name ?? current.district,
         microdistrict: zone.name,
         quartal: '',
         area: '',
         metro: '',
       ),
-      'mahalla' => current.copyWith(
+      'mahalla' => scoped.copyWith(
         district: district?.name ?? current.district,
         microdistrict: microdistrict?.name ?? current.microdistrict,
         quartal: zone.name,
         area: '',
         metro: '',
       ),
-      'local_area' => current.copyWith(
+      'local_area' => scoped.copyWith(
         district: district?.name ?? current.district,
         microdistrict: microdistrict?.name ?? current.microdistrict,
         quartal: mahalla?.name ?? current.quartal,
         area: zone.name,
         metro: '',
       ),
-      'development_area' => current.copyWith(
+      'development_area' => scoped.copyWith(
         district: district?.name ?? current.district,
         microdistrict: microdistrict?.name ?? current.microdistrict,
         quartal: mahalla?.name ?? current.quartal,
         area: zone.name,
         metro: '',
       ),
-      'metro' => current.copyWith(metro: zone.name),
+      'metro' => scoped.copyWith(metro: zone.name),
       _ => current,
     };
 
