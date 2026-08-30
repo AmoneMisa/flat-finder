@@ -113,16 +113,21 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
       ORDER BY dedupe_key, created_at DESC NULLS LAST, db_id DESC
     ),
     totals AS (
-      SELECT COUNT(*)::int AS total_count
+      SELECT
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (
+          WHERE lat_value BETWEEN -90 AND 90
+            AND lng_value BETWEEN -180 AND 180
+        )::int AS point_count
       FROM visible
     )
-    SELECT points.*, totals.total_count
+    SELECT points.*, totals.total_count, totals.point_count
     FROM totals
     LEFT JOIN LATERAL (
       SELECT visible.*
       FROM visible
-      WHERE visible.lat_value IS NOT NULL
-        AND visible.lng_value IS NOT NULL
+      WHERE visible.lat_value BETWEEN -90 AND 90
+        AND visible.lng_value BETWEEN -180 AND 180
       ORDER BY visible.created_at DESC NULLS LAST, visible.db_id DESC
       LIMIT ${limitParam}
     ) AS points ON TRUE
@@ -134,11 +139,12 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
     .map(mapPointFromRow)
     .filter(Boolean);
   const count = Number(rows[0]?.total_count) || 0;
+  const pointCount = Number(rows[0]?.point_count) || 0;
 
   return {
     count,
     points,
-    truncated: count > points.length,
+    truncated: pointCount > points.length,
     pages: 1,
     maxPoints: MAP_MAX_POINTS,
     queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
