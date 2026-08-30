@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 
 const CURSOR_VERSION = 1;
 const SCOPE_VERSION = 1;
+const BIGINT_MAX = 9_223_372_036_854_775_807n;
 const NON_SEMANTIC_FILTER_KEYS = new Set([
   'cursor',
   'offset',
@@ -36,7 +37,9 @@ function decodeCursor(value) {
   if (!value) return null;
   try {
     const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
-    return parsed?.v === CURSOR_VERSION ? parsed : null;
+    return parsed?.v === CURSOR_VERSION && parsed && typeof parsed === 'object'
+      ? parsed
+      : null;
   } catch {
     return null;
   }
@@ -44,6 +47,36 @@ function decodeCursor(value) {
 
 function encodeCursor(value) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+function normalizeCursorPosition(parsed, {keepCount = true} = {}) {
+  if (!parsed || !['newest', 'oldest'].includes(parsed.sort)) return null;
+
+  const id = String(parsed.id ?? '');
+  if (!/^[1-9]\d*$/.test(id)) return null;
+  try {
+    if (BigInt(id) > BIGINT_MAX) return null;
+  } catch {
+    return null;
+  }
+
+  let time = null;
+  if (parsed.t) {
+    const milliseconds = Date.parse(String(parsed.t));
+    if (!Number.isFinite(milliseconds)) return null;
+    time = new Date(milliseconds).toISOString();
+  }
+
+  const normalized = {
+    v: CURSOR_VERSION,
+    sort: parsed.sort,
+    t: time,
+    id,
+  };
+  const count = Number(parsed.c);
+  if (keepCount && Number.isSafeInteger(count) && count >= 0) normalized.c = count;
+  if (parsed.s != null) normalized.s = parsed.s;
+  return normalized;
 }
 
 export function searchCursorScope(filters = {}, countries = []) {
@@ -70,19 +103,22 @@ export function prepareCursorForScope(value, scope) {
   if (!parsed) return '';
 
   if (parsed.s != null) {
-    return parsed.s === scope ? String(value) : '';
+    if (parsed.s !== scope) return '';
+    const normalized = normalizeCursorPosition(parsed);
+    return normalized ? encodeCursor(normalized) : '';
   }
 
   // Legacy v1 cursors remain usable as positional cursors, but their carried
   // total predates scope binding and therefore cannot be trusted for a new
   // request. Removing `c` forces the core query to calculate the count once.
-  const {c: _legacyCount, ...legacyCursor} = parsed;
-  return encodeCursor(legacyCursor);
+  const normalized = normalizeCursorPosition(parsed, {keepCount: false});
+  return normalized ? encodeCursor(normalized) : '';
 }
 
 export function attachScopeToCursor(value, scope) {
   if (!value) return null;
   const parsed = decodeCursor(value);
-  if (!parsed) return value;
-  return encodeCursor({...parsed, s: scope});
+  const normalized = normalizeCursorPosition(parsed);
+  if (!normalized) return null;
+  return encodeCursor({...normalized, s: scope});
 }
