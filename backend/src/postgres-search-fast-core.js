@@ -4,7 +4,7 @@ import {pool} from './db.js';
 // search, and stats requests, and map-feed.js still calls it directly. The
 // two fast paths above only shortcut the narrow no-filter and exact-listing
 // cases; everything else depends on this query.
-import {searchPostgresListings as searchPostgresListingsGeneral} from './postgres-search.js';
+import {searchPostgresListings as searchPostgresListingsGeneral} from './postgres-search-core.js';
 
 const MAX_AGE_DAYS = 14;
 const CURSOR_VERSION = 1;
