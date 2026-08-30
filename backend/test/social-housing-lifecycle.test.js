@@ -18,3 +18,10 @@ test('complete social crawls age out missing rows and sync ES deactivation', () 
   assert.match(scheduler, /deleteListingDocuments\(missing\.deactivated\)/);
   assert.match(scheduler, /crawlStartedAt/);
 });
+
+test('verified Facebook housing groups cover the supplied markets', () => {
+  assert.match(scheduler, /groups\/1634005426616533\/.*city: 'Tashkent'/);
+  assert.match(scheduler, /groups\/rentinKyiv\/.*city: 'Kyiv'/);
+  assert.match(scheduler, /groups\/661893508190887\/.*city: 'Brasov'/);
+  assert.match(scheduler, /groups\/1317985588227312\/.*city: 'Almaty'/);
+});

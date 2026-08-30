@@ -22,12 +22,33 @@ const DEFAULT_FACEBOOK_TARGETS = {
     { target: 'https://www.facebook.com/groups/281140502050492/', city: 'Tashkent' },
     { target: 'https://www.facebook.com/groups/kvartira/', city: 'Tashkent' },
     { target: 'https://www.facebook.com/groups/SvoyDomTashkent/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/1634005426616533/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/rent.let/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/Pro100Arenda/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/1116133552576343/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/1647978165496858/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/m2hubuzbekistan/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/238576114433292/', city: 'Tashkent' },
+    { target: 'https://www.facebook.com/groups/973227684005877/' },
   ],
   UA: [
     { target: 'https://www.facebook.com/groups/rieltory.zlo/', city: 'Kyiv' },
     { target: 'https://www.facebook.com/groups/445199492349490/', city: 'Kyiv' },
     { target: 'https://www.facebook.com/groups/1500652316919278/', city: 'Kyiv' },
     { target: 'https://www.facebook.com/groups/RealEstateOfKyivSuburbanWithoutACommission/', city: 'Kyiv' },
+    { target: 'https://www.facebook.com/groups/rentinKyiv/', city: 'Kyiv' },
+  ],
+  RO: [
+    { target: 'https://www.facebook.com/groups/490489845820582/', city: 'Bucharest' },
+    { target: 'https://www.facebook.com/groups/811213449802942/', city: 'Bucharest' },
+    { target: 'https://www.facebook.com/groups/1263583490833503/', city: 'Bucharest' },
+    { target: 'https://www.facebook.com/groups/658860528761062/', city: 'Bucharest' },
+    { target: 'https://www.facebook.com/groups/661893508190887/', city: 'Brasov' },
+  ],
+  KZ: [
+    { target: 'https://www.facebook.com/groups/1317985588227312/', city: 'Almaty' },
+    { target: 'https://www.facebook.com/www.ARENDA.kz/' },
+    { target: 'https://www.facebook.com/groups/991328870989902/', city: 'Almaty' },
   ],
 };
 
