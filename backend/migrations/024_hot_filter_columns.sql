@@ -1,6 +1,9 @@
 -- Materialize scalar values that are repeatedly cast out of the wide JSONB
 -- payload during public search. STORED generated columns preserve the current
 -- semantics: only JSON numbers participate; strings/unknown values remain NULL.
+-- Keep all generated scalar additions in one ALTER TABLE so a fresh deployment
+-- rewrites the listings heap once rather than repeating that work for spatial
+-- coordinates in a later migration.
 ALTER TABLE listings
   ADD COLUMN IF NOT EXISTS bedrooms DOUBLE PRECISION
     GENERATED ALWAYS AS (
@@ -49,6 +52,20 @@ ALTER TABLE listings
           ELSE NULL
         END
       )
+    ) STORED,
+  ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION
+    GENERATED ALWAYS AS (
+      CASE WHEN jsonb_typeof(data->'lat') = 'number'
+        THEN (data->>'lat')::double precision
+        ELSE NULL
+      END
+    ) STORED,
+  ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION
+    GENERATED ALWAYS AS (
+      CASE WHEN jsonb_typeof(data->'lng') = 'number'
+        THEN (data->>'lng')::double precision
+        ELSE NULL
+      END
     ) STORED;
 
 -- Country/city are the dominant narrowing dimensions in the listing UI.
