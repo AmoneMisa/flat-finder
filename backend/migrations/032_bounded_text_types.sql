@@ -2,10 +2,12 @@
 -- changes are about schema discipline and rejecting accidental huge values,
 -- not about storage/query-speed gains.
 --
--- Do NOT alter the hot listings label columns here. city participates in the
--- generated dedupe_key and district/metro have active indexes; ALTER TYPE can
--- require dependency/index rebuilds under an ACCESS EXCLUSIVE lock. That work
--- belongs in an explicit maintenance window after production measurements.
+-- Do NOT alter trigger/generated-column-bound hot columns here. `listings.city`
+-- participates in the generated dedupe_key, while
+-- `listing_property_clusters.cluster_id` participates in the cluster sync
+-- trigger. ALTER TYPE would require dependency teardown/rebuild under stronger
+-- locks for no storage/performance benefit. Revisit only in a maintenance
+-- window if production evidence justifies it.
 --
 -- IMPORTANT: explicit casts to VARCHAR(n) can truncate. Validate first and fail
 -- loudly instead of silently modifying production data.
@@ -46,10 +48,6 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM places WHERE char_length(name_ru) > 255) THEN
     RAISE EXCEPTION 'Cannot bound places.name_ru to varchar(255)';
-  END IF;
-
-  IF EXISTS (SELECT 1 FROM listing_property_clusters WHERE char_length(cluster_id) > 128) THEN
-    RAISE EXCEPTION 'Cannot bound listing_property_clusters.cluster_id to varchar(128)';
   END IF;
 
   IF EXISTS (SELECT 1 FROM learned_geo WHERE char_length(country) > 8) THEN
@@ -104,10 +102,6 @@ ALTER TABLE places
   ALTER COLUMN name TYPE VARCHAR(255) USING name::VARCHAR(255),
   ALTER COLUMN name_ru TYPE VARCHAR(255) USING name_ru::VARCHAR(255);
 
--- Cluster ids are application-generated (`property:<short hash>`) and bounded.
-ALTER TABLE listing_property_clusters
-  ALTER COLUMN cluster_id TYPE VARCHAR(128) USING cluster_id::VARCHAR(128);
-
 -- Learned geography has a mix of bounded metadata and genuinely free-form
 -- geocoder text. query_text/canonical_name/street/provider_id remain TEXT.
 ALTER TABLE learned_geo
@@ -127,5 +121,4 @@ ALTER TABLE subscriptions.mobile_subscriptions
 
 ANALYZE crawl_tasks;
 ANALYZE places;
-ANALYZE listing_property_clusters;
 ANALYZE learned_geo;
