@@ -19,8 +19,9 @@ test('performance hardening schema and search paths work together', {skip: !enab
     SELECT table_schema, table_name, column_name, data_type, character_maximum_length
     FROM information_schema.columns
     WHERE (table_schema = 'public' AND table_name IN (
-      'listings',
       'crawl_tasks',
+      'crawl_task_runs',
+      'learned_geo',
       'listing_location_terms',
       'listing_nearby_places',
       'listing_property_clusters'
@@ -36,31 +37,29 @@ test('performance hardening schema and search paths work together', {skip: !enab
     assert.equal(Number(row.character_maximum_length), length, `${key} length`);
   };
 
-  varchar('public.listings.city', 255);
-  varchar('public.listings.district', 255);
-  varchar('public.listings.metro', 255);
-  varchar('public.listings.residence_complex', 512);
   varchar('public.crawl_tasks.crawl_generation', 128);
   varchar('public.crawl_tasks.type', 64);
   varchar('public.crawl_tasks.country', 8);
   varchar('public.crawl_tasks.status', 16);
   varchar('public.crawl_tasks.locked_by', 200);
+  varchar('public.crawl_task_runs.crawl_generation', 128);
   varchar('public.listing_location_terms.term_type', 64);
   varchar('public.listing_location_terms.normalized_name', 512);
   varchar('public.listing_nearby_places.kind', 64);
   varchar('public.listing_property_clusters.cluster_id', 128);
+  varchar('public.learned_geo.country', 8);
+  varchar('public.learned_geo.entity_type', 64);
+  varchar('public.learned_geo.provider', 32);
   varchar('subscriptions.mobile_subscriptions.name', 120);
-
   assert.equal(byName.get('public.crawl_tasks.lock_token')?.data_type, 'uuid');
 
+  await pool.query(`DELETE FROM listing_property_clusters WHERE source = 'perf-cluster-test'`);
   await pool.query(`DELETE FROM listings WHERE source = 'perf-hardening-test'`);
 
   const createdAt = new Date().toISOString();
-  await upsertListings([{
-    id: 'typed-search-1',
+  const common = {
     source: 'perf-hardening-test',
     country: 'ZZ',
-    title: 'Performance hardening integration flat',
     description: 'A test listing that exercises typed filters, normalized relations and map radius search.',
     propertyType: 'flat',
     dealType: 'longRent',
@@ -80,11 +79,28 @@ test('performance hardening schema and search paths work together', {skip: !enab
     microdistrict: 'Perf Microdistrict',
     localAreas: ['Perf Quarter'],
     nearbyPlaces: [{kind: 'school', distanceM: 300}],
-    lat: 50,
-    lng: 30,
-    createdAt,
+    propertyClusterId: 'property:perf-search-shared',
     commercial: false,
-  }]);
+  };
+
+  await upsertListings([
+    {
+      ...common,
+      id: 'typed-search-1',
+      title: 'Performance hardening integration flat',
+      lat: 50,
+      lng: 30,
+      createdAt,
+    },
+    {
+      ...common,
+      id: 'typed-search-old',
+      title: 'Older duplicate performance flat',
+      lat: 50.0001,
+      lng: 30.0001,
+      createdAt: new Date(Date.now() - 60_000).toISOString(),
+    },
+  ]);
 
   const stored = await pool.query(`
     SELECT id, bedrooms, floor_number, total_floors, building_year,
@@ -176,7 +192,7 @@ test('performance hardening schema and search paths work together', {skip: !enab
     countries: ['ZZ'],
     rates: {USD: 1},
   });
-  assert.equal(search.count, 1);
+  assert.equal(search.count, 1, 'property-cluster dedupe should preserve one representative');
   assert.equal(search.listings[0]?.id, 'typed-search-1');
 
   const map = await searchPostgresMapPoints({
@@ -189,6 +205,29 @@ test('performance hardening schema and search paths work together', {skip: !enab
   assert.equal(map.truncated, false);
   assert.deepEqual(map.points.map((point) => point.id), ['typed-search-1']);
 
+  // Two overlapping cluster merges issued concurrently must converge on one
+  // cluster rather than leaving split membership across service replicas.
+  const payloadA = JSON.stringify([
+    {source: 'perf-cluster-test', country: 'ZZ', source_id: 'a'},
+    {source: 'perf-cluster-test', country: 'ZZ', source_id: 'b'},
+  ]);
+  const payloadB = JSON.stringify([
+    {source: 'perf-cluster-test', country: 'ZZ', source_id: 'b'},
+    {source: 'perf-cluster-test', country: 'ZZ', source_id: 'c'},
+  ]);
+  await Promise.all([
+    pool.query('SELECT merge_listing_property_cluster($1::jsonb, $2::text)', [payloadA, 'property:perf-a']),
+    pool.query('SELECT merge_listing_property_cluster($1::jsonb, $2::text)', [payloadB, 'property:perf-b']),
+  ]);
+  const clusters = await pool.query(`
+    SELECT COUNT(*)::int AS members, COUNT(DISTINCT cluster_id)::int AS clusters
+    FROM listing_property_clusters
+    WHERE source = 'perf-cluster-test' AND country = 'ZZ';
+  `);
+  assert.equal(clusters.rows[0]?.members, 3);
+  assert.equal(clusters.rows[0]?.clusters, 1);
+
+  await pool.query(`DELETE FROM listing_property_clusters WHERE source = 'perf-cluster-test'`);
   await pool.query(`DELETE FROM listings WHERE source = 'perf-hardening-test'`);
   await closeDb();
 });
