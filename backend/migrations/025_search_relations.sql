@@ -4,8 +4,8 @@
 
 CREATE TABLE IF NOT EXISTS listing_location_terms (
   listing_id BIGINT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
-  term_type TEXT NOT NULL,
-  normalized_name TEXT NOT NULL,
+  term_type VARCHAR(64) NOT NULL,
+  normalized_name VARCHAR(512) NOT NULL,
   PRIMARY KEY (listing_id, term_type, normalized_name)
 );
 
@@ -15,7 +15,7 @@ CREATE INDEX IF NOT EXISTS listing_location_terms_lookup_idx
 CREATE TABLE IF NOT EXISTS listing_nearby_places (
   listing_id BIGINT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
   place_index INTEGER NOT NULL,
-  kind TEXT,
+  kind VARCHAR(64),
   distance_m DOUBLE PRECISION,
   PRIMARY KEY (listing_id, place_index)
 );
