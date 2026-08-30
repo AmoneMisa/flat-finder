@@ -18,6 +18,7 @@ import '../utils/sort.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/listing_card.dart';
 import '../widgets/map_view.dart';
+import '../widgets/quick_presets_bar.dart';
 import '../widgets/searchable_dropdown.dart';
 import '../widgets/stats_sheet.dart';
 import 'favorites_screen.dart';
@@ -133,12 +134,6 @@ class _HomeScreenState extends State<HomeScreen> {
       await state.search();
       if (_mapMode) state.loadMapListings();
     }
-  }
-
-  Future<void> _applyCompactFilters(AppState state, Filters filters) async {
-    state.updateFilters(filters);
-    await state.search();
-    if (_mapMode) state.loadMapListings();
   }
 
   /// Pushes the map as its own full-screen route (no app bar/filters above
@@ -466,25 +461,41 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          if (MediaQuery.sizeOf(context).width < 700)
-            _MobilePrimaryFilters(
-              filters: state.filters,
-              countries: state.countries,
-              settings: settings,
-              onChanged: (filters) => _applyCompactFilters(state, filters),
+          Column(
+            children: [
+              QuickPresetsBar(
+                onApply: (filters) async {
+                  state.updateFilters(filters);
+                  await state.search();
+                  if (_mapMode) await state.loadMapListings();
+                },
+                onManage: _openPresets,
+              ),
+              _SummaryBar(state: state, settings: settings),
+              if (state.degradedCountries.isNotEmpty)
+                _Banner(
+                  text: settings.t('demoBanner', {
+                    'countries': state.degradedCountries.join(', '),
+                  }),
+                ),
+              if (state.sourceErrors.isNotEmpty)
+                _SourceErrorBanner(
+                  errors: state.sourceErrors,
+                  settings: settings,
+                ),
+              Expanded(child: _body(state, settings, hidden)),
+            ],
+          ),
+          if (state.loading || state.mapLoading)
+            Positioned.fill(
+              child: _DataLoadingOverlay(
+                label: settings.lang == 'ru'
+                    ? 'Загружаем данные…'
+                    : 'Loading data…',
+              ),
             ),
-          _SummaryBar(state: state, settings: settings),
-          if (state.degradedCountries.isNotEmpty)
-            _Banner(
-              text: settings.t('demoBanner', {
-                'countries': state.degradedCountries.join(', '),
-              }),
-            ),
-          if (state.sourceErrors.isNotEmpty)
-            _SourceErrorBanner(errors: state.sourceErrors, settings: settings),
-          Expanded(child: _body(state, settings, hidden)),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -655,9 +666,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _emptyLabel(SettingsState settings) => switch (_tab) {
-    _ViewTab.hidden => settings.t('noHiddenHere'),
-    _ViewTab.all => settings.t('noListings'),
-  };
+        _ViewTab.hidden => settings.t('noHiddenHere'),
+        _ViewTab.all => settings.t('noListings'),
+      };
 
   /// Column count from the available width: 1 on phones, up to 4 on wide
   /// desktop windows.
@@ -691,8 +702,7 @@ class _MapListingPreviewState extends State<_MapListingPreview> {
   @override
   void initState() {
     super.initState();
-    final needsHydration =
-        _listing.marketComparison == null ||
+    final needsHydration = _listing.marketComparison == null ||
         _listing.city.isEmpty ||
         (_listing.photos.isEmpty && _listing.photo == null);
     if (needsHydration) _hydrate();
@@ -719,19 +729,20 @@ class _MapListingPreviewState extends State<_MapListingPreview> {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-    child: Stack(
-      children: [
-        ListingCard(listing: _listing, onTap: () => widget.onOpen(_listing)),
-        if (_hydrating)
-          const Positioned(
-            left: 8,
-            right: 8,
-            top: 0,
-            child: LinearProgressIndicator(minHeight: 2),
-          ),
-      ],
-    ),
-  );
+        child: Stack(
+          children: [
+            ListingCard(
+                listing: _listing, onTap: () => widget.onOpen(_listing)),
+            if (_hydrating)
+              const Positioned(
+                left: 8,
+                right: 8,
+                top: 0,
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+          ],
+        ),
+      );
 }
 
 /// The primary web filters stay visible on phones. Advanced filters remain in
@@ -860,9 +871,8 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
       selectedCountry ?? '',
       country?.cities ?? const <String>[],
     );
-    final selectedCity = cities.contains(widget.filters.city)
-        ? widget.filters.city
-        : null;
+    final selectedCity =
+        cities.contains(widget.filters.city) ? widget.filters.city : null;
 
     final compactInputTheme = theme.inputDecorationTheme.copyWith(
       isDense: true,
@@ -1116,24 +1126,70 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
   }
 
   Filters _withQuickDeal(Filters f, _QuickDeal deal) => switch (deal) {
-    _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
-    _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
-    _QuickDeal.longRent => f.copyWith(
-      dealType: DealType.longRent,
-      roomOnly: false,
-    ),
-    _QuickDeal.room => f.copyWith(dealType: DealType.longRent, roomOnly: true),
-    _QuickDeal.shortRent => f.copyWith(
-      dealType: DealType.shortRent,
-      roomOnly: false,
-    ),
-  };
+        _QuickDeal.any => f.copyWith(dealType: DealType.any, roomOnly: false),
+        _QuickDeal.sale => f.copyWith(dealType: DealType.sale, roomOnly: false),
+        _QuickDeal.longRent => f.copyWith(
+            dealType: DealType.longRent,
+            roomOnly: false,
+          ),
+        _QuickDeal.room =>
+          f.copyWith(dealType: DealType.longRent, roomOnly: true),
+        _QuickDeal.shortRent => f.copyWith(
+            dealType: DealType.shortRent,
+            roomOnly: false,
+          ),
+      };
 }
 
 /// The quick-filter deal-type segments: room-share rent is stored as
 /// `dealType: longRent, roomOnly: true` in [Filters], not its own enum value,
 /// so it's surfaced as a distinct option only in this control.
 enum _QuickDeal { any, sale, longRent, room, shortRent }
+
+class _DataLoadingOverlay extends StatelessWidget {
+  const _DataLoadingOverlay({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AbsorbPointer(
+      absorbing: true,
+      child: ColoredBox(
+        color: scheme.scrim.withValues(alpha: 0.28),
+        child: Center(
+          child: Card(
+            elevation: 10,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.6,
+                      color: scheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _SummaryBar extends StatelessWidget {
   const _SummaryBar({required this.state, required this.settings});

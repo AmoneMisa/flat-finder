@@ -128,6 +128,11 @@ class _MapViewState extends State<MapView> {
     if (!mounted) return;
     setState(() => _zones = zones);
 
+    // Filters and map share one canonical selection. If a saved preset, filter
+    // sheet or deep link already selected a zone, restore it immediately and
+    // center the map on the same catalog entity.
+    if (_syncSelectionFromFilters(focus: true)) return;
+
     // A city typed/selected in filters is an explicit geographic scope, so it
     // wins over automatic result fitting. Use the real city boundary when the
     // catalog has it, otherwise its canonical center + accuracy radius.
@@ -210,9 +215,8 @@ class _MapViewState extends State<MapView> {
 
   void _focusZone(DistrictZone zone, {double? maxZoom}) {
     final points = <LatLng>[for (final ring in _ringsFor(zone)) ...ring];
-    final fallbackZoom = math
-        .min(maxZoom ?? _maxZoomForZone(zone.type), 19.0)
-        .toDouble();
+    final fallbackZoom =
+        math.min(maxZoom ?? _maxZoomForZone(zone.type), 19.0).toDouble();
     try {
       if (points.length >= 2) {
         _controller.fitCamera(
@@ -246,7 +250,77 @@ class _MapViewState extends State<MapView> {
     return null;
   }
 
-  Future<void> _applyZoneScope(DistrictZone zone) async {
+  DistrictZone? _zoneByName(Iterable<DistrictZone> zones, String name) {
+    if (name.isEmpty) return null;
+    for (final zone in zones) {
+      if (zone.name == name) return zone;
+    }
+    return null;
+  }
+
+  DistrictZone? _zoneMatchingFilters() {
+    final filters = context.read<AppState>().filters;
+    return _zoneByName(_zones.metroStations, filters.metro) ??
+        _zoneByName(_zones.areaZones, filters.area) ??
+        _zoneByName(_zones.quartalMarkers, filters.quartal) ??
+        _zoneByName(_zones.microdistrictMarkers, filters.microdistrict) ??
+        _zoneByName(_zones.districtZones, filters.district);
+  }
+
+  void _showLayerFor(DistrictZone zone) {
+    switch (zone.type) {
+      case 'district':
+        _showDistricts = true;
+      case 'microdistrict':
+        _showMicrodistricts = true;
+      case 'mahalla':
+        _showQuartals = true;
+      case 'local_area':
+      case 'development_area':
+        _showAreas = true;
+      case 'metro':
+        _showMetro = true;
+      case 'poi.park':
+        _showParks = true;
+      case 'poi.shopping_mall':
+        _showShoppingMalls = true;
+      case 'poi.university':
+        _showUniversities = true;
+    }
+  }
+
+  bool _syncSelectionFromFilters({bool focus = false}) {
+    if (!mounted) return false;
+    final zone = _zoneMatchingFilters();
+    if (zone == null) {
+      if (_selectedZoneId != null || _selectedDistrictId != null) {
+        setState(() {
+          _selectedZoneId = null;
+          _selectedDistrictId = null;
+          _activeZoneFocusId = null;
+        });
+      }
+      return false;
+    }
+
+    final district = _ancestorOfType(zone, 'district');
+    final changed = _selectedZoneId != zone.id;
+    if (changed) {
+      setState(() {
+        _selectedZoneId = zone.id;
+        _selectedDistrictId = district?.id;
+        _activeZoneFocusId = zone.id;
+        _expandedGroupKey = null;
+        _showLayerFor(zone);
+      });
+    } else {
+      _showLayerFor(zone);
+    }
+    if (focus) _focusZone(zone);
+    return true;
+  }
+
+  Future<void> _applyZoneScope(DistrictZone zone, {num? metroRadiusM}) async {
     final state = context.read<AppState>();
     final current = state.filters;
     // A map geography pick becomes the new search scope. Text search is a
@@ -260,41 +334,44 @@ class _MapViewState extends State<MapView> {
 
     final next = switch (zone.type) {
       'district' => scoped.copyWith(
-        district: zone.name,
-        microdistrict: '',
-        quartal: '',
-        area: '',
-        metro: '',
-      ),
+          district: zone.name,
+          microdistrict: '',
+          quartal: '',
+          area: '',
+          metro: '',
+        ),
       'microdistrict' => scoped.copyWith(
-        district: district?.name ?? current.district,
-        microdistrict: zone.name,
-        quartal: '',
-        area: '',
-        metro: '',
-      ),
+          district: district?.name ?? current.district,
+          microdistrict: zone.name,
+          quartal: '',
+          area: '',
+          metro: '',
+        ),
       'mahalla' => scoped.copyWith(
-        district: district?.name ?? current.district,
-        microdistrict: microdistrict?.name ?? current.microdistrict,
-        quartal: zone.name,
-        area: '',
-        metro: '',
-      ),
+          district: district?.name ?? current.district,
+          microdistrict: microdistrict?.name ?? current.microdistrict,
+          quartal: zone.name,
+          area: '',
+          metro: '',
+        ),
       'local_area' => scoped.copyWith(
-        district: district?.name ?? current.district,
-        microdistrict: microdistrict?.name ?? current.microdistrict,
-        quartal: mahalla?.name ?? current.quartal,
-        area: zone.name,
-        metro: '',
-      ),
+          district: district?.name ?? current.district,
+          microdistrict: microdistrict?.name ?? current.microdistrict,
+          quartal: mahalla?.name ?? current.quartal,
+          area: zone.name,
+          metro: '',
+        ),
       'development_area' => scoped.copyWith(
-        district: district?.name ?? current.district,
-        microdistrict: microdistrict?.name ?? current.microdistrict,
-        quartal: mahalla?.name ?? current.quartal,
-        area: zone.name,
-        metro: '',
-      ),
-      'metro' => scoped.copyWith(metro: zone.name),
+          district: district?.name ?? current.district,
+          microdistrict: microdistrict?.name ?? current.microdistrict,
+          quartal: mahalla?.name ?? current.quartal,
+          area: zone.name,
+          metro: '',
+        ),
+      'metro' => scoped.copyWith(
+          metro: zone.name,
+          metroMaxM: metroRadiusM,
+        ),
       _ => current,
     };
 
@@ -305,16 +382,62 @@ class _MapViewState extends State<MapView> {
     await state.loadMapListings();
   }
 
-  Future<void> _selectZone(DistrictZone zone) async {
+  Future<void> _clearZoneScope(DistrictZone zone) async {
+    final state = context.read<AppState>();
+    final current = state.filters;
+    final next = switch (zone.type) {
+      'district' => current.copyWith(
+          district: '',
+          microdistrict: '',
+          quartal: '',
+          area: '',
+        ),
+      'microdistrict' => current.copyWith(
+          microdistrict: '',
+          quartal: '',
+          area: '',
+        ),
+      'mahalla' => current.copyWith(quartal: '', area: ''),
+      'local_area' || 'development_area' => current.copyWith(area: ''),
+      'metro' => current.copyWith(metro: '', clearMetroMaxM: true),
+      _ => current,
+    };
+    state.updateFilters(next);
+    await state.search();
+    if (!mounted) return;
+    await state.loadMapListings();
+  }
+
+  Future<void> _selectZone(
+    DistrictZone zone, {
+    num? metroRadiusM,
+  }) async {
+    final current = context.read<AppState>().filters;
+    final sameZone = _selectedZoneId == zone.id;
+    final sameMetroRadius = zone.type != 'metro' ||
+        metroRadiusM == null ||
+        current.metroMaxM == metroRadiusM;
+    if (sameZone && sameMetroRadius) {
+      setState(() {
+        _selectedZoneId = null;
+        _selectedDistrictId = null;
+        _activeZoneFocusId = null;
+        _expandedGroupKey = null;
+      });
+      await _clearZoneScope(zone);
+      return;
+    }
+
     final district = _ancestorOfType(zone, 'district');
     setState(() {
       _selectedZoneId = zone.id;
       _selectedDistrictId = district?.id;
       _activeZoneFocusId = zone.id;
       _expandedGroupKey = null;
+      _showLayerFor(zone);
     });
     _focusZone(zone);
-    await _applyZoneScope(zone);
+    await _applyZoneScope(zone, metroRadiusM: metroRadiusM);
   }
 
   double _ringAreaScore(List<LatLng> ring) {
@@ -364,8 +487,7 @@ class _MapViewState extends State<MapView> {
     for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       final xi = poly[i].longitude, yi = poly[i].latitude;
       final xj = poly[j].longitude, yj = poly[j].latitude;
-      final intersect =
-          ((yi > p.latitude) != (yj > p.latitude)) &&
+      final intersect = ((yi > p.latitude) != (yj > p.latitude)) &&
           (p.longitude < (xj - xi) * (p.latitude - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
     }
@@ -390,9 +512,8 @@ class _MapViewState extends State<MapView> {
     if (_isFocused || widget.city.isNotEmpty || _activeZoneFocusId != null) {
       return;
     }
-    final located = widget.listings
-        .where((listing) => listing.hasLocation)
-        .toList();
+    final located =
+        widget.listings.where((listing) => listing.hasLocation).toList();
     if (located.isEmpty) return;
     final keys = located.map(_listingKey).toList()..sort();
     final signature = keys.join(',');
@@ -419,8 +540,7 @@ class _MapViewState extends State<MapView> {
     final lat = point.latitude.clamp(-85.05112878, 85.05112878).toDouble();
     final sinLat = math.sin(lat * math.pi / 180);
     final x = (point.longitude + 180) / 360 * worldSize;
-    final y =
-        (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
+    final y = (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
         worldSize;
     return Offset(x, y);
   }
@@ -534,7 +654,10 @@ class _MapViewState extends State<MapView> {
           height: _priceMarkerHeight,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => widget.onTapListing(listing),
+            onTap: () => _handlePointTap(
+              group.point,
+              () => widget.onTapListing(listing),
+            ),
             child: _StandalonePricePin(
               listing: listing,
               rates: widget.rates,
@@ -553,7 +676,7 @@ class _MapViewState extends State<MapView> {
         height: size,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => _openGroup(group),
+          onTap: () => _handlePointTap(group.point, () => _openGroup(group)),
           child: _ClusterDot(count: group.listings.length),
         ),
       ),
@@ -585,6 +708,47 @@ class _MapViewState extends State<MapView> {
     );
   }
 
+  double _distanceM(LatLng a, LatLng b) {
+    const earthRadiusM = 6371000.0;
+    final lat1 = a.latitude * math.pi / 180;
+    final lat2 = b.latitude * math.pi / 180;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1) *
+            math.cos(lat2) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return 2 * earthRadiusM * math.asin(math.sqrt(h));
+  }
+
+  (DistrictZone, num)? _metroHit(LatLng point) {
+    DistrictZone? nearest;
+    var nearestM = double.infinity;
+    for (final station in _zones.metroStations) {
+      final distance = _distanceM(point, LatLng(station.lat, station.lng));
+      if (distance < nearestM) {
+        nearest = station;
+        nearestM = distance;
+      }
+    }
+    if (nearest == null || nearestM > 1000) return null;
+    final radius = nearestM <= 200
+        ? 200
+        : nearestM <= 500
+            ? 500
+            : 1000;
+    return (nearest, radius);
+  }
+
+  void _handlePointTap(LatLng point, VoidCallback action) {
+    if (_drawing) {
+      setState(() => _area.add(point));
+      return;
+    }
+    action();
+  }
+
   void _onMapTap(LatLng point) {
     if (_expandedGroupKey != null) {
       setState(() => _expandedGroupKey = null);
@@ -592,6 +756,14 @@ class _MapViewState extends State<MapView> {
     if (_drawing) {
       setState(() => _area.add(point));
       return;
+    }
+
+    if (_showMetro) {
+      final metroHit = _metroHit(point);
+      if (metroHit != null) {
+        unawaited(_selectZone(metroHit.$1, metroRadiusM: metroHit.$2));
+        return;
+      }
     }
 
     // Hit-test narrow geographic scopes before broad districts. This prevents
@@ -625,8 +797,7 @@ class _MapViewState extends State<MapView> {
     double borderWidth = 2,
   }) {
     final selected = zone.id == _selectedZoneId;
-    final districtDimmed =
-        _selectedDistrictId != null &&
+    final districtDimmed = _selectedDistrictId != null &&
         zone.type == 'district' &&
         zone.id != _selectedDistrictId;
     final base = _parseHexColor(zone.colorHex);
@@ -643,36 +814,52 @@ class _MapViewState extends State<MapView> {
     );
   }
 
-  Polygon _proximityRing(DistrictZone place, double radiusM, Color color) {
+  Polygon _proximityRing(
+    DistrictZone place,
+    double radiusM,
+    Color color, {
+    bool selected = false,
+  }) {
     return Polygon(
       points: _circleRing(place, radiusM),
-      borderStrokeWidth: 1.5,
-      borderColor: color.withValues(alpha: 0.78),
-      color: color.withValues(alpha: 0.075),
+      borderStrokeWidth: selected ? 3 : 1.5,
+      borderColor: color.withValues(alpha: selected ? 1 : 0.78),
+      color: color.withValues(alpha: selected ? 0.18 : 0.075),
     );
   }
 
   List<Marker> _poiMarkers(List<DistrictZone> pois, IconData icon) => [
-    for (final poi in pois)
-      Marker(
-        point: LatLng(poi.lat, poi.lng),
-        width: 34,
-        height: 34,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => unawaited(_selectZone(poi)),
-          child: _PoiMarker(
-            icon: icon,
-            color: _parseHexColor(poi.colorHex),
-            selected: poi.id == _selectedZoneId,
+        for (final poi in pois)
+          Marker(
+            point: LatLng(poi.lat, poi.lng),
+            width: 34,
+            height: 34,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _handlePointTap(
+                LatLng(poi.lat, poi.lng),
+                () => unawaited(_selectZone(poi)),
+              ),
+              child: _PoiMarker(
+                icon: icon,
+                color: _parseHexColor(poi.colorHex),
+                selected: poi.id == _selectedZoneId,
+              ),
+            ),
           ),
-        ),
-      ),
-  ];
+      ];
 
   @override
   Widget build(BuildContext context) {
     final s = context.watch<SettingsState>().s;
+    final appState = context.watch<AppState>();
+    final selectedMetroRadius = appState.filters.metroMaxM?.toDouble();
+    final desiredZone = _zoneMatchingFilters();
+    if (desiredZone?.id != _selectedZoneId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncSelectionFromFilters(focus: true);
+      });
+    }
     final visible = _visible;
     final groups = _groupsFor(visible);
     final expandedGroup = _expandedGroup(groups);
@@ -760,11 +947,29 @@ class _MapViewState extends State<MapView> {
                 polygons: [
                   // Largest first so the stronger inner zones stay visible.
                   for (final station in _zones.metroStations)
-                    _proximityRing(station, 1000, _metro1000Color),
+                    _proximityRing(
+                      station,
+                      1000,
+                      _metro1000Color,
+                      selected: station.id == _selectedZoneId &&
+                          selectedMetroRadius == 1000,
+                    ),
                   for (final station in _zones.metroStations)
-                    _proximityRing(station, 500, _metro500Color),
+                    _proximityRing(
+                      station,
+                      500,
+                      _metro500Color,
+                      selected: station.id == _selectedZoneId &&
+                          selectedMetroRadius == 500,
+                    ),
                   for (final station in _zones.metroStations)
-                    _proximityRing(station, 200, _metro200Color),
+                    _proximityRing(
+                      station,
+                      200,
+                      _metro200Color,
+                      selected: station.id == _selectedZoneId &&
+                          selectedMetroRadius == 200,
+                    ),
                 ],
               ),
             if (_showParks && _zones.parks.isNotEmpty)
@@ -828,8 +1033,7 @@ class _MapViewState extends State<MapView> {
                               color: Colors.black.withValues(alpha: 0.55),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color:
-                                    (_selectedDistrictId != null &&
+                                color: (_selectedDistrictId != null &&
                                         zone.id != _selectedDistrictId)
                                     ? _desaturate(
                                         _parseHexColor(zone.colorHex),
@@ -842,8 +1046,7 @@ class _MapViewState extends State<MapView> {
                               zone.label,
                               style: TextStyle(
                                 color: Colors.white.withValues(
-                                  alpha:
-                                      (_selectedDistrictId != null &&
+                                  alpha: (_selectedDistrictId != null &&
                                           zone.id != _selectedDistrictId)
                                       ? 0.55
                                       : 1,
@@ -869,7 +1072,10 @@ class _MapViewState extends State<MapView> {
                       height: 34,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: () => unawaited(_selectZone(station)),
+                        onTap: () => _handlePointTap(
+                          LatLng(station.lat, station.lng),
+                          () => unawaited(_selectZone(station)),
+                        ),
                         child: _MetroStationMarker(
                           selected: station.id == _selectedZoneId,
                         ),
@@ -895,7 +1101,7 @@ class _MapViewState extends State<MapView> {
                   Icons.school_outlined,
                 ),
               ),
-            if (selectedZone != null && selectedZone.type != 'district')
+            if (selectedZone != null)
               MarkerLayer(
                 markers: [
                   Marker(
@@ -941,7 +1147,9 @@ class _MapViewState extends State<MapView> {
                     points: _area,
                     borderStrokeWidth: 2,
                     borderColor: Theme.of(context).colorScheme.primary,
-                    color: Theme.of(context).colorScheme.primary
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
                         .withValues(alpha: 0.15),
                   ),
                 ],
@@ -1166,9 +1374,8 @@ class _ZoneToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: active
-                ? scheme.primary
-                : Colors.black.withValues(alpha: 0.55),
+            color:
+                active ? scheme.primary : Colors.black.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: active ? scheme.primary : Colors.white24),
           ),
@@ -1278,20 +1485,20 @@ class _PoiMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: selected
-          ? Theme.of(context).colorScheme.primary
-          : Colors.black.withValues(alpha: 0.78),
-      shape: BoxShape.circle,
-      border: Border.all(
-        color: selected ? Colors.white : color,
-        width: selected ? 2.5 : 2,
-      ),
-      boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
-    ),
-    child: Icon(icon, size: 18, color: Colors.white),
-  );
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : Colors.black.withValues(alpha: 0.78),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? Colors.white : color,
+            width: selected ? 2.5 : 2,
+          ),
+          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
+        ),
+        child: Icon(icon, size: 18, color: Colors.white),
+      );
 }
 
 class _ClusterAccumulator {
