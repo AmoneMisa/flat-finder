@@ -70,7 +70,7 @@ function normalizeMatchRows(searchMatches) {
   return rows;
 }
 
-function buildSearchContext({ filters, countries, rates, searchMatches }) {
+export function buildSearchContext({ filters, countries, rates, searchMatches }) {
   const params = [];
   const add = (value) => {
     params.push(value);
@@ -457,6 +457,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     else pageWhere.push(`l.created_at IS NULL AND l.id > ${idParam}::bigint`);
     useCursor = true;
   }
+  const cursorCount = Number(cursor?.c);
+  const hasCursorCount = useCursor && Number.isInteger(cursorCount) && cursorCount >= 0;
 
   const limit = Math.max(1, Math.min(Number(filters.limit) || 40, 60));
   const limitParam = addPage(limit);
@@ -476,8 +478,9 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   // Without a cursor, pageWhere is exactly countSql's `dedupe_rank = 1` predicate,
   // so a window COUNT(*) OVER() over that same filtered set gives the identical
   // total countSql would, in the one scan the page fetch already has to do.
-  // With a cursor, pageWhere also excludes already-seen rows, so the window
-  // total would undercount — that case keeps the separate countSql query.
+  // Cursor tokens carry that first-page total forward, so later cursor pages
+  // avoid an otherwise identical exact COUNT scan. Legacy cursors without a
+  // carried total fall back to countSql once for compatibility.
   const combinedPageSql = useCursor ? null : `
     SELECT l.id AS db_id, l.created_at, l.price, l.currency, l.title, l.data, l.search_rank,
       COUNT(*) OVER()::int AS total_count
@@ -503,6 +506,9 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     countOrStatsResult = pageResult.rows.length
       ? { rows: [{ count: pageResult.rows[0].total_count }] }
       : await pool.query(countSql, baseParams);
+  } else if (hasCursorCount) {
+    pageResult = await pool.query(pageSql, pageParams);
+    countOrStatsResult = { rows: [{ count: cursorCount }] };
   } else {
     [countOrStatsResult, pageResult] = await Promise.all([
       pool.query(countSql, baseParams),
@@ -531,7 +537,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   if (!filters.statsOnly && rows.length === limit && ['newest', 'oldest'].includes(context.sort)) {
     const last = rows[rows.length - 1];
     const time = last.created_at instanceof Date ? last.created_at.toISOString() : (last.created_at ? new Date(last.created_at).toISOString() : null);
-    nextCursor = encodeCursor({ v: CURSOR_VERSION, sort: context.sort, t: time, id: String(last.db_id) });
+    nextCursor = encodeCursor({ v: CURSOR_VERSION, sort: context.sort, t: time, id: String(last.db_id), c: count });
   }
 
   return {
