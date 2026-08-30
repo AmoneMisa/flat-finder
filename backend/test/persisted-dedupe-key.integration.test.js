@@ -66,9 +66,14 @@ async function migration(name) {
 
 test('persisted dedupe key is equivalent to the previous runtime fingerprint', {skip: !connectionString}, async () => {
   const client = new Client({connectionString});
+  const schema = `dedupe_migration_test_${process.pid}_${Date.now()}`;
   await client.connect();
   try {
-    await client.query('DROP TABLE IF EXISTS listings CASCADE');
+    // This test intentionally replays old migrations. Keep that destructive
+    // fixture out of public so parallel integration tests never lose the
+    // current listings table, generated columns, triggers, or foreign keys.
+    await client.query(`CREATE SCHEMA ${schema}`);
+    await client.query(`SET search_path TO ${schema}`);
     await client.query(await migration('001_baseline_listings.sql'));
     await client.query(await migration('010_persisted_dedupe_key.sql'));
 
@@ -123,6 +128,8 @@ test('persisted dedupe key is equivalent to the previous runtime fingerprint', {
     assert.equal(after.rows[0].dedupe_key, legacyKey(vectors[3]));
     assert.notEqual(after.rows[0].dedupe_key, before, 'stored generated key must refresh when fingerprint inputs change');
   } finally {
+    await client.query('RESET search_path').catch(() => {});
+    await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => {});
     await client.end();
   }
 });
