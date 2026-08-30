@@ -1,6 +1,7 @@
 -- Flat Finder production performance report.
 -- Run against the production database after representative traffic has warmed
--- pg_stat_statements. This script is read-only.
+-- pg_stat_statements. This script is read-only and still reports index/table
+-- pressure when pg_stat_statements is unavailable.
 
 \echo '=== database / connection summary ==='
 SELECT
@@ -12,6 +13,14 @@ SELECT
 FROM pg_stat_activity
 WHERE datname = current_database();
 
+SELECT EXISTS (
+  SELECT 1
+  FROM pg_extension
+  WHERE extname = 'pg_stat_statements'
+) AS has_pg_stat_statements
+\gset
+
+\if :has_pg_stat_statements
 \echo '=== top statements by total execution time ==='
 SELECT
   calls,
@@ -43,6 +52,10 @@ WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
   AND calls >= 20
 ORDER BY mean_exec_time DESC
 LIMIT 30;
+\else
+\echo '=== pg_stat_statements unavailable ==='
+\echo 'Enable/load pg_stat_statements to collect statement timing; continuing with index/table statistics.'
+\endif
 
 \echo '=== listing indexes by scan count / size ==='
 SELECT
@@ -67,6 +80,7 @@ ORDER BY s.relname, s.idx_scan DESC, pg_relation_size(s.indexrelid) DESC;
 
 \echo '=== table IO / dead tuple pressure ==='
 SELECT
+  schemaname,
   relname,
   seq_scan,
   idx_scan,
@@ -78,17 +92,18 @@ SELECT
   last_autovacuum,
   last_autoanalyze
 FROM pg_stat_user_tables
-WHERE relname IN (
+WHERE (schemaname = 'public' AND relname IN (
   'listings',
   'listing_public_feed_members',
   'listing_location_terms',
   'listing_nearby_places',
   'listing_photo_hashes',
   'listing_property_clusters',
-  'crawl_tasks',
+  'crawl_tasks'
+)) OR (schemaname = 'subscriptions' AND relname IN (
   'mobile_deliveries',
   'mobile_subscription_seen'
-)
+))
 ORDER BY n_dead_tup DESC;
 
 \echo '=== queue backlog / leases ==='
