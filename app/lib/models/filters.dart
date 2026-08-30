@@ -246,6 +246,9 @@ class Filters {
   num? metroMaxM; // max distance (meters) from a metro/transit station
   num? nearbyMaxM; // max distance (meters) from nearbyKind
   String? nearbyKind; // one of kNearbyKinds
+  num? centerLat;
+  num? centerLng;
+  num? radiusM;
   bool withPhotos;
   String city;
   String district;
@@ -296,6 +299,9 @@ class Filters {
     this.metroMaxM,
     this.nearbyMaxM,
     this.nearbyKind,
+    this.centerLat,
+    this.centerLng,
+    this.radiusM,
     this.withPhotos = false,
     this.city = '',
     this.district = '',
@@ -350,6 +356,9 @@ class Filters {
     num? metroMaxM,
     num? nearbyMaxM,
     String? nearbyKind,
+    num? centerLat,
+    num? centerLng,
+    num? radiusM,
     bool? withPhotos,
     bool clearPriceMin = false,
     bool clearPriceMax = false,
@@ -374,6 +383,7 @@ class Filters {
     bool clearMetroMaxM = false,
     bool clearNearbyMaxM = false,
     bool clearNearbyKind = false,
+    bool clearRadiusSearch = false,
     String? city,
     String? district,
     String? microdistrict,
@@ -434,6 +444,9 @@ class Filters {
       metroMaxM: clearMetroMaxM ? null : (metroMaxM ?? this.metroMaxM),
       nearbyMaxM: clearNearbyMaxM ? null : (nearbyMaxM ?? this.nearbyMaxM),
       nearbyKind: clearNearbyKind ? null : (nearbyKind ?? this.nearbyKind),
+      centerLat: clearRadiusSearch ? null : (centerLat ?? this.centerLat),
+      centerLng: clearRadiusSearch ? null : (centerLng ?? this.centerLng),
+      radiusM: clearRadiusSearch ? null : (radiusM ?? this.radiusM),
       withPhotos: withPhotos ?? this.withPhotos,
       city: city ?? this.city,
       district: district ?? this.district,
@@ -488,6 +501,9 @@ class Filters {
         'metroMaxM': metroMaxM,
         'nearbyMaxM': nearbyMaxM,
         'nearbyKind': nearbyKind,
+        'centerLat': centerLat,
+        'centerLng': centerLng,
+        'radiusM': radiusM,
         'withPhotos': withPhotos,
         'city': city,
         'district': district,
@@ -561,6 +577,9 @@ class Filters {
       metroMaxM: n(j['metroMaxM']),
       nearbyMaxM: n(j['nearbyMaxM']),
       nearbyKind: j['nearbyKind'] as String?,
+      centerLat: n(j['centerLat']),
+      centerLng: n(j['centerLng']),
+      radiusM: n(j['radiusM']),
       withPhotos: j['withPhotos'] == true,
       city: (j['city'] ?? '').toString(),
       district: (j['district'] ?? '').toString(),
@@ -645,6 +664,9 @@ class Filters {
       nearbyMaxM: n(q['nearbyMaxM']),
       nearbyKind:
           (q['nearbyKind']?.isNotEmpty ?? false) ? q['nearbyKind'] : null,
+      centerLat: n(q['centerLat']),
+      centerLng: n(q['centerLng']),
+      radiusM: n(q['radiusM']),
       withPhotos: q['withPhotos'] == 'true',
       city: (q['city'] ?? '').trim(),
       district: (q['district'] ?? '').trim(),
@@ -725,6 +747,11 @@ class Filters {
     if (nearbyMaxM != null) p['nearbyMaxM'] = nearbyMaxM.toString();
     if (nearbyKind != null && nearbyKind!.isNotEmpty)
       p['nearbyKind'] = nearbyKind!;
+    if (centerLat != null && centerLng != null && radiusM != null) {
+      p['centerLat'] = centerLat.toString();
+      p['centerLng'] = centerLng.toString();
+      p['radiusM'] = radiusM.toString();
+    }
     if (withPhotos) p['withPhotos'] = 'true';
     if (city.trim().isNotEmpty) p['city'] = city.trim();
     if (district.trim().isNotEmpty) p['district'] = district.trim();

@@ -53,8 +53,6 @@ class _FilterSheetState extends State<FilterSheet> {
   String? _metro;
   late TextEditingController _minCtl;
   late TextEditingController _maxCtl;
-  late TextEditingController _toleranceCtl;
-  bool _tolerance = false;
   late TextEditingController _roomsMinCtl;
   late TextEditingController _roomsMaxCtl;
   late TextEditingController _bedroomsMinCtl;
@@ -115,10 +113,6 @@ class _FilterSheetState extends State<FilterSheet> {
     );
     _maxCtl = TextEditingController(
       text: widget.initial.priceMax?.toString() ?? '',
-    );
-    _tolerance = (widget.initial.priceTolerance ?? 0) > 0;
-    _toleranceCtl = TextEditingController(
-      text: widget.initial.priceTolerance?.toString() ?? '',
     );
     _roomsMinCtl = TextEditingController(
       text: widget.initial.roomsMin?.toString() ?? '',
@@ -192,7 +186,6 @@ class _FilterSheetState extends State<FilterSheet> {
   List<TextEditingController> get _textControllers => [
     _minCtl,
     _maxCtl,
-    _toleranceCtl,
     _roomsMinCtl,
     _roomsMaxCtl,
     _bedroomsMinCtl,
@@ -237,7 +230,6 @@ class _FilterSheetState extends State<FilterSheet> {
     _liveApplyTimer?.cancel();
     _minCtl.dispose();
     _maxCtl.dispose();
-    _toleranceCtl.dispose();
     _roomsMinCtl.dispose();
     _roomsMaxCtl.dispose();
     _bedroomsMinCtl.dispose();
@@ -313,7 +305,6 @@ class _FilterSheetState extends State<FilterSheet> {
       metro: _metro ?? '',
       priceMin: parse(_minCtl.text),
       priceMax: parse(_maxCtl.text),
-      priceTolerance: _tolerance ? parse(_toleranceCtl.text) : null,
       priceCurrency: _priceCurrency,
       roomsMin: parse(_roomsMinCtl.text),
       roomsMax: parse(_roomsMaxCtl.text),
@@ -449,8 +440,6 @@ class _FilterSheetState extends State<FilterSheet> {
       _metro = f.metro.trim().isEmpty ? null : f.metro.trim();
       _minCtl.text = f.priceMin?.toString() ?? '';
       _maxCtl.text = f.priceMax?.toString() ?? '';
-      _tolerance = (f.priceTolerance ?? 0) > 0;
-      _toleranceCtl.text = f.priceTolerance?.toString() ?? '';
       _priceCurrency = f.priceCurrency;
       _roomsMinCtl.text = f.roomsMin?.toString() ?? '';
       _roomsMaxCtl.text = f.roomsMax?.toString() ?? '';
@@ -1024,9 +1013,6 @@ class _FilterSheetState extends State<FilterSheet> {
                               child: TextField(
                                 controller: _maxCtl,
                                 keyboardType: TextInputType.number,
-                                // Tolerance only makes sense once a max price is set —
-                                // rebuild to show/hide that checkbox as this changes.
-                                onChanged: (_) => setState(() {}),
                                 decoration: InputDecoration(
                                   labelText: s.t('max'),
                                   hintText: s.t('maxPlaceholder'),
@@ -1036,30 +1022,6 @@ class _FilterSheetState extends State<FilterSheet> {
                             ),
                           ],
                         ),
-                        if (_maxCtl.text.trim().isNotEmpty)
-                          CheckboxListTile(
-                            value: _tolerance,
-                            onChanged: (v) =>
-                                setState(() => _tolerance = v ?? false),
-                            contentPadding: EdgeInsets.zero,
-                            controlAffinity: ListTileControlAffinity.leading,
-                            title: Text(s.t('priceTolerance')),
-                            subtitle: Text(
-                              s.t('priceToleranceHint'),
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
-                        if (_tolerance && _maxCtl.text.trim().isNotEmpty)
-                          TextField(
-                            controller: _toleranceCtl,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              labelText: '+ ${s.t('max')}',
-                              hintText: '100',
-                              prefixText: '+ ',
-                              border: const OutlineInputBorder(),
-                            ),
-                          ),
                         if (_countries.length == 1 &&
                             widget.countries
                                 .firstWhere(

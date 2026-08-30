@@ -265,6 +265,17 @@ function buildSearchContext({ filters, countries, rates, searchMatches }) {
     where.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(l.data->'nearbyPlaces','[]'::jsonb)) AS place WHERE ${placeChecks.length ? placeChecks.join(' AND ') : 'TRUE'})`);
   }
 
+  if (Number.isFinite(filters.centerLat) && Number.isFinite(filters.centerLng)
+    && Number.isFinite(filters.radiusM) && filters.centerLat >= -90 && filters.centerLat <= 90
+    && filters.centerLng >= -180 && filters.centerLng <= 180 && filters.radiusM > 0) {
+    const lat = add(Number(filters.centerLat));
+    const lng = add(Number(filters.centerLng));
+    const radius = add(Math.min(Number(filters.radiusM), 200000));
+    where.push(`l.lat IS NOT NULL AND l.lng IS NOT NULL AND 6371000 * ACOS(LEAST(1, GREATEST(-1,
+      COS(RADIANS(${lat})) * COS(RADIANS(l.lat)) * COS(RADIANS(l.lng) - RADIANS(${lng}))
+      + SIN(RADIANS(${lat})) * SIN(RADIANS(l.lat))))) <= ${radius}`);
+  }
+
   if (filters.query && !elasticsearchAuthoritative) {
     const p = add(`%${String(filters.query).toLowerCase()}%`);
     where.push(`LOWER(CONCAT_WS(' ', l.title, l.description, l.city, l.district, l.metro, l.data->>'region', l.data->>'microdistrict', l.data->>'area', l.data->>'kvartal', l.data->>'residenceComplex', l.data->>'tags')) LIKE ${p}`);

@@ -49,6 +49,10 @@ class MapView extends StatefulWidget {
     this.locale = '',
     this.centerZoom = 6,
     this.onExpand,
+    this.radiusCenter,
+    this.radiusM,
+    this.onRadiusCenterChanged,
+    this.onRadiusChanged,
   });
 
   final List<Listing> listings;
@@ -65,6 +69,10 @@ class MapView extends StatefulWidget {
   /// pushes a full-screen route; the full-screen route itself passes null so
   /// the button doesn't show a second time.
   final VoidCallback? onExpand;
+  final LatLng? radiusCenter;
+  final double? radiusM;
+  final ValueChanged<LatLng>? onRadiusCenterChanged;
+  final ValueChanged<double>? onRadiusChanged;
 
   /// Zoom level used when [center] changes (e.g. 6 for a country default,
   /// higher when a specific listing's "show on map" set the center).
@@ -80,6 +88,7 @@ class _MapViewState extends State<MapView> {
 
   // Freeform search area the user outlines by tapping the map.
   bool _drawing = false;
+  bool _placingRadiusCenter = false;
   final List<LatLng> _area = [];
 
   // Same marker behaviour as Personal Site.
@@ -1154,6 +1163,18 @@ class _MapViewState extends State<MapView> {
                   ),
                 ],
               ),
+            if (widget.radiusCenter != null && widget.radiusM != null)
+              PolygonLayer(
+                polygons: [
+                  Polygon(
+                    points: _circleRingAt(widget.radiusCenter!.latitude,
+                        widget.radiusCenter!.longitude, widget.radiusM!),
+                    borderStrokeWidth: 2.5,
+                    borderColor: const Color(0xFF2563EB),
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.14),
+                  ),
+                ],
+              ),
             if (_area.length >= 2 && _area.length < 3)
               PolylineLayer(
                 polylines: [
@@ -1184,6 +1205,14 @@ class _MapViewState extends State<MapView> {
               ),
             MarkerLayer(
               markers: [
+                if (widget.radiusCenter != null)
+                  Marker(
+                    point: widget.radiusCenter!,
+                    width: 46,
+                    height: 46,
+                    child: const Icon(Icons.work,
+                        color: Color(0xFF2563EB), size: 36),
+                  ),
                 for (final group in groups)
                   if (expandedGroup == null || group.key != expandedGroup.key)
                     ..._markersForGroup(group, groups),
@@ -1230,6 +1259,22 @@ class _MapViewState extends State<MapView> {
                     : Theme.of(context).colorScheme.onSurface,
                 child: Icon(_drawing ? Icons.check : Icons.gesture),
               ),
+              if (widget.onRadiusCenterChanged != null) ...[
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'radiusCenter',
+                  tooltip: 'Указать работу на карте',
+                  onPressed: () => setState(
+                      () => _placingRadiusCenter = !_placingRadiusCenter),
+                  backgroundColor: _placingRadiusCenter
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.surface,
+                  foregroundColor: _placingRadiusCenter
+                      ? Theme.of(context).colorScheme.onPrimary
+                      : Theme.of(context).colorScheme.onSurface,
+                  child: const Icon(Icons.work_outline),
+                ),
+              ],
               if (_area.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
@@ -1259,6 +1304,30 @@ class _MapViewState extends State<MapView> {
                     : s.t('drawHint'),
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
+            ),
+          ),
+        if (widget.radiusCenter != null &&
+            widget.radiusM != null &&
+            widget.onRadiusChanged != null)
+          Positioned(
+            left: 12,
+            right: 76,
+            bottom: 18,
+            child: Card(
+              child: Row(children: [
+                const SizedBox(width: 12),
+                const Icon(Icons.work_outline, size: 20),
+                Expanded(
+                    child: Slider(
+                  min: 500,
+                  max: 30000,
+                  divisions: 59,
+                  value: widget.radiusM!.clamp(500, 30000),
+                  onChanged: widget.onRadiusChanged,
+                )),
+                Text('${(widget.radiusM! / 1000).toStringAsFixed(1)} км'),
+                const SizedBox(width: 12),
+              ]),
             ),
           ),
         if (_zones.cityZone?.boundaryRings.isNotEmpty == true ||

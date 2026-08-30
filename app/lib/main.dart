@@ -11,6 +11,7 @@ import 'state/hidden.dart';
 import 'state/history.dart';
 import 'state/presets.dart';
 import 'state/settings.dart';
+import 'state/sorted.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -47,6 +48,7 @@ class FlatFinderApp extends StatelessWidget {
           lazy: false,
           create: (_) => PresetsState(ApiService())..load(),
         ),
+        ChangeNotifierProvider(create: (_) => SortedState()..load()),
       ],
       child: Consumer<SettingsState>(
         builder: (context, settings, _) => MaterialApp(

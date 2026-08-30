@@ -304,9 +304,6 @@ class AppStrings {
       'contact': 'Contact',
       'call': 'Call',
       'message': 'Message',
-      'priceTolerance': 'Allow slightly over max',
-      'priceToleranceHint':
-          'Include listings up to this much above your max price.',
       'drawArea': 'Draw area',
       'clearArea': 'Clear area',
       'finishArea': 'Done',
@@ -420,7 +417,10 @@ class AppStrings {
           'Notify this phone when enabled presets get new listings.',
       'pushSetupRequired':
           'Push transport is not configured in this app build yet.',
-      'pushEnableFailed': 'Could not enable notifications. Check notification permission and connection.',
+      'pushEnableFailed':
+          'Could not enable notifications. Check notification permission and connection.',
+      'pushNewListing': 'New listing',
+      'pushOpen': 'Open',
       'enablePresetPush': 'Enable notifications',
       'disablePresetPush': 'Disable notifications',
       'enablePresetPushPromptTitle': 'Notify about new listings?',
@@ -725,9 +725,6 @@ class AppStrings {
       'contact': 'Контакт',
       'call': 'Позвонить',
       'message': 'Написать',
-      'priceTolerance': 'Допускать чуть дороже макс.',
-      'priceToleranceHint':
-          'Показывать объявления дороже макс. цены не более чем на эту сумму.',
       'drawArea': 'Выделить область',
       'clearArea': 'Очистить область',
       'finishArea': 'Готово',
@@ -842,6 +839,8 @@ class AppStrings {
       'pushSetupRequired': 'Push ещё не настроен для этой сборки приложения.',
       'pushEnableFailed':
           'Не удалось включить уведомления. Проверьте разрешение и соединение.',
+      'pushNewListing': 'Новая квартира',
+      'pushOpen': 'Открыть',
       'enablePresetPush': 'Включить уведомления',
       'disablePresetPush': 'Выключить уведомления',
       'enablePresetPushPromptTitle': 'Уведомлять о новых квартирах?',

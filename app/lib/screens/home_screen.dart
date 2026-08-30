@@ -10,6 +10,7 @@ import '../models/listing.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/hidden.dart';
+import '../state/favorites.dart';
 import '../state/settings.dart';
 import '../services/push_service.dart';
 import '../utils/format.dart';
@@ -26,6 +27,8 @@ import 'history_screen.dart';
 import 'listing_detail.dart';
 import 'presets_screen.dart';
 import 'settings_screen.dart';
+import 'sorted_screen.dart';
+import 'swipe_review_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -43,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
   AppLinks? _appLinks;
   StreamSubscription<Uri>? _linkSub;
   StreamSubscription<int>? _pushListingSub;
+  StreamSubscription<ForegroundPush>? _foregroundPushSub;
   final ScrollController _resultsScroll = ScrollController();
 
   @override
@@ -51,6 +55,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _initDeepLinks();
     _pushListingSub = PushService.instance.listingOpens.listen(
       _openSharedListing,
+    );
+    _foregroundPushSub = PushService.instance.foregroundPushes.listen(
+      _showForegroundPush,
     );
     _resultsScroll.addListener(_loadMoreNearEnd);
   }
@@ -66,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _linkSub?.cancel();
     _pushListingSub?.cancel();
+    _foregroundPushSub?.cancel();
     _resultsScroll.dispose();
     super.dispose();
   }
@@ -114,6 +122,45 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _showForegroundPush(ForegroundPush push) {
+    if (!mounted) return;
+    final settings = context.read<SettingsState>();
+    final title = push.title?.trim();
+    final body = push.body?.trim();
+    final messenger = ScaffoldMessenger.of(context);
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 8),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title?.isNotEmpty == true
+                    ? title!
+                    : settings.t('pushNewListing'),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              if (body?.isNotEmpty == true) ...[
+                const SizedBox(height: 3),
+                Text(body!),
+              ],
+            ],
+          ),
+          action: push.publicId == null
+              ? null
+              : SnackBarAction(
+                  label: settings.t('pushOpen'),
+                  onPressed: () => _openSharedListing(push.publicId!),
+                ),
+        ),
+      );
+  }
+
   Future<void> _openFilters(AppState state) async {
     final result = await showModalBottomSheet<Filters>(
       context: context,
@@ -160,6 +207,14 @@ class _HomeScreenState extends State<HomeScreen> {
             country: country,
             city: state.filters.city,
             locale: settings.lang,
+            radiusCenter: state.filters.centerLat != null &&
+                    state.filters.centerLng != null
+                ? LatLng(state.filters.centerLat!.toDouble(),
+                    state.filters.centerLng!.toDouble())
+                : null,
+            radiusM: state.filters.radiusM?.toDouble(),
+            onRadiusCenterChanged: (point) => _setRadiusCenter(state, point),
+            onRadiusChanged: (radius) => _setRadius(state, radius),
           ),
         ),
       ),
@@ -179,6 +234,76 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openHistory() {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const HistoryScreen()));
+  }
+
+  void _openSorted() => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SortedScreen()),
+      );
+
+  Future<void> _openSwipeReview() async {
+    final grouped = context.read<FavoritesState>().grouped();
+    final groups = <String, List<Listing>>{};
+    for (final country in grouped.entries) {
+      for (final city in country.value.entries) {
+        groups['${country.key} · ${city.key.isEmpty ? 'Без города' : city.key}'] =
+            city.value;
+      }
+    }
+    if (groups.isEmpty) return;
+    final selected = <String>{};
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+              builder: (context, setLocal) => AlertDialog(
+                title: const Text('Какие подборки посмотреть?'),
+                content: SizedBox(
+                    width: 420,
+                    child: ListView(shrinkWrap: true, children: [
+                      for (final entry in groups.entries)
+                        CheckboxListTile(
+                          value: selected.contains(entry.key),
+                          title: Text(entry.key),
+                          subtitle: Text('${entry.value.length} квартир'),
+                          onChanged: (value) => setLocal(() => value == true
+                              ? selected.add(entry.key)
+                              : selected.remove(entry.key)),
+                        ),
+                    ])),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('Отмена')),
+                  FilledButton(
+                      onPressed: selected.isEmpty
+                          ? null
+                          : () => Navigator.pop(dialogContext, true),
+                      child: const Text('Начать')),
+                ],
+              ),
+            ));
+    if (ok != true || !mounted) return;
+    final unique = <String, Listing>{};
+    for (final name in selected) {
+      for (final listing in groups[name]!)
+        unique['${listing.source}:${listing.id}'] = listing;
+    }
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => SwipeReviewScreen(listings: unique.values.toList())));
+  }
+
+  void _setRadiusCenter(AppState state, LatLng point) {
+    state.updateFilters(state.filters.copyWith(
+        centerLat: point.latitude,
+        centerLng: point.longitude,
+        radiusM: state.filters.radiusM ?? 5000));
+    state.search();
+    state.loadMapListings();
+  }
+
+  void _setRadius(AppState state, double radius) {
+    state.updateFilters(state.filters.copyWith(radiusM: radius));
+    state.search();
+    state.loadMapListings();
   }
 
   void _openPresets() {
@@ -382,6 +507,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   _openHistory();
                 case 'favorites':
                   _openFavorites();
+                case 'swipe':
+                  _openSwipeReview();
+                case 'sorted':
+                  _openSorted();
                 case 'presets':
                   _openPresets();
                 case 'statistics':
@@ -440,6 +569,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     title: Text(settings.t('favorites')),
                   ),
                 ),
+                const PopupMenuItem(
+                    value: 'swipe',
+                    child: ListTile(
+                        leading: Icon(Icons.swipe),
+                        title: Text('Просмотреть подборки'))),
+                const PopupMenuItem(
+                    value: 'sorted',
+                    child: ListTile(
+                        leading: Icon(Icons.done_all),
+                        title: Text('Отсортированные'))),
                 PopupMenuItem(
                   value: 'presets',
                   child: ListTile(
@@ -556,6 +695,14 @@ class _HomeScreenState extends State<HomeScreen> {
         country: mapCountry,
         city: state.filters.city,
         locale: settings.lang,
+        radiusCenter:
+            state.filters.centerLat != null && state.filters.centerLng != null
+                ? LatLng(state.filters.centerLat!.toDouble(),
+                    state.filters.centerLng!.toDouble())
+                : null,
+        radiusM: state.filters.radiusM?.toDouble(),
+        onRadiusCenterChanged: (point) => _setRadiusCenter(state, point),
+        onRadiusChanged: (radius) => _setRadius(state, radius),
         onExpand: () => _openFullScreenMap(
           state,
           settings,

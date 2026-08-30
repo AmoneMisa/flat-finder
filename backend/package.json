@@ -16,8 +16,8 @@
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.0",
-    "@whiteslove/geo-catalog": "https://codeload.github.com/AmoneMisa/geo-catalog/tar.gz/2d83deeaf0d1c199f5465df9210d9c2cc2fd781a",
-    "@whiteslove/parsing-lexicon": "^0.5.0",
+    "@whiteslove/geo-catalog": "^0.6.0",
+    "@whiteslove/parsing-lexicon": "^0.5.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.23.0"

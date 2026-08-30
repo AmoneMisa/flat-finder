@@ -1,7 +1,7 @@
 name: flat_finder
 description: Flat & house search across RO, UA, KZ, UZ, KG with a map and filters.
 publish_to: "none"
-version: 1.0.0+40
+version: 1.0.0+41
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

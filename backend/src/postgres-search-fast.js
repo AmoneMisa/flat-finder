@@ -33,6 +33,7 @@ const NUMERIC_FILTERS = [
   'nearbyMaxM', 'pricePerSqmMin', 'pricePerSqmMax', 'floorMin', 'floorMax',
   'totalFloorsMin', 'totalFloorsMax', 'yearMin', 'yearMax',
   'commissionPercentMin', 'commissionPercentMax',
+  'centerLat', 'centerLng', 'radiusM',
 ];
 
 const BOOLEAN_FILTERS = [

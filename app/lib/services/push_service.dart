@@ -4,6 +4,18 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
+class ForegroundPush {
+  const ForegroundPush({
+    required this.title,
+    required this.body,
+    required this.publicId,
+  });
+
+  final String? title;
+  final String? body;
+  final int? publicId;
+}
+
 /// Thin FCM client for anonymous apartment-preset notifications.
 ///
 /// No account or device MAC is used. Firebase options are supplied at build
@@ -26,6 +38,8 @@ class PushService {
 
   final _listingOpens = StreamController<int>.broadcast();
   Stream<int> get listingOpens => _listingOpens.stream;
+  final _foregroundPushes = StreamController<ForegroundPush>.broadcast();
+  Stream<ForegroundPush> get foregroundPushes => _foregroundPushes.stream;
 
   bool _initialized = false;
   bool _listenersAttached = false;
@@ -54,6 +68,7 @@ class PushService {
     }
     if (!_listenersAttached) {
       _listenersAttached = true;
+      FirebaseMessaging.onMessage.listen(_emitForegroundPush);
       FirebaseMessaging.onMessageOpenedApp.listen(_emitListing);
       final initial = await FirebaseMessaging.instance.getInitialMessage();
       if (initial != null) {
@@ -65,9 +80,21 @@ class PushService {
   }
 
   void _emitListing(RemoteMessage message) {
-    final raw = message.data['publicId'];
-    final id = int.tryParse(raw?.toString() ?? '');
+    final id = _publicId(message);
     if (id != null && id > 0) _listingOpens.add(id);
+  }
+
+  void _emitForegroundPush(RemoteMessage message) {
+    _foregroundPushes.add(ForegroundPush(
+      title: message.notification?.title,
+      body: message.notification?.body,
+      publicId: _publicId(message),
+    ));
+  }
+
+  int? _publicId(RemoteMessage message) {
+    final raw = message.data['publicId'];
+    return int.tryParse(raw?.toString() ?? '');
   }
 
   Future<String?> token({bool requestPermission = false}) async {
