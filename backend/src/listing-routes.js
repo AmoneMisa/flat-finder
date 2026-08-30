@@ -1,4 +1,4 @@
-import {COUNTRY_CODES} from './countries.js';
+import {COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 import {getRates} from './fx.js';
 import {refreshAll} from './scheduler.js';
@@ -8,6 +8,7 @@ import {attachMarketComparisons} from './market-comparison.js';
 import {searchListingMatches} from './elasticsearch.js';
 import {checkRate} from './request-rate-limit.js';
 import {prepareCustomSources} from './custom-source-queue.js';
+import {annotateNearbyTransport} from './transport-nearby.js';
 
 const LISTING_MAX_AGE_DAYS = 14;
 const VALID_SOURCES = ['olx', 'telegram', 'facebook', 'threads'];
@@ -138,7 +139,6 @@ function canonicalizeCityFilter(filters, codes) {
   filters.city = canonicalCity(filters.city, country) || filters.city;
 }
 
-
 async function tryPostgresSearch({filters, codes, force}) {
   if (force) {
     void refreshAll('manual').catch((err) => {
@@ -211,6 +211,21 @@ async function tryPostgresSearch({filters, codes, force}) {
       console.warn('[market-comparison] enrichment failed:', err?.message ?? err);
     } finally {
       marketComparisonMs = Math.round((performance.now() - marketStartedAt) * 10) / 10;
+    }
+  }
+
+  // Transport was added after many rows were already persisted. Enrich the
+  // returned UZ/Tashkent rows from their stored coordinates as well, so users
+  // do not have to wait for a recrawl before the details table can show the
+  // nearest bus/metro context.
+  if (listings.length && codes.length === 1) {
+    const country = COUNTRIES[codes[0]];
+    if (country) {
+      try {
+        await annotateNearbyTransport(listings, country);
+      } catch (err) {
+        console.warn('[transport] read-time enrichment failed:', err?.message ?? err);
+      }
     }
   }
 
