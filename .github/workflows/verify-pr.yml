@@ -60,5 +60,15 @@ jobs:
       - name: Apply database migrations
         run: npm run migrate --prefix backend
 
+      - name: Validate PostgreSQL performance report
+        env:
+          PGPASSWORD: flatfinder-test
+        run: >-
+          psql -v ON_ERROR_STOP=1
+          -h 127.0.0.1 -p 5432
+          -U flatfinder -d flatfinder
+          -f backend/scripts/postgres-performance-report.sql
+          > /tmp/postgres-performance-report.txt
+
       - name: Run backend tests
         run: npm test --prefix backend
