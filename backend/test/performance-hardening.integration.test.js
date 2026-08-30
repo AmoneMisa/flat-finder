@@ -21,6 +21,7 @@ test('performance hardening schema and search paths work together', {skip: !enab
     WHERE (table_schema = 'public' AND table_name IN (
       'crawl_tasks',
       'crawl_task_runs',
+      'places',
       'learned_geo',
       'listing_location_terms',
       'listing_nearby_places',
@@ -43,15 +44,18 @@ test('performance hardening schema and search paths work together', {skip: !enab
   varchar('public.crawl_tasks.status', 16);
   varchar('public.crawl_tasks.locked_by', 200);
   varchar('public.crawl_task_runs.crawl_generation', 128);
+  varchar('public.places.city', 160);
+  varchar('public.places.name', 255);
+  varchar('public.places.name_ru', 255);
   varchar('public.listing_location_terms.term_type', 64);
   varchar('public.listing_location_terms.normalized_name', 512);
   varchar('public.listing_nearby_places.kind', 64);
-  varchar('public.listing_property_clusters.cluster_id', 128);
   varchar('public.learned_geo.country', 8);
   varchar('public.learned_geo.entity_type', 64);
   varchar('public.learned_geo.provider', 32);
   varchar('subscriptions.mobile_subscriptions.name', 120);
   assert.equal(byName.get('public.crawl_tasks.lock_token')?.data_type, 'uuid');
+  assert.equal(byName.get('public.listing_property_clusters.cluster_id')?.data_type, 'text');
 
   await pool.query(`DELETE FROM listing_property_clusters WHERE source = 'perf-cluster-test'`);
   await pool.query(`DELETE FROM listings WHERE source = 'perf-hardening-test'`);
