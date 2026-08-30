@@ -27,6 +27,8 @@ test('exact source listing requests qualify for the indexed detail path', () => 
 test('fast searches use one database request and exact lookups follow the unique index order', async () => {
   const source = await readFile(new URL('../src/postgres-search-fast-core.js', import.meta.url), 'utf8');
 
+  assert.match(source, /from '\.\/postgres-search-core\.js'/u);
+  assert.doesNotMatch(source, /from '\.\/postgres-search\.js'/u);
   assert.match(source, /l\.source = \$1[\s\S]*l\.country = \$2[\s\S]*l\.source_id = \$3/u);
   assert.match(source, /searchPath: 'postgres-listing-id'/u);
   assert.match(source, /const cursorCount = Number\(cursor\?\.c\)/u);
