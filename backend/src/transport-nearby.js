@@ -38,14 +38,8 @@ function eligibleListing(listing, country) {
   return !city || city === 'Tashkent';
 }
 
-/**
- * Adds complete nearby transit arrays from geo-catalog. The old single `metro`
- * field remains the closest metro fallback for backwards compatibility.
- */
-export async function annotateNearbyTransport(listings, country) {
-  if (!Array.isArray(listings) || !listings.length) return 0;
-  const transport = await loadTransportModule();
-  if (!transport?.nearestTransportStops) return 0;
+export function annotateNearbyTransportWithCatalog(listings, country, transport) {
+  if (!Array.isArray(listings) || !listings.length || !transport?.nearestTransportStops) return 0;
 
   let annotated = 0;
   for (const listing of listings) {
@@ -69,7 +63,6 @@ export async function annotateNearbyTransport(listings, country) {
 
     if (metro.length) {
       listing.nearbyMetro = metro;
-      // Keep the historical field name in sync for current consumers.
       listing.metroNearby = metro.map(({ name, distanceM }) => ({ name, nameRu: null, distanceM }));
       if (!listing.metro) {
         listing.metro = metro[0].name;
@@ -86,6 +79,17 @@ export async function annotateNearbyTransport(listings, country) {
     }
   }
 
+  return annotated;
+}
+
+/**
+ * Adds complete nearby transit arrays from geo-catalog. The old single `metro`
+ * field remains the closest metro fallback for backwards compatibility.
+ */
+export async function annotateNearbyTransport(listings, country) {
+  if (!Array.isArray(listings) || !listings.length) return 0;
+  const transport = await loadTransportModule();
+  const annotated = annotateNearbyTransportWithCatalog(listings, country, transport);
   if (annotated) console.log(`[transport] nearby transit annotated: ${annotated}/${listings.length}`);
   return annotated;
 }
