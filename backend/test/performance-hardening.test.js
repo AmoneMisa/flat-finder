@@ -77,13 +77,18 @@ test('performance migrations own materialization, relations, delivery leases and
   const bounded = await source('../migrations/032_bounded_text_types.sql');
 
   assert.match(hot, /GENERATED ALWAYS AS/u);
-  assert.match(hot, /listings_active_country_city_metro_distance_idx/u);
+  assert.match(hot, /ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION/u);
+  assert.match(hot, /ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION/u);
+  assert.doesNotMatch(hot, /CREATE INDEX/u, '024 must release ALTER TABLE lock before index builds');
   assert.match(relations, /term_type VARCHAR\(64\)/u);
   assert.match(relations, /normalized_name VARCHAR\(512\)/u);
   assert.match(relations, /kind VARCHAR\(64\)/u);
+  assert.match(relations, /LEFT\(LOWER\(BTRIM\(entity->>'type'\)\), 64\)/u);
+  assert.match(relations, /LEFT\(LOWER\(BTRIM\(entity->>'name'\)\), 512\)/u);
   assert.match(relations, /CREATE TRIGGER listings_insert_search_relations/u);
   assert.match(relations, /CREATE TRIGGER listings_update_search_relations/u);
   assert.match(relations, /WHEN \(/u);
+  assert.match(spatial, /listings_active_country_city_metro_distance_idx/u);
   assert.match(spatial, /listings_active_country_geo_idx/u);
   assert.match(delivery, /mobile_deliveries_status_check/u);
   assert.match(delivery, /locked_until/u);
