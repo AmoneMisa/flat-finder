@@ -808,6 +808,9 @@ class _SpecTable extends StatelessWidget {
             : (country?.locationLabel(l.city, l.metro!, kind: 'metro') ??
                   l.metro),
       ),
+      (Icons.tram_outlined, 'tram', l.transportSummary('tram')),
+      (Icons.directions_bus_outlined, 'bus', l.transportSummary('bus')),
+      (Icons.electric_rickshaw_outlined, 'trolleybus', l.transportSummary('trolleybus')),
       (Icons.location_on_outlined, 'address', l.address),
       (
         Icons.storefront_outlined,
