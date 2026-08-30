@@ -4,6 +4,10 @@
 -- Keep all generated scalar additions in one ALTER TABLE so a fresh deployment
 -- rewrites the listings heap once rather than repeating that work for spatial
 -- coordinates in a later migration.
+--
+-- Do not build indexes in this migration. ALTER TABLE retains ACCESS EXCLUSIVE
+-- until the migration transaction commits; moving index creation to 026 releases
+-- that strongest lock before the longer index-build phase begins.
 ALTER TABLE listings
   ADD COLUMN IF NOT EXISTS bedrooms DOUBLE PRECISION
     GENERATED ALWAYS AS (
@@ -67,32 +71,3 @@ ALTER TABLE listings
         ELSE NULL
       END
     ) STORED;
-
--- Country/city are the dominant narrowing dimensions in the listing UI.
--- These indexes remain selective without trying to encode every possible
--- filter combination into a separate composite index.
-CREATE INDEX IF NOT EXISTS listings_active_country_city_bedrooms_idx
-  ON listings(country, city, bedrooms)
-  WHERE active = TRUE AND bedrooms IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS listings_active_country_city_floor_idx
-  ON listings(country, city, floor_number)
-  WHERE active = TRUE AND floor_number IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS listings_active_country_city_total_floors_idx
-  ON listings(country, city, total_floors)
-  WHERE active = TRUE AND total_floors IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS listings_active_country_city_building_year_idx
-  ON listings(country, city, building_year)
-  WHERE active = TRUE AND building_year IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS listings_active_country_city_commission_idx
-  ON listings(country, city, commission_percent)
-  WHERE active = TRUE AND commission_percent IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS listings_active_country_city_metro_distance_idx
-  ON listings(country, city, metro_distance_m)
-  WHERE active = TRUE AND metro_distance_m IS NOT NULL;
-
-ANALYZE listings;
