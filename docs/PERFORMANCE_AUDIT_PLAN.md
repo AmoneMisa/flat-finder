@@ -1,6 +1,6 @@
 # Flat Finder PostgreSQL performance hardening plan
 
-Status: implementation complete except production evidence / external FCM validation
+Status: implementation complete; production query/index evidence remains intentionally pending
 Branch: `perf/postgres-audit-hardening`
 PR: `#71`
 
@@ -54,7 +54,7 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Only a process that successfully claims a delivery may call FCM.
 - [x] Make seen writes/probes set-based instead of per-item N+1 reads/writes.
 - [x] Put a stable `deliveryId` in the push payload to support client-side crash-window dedupe.
-- [ ] Add a transport-level multi-worker integration test around the FCM boundary; DB coordination is covered structurally but FCM itself is not exercised in CI.
+- [x] Add a transport-level multi-worker integration test around the FCM boundary: four independent scanner processes share PostgreSQL, use mocked FX/OAuth/FCM HTTP boundaries, and must emit exactly one push plus durable `sent`/seen state.
 
 ### 7. Atomic property-cluster merge
 - [x] Move discovery, canonical cluster selection, merge and member upsert into one database transaction/function.
@@ -100,7 +100,8 @@ This plan records the audit findings, implementation order and remaining validat
 
 1. Pull requests touching backend code run against PostgreSQL 18 before merge.
 2. All migrations must apply from an empty database in CI.
-3. Existing backend tests and new regression/integration tests must pass.
-4. Compare SQL query count before/after for affected request paths.
-5. Use `EXPLAIN (ANALYZE, BUFFERS)` on representative production-like/production data before deleting or adding final indexes.
-6. Avoid application-local parsing/geography logic that belongs in `@whiteslove/parsing-lexicon` or `@whiteslove/geo-catalog`.
+3. Existing backend tests and new regression/integration tests must pass; current hardening gate is 294/294 on PostgreSQL 18.6.
+4. Multi-process notification delivery must cross the mocked FCM transport boundary only once for one logical delivery.
+5. Compare SQL query count before/after for affected request paths.
+6. Use `EXPLAIN (ANALYZE, BUFFERS)` on representative production-like/production data before deleting or adding final indexes.
+7. Avoid application-local parsing/geography logic that belongs in `@whiteslove/parsing-lexicon` or `@whiteslove/geo-catalog`.
