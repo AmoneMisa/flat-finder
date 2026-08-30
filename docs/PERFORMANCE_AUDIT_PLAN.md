@@ -1,6 +1,6 @@
 # Flat Finder PostgreSQL performance hardening plan
 
-Status: implementation complete; production query/index evidence remains intentionally pending
+Status: approved implementation complete; production query/index evidence remains intentionally pending, with cursor-scope binding tracked as follow-up hardening
 Branch: `perf/postgres-audit-hardening`
 PR: `#71`
 
@@ -23,6 +23,8 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Preserve explicit stats/count-only API behaviour and legacy cursors.
 - [x] Add cursor-pagination regression tests.
 - [x] Use `LIMIT + 1` internally so `nextCursor` is emitted only when another row definitely exists, avoiding a terminal empty request.
+- [x] Reject carried counts from cursors whose sort does not match the active request.
+- [ ] Bind newly issued cursors to a fingerprint of the normalized query scope (countries + semantic filters). A cursor with an explicit mismatched scope must be rejected; legacy unscoped cursors may remain positional for compatibility but must not supply a trusted carried count.
 
 ### 3. Move hot scalar JSONB filters to typed columns
 - [x] Inventory scalar filters cast/read from JSONB (`bedrooms`, `floor`, `totalFloors`, `buildingYear`, `commissionPercent`, `metroDistance`, etc.).
@@ -30,6 +32,8 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Replace runtime JSONB casts in hot search predicates with typed columns.
 - [x] Add selective country/city/filter indexes rather than every possible filter combination.
 - [x] Keep JSONB as source/enrichment payload, not the hot scalar filter layer.
+- [x] Materialize all eight STORED listing scalars, including `lat/lng`, in one `ALTER TABLE` so deployment rewrites the listings heap once.
+- [x] Build scalar/spatial indexes in the following migration so the longer index-build phase does not inherit the generated-column migration's `ACCESS EXCLUSIVE` lock.
 
 ### 4. Normalize repeated-array geo/nearby filters
 - [x] Add normalized relation tables for location terms and nearby-place facts.
@@ -38,6 +42,7 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Rebuild relation rows only when the owning JSON fragments change, not on unrelated `data` updates.
 - [x] Replace `jsonb_array_elements*` request-time predicates with indexed `EXISTS`/semi-joins.
 - [x] Add bounded domain types and indexes for `(type, normalized_name, listing_id)` and `(kind, distance_m, listing_id)` access paths.
+- [x] Bound upstream-derived materialized helper labels before writing them so a pathological source value cannot fail the owning listing insert/update.
 
 ### 5. Spatial/radius search
 - [x] Add indexable `lat/lng` representation and bounding-box prefiltering as the non-PostGIS interim path.
@@ -67,6 +72,8 @@ This plan records the audit findings, implementation order and remaining validat
 
 ### 8. Evidence-driven index/read-model/queue cleanup
 - [x] Add `backend/scripts/postgres-performance-report.sql` for connection pressure, `pg_stat_statements`, index usage, dead tuples, queue and mobile outbox state.
+- [x] Make the report continue with index/table/queue metrics when `pg_stat_statements` is not installed.
+- [x] Execute the report under `psql -v ON_ERROR_STOP=1` in the PostgreSQL 18 CI gate.
 - [ ] Capture production `pg_stat_statements` and `EXPLAIN (ANALYZE, BUFFERS)` after representative traffic.
 - [ ] Remove/reshape old indexes only from production evidence (`pg_stat_user_indexes`), not from static guesses.
 - [x] Rework `listing_public_feed_members` trigger from unconditional delete+insert to conditional upsert/delete.
@@ -100,8 +107,11 @@ This plan records the audit findings, implementation order and remaining validat
 
 1. Pull requests touching backend code run against PostgreSQL 18 before merge.
 2. All migrations must apply from an empty database in CI.
-3. Existing backend tests and new regression/integration tests must pass; current hardening gate is 294/294 on PostgreSQL 18.6.
-4. Multi-process notification delivery must cross the mocked FCM transport boundary only once for one logical delivery.
-5. Compare SQL query count before/after for affected request paths.
-6. Use `EXPLAIN (ANALYZE, BUFFERS)` on representative production-like/production data before deleting or adding final indexes.
-7. Avoid application-local parsing/geography logic that belongs in `@whiteslove/parsing-lexicon` or `@whiteslove/geo-catalog`.
+3. A production-like upgrade test must create a database at schema version `023`, insert representative legacy rows, apply `024–032`, and preserve data while materializing the new search/outbox structures.
+4. Migration `032` must fail before type conversion when an oversized legacy value exists; CI verifies that the failed attempt rolls back without truncating the value, after which a clean retry succeeds.
+5. The production performance-report SQL must execute through real `psql -v ON_ERROR_STOP=1` even when `pg_stat_statements` is unavailable.
+6. Existing backend tests and new regression/integration tests must pass; current hardening gate is **296/296** on PostgreSQL 18.6.
+7. Multi-process notification delivery must cross the mocked FCM transport boundary only once for one logical delivery.
+8. Compare SQL query count before/after for affected request paths.
+9. Use `EXPLAIN (ANALYZE, BUFFERS)` on representative production-like/production data before deleting or adding final indexes.
+10. Avoid application-local parsing/geography logic that belongs in `@whiteslove/parsing-lexicon` or `@whiteslove/geo-catalog`.
