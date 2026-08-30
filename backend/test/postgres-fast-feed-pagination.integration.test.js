@@ -13,6 +13,10 @@ function decodeCursor(value) {
   return JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
 }
 
+function encodeCursor(value) {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
 test('fast default feed carries count and avoids an empty terminal cursor page', {skip: !enabled}, async () => {
   await assertDatabaseReady();
   await pool.query('DELETE FROM listings WHERE source = $1', [SOURCE]);
@@ -82,6 +86,15 @@ test('fast default feed carries count and avoids an empty terminal cursor page',
   assert.equal(first.listings[0]?.id, 'fast-feed-1');
   assert.ok(first.nextCursor);
   assert.equal(decodeCursor(first.nextCursor).c, 3);
+
+  const mismatchedCursor = encodeCursor({...decodeCursor(first.nextCursor), sort: 'oldest', c: 999});
+  const mismatched = await searchPostgresListings({
+    filters: {...filters, cursor: mismatchedCursor, offset: 0},
+    countries: [COUNTRY],
+    rates: {USD: 1},
+  });
+  assert.equal(mismatched.count, 3, 'a cursor rejected by sort must not supply the carried count');
+  assert.equal(mismatched.listings[0]?.id, 'fast-feed-1');
 
   const second = await searchPostgresListings({
     filters: {...filters, cursor: first.nextCursor, offset: 999},
