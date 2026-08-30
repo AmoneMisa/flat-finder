@@ -107,10 +107,31 @@ BEGIN
 END;
 $$;
 
+-- Inserts always need relation materialization. Updates rebuild only when one
+-- of the JSON fragments that owns these relations actually changed; routine
+-- price/availability/anti-fake updates therefore do not churn relation rows.
 DROP TRIGGER IF EXISTS listings_sync_search_relations ON listings;
-CREATE TRIGGER listings_sync_search_relations
-AFTER INSERT OR UPDATE OF data ON listings
+DROP TRIGGER IF EXISTS listings_insert_search_relations ON listings;
+DROP TRIGGER IF EXISTS listings_update_search_relations ON listings;
+
+CREATE TRIGGER listings_insert_search_relations
+AFTER INSERT ON listings
 FOR EACH ROW
+EXECUTE FUNCTION sync_listing_search_relations();
+
+CREATE TRIGGER listings_update_search_relations
+AFTER UPDATE OF data ON listings
+FOR EACH ROW
+WHEN (
+  (OLD.data->'microdistrict') IS DISTINCT FROM (NEW.data->'microdistrict')
+  OR (OLD.data->'kvartal') IS DISTINCT FROM (NEW.data->'kvartal')
+  OR (OLD.data->'area') IS DISTINCT FROM (NEW.data->'area')
+  OR (OLD.data->'localAreas') IS DISTINCT FROM (NEW.data->'localAreas')
+  OR (OLD.data->'developmentAreas') IS DISTINCT FROM (NEW.data->'developmentAreas')
+  OR (OLD.data->'informalAreas') IS DISTINCT FROM (NEW.data->'informalAreas')
+  OR (OLD.data->'locationEntities') IS DISTINCT FROM (NEW.data->'locationEntities')
+  OR (OLD.data->'nearbyPlaces') IS DISTINCT FROM (NEW.data->'nearbyPlaces')
+)
 EXECUTE FUNCTION sync_listing_search_relations();
 
 -- Backfill current rows once. Use the same semantic sources as the trigger.
