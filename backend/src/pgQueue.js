@@ -42,18 +42,29 @@ function taskIdentity(task) {
   ].join(':');
 }
 
+function boundedQueueIdentity(value, fallback, maxLength, field) {
+  const text = String(value || fallback);
+  if (text.length > maxLength) {
+    throw new RangeError(`queue ${field} exceeds ${maxLength} characters`);
+  }
+  return text;
+}
+
 function normalizedTask(task) {
   const payload = {
     ...task,
     priority: Math.max(0, Math.trunc(Number(task.priority) || 0)),
     crawlerShard: Math.max(0, Math.trunc(Number(task.crawlerShard) || 0)),
   };
+  const crawlGeneration = boundedQueueIdentity(payload.crawlGeneration, 'legacy', 128, 'crawlGeneration');
+  const type = boundedQueueIdentity(payload.type, '', 64, 'type');
+  const country = boundedQueueIdentity(payload.country, '', 8, 'country').toUpperCase();
 
   return {
     taskKey: taskIdentity(payload),
-    crawlGeneration: String(payload.crawlGeneration || 'legacy'),
-    type: String(payload.type || ''),
-    country: String(payload.country || '').toUpperCase(),
+    crawlGeneration,
+    type,
+    country,
     crawlerShard: payload.crawlerShard,
     priority: payload.priority,
     payload,
