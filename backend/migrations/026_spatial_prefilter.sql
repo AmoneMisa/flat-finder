@@ -1,21 +1,6 @@
--- Ensure listing coordinates have an indexable scalar representation. Existing
--- installations that already own physical lat/lng columns keep them because of
--- IF NOT EXISTS; fresh schemas derive them from the canonical JSONB listing.
-ALTER TABLE listings
-  ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION
-    GENERATED ALWAYS AS (
-      CASE WHEN jsonb_typeof(data->'lat') = 'number'
-        THEN (data->>'lat')::double precision
-        ELSE NULL
-      END
-    ) STORED,
-  ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION
-    GENERATED ALWAYS AS (
-      CASE WHEN jsonb_typeof(data->'lng') = 'number'
-        THEN (data->>'lng')::double precision
-        ELSE NULL
-      END
-    ) STORED;
+-- Latitude/longitude are materialized together with the other STORED listing
+-- scalars in migration 024 so fresh deployments rewrite the listings heap only
+-- once. This migration owns only the spatial access paths.
 
 -- Bounding-box prefilters use country plus latitude as the leading range and
 -- retain longitude in the same compact partial index for the remaining check.
