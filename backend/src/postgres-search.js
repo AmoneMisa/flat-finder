@@ -13,9 +13,12 @@ export {buildSearchContext};
 export async function searchPostgresListings(args) {
   const filters = args?.filters || {};
   const scope = searchCursorScope(filters, args?.countries || []);
+  const preparedCursor = prepareCursorForScope(filters.cursor, scope);
+  const rejectedCursor = Boolean(filters.cursor) && !preparedCursor;
   const scopedFilters = {
     ...filters,
-    cursor: prepareCursorForScope(filters.cursor, scope),
+    cursor: preparedCursor,
+    ...(rejectedCursor ? {offset: 0} : {}),
   };
 
   const result = await searchPostgresListingsCore({...args, filters: scopedFilters});
