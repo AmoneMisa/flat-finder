@@ -169,6 +169,41 @@ test('performance hardening schema and search paths work together', {skip: !enab
   `, [listingId]);
   assert.deepEqual(termsAfter.rows, termsBefore.rows);
 
+  // Materialized helper relations must never turn an otherwise valid listing
+  // update into a VARCHAR overflow. Upstream JSON remains lossless; only the
+  // bounded acceleration rows are capped to their schema contract.
+  const longType = 't'.repeat(80);
+  const longName = 'n'.repeat(600);
+  const longLocalArea = 'a'.repeat(600);
+  const longKind = 'k'.repeat(80);
+  await pool.query(`
+    UPDATE listings
+    SET data = data || jsonb_build_object(
+      'locationEntities', jsonb_build_array(jsonb_build_object('type', $2::text, 'name', $3::text)),
+      'localAreas', COALESCE(data->'localAreas', '[]'::jsonb) || jsonb_build_array($4::text),
+      'nearbyPlaces', COALESCE(data->'nearbyPlaces', '[]'::jsonb)
+        || jsonb_build_array(jsonb_build_object('kind', $5::text, 'distanceM', 123))
+    )
+    WHERE id = $1;
+  `, [listingId, longType, longName, longLocalArea, longKind]);
+
+  const boundedTerms = await pool.query(`
+    SELECT term_type, normalized_name
+    FROM listing_location_terms
+    WHERE listing_id = $1;
+  `, [listingId]);
+  assert.ok(boundedTerms.rows.some((row) => row.term_type === longType.slice(0, 64) && row.normalized_name === longName.slice(0, 512)));
+  assert.ok(boundedTerms.rows.some((row) => row.term_type === 'local_area' && row.normalized_name === longLocalArea.slice(0, 512)));
+  assert.ok(boundedTerms.rows.every((row) => row.term_type.length <= 64 && row.normalized_name.length <= 512));
+
+  const boundedNearby = await pool.query(`
+    SELECT kind
+    FROM listing_nearby_places
+    WHERE listing_id = $1;
+  `, [listingId]);
+  assert.ok(boundedNearby.rows.some((row) => row.kind === longKind.slice(0, 64)));
+  assert.ok(boundedNearby.rows.every((row) => row.kind == null || row.kind.length <= 64));
+
   const filters = {
     propertyType: 'any',
     dealType: 'longRent',
