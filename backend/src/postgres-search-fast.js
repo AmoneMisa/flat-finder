@@ -155,8 +155,6 @@ async function searchDefaultFeed({filters, countries}) {
 
   const sort = filters.sort || 'newest';
   const cursor = decodeCursor(filters.cursor);
-  const cursorCount = Number(cursor?.c);
-  const hasCursorCount = Number.isSafeInteger(cursorCount) && cursorCount >= 0;
   const pageWhere = [];
   let useCursor = false;
 
@@ -176,6 +174,8 @@ async function searchDefaultFeed({filters, countries}) {
     }
     useCursor = true;
   }
+  const cursorCount = Number(cursor?.c);
+  const hasCursorCount = useCursor && Number.isSafeInteger(cursorCount) && cursorCount >= 0;
 
   const limit = Math.max(1, Math.min(Number(filters.limit) || 40, 60));
   const fetchLimit = limit + 1;
