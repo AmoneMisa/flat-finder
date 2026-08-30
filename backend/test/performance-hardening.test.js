@@ -92,12 +92,18 @@ test('performance migrations own materialization, relations, delivery leases and
   assert.match(bounded, /ALTER COLUMN lock_token TYPE UUID/u);
   assert.match(bounded, /ALTER COLUMN crawl_generation TYPE VARCHAR\(128\)/u);
   assert.match(bounded, /ALTER COLUMN name TYPE VARCHAR\(120\)/u);
-  assert.match(bounded, /Do NOT alter the hot listings label columns here/u);
+  assert.match(bounded, /Do NOT alter trigger\/generated-column-bound hot columns here/u);
+  assert.doesNotMatch(bounded, /ALTER COLUMN cluster_id TYPE VARCHAR/u);
+  assert.doesNotMatch(bounded, /ALTER COLUMN city TYPE VARCHAR\(255\).*listings/su);
 });
 
-test('hiring data reuses the main backend pool instead of opening another pool', async () => {
+test('hiring and places data reuse the main backend pool instead of opening extra pools', async () => {
   const hiring = await source('../src/hiring-db.js');
-  assert.match(hiring, /import \{pool\} from '\.\/db\.js'/u);
-  assert.doesNotMatch(hiring, /new Pool\(/u);
+  const places = await source('../src/places-db.js');
+  for (const module of [hiring, places]) {
+    assert.match(module, /import \{pool\} from '\.\/db\.js'/u);
+    assert.doesNotMatch(module, /new Pool\(/u);
+  }
   assert.doesNotMatch(hiring, /HIRING_PG_POOL_MAX/u);
+  assert.doesNotMatch(places, /PLACES_DB_POOL_MAX/u);
 });
