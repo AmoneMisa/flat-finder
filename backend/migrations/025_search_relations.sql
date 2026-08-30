@@ -1,0 +1,195 @@
+-- Normalize repeated JSONB arrays used by location/nearby filters. Search can
+-- now use indexed semi-joins instead of expanding JSON arrays for every
+-- candidate listing on every request.
+
+CREATE TABLE IF NOT EXISTS listing_location_terms (
+  listing_id BIGINT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  term_type TEXT NOT NULL,
+  normalized_name TEXT NOT NULL,
+  PRIMARY KEY (listing_id, term_type, normalized_name)
+);
+
+CREATE INDEX IF NOT EXISTS listing_location_terms_lookup_idx
+  ON listing_location_terms(term_type, normalized_name, listing_id);
+
+CREATE TABLE IF NOT EXISTS listing_nearby_places (
+  listing_id BIGINT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  place_index INTEGER NOT NULL,
+  kind TEXT,
+  distance_m DOUBLE PRECISION,
+  PRIMARY KEY (listing_id, place_index)
+);
+
+CREATE INDEX IF NOT EXISTS listing_nearby_places_kind_distance_idx
+  ON listing_nearby_places(kind, distance_m, listing_id)
+  WHERE kind IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS listing_nearby_places_distance_idx
+  ON listing_nearby_places(distance_m, listing_id)
+  WHERE distance_m IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION sync_listing_search_relations()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  DELETE FROM listing_location_terms WHERE listing_id = NEW.id;
+  DELETE FROM listing_nearby_places WHERE listing_id = NEW.id;
+
+  INSERT INTO listing_location_terms(listing_id, term_type, normalized_name)
+  SELECT DISTINCT NEW.id, term_type, normalized_name
+  FROM (
+    SELECT 'microdistrict'::text AS term_type, LOWER(BTRIM(NEW.data->>'microdistrict')) AS normalized_name
+    WHERE NULLIF(BTRIM(NEW.data->>'microdistrict'), '') IS NOT NULL
+
+    UNION ALL
+    SELECT 'quartal', LOWER(BTRIM(NEW.data->>'kvartal'))
+    WHERE NULLIF(BTRIM(NEW.data->>'kvartal'), '') IS NOT NULL
+
+    UNION ALL
+    SELECT 'area', LOWER(BTRIM(NEW.data->>'area'))
+    WHERE NULLIF(BTRIM(NEW.data->>'area'), '') IS NOT NULL
+
+    UNION ALL
+    SELECT 'local_area', LOWER(BTRIM(value))
+    FROM jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(NEW.data->'localAreas') = 'array'
+        THEN NEW.data->'localAreas' ELSE '[]'::jsonb END
+    ) AS value
+    WHERE NULLIF(BTRIM(value), '') IS NOT NULL
+
+    UNION ALL
+    SELECT 'development_area', LOWER(BTRIM(value))
+    FROM jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(NEW.data->'developmentAreas') = 'array'
+        THEN NEW.data->'developmentAreas' ELSE '[]'::jsonb END
+    ) AS value
+    WHERE NULLIF(BTRIM(value), '') IS NOT NULL
+
+    UNION ALL
+    SELECT 'informal_area', LOWER(BTRIM(value))
+    FROM jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(NEW.data->'informalAreas') = 'array'
+        THEN NEW.data->'informalAreas' ELSE '[]'::jsonb END
+    ) AS value
+    WHERE NULLIF(BTRIM(value), '') IS NOT NULL
+
+    UNION ALL
+    SELECT
+      LOWER(BTRIM(entity->>'type')),
+      LOWER(BTRIM(entity->>'name'))
+    FROM jsonb_array_elements(
+      CASE WHEN jsonb_typeof(NEW.data->'locationEntities') = 'array'
+        THEN NEW.data->'locationEntities' ELSE '[]'::jsonb END
+    ) AS entity
+    WHERE NULLIF(BTRIM(entity->>'type'), '') IS NOT NULL
+      AND NULLIF(BTRIM(entity->>'name'), '') IS NOT NULL
+  ) terms
+  WHERE normalized_name IS NOT NULL AND normalized_name <> '';
+
+  INSERT INTO listing_nearby_places(listing_id, place_index, kind, distance_m)
+  SELECT
+    NEW.id,
+    (ordinality - 1)::integer,
+    NULLIF(LOWER(BTRIM(place->>'kind')), ''),
+    CASE WHEN jsonb_typeof(place->'distanceM') = 'number'
+      THEN (place->>'distanceM')::double precision
+      ELSE NULL
+    END
+  FROM jsonb_array_elements(
+    CASE WHEN jsonb_typeof(NEW.data->'nearbyPlaces') = 'array'
+      THEN NEW.data->'nearbyPlaces' ELSE '[]'::jsonb END
+  ) WITH ORDINALITY AS item(place, ordinality)
+  WHERE NULLIF(BTRIM(place->>'kind'), '') IS NOT NULL
+     OR jsonb_typeof(place->'distanceM') = 'number';
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS listings_sync_search_relations ON listings;
+CREATE TRIGGER listings_sync_search_relations
+AFTER INSERT OR UPDATE OF data ON listings
+FOR EACH ROW
+EXECUTE FUNCTION sync_listing_search_relations();
+
+-- Backfill current rows once. Use the same semantic sources as the trigger.
+INSERT INTO listing_location_terms(listing_id, term_type, normalized_name)
+SELECT DISTINCT listing_id, term_type, normalized_name
+FROM (
+  SELECT l.id AS listing_id, 'microdistrict'::text AS term_type, LOWER(BTRIM(l.data->>'microdistrict')) AS normalized_name
+  FROM listings l
+  WHERE NULLIF(BTRIM(l.data->>'microdistrict'), '') IS NOT NULL
+
+  UNION ALL
+  SELECT l.id, 'quartal', LOWER(BTRIM(l.data->>'kvartal'))
+  FROM listings l
+  WHERE NULLIF(BTRIM(l.data->>'kvartal'), '') IS NOT NULL
+
+  UNION ALL
+  SELECT l.id, 'area', LOWER(BTRIM(l.data->>'area'))
+  FROM listings l
+  WHERE NULLIF(BTRIM(l.data->>'area'), '') IS NOT NULL
+
+  UNION ALL
+  SELECT l.id, 'local_area', LOWER(BTRIM(value))
+  FROM listings l
+  CROSS JOIN LATERAL jsonb_array_elements_text(
+    CASE WHEN jsonb_typeof(l.data->'localAreas') = 'array'
+      THEN l.data->'localAreas' ELSE '[]'::jsonb END
+  ) AS value
+  WHERE NULLIF(BTRIM(value), '') IS NOT NULL
+
+  UNION ALL
+  SELECT l.id, 'development_area', LOWER(BTRIM(value))
+  FROM listings l
+  CROSS JOIN LATERAL jsonb_array_elements_text(
+    CASE WHEN jsonb_typeof(l.data->'developmentAreas') = 'array'
+      THEN l.data->'developmentAreas' ELSE '[]'::jsonb END
+  ) AS value
+  WHERE NULLIF(BTRIM(value), '') IS NOT NULL
+
+  UNION ALL
+  SELECT l.id, 'informal_area', LOWER(BTRIM(value))
+  FROM listings l
+  CROSS JOIN LATERAL jsonb_array_elements_text(
+    CASE WHEN jsonb_typeof(l.data->'informalAreas') = 'array'
+      THEN l.data->'informalAreas' ELSE '[]'::jsonb END
+  ) AS value
+  WHERE NULLIF(BTRIM(value), '') IS NOT NULL
+
+  UNION ALL
+  SELECT l.id, LOWER(BTRIM(entity->>'type')), LOWER(BTRIM(entity->>'name'))
+  FROM listings l
+  CROSS JOIN LATERAL jsonb_array_elements(
+    CASE WHEN jsonb_typeof(l.data->'locationEntities') = 'array'
+      THEN l.data->'locationEntities' ELSE '[]'::jsonb END
+  ) AS entity
+  WHERE NULLIF(BTRIM(entity->>'type'), '') IS NOT NULL
+    AND NULLIF(BTRIM(entity->>'name'), '') IS NOT NULL
+) terms
+WHERE normalized_name IS NOT NULL AND normalized_name <> ''
+ON CONFLICT DO NOTHING;
+
+INSERT INTO listing_nearby_places(listing_id, place_index, kind, distance_m)
+SELECT
+  l.id,
+  (ordinality - 1)::integer,
+  NULLIF(LOWER(BTRIM(place->>'kind')), ''),
+  CASE WHEN jsonb_typeof(place->'distanceM') = 'number'
+    THEN (place->>'distanceM')::double precision
+    ELSE NULL
+  END
+FROM listings l
+CROSS JOIN LATERAL jsonb_array_elements(
+  CASE WHEN jsonb_typeof(l.data->'nearbyPlaces') = 'array'
+    THEN l.data->'nearbyPlaces' ELSE '[]'::jsonb END
+) WITH ORDINALITY AS item(place, ordinality)
+WHERE NULLIF(BTRIM(place->>'kind'), '') IS NOT NULL
+   OR jsonb_typeof(place->'distanceM') = 'number'
+ON CONFLICT (listing_id, place_index) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  distance_m = EXCLUDED.distance_m;
+
+ANALYZE listing_location_terms;
+ANALYZE listing_nearby_places;
