@@ -70,12 +70,16 @@ test('performance migrations own materialization, relations, delivery leases and
   const bands = await source('../migrations/028_perceptual_hash_bands.sql');
   const clusters = await source('../migrations/029_atomic_property_cluster_merge.sql');
   const feed = await source('../migrations/030_public_feed_member_upsert.sql');
+  const bounded = await source('../migrations/032_bounded_text_types.sql');
 
   assert.match(hot, /GENERATED ALWAYS AS/u);
   assert.match(hot, /listings_active_country_city_metro_distance_idx/u);
-  assert.match(relations, /CREATE TABLE IF NOT EXISTS listing_location_terms/u);
-  assert.match(relations, /CREATE TABLE IF NOT EXISTS listing_nearby_places/u);
-  assert.match(relations, /CREATE TRIGGER listings_sync_search_relations/u);
+  assert.match(relations, /term_type VARCHAR\(64\)/u);
+  assert.match(relations, /normalized_name VARCHAR\(512\)/u);
+  assert.match(relations, /kind VARCHAR\(64\)/u);
+  assert.match(relations, /CREATE TRIGGER listings_insert_search_relations/u);
+  assert.match(relations, /CREATE TRIGGER listings_update_search_relations/u);
+  assert.match(relations, /WHEN \(/u);
   assert.match(spatial, /listings_active_country_geo_idx/u);
   assert.match(delivery, /mobile_deliveries_status_check/u);
   assert.match(delivery, /locked_until/u);
@@ -85,6 +89,10 @@ test('performance migrations own materialization, relations, delivery leases and
   assert.match(clusters, /jsonb_to_recordset\(p_members\)/u);
   assert.match(feed, /ON CONFLICT \(listing_id\) DO UPDATE/u);
   assert.doesNotMatch(feed, /DELETE FROM listing_public_feed_members[\s\S]*INSERT INTO listing_public_feed_members/u);
+  assert.match(bounded, /ALTER COLUMN lock_token TYPE UUID/u);
+  assert.match(bounded, /ALTER COLUMN crawl_generation TYPE VARCHAR\(128\)/u);
+  assert.match(bounded, /ALTER COLUMN name TYPE VARCHAR\(120\)/u);
+  assert.match(bounded, /Do NOT alter the hot listings label columns here/u);
 });
 
 test('hiring data reuses the main backend pool instead of opening another pool', async () => {
