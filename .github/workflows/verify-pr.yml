@@ -6,6 +6,11 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/verify-pr.yml'
+      - '.github/workflows/deploy.yml'
+      - 'deploy.sh'
+      - 'scripts/upgrade-postgres-18.sh'
+      - 'scripts/fallback-deploy.sh'
+      - 'scripts/install-fallback-timer.sh'
       - 'docker-compose.yml'
 
 permissions:
@@ -56,6 +61,13 @@ jobs:
 
       - name: Check JavaScript syntax
         run: find backend/src backend/test -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Check deployment syntax
+        run: |
+          bash -n deploy.sh
+          bash -n scripts/upgrade-postgres-18.sh
+          bash -n scripts/fallback-deploy.sh
+          bash -n scripts/install-fallback-timer.sh
 
       - name: Apply database migrations
         run: npm run migrate --prefix backend
