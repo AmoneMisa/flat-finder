@@ -1,8 +1,9 @@
 -- Use bounded VARCHAR for fields whose application/domain semantics have a
 -- practical maximum length. This is a schema/data-quality constraint, not a
 -- PostgreSQL storage-speed optimization: TEXT and VARCHAR use the same varlena
--- representation. Keep free-form text, URLs, source IDs, keys and errors as
--- TEXT so ingestion never truncates externally-owned identifiers or content.
+-- representation. Keep free-form text, URLs, source/provider IDs, keys and
+-- errors as TEXT so ingestion never truncates externally-owned identifiers or
+-- content.
 --
 -- PostgreSQL rejects this migration if an existing value exceeds a declared
 -- bound; no value is silently truncated.
@@ -31,13 +32,14 @@ ALTER TABLE crawl_tasks
   ALTER COLUMN lock_token TYPE UUID USING NULLIF(lock_token, '')::UUID;
 
 -- Place labels are human-readable names rather than free-form descriptions.
+-- external_id remains TEXT because its format is owned by the upstream source.
 ALTER TABLE places
   ALTER COLUMN city TYPE VARCHAR(160) USING city::VARCHAR(160),
   ALTER COLUMN name TYPE VARCHAR(255) USING name::VARCHAR(255),
-  ALTER COLUMN name_ru TYPE VARCHAR(255) USING name_ru::VARCHAR(255),
-  ALTER COLUMN external_id TYPE VARCHAR(255) USING external_id::VARCHAR(255);
+  ALTER COLUMN name_ru TYPE VARCHAR(255) USING name_ru::VARCHAR(255);
 
--- Learned geocoder metadata. lookup_key and query_text deliberately stay TEXT.
+-- Learned geocoder metadata. lookup_key/query_text/provider_id stay TEXT; the
+-- provider owns provider_id and may change its format independently of us.
 ALTER TABLE learned_geo
   ALTER COLUMN country TYPE VARCHAR(8) USING country::VARCHAR(8),
   ALTER COLUMN region TYPE VARCHAR(160) USING region::VARCHAR(160),
@@ -49,7 +51,6 @@ ALTER TABLE learned_geo
   ALTER COLUMN entity_type TYPE VARCHAR(64) USING entity_type::VARCHAR(64),
   ALTER COLUMN canonical_name TYPE VARCHAR(255) USING canonical_name::VARCHAR(255),
   ALTER COLUMN provider TYPE VARCHAR(64) USING provider::VARCHAR(64),
-  ALTER COLUMN provider_id TYPE VARCHAR(255) USING provider_id::VARCHAR(255),
   ALTER COLUMN provider_type TYPE VARCHAR(64) USING provider_type::VARCHAR(64);
 
 -- Anti-fake/property identity. photo_url/source_id/title remain TEXT.
