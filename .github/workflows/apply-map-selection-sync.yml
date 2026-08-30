@@ -19,7 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply interaction and home UX changes
-        run: python .github/apply_map_patch.py
+        run: |
+          python .github/apply_map_patch.py
+          sed -i 's/if (!mounted || _zones\.all\.isEmpty) return false;/if (!mounted) return false;/' app/lib/widgets/map_view.dart
 
       - uses: subosito/flutter-action@v2
         with:
@@ -29,8 +31,8 @@ jobs:
       - name: Format and analyze
         working-directory: app
         run: |
-          dart format lib/screens/home_screen.dart lib/widgets/map_view.dart lib/widgets/quick_presets_bar.dart
           flutter pub get
+          dart format lib/screens/home_screen.dart lib/widgets/map_view.dart lib/widgets/quick_presets_bar.dart
           flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Commit generated changes
