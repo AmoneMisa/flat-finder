@@ -1,6 +1,6 @@
 # Flat Finder PostgreSQL performance hardening plan
 
-Status: implementation mostly complete; CI/production validation active
+Status: implementation complete except production evidence / external FCM validation
 Branch: `perf/postgres-audit-hardening`
 PR: `#71`
 
@@ -22,7 +22,7 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Skip the exact count query on subsequent cursor pages when the cursor contains that total.
 - [x] Preserve explicit stats/count-only API behaviour and legacy cursors.
 - [x] Add cursor-pagination regression tests.
-- [ ] Use `LIMIT + 1` internally so `nextCursor` is emitted only when another row definitely exists, rather than on an exact page boundary.
+- [x] Use `LIMIT + 1` internally so `nextCursor` is emitted only when another row definitely exists, avoiding a terminal empty request.
 
 ### 3. Move hot scalar JSONB filters to typed columns
 - [x] Inventory scalar filters cast/read from JSONB (`bedrooms`, `floor`, `totalFloors`, `buildingYear`, `commissionPercent`, `metroDistance`, etc.).
@@ -41,10 +41,10 @@ This plan records the audit findings, implementation order and remaining validat
 
 ### 5. Spatial/radius search
 - [x] Add indexable `lat/lng` representation and bounding-box prefiltering as the non-PostGIS interim path.
-- [x] Apply exact Haversine distance only to the bounded candidate set.
+- [x] Apply exact spherical distance only to the bounded candidate set.
 - [x] Reuse the same predicate builder for list and map filters.
-- [x] Add integration coverage for radius filtering.
-- [ ] Add explicit near-boundary numerical tests before considering this spatial work fully frozen.
+- [x] Build the bounding box from the same `R=6_371_000 m` spherical model as the exact predicate, including conservative longitude handling near poles/dateline.
+- [x] Add an explicit 999 m / 1001 m boundary regression proving bbox and exact distance agree at a 1000 m radius.
 
 ## P0 — concurrency correctness that also reduces waste
 
@@ -81,7 +81,7 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Add eight indexed 8-bit perceptual-hash bands.
 - [x] Use band matches as the candidate set and exact Hamming distance as the final check.
 - [x] Cap the accepted Hamming threshold at 7, which guarantees at least one exact 8-bit band match for every accepted candidate.
-- [ ] Add a dedicated recall regression proving an old-but-valid perceptual match remains discoverable after many newer hashes exist.
+- [x] Add a recall regression with an old distance-7 match behind more than 800 newer country hashes.
 
 ## Short text / column type hygiene
 
@@ -91,9 +91,10 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Convert application-controlled queue fields to bounded `VARCHAR`; convert queue lease token from `TEXT` to native `UUID`.
 - [x] Bound place labels that are already normalized at ingestion while keeping upstream-owned `external_id` as `TEXT`.
 - [x] Bound learned-geography metadata while keeping free-form query/provider identifiers as `TEXT`.
-- [x] Bound property cluster IDs and mobile preset names.
-- [x] Fail the migration on oversized legacy values instead of silently truncating them.
-- [ ] Do not automatically alter hot `listings` label columns: `city` participates in generated `dedupe_key`, and indexed label type changes can require dependency/index rebuilds under an exclusive lock. Revisit only in a maintenance window if production evidence justifies it.
+- [x] Bound mobile preset names.
+- [x] Fail migrations on oversized legacy values instead of silently truncating them.
+- [x] Keep trigger/generated-column-bound columns (`listings` hot labels and `listing_property_clusters.cluster_id`) as `TEXT` in automatic deploy migrations; PostgreSQL CI demonstrated that changing them requires dependency teardown/rebuild, with no storage/performance gain.
+- [ ] Revisit those dependency-bound types only in a maintenance window if there is a concrete schema-contract reason, not for query speed.
 
 ## Validation gates
 
