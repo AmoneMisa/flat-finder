@@ -775,6 +775,15 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
   @override
   void didUpdateWidget(covariant _MobilePrimaryFilters oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // A map selection replaces the Filters object and may intentionally clear
+    // query while a 300 ms text-search debounce is still pending. Cancel only
+    // for an external filter replacement that disagrees with the local input;
+    // unrelated AppState notifications keep the same Filters instance, while a
+    // normal debounced search already has matching controller text.
+    if (!identical(oldWidget.filters, widget.filters) &&
+        _query.text != widget.filters.query) {
+      _debounce?.cancel();
+    }
     _sync(_query, widget.filters.query);
     _sync(_priceMin, _numberText(widget.filters.priceMin));
     _sync(_priceMax, _numberText(widget.filters.priceMax));
