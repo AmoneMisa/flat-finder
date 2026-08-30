@@ -9,6 +9,17 @@ import {checkRate} from './request-rate-limit.js';
 import {pool} from './db.js';
 import {getRates} from './fx.js';
 import {attachMarketComparisons} from './market-comparison.js';
+import {annotateNearbyTransport} from './transport-nearby.js';
+
+async function attachNearbyTransport(listing, country) {
+  if (!listing || !country) return listing;
+  try {
+    await annotateNearbyTransport([listing], country);
+  } catch (err) {
+    console.warn('[listing-item] transport enrichment failed:', err?.message ?? err);
+  }
+  return listing;
+}
 
 export function installListingItemRoutes(app) {
   // The listings.id BIGSERIAL is stamped onto every row's data->>'publicId' by
@@ -45,6 +56,7 @@ export function installListingItemRoutes(app) {
       } catch (err) {
         console.warn('[listing-item] market comparison failed:', err?.message ?? err);
       }
+      await attachNearbyTransport(listing, COUNTRIES[row.country]);
 
       return res.json({
         listing,
@@ -78,6 +90,7 @@ export function installListingItemRoutes(app) {
       // feed: they are persisted inactive and removed from search results.
       const cached = await readFreshActiveListing({source, country: code, id});
       if (cached) {
+        await attachNearbyTransport(cached.listing, country);
         return res.json({
           listing: cached.listing,
           availability: {status: 'active', checkedAt: cached.checkedAt, cached: true},
@@ -100,6 +113,7 @@ export function installListingItemRoutes(app) {
         return res.status(404).json({error: 'Listing no longer available'});
       }
 
+      await attachNearbyTransport(listing, country);
       const availability = await recordListingAvailability({
         source,
         country: code,
