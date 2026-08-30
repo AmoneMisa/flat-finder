@@ -30,7 +30,7 @@ test('fast searches use one database request and exact lookups follow the unique
   assert.match(source, /l\.source = \$1[\s\S]*l\.country = \$2[\s\S]*l\.source_id = \$3/u);
   assert.match(source, /searchPath: 'postgres-listing-id'/u);
   assert.match(source, /const cursorCount = Number\(cursor\?\.c\)/u);
-  assert.match(source, /const hasCursorCount = Number\.isSafeInteger\(cursorCount\) && cursorCount >= 0/u);
+  assert.match(source, /const hasCursorCount = useCursor && Number\.isSafeInteger\(cursorCount\) && cursorCount >= 0/u);
   assert.match(source, /const fetchLimit = limit \+ 1/u);
   assert.match(source, /const pageSql = hasCursorCount[\s\S]*SELECT p\.db_id, p\.created_at, l\.data[\s\S]*SELECT totals\.count/u);
   assert.match(source, /FROM \(SELECT COUNT\(\*\)::int AS count FROM deduped\) totals/u);
