@@ -86,8 +86,8 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
         l.property_type,
         l.rooms,
         l.area_sqm,
-        l.data->>'lat' AS lat_value,
-        l.data->>'lng' AS lng_value,
+        l.lat AS lat_value,
+        l.lng AS lng_value,
         (l.data @> '{"roomOnly":true}'::jsonb) AS room_only,
         COALESCE(
           NULLIF(BTRIM(l.data->>'photo'), ''),
@@ -121,8 +121,8 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
     LEFT JOIN LATERAL (
       SELECT visible.*
       FROM visible
-      WHERE NULLIF(BTRIM(visible.lat_value), '') IS NOT NULL
-        AND NULLIF(BTRIM(visible.lng_value), '') IS NOT NULL
+      WHERE visible.lat_value IS NOT NULL
+        AND visible.lng_value IS NOT NULL
       ORDER BY visible.created_at DESC NULLS LAST, visible.db_id DESC
       LIMIT ${limitParam}
     ) AS points ON TRUE
