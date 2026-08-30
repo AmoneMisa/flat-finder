@@ -28,5 +28,6 @@ test('stats-only requests do not repeat the full ranked page query', () => {
   assert.match(source, /if \(filters\.includeStats && filters\.statsOnly\)/u);
   assert.match(source, /countOrStatsResult = await pool\.query\(statsSql, baseParams\)/u);
   assert.match(source, /let pageResult = \{rows: \[\]\}/u);
-  assert.match(source, /if \(!filters\.statsOnly && rows\.length === limit/u);
+  assert.match(source, /const hasMore = !filters\.statsOnly && pageResult\.rows\.length > limit/u);
+  assert.match(source, /const rows = filters\.statsOnly \? \[\] : pageResult\.rows\.slice\(0, limit\)/u);
 });
