@@ -6,23 +6,26 @@
 // often as a city gets a new metro line. One city-wide pull fills this table,
 // and every listing after that is arithmetic over rows already in memory.
 
-import pg from 'pg';
+import {pool} from './db.js';
 
-const {Pool} = pg;
+function boundedText(value, max, fallback = null) {
+  if (value == null) return fallback;
+  return String(value).slice(0, max);
+}
 
-const pool = new Pool({
-  host: process.env.PGHOST || 'flat-finder-postgres',
-  port: Number(process.env.PGPORT) || 5432,
-  database: process.env.POSTGRES_DB || 'flatfinder',
-  user: process.env.POSTGRES_USER || 'flatfinder',
-  password: process.env.POSTGRES_PASSWORD || '',
-  max: Number(process.env.PLACES_DB_POOL_MAX) || 4,
-  idleTimeoutMillis: 30_000,
-});
-
-pool.on('error', (error) => {
-  console.error('[places:postgres] idle client error:', error.message);
-});
+function normalizedPlace(row) {
+  return {
+    ...row,
+    country: boundedText(String(row?.country || '').toUpperCase(), 8, ''),
+    city: boundedText(row?.city || '', 160, ''),
+    kind: boundedText(row?.kind || '', 32, ''),
+    name: boundedText(row?.name || '', 255, ''),
+    name_ru: boundedText(row?.name_ru ?? row?.nameRu, 255),
+    source: boundedText(row?.source || '', 16, ''),
+    // Upstream-owned identifiers remain unbounded TEXT in PostgreSQL.
+    external_id: String(row?.external_id ?? row?.externalId ?? ''),
+  };
+}
 
 const UPSERT_SQL = `
   INSERT INTO places (country, city, kind, name, name_ru, lat, lng, source, external_id, tags, updated_at)
@@ -48,7 +51,7 @@ export async function upsertPlaces(rows) {
 
   let saved = 0;
   for (let offset = 0; offset < rows.length; offset += 500) {
-    const batch = rows.slice(offset, offset + 500);
+    const batch = rows.slice(offset, offset + 500).map(normalizedPlace);
     await pool.query(UPSERT_SQL, [JSON.stringify(batch)]);
     saved += batch.length;
   }
@@ -61,7 +64,7 @@ export async function loadCityPlaces(country, city) {
     `SELECT kind, name, name_ru, lat, lng
      FROM places
      WHERE country = $1 AND ($2 = '' OR city = $2);`,
-    [String(country || '').toUpperCase(), String(city || '')],
+    [boundedText(String(country || '').toUpperCase(), 8, ''), boundedText(city || '', 160, '')],
   );
 
   return result.rows.map((row) => ({
@@ -82,6 +85,6 @@ export async function placesFreshness() {
   return result.rows;
 }
 
-export async function closePlacesDb() {
-  await pool.end();
-}
+// Kept for callers that historically owned a dedicated places pool. Places now
+// shares the process-wide backend pool, whose lifecycle is owned by db.js.
+export async function closePlacesDb() {}
