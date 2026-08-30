@@ -140,7 +140,7 @@ class _MapViewState extends State<MapView> {
     // Filters and map share one canonical selection. If a saved preset, filter
     // sheet or deep link already selected a zone, restore it immediately and
     // center the map on the same catalog entity.
-    if (_syncSelectionFromFilters(focus: true)) return;
+    if (_syncSelectionFromFilters(focus: !_isFocused)) return;
 
     // A city typed/selected in filters is an explicit geographic scope, so it
     // wins over automatic result fitting. Use the real city boundary when the
@@ -423,10 +423,43 @@ class _MapViewState extends State<MapView> {
   }) async {
     final current = context.read<AppState>().filters;
     final sameZone = _selectedZoneId == zone.id;
-    final sameMetroRadius = zone.type != 'metro' ||
-        metroRadiusM == null ||
-        current.metroMaxM == metroRadiusM;
-    if (sameZone && sameMetroRadius) {
+
+    // Metro uses a deliberate two-tap interaction. The first tap only selects
+    // the station and reveals its label/rings. The second tap applies it as a
+    // search filter. A further tap on an already-filtered station clears it.
+    if (zone.type == 'metro') {
+      final alreadyFiltered = current.metro == zone.name &&
+          (metroRadiusM == null || current.metroMaxM == metroRadiusM);
+
+      if (!sameZone) {
+        final district = _ancestorOfType(zone, 'district');
+        setState(() {
+          _selectedZoneId = zone.id;
+          _selectedDistrictId = district?.id;
+          _activeZoneFocusId = zone.id;
+          _expandedGroupKey = null;
+          _showLayerFor(zone);
+        });
+        _focusZone(zone);
+        return;
+      }
+
+      if (!alreadyFiltered) {
+        await _applyZoneScope(zone, metroRadiusM: metroRadiusM);
+        return;
+      }
+
+      setState(() {
+        _selectedZoneId = null;
+        _selectedDistrictId = null;
+        _activeZoneFocusId = null;
+        _expandedGroupKey = null;
+      });
+      await _clearZoneScope(zone);
+      return;
+    }
+
+    if (sameZone) {
       setState(() {
         _selectedZoneId = null;
         _selectedDistrictId = null;
@@ -866,7 +899,7 @@ class _MapViewState extends State<MapView> {
     final desiredZone = _zoneMatchingFilters();
     if (desiredZone?.id != _selectedZoneId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _syncSelectionFromFilters(focus: true);
+        if (mounted) _syncSelectionFromFilters(focus: !_isFocused);
       });
     }
     final visible = _visible;

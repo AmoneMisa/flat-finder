@@ -12,6 +12,7 @@ import '../state/app_state.dart';
 import '../state/hidden.dart';
 import '../state/favorites.dart';
 import '../state/settings.dart';
+import '../state/sorted.dart';
 import '../services/push_service.dart';
 import '../utils/format.dart';
 import '../utils/share_link.dart';
@@ -381,6 +382,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final state = context.watch<AppState>();
     final settings = context.watch<SettingsState>();
     final hidden = context.watch<HiddenState>();
+    final sorted = context.watch<SortedState>();
     final headerActionStyle = IconButton.styleFrom(
       minimumSize: const Size(30, 38),
       maximumSize: const Size(30, 38),
@@ -624,7 +626,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   errors: state.sourceErrors,
                   settings: settings,
                 ),
-              Expanded(child: _body(state, settings, hidden)),
+              Expanded(child: _body(state, settings, hidden, sorted)),
             ],
           ),
           if (state.loading || state.mapLoading)
@@ -648,10 +650,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _body(AppState state, SettingsState settings, HiddenState hidden) {
-    if (state.loading && state.listings.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
+  Widget _body(
+    AppState state,
+    SettingsState settings,
+    HiddenState hidden,
+    SortedState sorted,
+  ) {
     if (state.error != null && state.listings.isEmpty) {
       return _ErrorView(
         message: state.error!,
@@ -671,47 +675,91 @@ class _HomeScreenState extends State<HomeScreen> {
         displayCurrency: settings.displayCurrency,
       ),
       hidden,
+      sorted,
     );
-
-    if (listings.isEmpty) {
-      return Center(child: Text(_emptyLabel(settings)));
-    }
 
     if (_mapMode) {
       final mapCountry = state.filters.countries.isNotEmpty
           ? state.filters.countries.first
           : '';
-      return MapView(
-        // A fresh key on country/city change forces a clean remount instead
-        // of relying on didUpdateWidget to notice and recenter — a country
-        // switch was leaving the map showing the old country's tiles.
-        key: ValueKey('map-$mapCountry-${state.filters.city}'),
-        listings: state.mapListings.isNotEmpty ? state.mapListings : listings,
-        center: center,
-        centerZoom: _focusListing?.hasLocation == true ? 18 : 6,
-        onTapListing: _showMapPreview,
-        rates: state.rates,
-        displayCurrency: settings.displayCurrency,
-        country: mapCountry,
-        city: state.filters.city,
-        locale: settings.lang,
-        radiusCenter:
-            state.filters.centerLat != null && state.filters.centerLng != null
-                ? LatLng(state.filters.centerLat!.toDouble(),
-                    state.filters.centerLng!.toDouble())
-                : null,
-        radiusM: state.filters.radiusM?.toDouble(),
-        onRadiusCenterChanged: (point) => _setRadiusCenter(state, point),
-        onRadiusChanged: (radius) => _setRadius(state, radius),
-        onExpand: () => _openFullScreenMap(
-          state,
-          settings,
-          mapCountry,
-          state.mapListings.isNotEmpty ? state.mapListings : listings,
-          center,
-        ),
+      final mapItems = _applyTab(
+        state.mapListings.isNotEmpty ? state.mapListings : listings,
+        hidden,
+        sorted,
+      );
+      final focusKey = _focusListing == null
+          ? 'browse'
+          : '${_focusListing!.source}:${_focusListing!.id}';
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: MapView(
+              // Include explicit listing focus in the key. A card-to-map jump
+              // must not be reused as an ordinary browse camera instance.
+              key: ValueKey(
+                'map-$mapCountry-${state.filters.city}-$focusKey',
+              ),
+              listings: mapItems,
+              center: center,
+              centerZoom: _focusListing?.hasLocation == true ? 18 : 6,
+              onTapListing: _showMapPreview,
+              rates: state.rates,
+              displayCurrency: settings.displayCurrency,
+              country: mapCountry,
+              city: state.filters.city,
+              locale: settings.lang,
+              radiusCenter: state.filters.centerLat != null &&
+                      state.filters.centerLng != null
+                  ? LatLng(
+                      state.filters.centerLat!.toDouble(),
+                      state.filters.centerLng!.toDouble(),
+                    )
+                  : null,
+              radiusM: state.filters.radiusM?.toDouble(),
+              onRadiusCenterChanged: (point) => _setRadiusCenter(state, point),
+              onRadiusChanged: (radius) => _setRadius(state, radius),
+              onExpand: () => _openFullScreenMap(
+                state,
+                settings,
+                mapCountry,
+                mapItems,
+                center,
+              ),
+            ),
+          ),
+          // Keep the map and its geography controls usable when the current
+          // filters return nothing. The empty state is only a floating notice.
+          if (mapItems.isEmpty && !state.loading && !state.mapLoading)
+            Positioned(
+              top: 12,
+              left: 16,
+              right: 16,
+              child: IgnorePointer(
+                child: Center(
+                  child: Card(
+                    elevation: 6,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      child: Text(
+                        _emptyLabel(settings),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       );
     }
+
+    if (listings.isEmpty) {
+      return Center(child: Text(_emptyLabel(settings)));
+    }
+
     return RefreshIndicator(
       onRefresh: () => _pullRefresh(state),
       child: Stack(
@@ -767,20 +815,6 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-          if (state.loading) ...[
-            // Blocks taps on the (still-visible, now stale) list while a
-            // reload is in flight, so a tap can't land on a card that's
-            // about to be replaced.
-            const Positioned.fill(
-              child: AbsorbPointer(child: SizedBox.expand()),
-            ),
-            const Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: LinearProgressIndicator(),
-            ),
-          ],
         ],
       ),
     );
@@ -797,13 +831,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Restrict the visible listings to the selected quick view (on top of the
   /// active filters/search). "Fresh" keeps only posts from the last 24 hours.
-  List<Listing> _applyTab(List<Listing> listings, HiddenState hidden) {
+  List<Listing> _applyTab(
+    List<Listing> listings,
+    HiddenState hidden,
+    SortedState sorted,
+  ) {
     if (_tab == _ViewTab.hidden) {
       return listings.where((l) => hidden.isHidden(l.id)).toList();
     }
     // Every other view excludes dismissed listings, matching the site's
     // `activeListings` (hidden ones only ever show up under the Hidden tab).
-    final active = listings.where((l) => !hidden.isHidden(l.id));
+    final active = listings.where(
+      (l) => !hidden.isHidden(l.id) && !sorted.containsListing(l),
+    );
     switch (_tab) {
       case _ViewTab.all:
         return active.toList();
