@@ -372,16 +372,16 @@ export async function failTask({
       `
         UPDATE crawl_tasks
         SET
-          status = $3,
+          status = $3::varchar,
           run_after = CASE
-            WHEN $3 = 'dead' THEN run_after
+            WHEN $3::varchar = 'dead' THEN run_after
             ELSE NOW() + ($4::bigint * INTERVAL '1 millisecond')
           END,
           locked_by = NULL,
           lock_token = NULL,
           locked_until = NULL,
           last_error = $5,
-          finished_at = CASE WHEN $3 = 'dead' THEN NOW() ELSE NULL END,
+          finished_at = CASE WHEN $3::varchar = 'dead' THEN NOW() ELSE NULL END,
           updated_at = NOW()
         WHERE id = $1
           AND lock_token = $2
