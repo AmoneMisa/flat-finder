@@ -49,6 +49,44 @@ class MoneyAmount {
   };
 }
 
+
+class NearbyTransportStop {
+  final String id;
+  final String name;
+  final String mode;
+  final int distanceM;
+  final List<String> routeRefs;
+
+  const NearbyTransportStop({
+    required this.id,
+    required this.name,
+    required this.mode,
+    required this.distanceM,
+    this.routeRefs = const [],
+  });
+
+  factory NearbyTransportStop.fromJson(Map<String, dynamic> j) => NearbyTransportStop(
+    id: j['id']?.toString() ?? '',
+    name: j['name']?.toString() ?? '',
+    mode: j['mode']?.toString() ?? '',
+    distanceM: (j['distanceM'] as num?)?.round() ?? 0,
+    routeRefs: (j['routeRefs'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'mode': mode,
+    'distanceM': distanceM,
+    'routeRefs': routeRefs,
+  };
+
+  String get displayLabel {
+    final routes = routeRefs.isEmpty ? '' : ' · ${routeRefs.join(', ')}';
+    return '$name$routes · $distanceM m';
+  }
+}
+
 String? _locationName(dynamic value) {
   if (value == null) return null;
   if (value is Map) {
@@ -111,6 +149,8 @@ class Listing {
   final String? contact; // phone or @handle | null
   final String? district; // intra-city district / neighbourhood | null
   final String? metro; // nearest metro/transit station | null
+  final List<NearbyTransportStop> nearbyMetro;
+  final List<NearbyTransportStop> nearbyTransport;
   final List<String> nearby; // nearby landmarks
   final List<String> nearbyShops; // named shop/mall chains mentioned
   final bool? petsAllowed; // true/false/null (unstated)
@@ -198,6 +238,8 @@ class Listing {
     required this.contact,
     required this.district,
     required this.metro,
+    this.nearbyMetro = const [],
+    this.nearbyTransport = const [],
     required this.nearby,
     this.nearbyShops = const [],
     this.petsAllowed,
@@ -262,6 +304,16 @@ class Listing {
 
   bool get hasLocation => lat != null && lng != null;
 
+  List<NearbyTransportStop> transportByMode(String mode) => nearbyTransport
+      .where((stop) => stop.mode == mode)
+      .toList(growable: false);
+
+  String? transportSummary(String mode) {
+    final stops = transportByMode(mode);
+    if (stops.isEmpty) return null;
+    return stops.map((stop) => stop.displayLabel).join(', ');
+  }
+
   factory Listing.fromJson(Map<String, dynamic> j) {
     double? toD(dynamic v) => v == null ? null : (v as num).toDouble();
     final market = j['marketComparison'];
@@ -285,6 +337,16 @@ class Listing {
       contact: j['contact'] as String?,
       district: _locationName(j['district']),
       metro: _locationName(j['metro']),
+      nearbyMetro: (j['nearbyMetro'] as List?)
+              ?.whereType<Map>()
+              .map((e) => NearbyTransportStop.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          const [],
+      nearbyTransport: (j['nearbyTransport'] as List?)
+              ?.whereType<Map>()
+              .map((e) => NearbyTransportStop.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          const [],
       nearby:
           (j['nearby'] as List?)
               ?.map((e) => _capitalizeFirstLetter(e.toString()))
@@ -395,6 +457,8 @@ class Listing {
     'contact': contact,
     'district': district,
     'metro': metro,
+    'nearbyMetro': nearbyMetro.map((e) => e.toJson()).toList(),
+    'nearbyTransport': nearbyTransport.map((e) => e.toJson()).toList(),
     'nearby': nearby,
     'nearbyShops': nearbyShops,
     'petsAllowed': petsAllowed,
