@@ -92,11 +92,21 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // so users can see direct-owner and realtor/roommate inventory.
     { name: 'arenda_kvartiry_astana', city: 'Astana', ownerOnly: true, dealType: 'longRent' },
     { name: 'rentinastana', city: 'Astana' },
+
+    // Regional public rental feeds. These stay mixed and use normal agency and
+    // wanted-listing classification instead of owner filtering.
+    { name: 'arendaktobe', city: 'Aktobe' },
+    { name: 'arenda_karaganda_kvartira', city: 'Karaganda' },
   ],
   KG: [
     // Bishkek stream is mixed; keep both owner and realtor inventory and rely on
     // the existing wanted/agency classifiers instead of suppressing either side.
     { name: 'bishkekarendakv', city: 'Bishkek', dealType: 'longRent' },
+
+    // Osh has both a structured search/supply channel and a broad public group.
+    // Both include mixed inventory, so neither is forced owner-only.
+    { name: 'kvartira_osh', city: 'Osh' },
+    { name: 'arendaosh', city: 'Osh' },
   ],
   UZ: [
     // Mixed Tashkent feed: keep both #хозяева and #риелтор sections.
@@ -144,6 +154,19 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
       dealType: 'shortRent',
       ownerMarkers: ['egasi', 'bezmakler', 'без маклера', 'без посредников'],
     },
+
+    // Bukhara direct-owner channel: channel policy explicitly says no agents.
+    { name: 'arenda_kvartir_buxara', city: 'Bukhara', ownerOnly: true },
+
+    // Samarkand daily-rent public group supplements the existing general feeds.
+    { name: 'arenda_samarkand_etagi', city: 'Samarkand', dealType: 'shortRent' },
+
+    // Regional mixed feeds: owners, agents and roommate offers are all retained.
+    { name: 'namangan_ijara_kvartiralar', city: 'Namangan' },
+    { name: 'Arenda_Kvartira_Fergane_1', city: 'Fergana' },
+    { name: 'farpi_ijara_kv', city: 'Fergana' },
+    { name: 'andijon_ijara_bor', city: 'Andijan' },
+    { name: 'ijara_arenda_uylari', city: 'Andijan' },
   ],
 };
 
