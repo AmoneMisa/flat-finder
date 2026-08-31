@@ -15,6 +15,11 @@ export const REALTOR_HOUSING_SOURCES = {
       url: 'https://rentli.uz/ru',
       city: 'Tashkent',
     },
+    {
+      key: 'domza-tashkent-rent',
+      url: 'https://domza.uz/offers',
+      city: 'Tashkent',
+    },
   ],
   UA: [
     {
