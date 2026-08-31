@@ -222,12 +222,13 @@ export function enforceOwnerOnlyListings(listings, policy = {}) {
       if (!text || looksHousingWanted(text)) return false;
       if (hasMarker(text, policy.ownerRejectMarkers)) return false;
 
-      const directOwner = isDirectOwner(text);
+      const ownerMarker = hasMarker(text, policy.ownerMarkers);
+      const directOwner = ownerMarker || isDirectOwner(text);
       if (listing?.byAgency === true && !directOwner) return false;
       if (classifyAgency(text) && !directOwner) return false;
 
       if (Array.isArray(policy.ownerMarkers) && policy.ownerMarkers.length) {
-        return hasMarker(text, policy.ownerMarkers) || directOwner;
+        return directOwner;
       }
 
       return true;
@@ -263,8 +264,6 @@ async function persist(listings, task) {
     );
   }
 
-  // AI Vision is intentionally off the critical persistence path. Queueing is
-  // synchronous/cheap; the worker result is merged back into PostgreSQL and ES.
   scheduleListingsVision(listings);
 
   return { saved, indexed };
@@ -288,6 +287,7 @@ function nextOlxTask(task, pageResult, page) {
     segment: String(task.segment || ''),
     page: nextPage,
     priority: Math.max(1, 7 - nextPage),
+    ownerOnly: task.ownerOnly === true,
     queueProtocol: task.queueProtocol,
     crawlGeneration: task.crawlGeneration,
     crawlerShard: task.crawlerShard,
@@ -317,6 +317,14 @@ async function processQueueTaskInner(task) {
       city: task.city ? String(task.city) : null,
       crawlerShard: task.crawlerShard,
     });
+
+    if (task.ownerOnly === true) {
+      pageResult.listings = enforceOwnerOnlyListings(pageResult.listings, {
+        ownerOnly: true,
+        ownerMarkers: ['proprietar', 'direct proprietar', 'fără comision', 'fara comision'],
+        dealType: olxSegmentDealType(segment),
+      });
+    }
 
     const rejected = await rejectOutOfAreaCoordinates(
       pageResult.listings,
