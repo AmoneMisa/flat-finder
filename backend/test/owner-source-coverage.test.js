@@ -27,6 +27,7 @@ test('owner registry covers curated direct-owner platforms in every configured c
     'https://garsoniera.ro/anunturi/inchiriere',
     'https://arendator.kg/',
     'https://sutochno.kg/bishkek/',
+    'https://sutochno.kg/osh/',
   ]) {
     assert.equal(urls.filter((url) => url === expected).length, 1, expected);
   }
@@ -35,6 +36,7 @@ test('owner registry covers curated direct-owner platforms in every configured c
   assert.equal(ownerHousingSources('UZ').find((source) => source.key === 'turar-tashkent-owner-daily')?.dealType, 'shortRent');
   assert.equal(ownerHousingSources('UA').find((source) => source.key === 'dobalux-ukraine-owner-daily')?.dealType, 'shortRent');
   assert.equal(ownerHousingSources('KG').find((source) => source.key === 'sutochno-bishkek-owner-daily')?.dealType, 'shortRent');
+  assert.equal(ownerHousingSources('KG').find((source) => source.key === 'sutochno-osh-owner-daily')?.city, 'Osh');
   assert.ok(!realtorHousingSources('UZ').some((source) => source.url.includes('rentli.uz')));
   assert.equal(COUNTRIES.KG?.currency, 'KGS');
   assert.deepEqual(COUNTRIES.KG?.sources, ['telegram']);
@@ -91,6 +93,7 @@ test('crawl plan restores daily OLX and queues owner-first sources', () => {
     'garsoniera-romania-owner-rent',
     'arendator-bishkek-owner-rent',
     'sutochno-bishkek-owner-daily',
+    'sutochno-osh-owner-daily',
   ]) {
     assert.ok(tasks.some((task) => task.type === 'flat.custom.url' && task.segment === segment && task.ownerOnly));
   }
