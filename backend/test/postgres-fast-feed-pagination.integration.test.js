@@ -95,7 +95,7 @@ test('fast default feed carries count and scopes cursor pagination to the active
   };
 
   const first = await searchPostgresListings({filters, countries: [COUNTRY], rates: {USD: 1}});
-  assert.equal(first.searchPath, 'postgres-feed-members');
+  assert.equal(first.searchPath, 'postgres-canonical-feed');
   assert.equal(first.count, 3);
   assert.equal(first.listings.length, 1);
   assert.equal(first.listings[0]?.id, 'fast-feed-1');
