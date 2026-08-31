@@ -26,6 +26,7 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Reject carried counts from cursors whose sort does not match the active request.
 - [x] Bind newly issued cursors to a fingerprint of the normalized query scope (countries + semantic filters). Explicitly mismatched scoped cursors restart from the first page; legacy unscoped cursors remain positional for compatibility but cannot supply a trusted carried count.
 - [x] Validate cursor sort/timestamp/PostgreSQL bigint position before passing it to SQL builders.
+- [x] Reject oversized cursor tokens before base64 decode/JSON parsing.
 - [x] Add unit plus fast/general PostgreSQL integration regressions for scope mismatch, legacy recount and first-page restart semantics.
 
 ### 3. Move hot scalar JSONB filters to typed columns
@@ -65,7 +66,7 @@ This plan records the audit findings, implementation order and remaining validat
 
 ### 7. Atomic property-cluster merge
 - [x] Move discovery, canonical cluster selection, merge and member upsert into one database transaction/function.
-- [x] Serialize overlapping merges with transaction-scoped advisory locks acquired in deterministic order.
+- [x] Serialize the cluster-canonicalization critical section across replicas with one transaction-scoped PostgreSQL advisory lock. Cluster-wide rewrites can move members not present in another request's input set, so this deliberately favors correctness over parallel merge throughput.
 - [x] Replace member-by-member upserts with set-based `jsonb_to_recordset` operations.
 - [x] Preserve propagation back to `listings.data.propertyClusterId`, generated `dedupe_key` and public-feed read model.
 - [x] Add concurrent overlapping-merge integration coverage.
@@ -105,6 +106,15 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Keep trigger/generated-column-bound columns (`listings` hot labels and `listing_property_clusters.cluster_id`) as `TEXT` in automatic deploy migrations; PostgreSQL CI demonstrated that changing them requires dependency teardown/rebuild, with no storage/performance gain.
 - [ ] Revisit those dependency-bound types only in a maintenance window if there is a concrete schema-contract reason, not for query speed.
 
+## Deployment caveats
+
+The current migration runner wraps each migration file in one transaction and records the version only after the SQL succeeds. The hardening migrations preserve that atomicity rather than pretending to provide zero-downtime behavior the runner cannot safely guarantee.
+
+- Migration `024` adds STORED generated columns to `listings`; this requires a heap rewrite and an `ACCESS EXCLUSIVE` table lock. All eight generated scalars are added in one `ALTER TABLE` to avoid repeating that rewrite.
+- Migration `026` builds scalar/spatial indexes only after `024` commits, so index builds do not inherit the `ACCESS EXCLUSIVE` rewrite lock. They are still ordinary transactional `CREATE INDEX` statements and may block writes while each index is built.
+- Migration `025` installs relation-maintenance triggers and backfills normalized search relations in the same transaction. Moving trigger creation after the backfill without a staged/catch-up protocol would open a race where concurrent listing changes are missed. Reducing this write-blocking window safely requires explicit multi-transaction/no-transaction migration support, not a SQL reorder.
+- If production table size makes these lock windows unacceptable, introduce a dedicated staged migration protocol (including `CREATE INDEX CONCURRENTLY` support and a race-free relation catch-up phase) before deploying these schema changes.
+
 ## Validation gates
 
 1. Pull requests touching backend code run against PostgreSQL 18 before merge.
@@ -112,9 +122,10 @@ This plan records the audit findings, implementation order and remaining validat
 3. A production-like upgrade test must create a database at schema version `023`, insert representative legacy rows, apply `024–032`, and preserve data while materializing the new search/outbox structures.
 4. Migration `032` must fail before type conversion when an oversized legacy value exists; CI verifies that the failed attempt rolls back without truncating the value, after which a clean retry succeeds.
 5. The production performance-report SQL must execute through real `psql -v ON_ERROR_STOP=1` even when `pg_stat_statements` is unavailable.
-6. Existing backend tests and new regression/integration tests must pass; current hardening gate is **303/303** on PostgreSQL 18.6.
+6. Existing backend tests and new regression/integration tests must pass; last completed hardening gate before the latest review fixes is **303/303** on PostgreSQL 18.6. The latest HEAD must pass the same gate before merge/readiness.
 7. Multi-process notification delivery must cross the mocked FCM transport boundary only once for one logical delivery.
 8. Scoped cursor regressions must prove that countries/semantic filters cannot reuse another query's position or carried count, while legacy cursors preserve position with a one-time recount.
-9. Compare SQL query count before/after for affected request paths.
-10. Use `EXPLAIN (ANALYZE, BUFFERS)` on representative production-like/production data before deleting or adding final indexes.
-11. Avoid application-local parsing/geography logic that belongs in `@whiteslove/parsing-lexicon` or `@whiteslove/geo-catalog`.
+9. Concurrent property-cluster regressions must converge while the database function owns cross-replica serialization.
+10. Compare SQL query count before/after for affected request paths.
+11. Use `EXPLAIN (ANALYZE, BUFFERS)` on representative production-like/production data before deleting or adding final indexes.
+12. Avoid application-local parsing/geography logic that belongs in `@whiteslove/parsing-lexicon` or `@whiteslove/geo-catalog`.
