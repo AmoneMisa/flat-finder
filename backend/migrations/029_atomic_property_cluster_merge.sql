@@ -1,7 +1,12 @@
--- Merge property-cluster membership in one database transaction. Advisory
--- transaction locks are acquired in deterministic order for every participating
--- member and existing cluster, so overlapping merges across service replicas
--- serialize without a process-local mutex or deadlock-prone lock order.
+-- Merge property-cluster membership in one database transaction.
+--
+-- Cluster merges are much rarer than listing reads/writes, while a merge may
+-- rewrite every row belonging to an existing cluster. Fine-grained member locks
+-- alone are therefore not sufficient: another transaction can move a different
+-- member of the same cluster and make a previously-read cluster id stale. Keep
+-- the canonicalization critical section under one transaction-scoped advisory
+-- lock across service replicas. This deliberately trades tiny merge concurrency
+-- for simple, race-free cluster convergence.
 
 CREATE OR REPLACE FUNCTION merge_listing_property_cluster(
   p_members JSONB,
@@ -11,7 +16,6 @@ RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_key TEXT;
   v_existing_ids TEXT[];
   v_cluster_id TEXT;
   v_size INTEGER;
@@ -24,29 +28,11 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  -- Any two overlapping merge requests share at least one member lock. Sort
-  -- lock acquisition globally so requests with multiple shared members cannot
-  -- deadlock each other.
-  FOR v_key IN
-    SELECT member_key
-    FROM (
-      SELECT DISTINCT CONCAT_WS(':',
-        LOWER(BTRIM(member.source)),
-        UPPER(BTRIM(member.country)),
-        BTRIM(member.source_id)
-      ) AS member_key
-      FROM jsonb_to_recordset(p_members)
-        AS member(source TEXT, country TEXT, source_id TEXT)
-      WHERE NULLIF(BTRIM(member.source), '') IS NOT NULL
-        AND NULLIF(BTRIM(member.country), '') IS NOT NULL
-        AND NULLIF(BTRIM(member.source_id), '') IS NOT NULL
-    ) keys
-    ORDER BY member_key
-  LOOP
-    PERFORM pg_advisory_xact_lock(
-      hashtextextended('property-member:' || v_key, 0)
-    );
-  END LOOP;
+  -- Every runtime cluster merge takes this lock before reading current
+  -- membership. PostgreSQL releases it automatically with the transaction.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('property-cluster-merge-global', 0)
+  );
 
   SELECT ARRAY_AGG(DISTINCT cluster.cluster_id ORDER BY cluster.cluster_id)
   INTO v_existing_ids
@@ -56,27 +42,6 @@ BEGIN
     ON cluster.source = LOWER(BTRIM(member.source))
    AND cluster.country = UPPER(BTRIM(member.country))
    AND cluster.source_id = BTRIM(member.source_id);
-
-  -- Serialize merges that touch different members of the same already-known
-  -- clusters, then re-read cluster ids after waiting so the decision is based
-  -- on the latest committed state.
-  IF COALESCE(array_length(v_existing_ids, 1), 0) > 0 THEN
-    FOREACH v_key IN ARRAY v_existing_ids
-    LOOP
-      PERFORM pg_advisory_xact_lock(
-        hashtextextended('property-cluster:' || v_key, 0)
-      );
-    END LOOP;
-
-    SELECT ARRAY_AGG(DISTINCT cluster.cluster_id ORDER BY cluster.cluster_id)
-    INTO v_existing_ids
-    FROM listing_property_clusters cluster
-    JOIN jsonb_to_recordset(p_members)
-      AS member(source TEXT, country TEXT, source_id TEXT)
-      ON cluster.source = LOWER(BTRIM(member.source))
-     AND cluster.country = UPPER(BTRIM(member.country))
-     AND cluster.source_id = BTRIM(member.source_id);
-  END IF;
 
   v_cluster_id := CASE
     WHEN COALESCE(array_length(v_existing_ids, 1), 0) > 0
