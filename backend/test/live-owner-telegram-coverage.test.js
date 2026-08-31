@@ -5,30 +5,27 @@ import { COUNTRIES } from '../src/countries.js';
 import { telegramHousingChannels } from '../src/telegram-housing-sources.js';
 import { buildCrawlPlan } from '../src/queuePlan.js';
 
-test('Ukraine live owner feeds are queued with strict owner semantics', () => {
+test('Ukraine keeps dedicated owner feeds without suppressing mixed channels', () => {
   const channels = telegramHousingChannels('UA', COUNTRIES.UA.telegramChannels);
   const byName = (name) => channels.find((channel) => channel?.name === name);
 
-  assert.equal(byName('direct_rent')?.city, 'Lviv');
-  assert.equal(byName('direct_rent')?.ownerOnly, true);
-  assert.equal(byName('direct_rent')?.dealType, 'longRent');
+  for (const [name, city] of [
+    ['direct_rent', 'Lviv'],
+    ['direct_rent_cv', 'Chernivtsi'],
+    ['direct_rent_rivne', 'Rivne'],
+    ['lviv_no_maklers', 'Lviv'],
+    ['BEZ_rieltoriv_DP', 'Dnipro'],
+    ['LUTSK_ORENDA', 'Lutsk'],
+    ['Ternopol_arenda', 'Ternopil'],
+  ]) {
+    assert.equal(byName(name)?.city, city, name);
+    assert.equal(byName(name)?.ownerOnly, true, name);
+  }
 
-  assert.equal(byName('direct_rent_cv')?.ownerOnly, true);
-  assert.equal(byName('direct_rent_cv')?.city, 'Chernivtsi');
-  assert.equal(byName('direct_rent_rivne')?.ownerOnly, true);
-  assert.equal(byName('direct_rent_rivne')?.city, 'Rivne');
-
-  assert.equal(byName('lviv_no_maklers')?.ownerOnly, true);
-  assert.ok(byName('lviv_no_maklers')?.ownerMarkers.includes('#власник'));
-
-  assert.equal(byName('rent_frankivsk')?.ownerOnly, true);
-  assert.ok(byName('rent_frankivsk')?.ownerMarkers.includes('#власник'));
-
-  assert.equal(byName('SMARTIN_MYKOLAYIV')?.ownerOnly, true);
-  assert.ok(byName('SMARTIN_MYKOLAYIV')?.ownerMarkers.includes('від власника'));
-
-  assert.equal(byName('rentin_khmelnytskyi')?.ownerOnly, true);
-  assert.ok(byName('rentin_khmelnytskyi')?.ownerMarkers.includes('без комісії ріелтора'));
+  // Mixed feeds must stay mixed so owner and realtor listings remain visible.
+  for (const name of ['KH_Rent', 'rent_frankivsk', 'SMARTIN_MYKOLAYIV', 'rentin_khmelnytskyi']) {
+    assert.notEqual(byName(name)?.ownerOnly, true, name);
+  }
 
   const { tasks } = buildCrawlPlan({ shardCount: 2 });
   for (const name of [
@@ -36,9 +33,9 @@ test('Ukraine live owner feeds are queued with strict owner semantics', () => {
     'direct_rent_cv',
     'direct_rent_rivne',
     'lviv_no_maklers',
-    'rent_frankivsk',
-    'SMARTIN_MYKOLAYIV',
-    'rentin_khmelnytskyi',
+    'BEZ_rieltoriv_DP',
+    'LUTSK_ORENDA',
+    'Ternopol_arenda',
   ]) {
     assert.ok(tasks.some((task) =>
       task.type === 'flat.telegram.channel'
@@ -47,6 +44,51 @@ test('Ukraine live owner feeds are queued with strict owner semantics', () => {
       && task.ownerOnly === true,
     ), name);
   }
+
+  for (const name of ['KH_Rent', 'rent_frankivsk', 'SMARTIN_MYKOLAYIV', 'rentin_khmelnytskyi']) {
+    assert.ok(tasks.some((task) =>
+      task.type === 'flat.telegram.channel'
+      && task.country === 'UA'
+      && task.channel === name
+      && task.ownerOnly !== true,
+    ), name);
+  }
+});
+
+test('Kazakhstan adds Astana owner and mixed feeds side by side', () => {
+  const channels = telegramHousingChannels('KZ', COUNTRIES.KZ.telegramChannels);
+  const byName = (name) => channels.find((channel) => channel?.name === name);
+
+  assert.equal(byName('arenda_kvartiry_astana')?.ownerOnly, true);
+  assert.equal(byName('arenda_kvartiry_astana')?.city, 'Astana');
+  assert.notEqual(byName('rentinastana')?.ownerOnly, true);
+  assert.equal(byName('rentinastana')?.city, 'Astana');
+  assert.notEqual(byName('kvartira_v_almaty')?.ownerOnly, true);
+
+  const { tasks } = buildCrawlPlan({ shardCount: 2 });
+  assert.ok(tasks.some((task) =>
+    task.type === 'flat.telegram.channel'
+    && task.country === 'KZ'
+    && task.channel === 'arenda_kvartiry_astana'
+    && task.ownerOnly === true,
+  ));
+  assert.ok(tasks.some((task) =>
+    task.type === 'flat.telegram.channel'
+    && task.country === 'KZ'
+    && task.channel === 'rentinastana'
+    && task.ownerOnly !== true,
+  ));
+});
+
+test('mixed Bishkek and Tashkent feeds are not narrowed to owners only', () => {
+  const kg = telegramHousingChannels('KG', COUNTRIES.KG.telegramChannels);
+  const bishkek = kg.find((channel) => channel?.name === 'bishkekarendakv');
+  assert.equal(bishkek?.city, 'Bishkek');
+  assert.notEqual(bishkek?.ownerOnly, true);
+
+  const uz = telegramHousingChannels('UZ', COUNTRIES.UZ.telegramChannels);
+  assert.ok(uz.some((channel) => channel === 'arentash'));
+  assert.ok(!uz.some((channel) => channel?.name === 'arentash' && channel.ownerOnly === true));
 });
 
 test('Tashkent live daily feed is owner-only short rent', () => {
