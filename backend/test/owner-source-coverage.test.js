@@ -24,6 +24,8 @@ test('owner registry covers curated direct-owner platforms in every configured c
   ]) {
     assert.equal(urls.filter((url) => url === expected).length, 1, expected);
   }
+  assert.equal(ownerHousingSources('UZ').find((source) => source.key === 'turar-tashkent-owner-daily')?.dealType, 'shortRent');
+  assert.equal(ownerHousingSources('KG').find((source) => source.key === 'sutochno-bishkek-owner-daily')?.dealType, 'shortRent');
   assert.ok(!realtorHousingSources('UZ').some((source) => source.url.includes('rentli.uz')));
   assert.equal(COUNTRIES.KG?.currency, 'KGS');
   assert.deepEqual(COUNTRIES.KG?.sources, ['telegram']);
