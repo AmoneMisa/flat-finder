@@ -5,6 +5,26 @@ import { COUNTRIES } from '../src/countries.js';
 import { telegramHousingChannels } from '../src/telegram-housing-sources.js';
 import { buildCrawlPlan } from '../src/queuePlan.js';
 
+test('Romania keeps live Bucharest general feeds alongside owner sources', () => {
+  const channels = telegramHousingChannels('RO', COUNTRIES.RO.telegramChannels);
+  const byName = (name) => channels.find((channel) => channel?.name === name);
+
+  for (const name of ['bucharest_homes', 'apartamenti_bucharest']) {
+    assert.equal(byName(name)?.city, 'Bucharest', name);
+    assert.notEqual(byName(name)?.ownerOnly, true, name);
+  }
+
+  const { tasks } = buildCrawlPlan({ shardCount: 2 });
+  for (const name of ['bucharest_homes', 'apartamenti_bucharest']) {
+    assert.ok(tasks.some((task) =>
+      task.type === 'flat.telegram.channel'
+      && task.country === 'RO'
+      && task.channel === name
+      && task.ownerOnly !== true,
+    ), name);
+  }
+});
+
 test('Ukraine keeps dedicated owner feeds without suppressing mixed channels', () => {
   const channels = telegramHousingChannels('UA', COUNTRIES.UA.telegramChannels);
   const byName = (name) => channels.find((channel) => channel?.name === name);
@@ -64,10 +84,16 @@ test('Kazakhstan adds owner and mixed regional feeds side by side', () => {
   assert.notEqual(byName('rentinastana')?.ownerOnly, true);
   assert.equal(byName('rentinastana')?.city, 'Astana');
   assert.notEqual(byName('kvartira_v_almaty')?.ownerOnly, true);
-  assert.equal(byName('arendaktobe')?.city, 'Aktobe');
-  assert.notEqual(byName('arendaktobe')?.ownerOnly, true);
-  assert.equal(byName('arenda_karaganda_kvartira')?.city, 'Karaganda');
-  assert.notEqual(byName('arenda_karaganda_kvartira')?.ownerOnly, true);
+
+  for (const [name, city] of [
+    ['arendaktobe', 'Aktobe'],
+    ['arenda_karaganda_kvartira', 'Karaganda'],
+    ['atyraukvortira', 'Atyrau'],
+    ['kvartiraoral', 'Oral'],
+  ]) {
+    assert.equal(byName(name)?.city, city, name);
+    assert.notEqual(byName(name)?.ownerOnly, true, name);
+  }
 
   const { tasks } = buildCrawlPlan({ shardCount: 2 });
   assert.ok(tasks.some((task) =>
@@ -76,7 +102,13 @@ test('Kazakhstan adds owner and mixed regional feeds side by side', () => {
     && task.channel === 'arenda_kvartiry_astana'
     && task.ownerOnly === true,
   ));
-  for (const name of ['rentinastana', 'arendaktobe', 'arenda_karaganda_kvartira']) {
+  for (const name of [
+    'rentinastana',
+    'arendaktobe',
+    'arenda_karaganda_kvartira',
+    'atyraukvortira',
+    'kvartiraoral',
+  ]) {
     assert.ok(tasks.some((task) =>
       task.type === 'flat.telegram.channel'
       && task.country === 'KZ'
@@ -127,6 +159,7 @@ test('Uzbekistan keeps mixed Tashkent and adds live regional coverage', () => {
     ['farpi_ijara_kv', 'Fergana'],
     ['andijon_ijara_bor', 'Andijan'],
     ['ijara_arenda_uylari', 'Andijan'],
+    ['kvartira_nukus', 'Nukus'],
   ]) {
     assert.equal(byName(name)?.city, city, name);
     assert.notEqual(byName(name)?.ownerOnly, true, name);
@@ -159,6 +192,7 @@ test('Uzbekistan keeps mixed Tashkent and adds live regional coverage', () => {
     'farpi_ijara_kv',
     'andijon_ijara_bor',
     'ijara_arenda_uylari',
+    'kvartira_nukus',
   ]) {
     assert.ok(tasks.some((task) =>
       task.type === 'flat.telegram.channel'
