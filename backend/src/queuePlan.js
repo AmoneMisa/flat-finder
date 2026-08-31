@@ -3,6 +3,7 @@ import { COUNTRIES } from './countries.js';
 import { telegramHousingChannels } from './telegram-housing-sources.js';
 import { realtorHousingSources } from './realtor-housing-sources.js';
 import { ownerHousingSources } from './owner-housing-sources.js';
+import { externalHousingSources } from './external-housing-sources.js';
 
 export const QUEUE_PROTOCOL_VERSION = Math.max(
   3,
@@ -106,6 +107,23 @@ export function taskPriority(task) {
   return 1;
 }
 
+function sourceTask(source, country, crawlGeneration, shardCount) {
+  return versionTask({
+    type: 'flat.custom.url',
+    country,
+    city: source.city || null,
+    url: source.url,
+    segment: source.key,
+    dealType: source.dealType || null,
+    curated: true,
+    ownerOnly: source.ownerOnly === true,
+    ownerMarkers: Array.isArray(source.ownerMarkers) ? [...source.ownerMarkers] : undefined,
+    ownerRejectMarkers: Array.isArray(source.ownerRejectMarkers)
+      ? [...source.ownerRejectMarkers]
+      : undefined,
+  }, crawlGeneration, shardCount);
+}
+
 export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
   const tasks = [];
   const crawlGeneration = randomUUID();
@@ -172,32 +190,17 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
     }
 
     for (const source of ownerHousingSources(country.code)) {
-      const task = versionTask({
-        type: 'flat.custom.url',
-        country: country.code,
-        city: source.city || null,
-        url: source.url,
-        segment: source.key,
-        dealType: source.dealType || null,
-        curated: true,
-        ownerOnly: true,
-        ownerMarkers: Array.isArray(source.ownerMarkers) ? [...source.ownerMarkers] : undefined,
-        ownerRejectMarkers: Array.isArray(source.ownerRejectMarkers)
-          ? [...source.ownerRejectMarkers]
-          : undefined,
-      }, crawlGeneration, shardCount);
+      const task = sourceTask({ ...source, ownerOnly: true }, country.code, crawlGeneration, shardCount);
       tasks.push({ ...task, priority: taskPriority(task) });
     }
 
     for (const source of realtorHousingSources(country.code)) {
-      const task = versionTask({
-        type: 'flat.custom.url',
-        country: country.code,
-        city: source.city || null,
-        url: source.url,
-        segment: source.key,
-        curated: true,
-      }, crawlGeneration, shardCount);
+      const task = sourceTask(source, country.code, crawlGeneration, shardCount);
+      tasks.push({ ...task, priority: taskPriority(task) });
+    }
+
+    for (const source of externalHousingSources(country.code)) {
+      const task = sourceTask(source, country.code, crawlGeneration, shardCount);
       tasks.push({ ...task, priority: taskPriority(task) });
     }
   }
