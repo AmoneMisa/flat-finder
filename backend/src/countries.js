@@ -212,7 +212,7 @@ const SOURCE_COUNTRIES = {
     center: { lat: 42.8746, lng: 74.5698 }, // Bishkek
     currency: 'KGS',
     sources: ['telegram'],
-    crawlCities: ['Bishkek'],
+    crawlCities: ['Bishkek', 'Osh'],
     telegramChannels: [],
   },
   UZ: {
