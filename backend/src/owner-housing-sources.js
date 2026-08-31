@@ -18,12 +18,32 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       city: 'Tashkent',
       dealType: 'longRent',
     }),
+    Object.freeze({
+      key: 'turar-tashkent-owner-daily',
+      url: 'https://turar.uz/ru/tashkent',
+      city: 'Tashkent',
+      dealType: 'shortRent',
+    }),
   ]),
   UA: Object.freeze([
     Object.freeze({
       key: 'easyhouse-ukraine-owner-rent',
       url: 'https://easy-house.in.ua/search/',
       city: null,
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'kvarto-ukraine-owner-rent',
+      url: 'https://kvarto.app/uk',
+      city: null,
+      dealType: 'longRent',
+    }),
+  ]),
+  KZ: Object.freeze([
+    Object.freeze({
+      key: 'kn-almaty-owner-rent',
+      url: 'https://www.kn.kz/almaty/arenda-kvartir-bez-posrednikov-s-foto',
+      city: 'Almaty',
       dealType: 'longRent',
     }),
   ]),
@@ -34,6 +54,12 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       city: 'Bucharest',
       dealType: 'longRent',
     }),
+    Object.freeze({
+      key: 'proprietar-direct-romania-owner-rent',
+      url: 'https://proprietar-direct.ro/categorii-anunturi/oferte-de-inchiriat/',
+      city: null,
+      dealType: 'longRent',
+    }),
   ]),
   KG: Object.freeze([
     Object.freeze({
@@ -41,6 +67,12 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       url: 'https://arendator.kg/',
       city: 'Bishkek',
       dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'sutochno-bishkek-owner-daily',
+      url: 'https://sutochno.kg/bishkek/',
+      city: 'Bishkek',
+      dealType: 'shortRent',
     }),
   ]),
 });
