@@ -18,10 +18,10 @@ class HiddenState extends ChangeNotifier {
   List<Listing> get items => List.unmodifiable(_items);
   bool get isEmpty => _items.isEmpty;
 
-  bool isHidden(Listing listing) {
-    final key = listingKey(listing);
-    return _items.any((item) => listingKey(item) == key);
-  }
+  bool isHiddenKey(String key) =>
+      _items.any((item) => listingKey(item) == key);
+
+  bool isHidden(Listing listing) => isHiddenKey(listingKey(listing));
 
   Future<void> load() async {
     try {

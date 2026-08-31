@@ -80,22 +80,23 @@ String currencySymbol(String code) => switch (code.toUpperCase()) {
 /// Compact price for a map pin: converts into [displayCurrency] when possible,
 /// then renders "<symbol><short number>" (e.g. "$45K", "1.2M сум"). Returns "—"
 /// when the price is unknown.
-String pinPriceLabel(
-  Listing l, {
+String pinPriceLabelValues(
+  num? price,
+  String currency, {
   Map<String, double>? rates,
   String? displayCurrency,
 }) {
-  if (l.price == null) return '—';
-  var value = l.price!;
-  var code = l.currency;
-  final from = rates?[l.currency];
+  if (price == null) return '—';
+  var value = price;
+  var code = currency;
+  final from = rates?[currency];
   final to = displayCurrency == null ? null : rates?[displayCurrency];
   if (displayCurrency != null &&
-      displayCurrency != l.currency &&
+      displayCurrency != currency &&
       from != null &&
       to != null &&
       from > 0) {
-    value = l.price! * to / from;
+    value = price * to / from;
     code = displayCurrency;
   }
   final sym = currencySymbol(code);
@@ -103,6 +104,17 @@ String pinPriceLabel(
   // Symbols like $ / € lead the number; word-ish codes (сум, lei, KZT) trail it.
   return sym.length <= 1 ? '$sym$n' : '$n $sym';
 }
+
+String pinPriceLabel(
+  Listing l, {
+  Map<String, double>? rates,
+  String? displayCurrency,
+}) => pinPriceLabelValues(
+  l.price,
+  l.currency,
+  rates: rates,
+  displayCurrency: displayCurrency,
+);
 
 String _shortNum(num v) {
   if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';

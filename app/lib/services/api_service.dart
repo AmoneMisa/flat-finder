@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/map_listing_point.dart';
 import '../models/search_statistics.dart';
 
 /// A source that failed during a search (a built-in scraper or a custom URL).
@@ -195,7 +196,7 @@ class ApiService {
 
   /// Compact full-map feed. The backend walks every result cursor internally,
   /// so Flutter shows the same flats as the web map instead of one card page.
-  Future<List<Listing>> fetchMapListings(Filters filters) async {
+  Future<List<MapListingPoint>> fetchMapListings(Filters filters) async {
     final params = Map<String, String>.from(filters.toQueryParams())
       ..['mapOnly'] = 'true';
     final uri =
@@ -203,9 +204,11 @@ class ApiService {
     final res = await http.get(uri).timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) return const [];
     final json = jsonDecode(res.body) as Map<String, dynamic>;
-    return ((json['mapPoints'] as List?) ?? const [])
-        .map((point) => Listing.fromJson(point as Map<String, dynamic>))
-        .toList();
+    return ((json['mapPoints'] as List?) ?? const []).map((raw) {
+      final point = Map<String, dynamic>.from(raw as Map);
+      if (point['photo'] != null) point['photo'] = _resolvePhoto(point['photo']);
+      return MapListingPoint.fromJson(point);
+    }).toList();
   }
 
   /// Re-fetch a single listing fresh from its source (manual "Reload this
