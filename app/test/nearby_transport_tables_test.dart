@@ -135,4 +135,50 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Far stop')).dy),
     );
   });
+
+  testWidgets('shows six stops and scrolls the remaining stops internally', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final stops = List.generate(
+      8,
+      (index) => NearbyTransportStop(
+        id: 'bus-$index',
+        name: 'Stop ${index + 1}',
+        mode: 'bus',
+        distanceM: (index + 1) * 100,
+        routeRefs: ['$index'],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            child: NearbyTransportModeTable(
+              title: 'Bus',
+              icon: Icons.directions_bus_outlined,
+              stops: stops,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final scrollArea = find.byKey(const Key('nearby-transport-scroll-area'));
+    expect(scrollArea, findsOneWidget);
+    expect(tester.getSize(scrollArea).height, 52 * 6);
+    expect(find.byType(Scrollbar), findsOneWidget);
+    expect(find.text('Stop 8'), findsNothing);
+
+    await tester.drag(scrollArea, const Offset(0, -200));
+    await tester.pump();
+
+    expect(find.text('Stop 8'), findsOneWidget);
+  });
 }

@@ -30,7 +30,6 @@ Color _parseHexColor(String hex) {
   if (value == null) return _fallbackZoneColor;
   return Color(0xFF000000 | value);
 }
-
 /// Desaturates a colour to approximate the site's `filter: grayscale(0.85)`
 /// on unselected districts once one district is selected.
 Color _desaturate(Color c, double amount) {
@@ -55,6 +54,7 @@ class MapView extends StatefulWidget {
     this.radiusM,
     this.onRadiusCenterChanged,
     this.onRadiusChanged,
+    this.showBaseTiles = true,
   });
 
   final List<MapListingPoint> listings;
@@ -76,6 +76,10 @@ class MapView extends StatefulWidget {
   final ValueChanged<LatLng>? onRadiusCenterChanged;
   final ValueChanged<double>? onRadiusChanged;
 
+  /// Can be disabled by widget tests that exercise marker interactions without
+  /// making network requests for OpenStreetMap tiles.
+  final bool showBaseTiles;
+
   /// Zoom level used when [center] changes (e.g. 6 for a country default,
   /// higher when a specific listing's "show on map" set the center).
   final double centerZoom;
@@ -96,7 +100,6 @@ class _MapViewState extends State<MapView> {
   // Same marker behaviour as Personal Site.
   static const _radialCapacity = 10;
   static const _clusterRadiusPx = 38.0;
-  static const _clusterZoomMax = 19.0;
   static const _priceMarkerWidth = 76.0;
   static const _priceMarkerHeight = 28.0;
 
@@ -660,16 +663,6 @@ class _MapViewState extends State<MapView> {
       widget.onTapListing(group.listings.first);
       return;
     }
-    if (group.listings.length > _radialCapacity &&
-        _zoom < _clusterZoomMax - 0.01) {
-      final targetZoom = math.min(_zoom + 1.0, _clusterZoomMax);
-      setState(() {
-        _expandedGroupKey = null;
-        _expandedGroupPage = 0;
-      });
-      _controller.move(group.point, targetZoom);
-      return;
-    }
     _controller.move(group.point, _zoom);
     setState(() {
       _expandedGroupKey = group.key;
@@ -708,6 +701,7 @@ class _MapViewState extends State<MapView> {
         width: size,
         height: size,
         child: GestureDetector(
+          key: Key('map-listing-group-${group.key}'),
           behavior: HitTestBehavior.opaque,
           onTap: () => _handlePointTap(group.point, () => _openGroup(group)),
           child: _ClusterDot(count: group.listings.length),
@@ -943,11 +937,12 @@ class _MapViewState extends State<MapView> {
             },
           ),
           children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.flat_finder',
-              maxZoom: 19,
-            ),
+            if (widget.showBaseTiles)
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.flat_finder',
+                maxZoom: 19,
+              ),
             if (_showCity && _zones.cityZone?.boundaryRings.isNotEmpty == true)
               PolygonLayer(
                 polygons: [
@@ -1777,6 +1772,7 @@ class _RadialClusterMarker extends StatelessWidget {
             _ => 104.0,
           };
     return SizedBox(
+      key: const Key('map-listing-group-page'),
       width: size,
       height: size,
       child: Stack(
@@ -1790,6 +1786,7 @@ class _RadialClusterMarker extends StatelessWidget {
                 left: center + math.cos(angle) * radius - 24,
                 top: center + math.sin(angle) * radius - 24,
                 child: _RadialPriceDot(
+                  key: Key('map-listing-page-item-${items[i].key}'),
                   listing: items[i],
                   rates: rates,
                   displayCurrency: displayCurrency,
@@ -1892,7 +1889,11 @@ class _RadialPager extends StatelessWidget {
                 ),
               ),
             ),
-            _RadialPagerButton(icon: Icons.chevron_right, onTap: onNextPage),
+            _RadialPagerButton(
+              key: const Key('map-listing-page-next'),
+              icon: Icons.chevron_right,
+              onTap: onNextPage,
+            ),
           ],
         ),
       ),
@@ -1901,7 +1902,11 @@ class _RadialPager extends StatelessWidget {
 }
 
 class _RadialPagerButton extends StatelessWidget {
-  const _RadialPagerButton({required this.icon, required this.onTap});
+  const _RadialPagerButton({
+    super.key,
+    required this.icon,
+    required this.onTap,
+  });
 
   final IconData icon;
   final VoidCallback? onTap;
@@ -1926,6 +1931,7 @@ class _RadialPagerButton extends StatelessWidget {
 
 class _RadialPriceDot extends StatelessWidget {
   const _RadialPriceDot({
+    super.key,
     required this.listing,
     required this.rates,
     required this.displayCurrency,

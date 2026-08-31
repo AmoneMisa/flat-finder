@@ -120,7 +120,7 @@ class _TransportSection {
 }
 
 /// One reusable mini-table for a transport mode (bus, trolleybus or tram).
-class NearbyTransportModeTable extends StatelessWidget {
+class NearbyTransportModeTable extends StatefulWidget {
   const NearbyTransportModeTable({
     super.key,
     required this.title,
@@ -132,7 +132,18 @@ class NearbyTransportModeTable extends StatelessWidget {
   final IconData icon;
   final List<NearbyTransportStop> stops;
 
-  List<NearbyTransportStop> get _orderedStops => [...stops]
+  @override
+  State<NearbyTransportModeTable> createState() =>
+      _NearbyTransportModeTableState();
+}
+
+class _NearbyTransportModeTableState extends State<NearbyTransportModeTable> {
+  static const int _visibleStopCount = 6;
+  static const double _rowHeight = 52;
+
+  final ScrollController _scrollController = ScrollController();
+
+  List<NearbyTransportStop> get _orderedStops => [...widget.stops]
     ..sort((left, right) {
       final distance = left.distanceM.compareTo(right.distanceM);
       if (distance != 0) return distance;
@@ -145,6 +156,23 @@ class NearbyTransportModeTable extends StatelessWidget {
         .where((route) => route.isNotEmpty)
         .toList(growable: false);
     return refs.isEmpty ? '—' : refs.join(', ');
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Widget _stopRow(NearbyTransportStop stop, int index, int count) {
+    return SizedBox(
+      height: _rowHeight,
+      child: _TransportStopRow(
+        stop: stop,
+        routes: _routes(stop),
+        drawBorder: index < count - 1,
+      ),
+    );
   }
 
   @override
@@ -174,11 +202,11 @@ class NearbyTransportModeTable extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(icon, size: 16, color: theme.colorScheme.primary),
+                  Icon(widget.icon, size: 16, color: theme.colorScheme.primary),
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
-                      title.toUpperCase(),
+                      widget.title.toUpperCase(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelSmall?.copyWith(
@@ -190,11 +218,27 @@ class NearbyTransportModeTable extends StatelessWidget {
                 ],
               ),
             ),
-            for (var index = 0; index < orderedStops.length; index++)
-              _TransportStopRow(
-                stop: orderedStops[index],
-                routes: _routes(orderedStops[index]),
-                drawBorder: index < orderedStops.length - 1,
+            if (orderedStops.length <= _visibleStopCount)
+              for (var index = 0; index < orderedStops.length; index++)
+                _stopRow(orderedStops[index], index, orderedStops.length)
+            else
+              SizedBox(
+                key: const Key('nearby-transport-scroll-area'),
+                height: _rowHeight * _visibleStopCount,
+                child: Scrollbar(
+                  controller: _scrollController,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    primary: false,
+                    padding: EdgeInsets.zero,
+                    itemCount: orderedStops.length,
+                    itemExtent: _rowHeight,
+                    itemBuilder: (context, index) =>
+                        _stopRow(orderedStops[index], index, orderedStops.length),
+                  ),
+                ),
               ),
           ],
         ),
