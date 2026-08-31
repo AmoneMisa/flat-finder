@@ -16,6 +16,7 @@ app = Flask(__name__)
 MAX_ITEMS = max(1, min(250, int(os.environ.get("SOCIAL_MAX_ITEMS", "100"))))
 HTTP_TIMEOUT = max(5, int(os.environ.get("SOCIAL_HTTP_TIMEOUT", "30")))
 BROWSER_TIMEOUT_MS = max(5_000, int(os.environ.get("SOCIAL_BROWSER_TIMEOUT_MS", "45000")))
+FACEBOOK_SCROLLS = max(1, min(12, int(os.environ.get("FACEBOOK_SCROLLS", "5"))))
 THREADS_SCROLLS = max(1, min(20, int(os.environ.get("THREADS_SCROLLS", "8"))))
 THREADS_BASE_URL = os.environ.get("THREADS_BASE_URL", "https://www.threads.com").rstrip("/")
 LINKEDIN_MAX_DETAIL_FETCHES = max(
@@ -138,6 +139,183 @@ def _normalize_facebook_post(post, target):
     }
 
 
+def _facebook_public_url(target_raw, target):
+    raw = str(target_raw or "").strip()
+    if re.match(r"^https?://", raw, re.I):
+        return _validate_public_url(raw, {"facebook.com", "fb.com"})
+    if target["kind"] == "group":
+        return f"https://www.facebook.com/groups/{target['value']}/"
+    return f"https://www.facebook.com/{target['value']}/"
+
+
+def _normalize_browser_facebook_item(item, target):
+    return {
+        "id": str(item.get("id") or item.get("url") or ""),
+        "source": "facebook",
+        "target": target,
+        "author": str(item.get("author") or ""),
+        "text": _clean_text(item.get("text")),
+        "url": str(item.get("url") or target),
+        "createdAt": _iso(item.get("createdAt")),
+        "images": list(dict.fromkeys(str(value) for value in (item.get("images") or []) if value)),
+        "video": None,
+        "likes": None,
+        "comments": None,
+        "shares": None,
+    }
+
+
+def _facebook_dom_items(page):
+    return page.evaluate(
+        """
+        () => {
+          const absolute = (href) => {
+            try { return new URL(href, location.origin); } catch { return null; }
+          };
+          const postId = (url) => {
+            let match = url.pathname.match(/\/groups\/[^/]+\/(?:posts|permalink)\/([^/?#]+)/i);
+            if (match) return match[1];
+            match = url.pathname.match(/\/posts\/([^/?#]+)/i);
+            if (match) return match[1];
+            return url.searchParams.get('story_fbid') || '';
+          };
+          const canonical = (url) => {
+            url.hash = '';
+            const id = url.searchParams.get('story_fbid');
+            const owner = url.searchParams.get('id');
+            if (id) {
+              url.search = '';
+              url.searchParams.set('story_fbid', id);
+              if (owner) url.searchParams.set('id', owner);
+              return url.href;
+            }
+            url.search = '';
+            return url.href;
+          };
+          const links = [...document.querySelectorAll(
+            'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="]'
+          )];
+          const unique = new Map();
+
+          for (const link of links) {
+            const url = absolute(link.getAttribute('href'));
+            if (!url || !/(^|\.)facebook\.com$/i.test(url.hostname.replace(/^www\./i, ''))) continue;
+            const id = postId(url);
+            if (!id || unique.has(id)) continue;
+
+            let article = link.closest('[role="article"]');
+            if (!article) {
+              let node = link;
+              for (let depth = 0; depth < 10 && node; depth += 1, node = node.parentElement) {
+                if (!(node instanceof HTMLElement)) continue;
+                const text = (node.innerText || '').trim();
+                const postLinks = node.querySelectorAll?.(
+                  'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="]'
+                )?.length || 0;
+                if (text.length >= 12 && text.length <= 5000 && postLinks <= 3) article = node;
+                if (postLinks > 3) break;
+              }
+            }
+            article = article || link.parentElement || link;
+            const text = (article.innerText || '').trim();
+            if (!text) continue;
+
+            const authorNode = article.querySelector?.('h2 a, h3 a, strong a');
+            const timeNode = article.querySelector?.('time[datetime]');
+            const images = [...(article.querySelectorAll?.('img[src]') || [])]
+              .filter((img) => (img.naturalWidth || img.width || 0) >= 120)
+              .map((img) => img.currentSrc || img.src || '')
+              .filter((src) => src && !src.startsWith('data:'));
+
+            unique.set(id, {
+              id,
+              author: (authorNode?.innerText || '').trim(),
+              text,
+              url: canonical(url),
+              createdAt: timeNode?.getAttribute('datetime') || null,
+              images: [...new Set(images)],
+            });
+          }
+          return [...unique.values()];
+        }
+        """
+    )
+
+
+def _facebook_restriction_reason(page):
+    current = str(page.url or "")
+    lowered_url = current.lower()
+    try:
+        text = _clean_text(page.locator("body").inner_text(timeout=2_000)).lower()
+    except Exception:
+        text = ""
+
+    if "/login" in lowered_url or "checkpoint" in lowered_url:
+        return f"redirected to {current}"
+
+    markers = (
+        "you must log in to continue",
+        "log into facebook to start sharing",
+        "log in to facebook to continue",
+        "this content isn't available right now",
+        "this content is not available right now",
+        "this content isn't available",
+        "this group is private",
+        "private group",
+    )
+    for marker in markers:
+        if marker in text:
+            return marker
+    return None
+
+
+def _fetch_facebook_playwright(target_raw, target, limit):
+    url = _facebook_public_url(target_raw, target)
+
+    with _BROWSER_GATE:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = _browser_context(browser)
+            page = context.new_page()
+            page.set_default_timeout(BROWSER_TIMEOUT_MS)
+            page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
+
+            collected = {}
+            stagnant = 0
+            for _ in range(FACEBOOK_SCROLLS):
+                before = len(collected)
+                for item in _facebook_dom_items(page):
+                    item_id = str(item.get("id") or item.get("url") or "")
+                    if not item_id:
+                        continue
+                    collected[item_id] = item
+                    if len(collected) >= limit:
+                        break
+                if len(collected) >= limit:
+                    break
+                stagnant = stagnant + 1 if len(collected) == before else 0
+                if stagnant >= 2:
+                    break
+                page.mouse.wheel(0, 2200)
+                page.wait_for_timeout(850)
+
+            final_url = page.url
+            restriction = _facebook_restriction_reason(page) if not collected else None
+            browser.close()
+
+    if restriction:
+        raise RuntimeError(f"Facebook public page is restricted: {restriction}")
+
+    items = [
+        _normalize_browser_facebook_item(item, target_raw)
+        for item in list(collected.values())[:limit]
+    ]
+    items = [item for item in items if item["id"] and item["text"]]
+    if not items:
+        raise RuntimeError(f"Facebook public page returned no readable posts: {final_url}")
+    return items
+
+
 def fetch_facebook(payload):
     target_raw = payload.get("target") or payload.get("url") or payload.get("page")
     target = _facebook_target(target_raw)
@@ -148,25 +326,51 @@ def fetch_facebook(payload):
         "pages": pages,
         "options": {"allow_extra_requests": False},
     }
-    if target["kind"] == "group":
-        kwargs["group"] = target["value"]
-        iterator = get_posts(**kwargs)
-    else:
-        iterator = get_posts(target["value"], **kwargs)
 
+    primary_error = None
     items = []
-    for post in iterator:
-        normalized = _normalize_facebook_post(post, target_raw)
-        if not normalized["id"]:
-            continue
-        items.append(normalized)
-        if len(items) >= limit:
-            break
+    try:
+        if target["kind"] == "group":
+            kwargs["group"] = target["value"]
+            iterator = get_posts(**kwargs)
+        else:
+            iterator = get_posts(target["value"], **kwargs)
+
+        for post in iterator:
+            normalized = _normalize_facebook_post(post, target_raw)
+            if not normalized["id"]:
+                continue
+            items.append(normalized)
+            if len(items) >= limit:
+                break
+    except Exception as exc:
+        primary_error = f"{type(exc).__name__}: {exc}"
+
+    if items:
+        return {
+            "ok": True,
+            "source": "facebook",
+            "target": target_raw,
+            "fetchMode": "facebook-scraper",
+            "count": len(items),
+            "items": items,
+        }
+
+    try:
+        items = _fetch_facebook_playwright(target_raw, target, limit)
+    except Exception as exc:
+        primary = primary_error or "returned 0 readable posts"
+        fallback = f"{type(exc).__name__}: {exc}"
+        raise RuntimeError(
+            f"Facebook fetch failed; facebook-scraper={primary}; playwright={fallback}"
+        ) from exc
 
     return {
         "ok": True,
         "source": "facebook",
         "target": target_raw,
+        "fetchMode": "playwright",
+        "primaryError": primary_error,
         "count": len(items),
         "items": items,
     }
