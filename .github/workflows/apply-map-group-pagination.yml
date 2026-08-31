@@ -1,0 +1,51 @@
+name: Apply map group pagination
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - '.github/scripts/apply-map-group-pagination.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply map pagination patch
+        run: python .github/scripts/apply-map-group-pagination.py
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Format and verify Flutter app
+        working-directory: app
+        run: |
+          dart format lib/widgets/map_view.dart lib/utils/map_group_pagination.dart test/map_group_pagination_test.dart
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+
+      - name: Commit patched app files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/lib/widgets/map_view.dart app/lib/utils/map_group_pagination.dart app/test/map_group_pagination_test.dart
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix(app): paginate dense map points at max zoom'
+          git push origin HEAD:master
