@@ -16,31 +16,8 @@ function priceToUsd(value, currency, rates) {
   return Number.isFinite(rate) && rate > 0 ? Number(value) / rate : null;
 }
 
-function jsonNumber(column, key) {
-  return `CASE WHEN jsonb_typeof(${column}->'${key}') = 'number' THEN (${column}->>'${key}')::double precision ELSE NULL END`;
-}
 
-function jsonTextArrayContains(column, key, param) {
-  return `EXISTS (
-    SELECT 1
-    FROM jsonb_array_elements_text(
-      CASE WHEN jsonb_typeof(${column}->'${key}') = 'array' THEN ${column}->'${key}' ELSE '[]'::jsonb END
-    ) AS value
-    WHERE LOWER(value) = ${param}
-  )`;
-}
 
-function locationEntityMatches(column, param, types) {
-  const allowed = types.map((type) => `'${String(type).replaceAll("'", "''")}'`).join(', ');
-  return `EXISTS (
-    SELECT 1
-    FROM jsonb_array_elements(
-      CASE WHEN jsonb_typeof(${column}->'locationEntities') = 'array' THEN ${column}->'locationEntities' ELSE '[]'::jsonb END
-    ) AS entity
-    WHERE LOWER(COALESCE(entity->>'name', '')) = ${param}
-      AND LOWER(COALESCE(entity->>'type', '')) IN (${allowed})
-  )`;
-}
 
 function encodeCursor(value) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
