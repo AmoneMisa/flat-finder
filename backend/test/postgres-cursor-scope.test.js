@@ -74,6 +74,7 @@ test('scoped cursor is accepted only for its exact query scope', () => {
 
 test('invalid cursors are rejected instead of reaching SQL builders', () => {
   assert.equal(prepareCursorForScope('not-a-cursor', 'scope-a'), '');
+  assert.equal(prepareCursorForScope('a'.repeat(1025), 'scope-a'), '');
   assert.equal(attachScopeToCursor(null, 'scope-a'), null);
 
   for (const cursor of [
