@@ -4,10 +4,13 @@
 
 CREATE TABLE IF NOT EXISTS listing_public_feed_canonical (
   dedupe_key TEXT PRIMARY KEY,
-  listing_id BIGINT NOT NULL UNIQUE
+  listing_id BIGINT NOT NULL
     REFERENCES listing_public_feed_members(listing_id) ON DELETE CASCADE,
   canonical_created_at TIMESTAMPTZ
 );
+
+CREATE INDEX IF NOT EXISTS listing_public_feed_canonical_listing_idx
+  ON listing_public_feed_canonical(listing_id, dedupe_key);
 
 CREATE OR REPLACE FUNCTION refresh_listing_public_feed_canonical(p_dedupe_key TEXT)
 RETURNS VOID
