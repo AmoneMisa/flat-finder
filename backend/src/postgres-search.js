@@ -1,3 +1,4 @@
+import {canonicalListingFilters} from './listing-filter-canonical.js';
 import {
   buildSearchContext,
   searchPostgresListings as searchPostgresListingsCore,
@@ -11,7 +12,7 @@ import {
 export {buildSearchContext};
 
 export async function searchPostgresListings(args) {
-  const filters = args?.filters || {};
+  const filters = canonicalListingFilters(args?.filters || {});
   const scope = searchCursorScope(filters, args?.countries || []);
   const preparedCursor = prepareCursorForScope(filters.cursor, scope);
   const rejectedCursor = Boolean(filters.cursor) && !preparedCursor;

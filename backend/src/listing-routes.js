@@ -46,11 +46,21 @@ export function parseListingFilters(q) {
   const maxAgeDays = requestedMaxAgeDays != null && requestedMaxAgeDays > 0
     ? Math.min(requestedMaxAgeDays, LISTING_MAX_AGE_DAYS)
     : LISTING_MAX_AGE_DAYS;
+  const requestedRoomOnly = bool(q.roomOnly);
+  const requestedDealType = ['sale', 'longRent', 'shortRent', 'roomRent', 'any'].includes(q.dealType)
+    ? q.dealType
+    : 'any';
+  // Backward compatibility for clients that still encode room rental as
+  // longRent + roomOnly=1. From this boundary onward roomRent is canonical.
+  const dealType = requestedDealType === 'longRent' && requestedRoomOnly === true
+    ? 'roomRent'
+    : requestedDealType;
+  const roomOnly = dealType === 'roomRent' ? null : requestedRoomOnly;
 
   return {
     customSources,
     propertyType: ['flat', 'house', 'any'].includes(q.propertyType) ? q.propertyType : 'any',
-    dealType: ['sale', 'longRent', 'shortRent', 'any'].includes(q.dealType) ? q.dealType : 'any',
+    dealType,
     agency: ['owner', 'agency', 'any'].includes(q.agency) ? q.agency : 'any',
     audience: ['women', 'men', 'family', 'any'].includes(q.audience) ? q.audience : 'any',
     priceMin: num(q.priceMin),
@@ -111,7 +121,7 @@ export function parseListingFilters(q) {
     listingId: q.listingId ? String(q.listingId) : '',
     pets: bool(q.pets),
     children: bool(q.children),
-    roomOnly: bool(q.roomOnly),
+    roomOnly,
     withPhotos: bool(q.withPhotos),
     maxAgeDays,
     sources,
