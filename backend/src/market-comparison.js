@@ -89,7 +89,7 @@ export async function attachMarketComparisons(listings, rates) {
        AND c.active = TRUE
        AND c.price IS NOT NULL
        AND UPPER(c.country) = t.country
-       AND c.city = t.city
+       AND LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(t.city))
        AND c.property_type = t.property_type
        AND (CASE WHEN c.data @> '{"roomOnly":true}'::jsonb THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
        AND c.rooms = t.rooms
@@ -111,7 +111,7 @@ export async function attachMarketComparisons(listings, rates) {
        AND c.active = TRUE
        AND c.price IS NOT NULL
        AND UPPER(c.country) = t.country
-       AND c.city = t.city
+       AND LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(t.city))
        AND c.property_type = t.property_type
        AND (CASE WHEN c.data @> '{"roomOnly":true}'::jsonb THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
        AND c.area_sqm IS NOT NULL
