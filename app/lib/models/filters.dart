@@ -24,12 +24,15 @@ enum SortBy {
 }
 
 /// All selectable listing sources. Empty selection on the server means "all".
-/// Reddit/Threads are omitted: their public APIs can't be read from the server
-/// (datacenter IPs are blocked / no public search), so they never return
-/// results and only added dead filter chips.
-const kAllSources = ['olx', 'telegram'];
+/// Curated owner/realtor websites are persisted as `custom`, so it must be part
+/// of the default set or those listings disappear from normal mobile searches.
+const kAllSources = ['olx', 'telegram', 'custom'];
 
-const kSourceLabels = {'olx': 'OLX', 'telegram': 'Telegram'};
+const kSourceLabels = {
+  'olx': 'OLX',
+  'telegram': 'Telegram',
+  'custom': 'Sites',
+};
 
 /// Boolean amenity filters the backend accepts as bare `?key=true` query
 /// params (`parseListingFilters` in listing-routes.js) and stores generically
@@ -80,6 +83,22 @@ Set<String> _singleCountry(Set<String>? values, [String fallback = 'RO']) {
 Map<String, String> _stringMap(dynamic v) => v is Map
     ? v.map((k, val) => MapEntry(k.toString(), val.toString()))
     : const {};
+
+Set<String> _storedSources(dynamic value) {
+  final sources = (value is List && value.isNotEmpty)
+      ? value.map((item) => item.toString()).toSet()
+      : {...kAllSources};
+
+  // Before curated websites became a selectable source, the complete/default
+  // source set was exactly OLX + Telegram. Upgrade that persisted default so
+  // existing installs gain Sites too. Narrower explicit selections stay intact.
+  const legacyAllSources = {'olx', 'telegram'};
+  if (sources.length == legacyAllSources.length &&
+      sources.containsAll(legacyAllSources)) {
+    return {...sources, 'custom'};
+  }
+  return sources;
+}
 
 /// Districts and metro/transit stations available within a single city.
 /// The `*Labels` maps (raw name -> localized label) are only populated when
@@ -540,7 +559,7 @@ class Filters {
 
     return Filters(
       countries: strSet(j['countries'], {'RO'}),
-      sources: strSet(j['sources'], {...kAllSources}),
+      sources: _storedSources(j['sources']),
       customSources: (j['customSources'] as List?)
               ?.map((e) => e.toString())
               .where((e) => e.isNotEmpty)

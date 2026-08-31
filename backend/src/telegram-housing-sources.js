@@ -1,11 +1,16 @@
 const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
   UA: [
     // Kyiv: additional active public housing feeds.
+    // These two communities explicitly describe themselves as direct/no-realtor.
+    { name: 'orenda_kyiv_city', city: 'Kyiv', ownerOnly: true, dealType: 'longRent' },
     { name: 'OrendakvartyrKyiv_UK', city: 'Kyiv' },
     { name: 'ArendaKyiva', city: 'Kyiv' },
     { name: 'ArendaUA', city: 'Kyiv' },
-    { name: 'arendakyiv_ua', city: 'Kyiv' },
+    { name: 'arendakyiv_ua', city: 'Kyiv', ownerOnly: true, dealType: 'longRent' },
     { name: 'rentapartmentkyiv', city: 'Kyiv' },
+    // Direct-owner feeds: no agencies/commission by channel policy.
+    { name: 'kievrentfree', city: 'Kyiv', ownerOnly: true },
+    { name: 'orenda_bez_rieltora', city: 'Kyiv', ownerOnly: true },
     // Dedicated daily/hourly apartment feed.
     { name: 'kyiv_kvartira', city: 'Kyiv', dealType: 'shortRent' },
 
@@ -41,10 +46,64 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'posutochnaya_arenda_odessa', city: 'Odesa', dealType: 'shortRent' },
     { name: 'OdessaDailyRentUar', city: 'Odesa', dealType: 'shortRent' },
   ],
+  KZ: [
+    // These channels explicitly advertise direct/verified owners and no agents.
+    { name: 'kvartiry2', city: 'Almaty', ownerOnly: true },
+    { name: 'kvartiralmaty1', city: 'Almaty', ownerOnly: true },
+    { name: 'freehomekz_Almaty', city: 'Almaty', ownerOnly: true, dealType: 'shortRent' },
+    // Mixed owner/roommate feed: require an explicit owner phrase per post.
+    {
+      name: 'kvartira_v_almaty',
+      city: 'Almaty',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: [
+        'хозяин, не риелтор',
+        'не риелтор и не агенство',
+        'не риелтор и не агентство',
+        'я сама хозяйка',
+        'сама хозяйка',
+        'без риелтора — хозяйка',
+        'без риелтора - хозяйка',
+        'собственник',
+        'от хозяина',
+      ],
+    },
+  ],
+  KG: [
+    // Mixed Bishkek housing stream: accept only posts that explicitly identify
+    // the owner/direct relationship. Wanted posts are rejected downstream too.
+    {
+      name: 'bishkekarendakv',
+      city: 'Bishkek',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: [
+        'от собственника',
+        'собственник',
+        'от хозяина',
+        'хозяин',
+        'без риэлтор',
+        'без риелтор',
+        'риелторов просьба не беспокоить',
+        'үй ээсинин',
+      ],
+    },
+  ],
   UZ: [
+    // Mixed Tashkent feed: only accept posts marked as owners (or with a direct-
+    // owner phrase) and explicitly reject the realtor section.
+    {
+      name: 'arentash',
+      city: 'Tashkent',
+      ownerOnly: true,
+      ownerMarkers: ['#хозяева'],
+      ownerRejectMarkers: ['#риелтор'],
+    },
     // Tashkent: additional active public housing feeds.
-    { name: 'kvartira_maklersiz_bezmakler', city: 'Tashkent' },
-    { name: 'kvartira_bez_posrednika', city: 'Tashkent' },
+    { name: 'kvartira_maklersiz_bezmakler', city: 'Tashkent', ownerOnly: true },
+    { name: 'kvartira_bez_posrednika', city: 'Tashkent', ownerOnly: true },
+    { name: 'ijaraga_kvartiralar_Bezmakler', city: 'Tashkent', ownerOnly: true, dealType: 'longRent' },
     { name: 'nedvij_tashkent', city: 'Tashkent' },
     { name: 'iHometashkent', city: 'Tashkent' },
     // Dedicated daily-rent feeds (Russian and Uzbek wording).
@@ -59,17 +118,18 @@ function channelKey(value) {
 }
 
 export function telegramHousingChannels(countryCode, baseChannels = []) {
-  const merged = [];
-  const seen = new Set();
-
-  for (const item of [...baseChannels, ...(EXTRA_TELEGRAM_HOUSING_CHANNELS[countryCode] || [])]) {
+  // Extras are curated overrides. If a base channel later becomes known to be
+  // owner-only, its richer object config must replace the old bare string.
+  const merged = new Map();
+  for (const item of baseChannels) {
     const key = channelKey(item);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    merged.push(item);
+    if (key) merged.set(key, item);
   }
-
-  return merged;
+  for (const item of EXTRA_TELEGRAM_HOUSING_CHANNELS[countryCode] || []) {
+    const key = channelKey(item);
+    if (key) merged.set(key, item);
+  }
+  return [...merged.values()];
 }
 
 export { EXTRA_TELEGRAM_HOUSING_CHANNELS };

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { COUNTRIES } from './countries.js';
 import { telegramHousingChannels } from './telegram-housing-sources.js';
 import { realtorHousingSources } from './realtor-housing-sources.js';
+import { ownerHousingSources } from './owner-housing-sources.js';
 
 export const QUEUE_PROTOCOL_VERSION = Math.max(
   3,
@@ -82,6 +83,7 @@ function versionTask(task, crawlGeneration, shardCount) {
 export function taskPriority(task) {
   if (task.type === 'flat.olx.page') {
     if (task.country === 'UA' && task.page === 1 && task.city) return 10;
+    if (task.ownerOnly) return 9;
     if (task.page === 1 && task.city) return 9;
     if (task.page === 1) return 7;
     return Math.max(1, 7 - task.page);
@@ -94,11 +96,11 @@ export function taskPriority(task) {
     ) {
       return 10;
     }
-    return 8;
+    return task.ownerOnly ? 9 : 8;
   }
 
   if (task.type === 'flat.custom.url') {
-    return 6;
+    return task.ownerOnly ? 8 : 6;
   }
 
   return 1;
@@ -110,7 +112,7 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
 
   for (const country of Object.values(COUNTRIES)) {
     if (country.sources?.includes('olx')) {
-      const segments = ['flat:longRent', 'flat:sale'];
+      const segments = ['flat:longRent', 'flat:shortRent', 'flat:sale'];
 
       if (country.code === 'UA' && Array.isArray(country.olxCities)) {
         for (const target of country.olxCities) {
@@ -140,6 +142,7 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
         }
       } else {
         for (const segment of segments) {
+          const ownerOnly = country.code === 'RO' && segment === 'flat:longRent';
           const task = versionTask({
             type: 'flat.olx.page',
             country: country.code,
@@ -147,6 +150,7 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
             citySlug: null,
             segment,
             page: 1,
+            ownerOnly,
           }, crawlGeneration, shardCount);
           tasks.push({ ...task, priority: taskPriority(task) });
         }
@@ -163,9 +167,24 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
           country: country.code,
           channel: channel.name,
           city: channel.city,
+          ownerOnly: raw?.ownerOnly === true,
         }, crawlGeneration, shardCount);
         tasks.push({ ...task, priority: taskPriority(task) });
       }
+    }
+
+    for (const source of ownerHousingSources(country.code)) {
+      const task = versionTask({
+        type: 'flat.custom.url',
+        country: country.code,
+        city: source.city || null,
+        url: source.url,
+        segment: source.key,
+        dealType: source.dealType || null,
+        curated: true,
+        ownerOnly: true,
+      }, crawlGeneration, shardCount);
+      tasks.push({ ...task, priority: taskPriority(task) });
     }
 
     for (const source of realtorHousingSources(country.code)) {

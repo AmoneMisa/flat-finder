@@ -8,12 +8,11 @@ import {countryByCode} from '@whiteslove/parsing-lexicon/countries';
 // production never substitutes generated demo listings.
 //
 // Sources:
-//   olx      - OLX internal JSON API (RO/UA/KZ/UZ)
+//   olx      - OLX public listing pages through the dedicated sidecar
 //   telegram - public Telegram channels via the separate MTProto worker
 //
-// NOTE: OLX real-estate root category ids differ per portal. Telegram channels
-// below are starting points — verify/replace them for your use case.
-// Kyrgyzstan is intentionally omitted for now.
+// KG has curated direct-owner web sources plus a strict owner-filtered Telegram
+// feed. OLX is intentionally not enabled until a dedicated KG transport exists.
 
 const SOURCE_COUNTRIES = {
   RO: {
@@ -105,11 +104,11 @@ const SOURCE_COUNTRIES = {
       { name: 'arenda_kvartiry_kiev', city: 'Kyiv' },
       { name: 'x_arenda_kyiv', city: 'Kyiv' },
       { name: 'orendakvartyr_kyiv', city: 'Kyiv' },
-// Davnich network
+      // Davnich network
       { name: 'davnichK', city: 'Kyiv' },
       { name: 'davnich', city: 'Kharkiv' },
 
-// Продажа квартир, разные города
+      // Продажа квартир, разные города
       { name: 'davnichprodaga', city: null, dealType: 'sale' },
       // Kharkiv
       { name: 'x_arenda_kharkov', city: 'Kharkiv' },
@@ -203,10 +202,18 @@ const SOURCE_COUNTRIES = {
     olxHost: 'https://www.olx.kz',
     realEstateRoot: 1,
     crawlCities: ['Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau', 'Oral'],
-    // NOTE: KZ is thin after pruning dead channels — needs fresh replacements.
     telegramChannels: [
       'kvartiry2', 'arendakvartirastana2022', 'arendam0',
     ],
+  },
+  KG: {
+    code: 'KG',
+    callingCode: '+996',
+    center: { lat: 42.8746, lng: 74.5698 }, // Bishkek
+    currency: 'KGS',
+    sources: ['telegram'],
+    crawlCities: ['Bishkek'],
+    telegramChannels: [],
   },
   UZ: {
     code: 'UZ',
@@ -225,7 +232,6 @@ const SOURCE_COUNTRIES = {
   },
 };
 
-
 export const COUNTRIES = Object.freeze(Object.fromEntries(
   Object.entries(SOURCE_COUNTRIES).map(([code, config]) => {
     const shared = countryByCode(code);
@@ -234,7 +240,7 @@ export const COUNTRIES = Object.freeze(Object.fromEntries(
       Object.freeze({
         ...config,
         name: shared?.canonical ?? code,
-        currency: shared?.currency ?? null,
+        currency: shared?.currency ?? config.currency ?? null,
       }),
     ];
   }),

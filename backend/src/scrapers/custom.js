@@ -5,6 +5,7 @@
 // structured data the page exposes:
 //   1. schema.org JSON-LD  (<script type="application/ld+json">)
 //   2. RSS / Atom feed items
+//   3. conservative SSR card extraction for allowlisted owner-only catalogues
 //
 // It deliberately does NOT try to scrape login-walled, JS-rendered, or bot-
 // protected platforms (Facebook, Instagram, Airbnb, Booking, Agoda, …): those
@@ -17,6 +18,7 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import { makeListing } from '../normalize.js';
 import { fetchChannel } from './telegram.js';
+import { extractKnownOwnerHtml } from './owner-html.js';
 
 const FETCH_TIMEOUT_MS = 12_000;
 const DOMZA_FETCH_TIMEOUT_MS = 20_000;
@@ -474,18 +476,19 @@ async function scrapeTelegramUrl(u, country) {
 
 // Fetch + parse a single custom-source URL. Recognizes common social platforms
 // and routes them to a dedicated reader; otherwise falls back to reading any
-// structured data (JSON-LD) or RSS/Atom feed on the page. Domza's catalog is
-// server-rendered but keeps listing JSON-LD on the individual offer pages, so
-// we discover those links first and then parse the detail pages in parallel.
+// structured data (JSON-LD), RSS/Atom feeds, and (only for explicitly
+// allowlisted direct-owner sites) conservative server-rendered listing-card
+// extraction. Domza's catalog keeps listing JSON-LD on individual offer pages,
+// so we discover those links first and parse the detail pages in parallel.
 export async function scrapeCustomUrl(url, country) {
   const safe = await assertSafeUrl(url);
   const platform = detectPlatform(safe);
   if (platform === 'telegram') return scrapeTelegramUrl(safe, country);
   if (platform === 'facebook') {
-    // Facebook groups are login-walled and JS-rendered; there is nothing a
-    // server-side fetch can read, so fail with a clear explanation.
+    // Dedicated scheduled Facebook ingestion is handled by social-fetcher.
+    // Generic user-entered Facebook URLs remain unsupported here.
     throw new SourceError(
-      'Facebook groups require login and cannot be read automatically — not supported',
+      'Facebook groups require the dedicated social fetcher — not supported as a generic custom URL',
     );
   }
   if (isDomzaCatalogUrl(safe)) {
@@ -495,10 +498,11 @@ export async function scrapeCustomUrl(url, country) {
   const body = await fetchText(safe);
   let listings = extractJsonLd(body, country, safe.href);
   if (!listings.length) listings = extractFeed(body, country, safe.href);
+  if (!listings.length) listings = extractKnownOwnerHtml(body, country, safe.href);
 
   if (!listings.length) {
     throw new SourceError(
-      'No listings found — the page has no structured data (JSON-LD) or feed we can read',
+      'No listings found — the page has no readable structured data, feed, or supported owner catalogue cards',
     );
   }
   return listings.slice(0, MAX_ITEMS);
