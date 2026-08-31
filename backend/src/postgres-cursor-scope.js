@@ -53,7 +53,8 @@ function encodeCursor(value) {
 }
 
 function normalizeCursorPosition(parsed, {keepCount = true} = {}) {
-  if (!parsed || !['newest', 'oldest'].includes(parsed.sort)) return null;
+  const supportedSorts = ['newest', 'oldest', 'priceAsc', 'priceDesc'];
+  if (!parsed || !supportedSorts.includes(parsed.sort)) return null;
 
   const id = String(parsed.id ?? '');
   if (!/^[1-9]\d*$/.test(id)) return null;
@@ -63,19 +64,26 @@ function normalizeCursorPosition(parsed, {keepCount = true} = {}) {
     return null;
   }
 
-  let time = null;
-  if (parsed.t) {
-    const milliseconds = Date.parse(String(parsed.t));
-    if (!Number.isFinite(milliseconds)) return null;
-    time = new Date(milliseconds).toISOString();
-  }
-
   const normalized = {
     v: CURSOR_VERSION,
     sort: parsed.sort,
-    t: time,
     id,
   };
+
+  if (['newest', 'oldest'].includes(parsed.sort)) {
+    let time = null;
+    if (parsed.t) {
+      const milliseconds = Date.parse(String(parsed.t));
+      if (!Number.isFinite(milliseconds)) return null;
+      time = new Date(milliseconds).toISOString();
+    }
+    normalized.t = time;
+  } else {
+    const price = parsed.p == null ? null : Number(parsed.p);
+    if (price != null && !Number.isFinite(price)) return null;
+    normalized.p = price;
+  }
+
   const count = Number(parsed.c);
   if (keepCount && Number.isSafeInteger(count) && count >= 0) normalized.c = count;
   if (parsed.s != null) normalized.s = parsed.s;

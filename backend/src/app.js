@@ -7,6 +7,7 @@ import {installAvailabilityRoutes} from './availability-routes.js';
 import {installSystemRoutes} from './system-routes.js';
 import {installListingRoutes} from './listing-routes.js';
 import {installListingItemRoutes} from './listing-item-routes.js';
+import {installMobileListingRoutes} from './mobile-listing-routes.js';
 import {installCatalogRoutes} from './catalog-routes.js';
 import {installMediaRoutes} from './media-routes.js';
 import {checkRate} from './request-rate-limit.js';
@@ -38,6 +39,7 @@ export function createApp() {
   installAvailabilityRoutes(app);
   installSystemRoutes(app);
   installListingRoutes(app);
+  installMobileListingRoutes(app);
   installListingItemRoutes(app);
   installCatalogRoutes(app);
   installMediaRoutes(app);

@@ -4,6 +4,10 @@ import {
   searchPostgresListings as searchPostgresListingsCore,
 } from './postgres-search-fast-core.js';
 import {
+  canUseCanonicalFeedPath,
+  searchCanonicalFeed,
+} from './postgres-canonical-feed.js';
+import {
   attachScopeToCursor,
   prepareCursorForScope,
   searchCursorScope,
@@ -22,7 +26,10 @@ export async function searchPostgresListings(args) {
     ...(rejectedCursor ? {offset: 0} : {}),
   };
 
-  const result = await searchPostgresListingsCore({...args, filters: scopedFilters});
+  const scopedArgs = {...args, filters: scopedFilters};
+  const result = canUseCanonicalFeedPath(scopedFilters, args?.searchMatches)
+    ? await searchCanonicalFeed(scopedArgs)
+    : await searchPostgresListingsCore(scopedArgs);
   return {
     ...result,
     nextCursor: attachScopeToCursor(result.nextCursor, scope),
