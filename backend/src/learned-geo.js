@@ -31,6 +31,11 @@ function text(value) {
   return out || null;
 }
 
+function boundedText(value, maxLength) {
+  const out = text(value);
+  return out ? out.slice(0, maxLength) : null;
+}
+
 function canonicalForSource(listing, source, candidate) {
   if (source === 'street') return text(listing.street) || text(candidate?.name);
   if (source === 'residentialComplex') return text(listing.residenceComplex) || text(candidate?.name);
@@ -126,22 +131,22 @@ export async function rememberLearnedGeo(descriptor, coords, provider = {}) {
      ON CONFLICT (lookup_key) DO NOTHING`,
     [
       descriptor.lookupKey,
-      descriptor.country,
-      descriptor.region,
-      descriptor.city,
-      descriptor.district,
+      boundedText(descriptor.country, 8),
+      boundedText(descriptor.region, 255),
+      boundedText(descriptor.city, 255),
+      boundedText(descriptor.district, 255),
       descriptor.street,
-      descriptor.houseNumber,
-      descriptor.building,
-      descriptor.type,
+      boundedText(descriptor.houseNumber, 64),
+      boundedText(descriptor.building, 128),
+      boundedText(descriptor.type, 64),
       descriptor.canonicalName,
       descriptor.queryText,
       coords.lat,
       coords.lng,
       descriptor.accuracyM,
-      text(provider.name) || 'nominatim',
+      boundedText(provider.name, 32) || 'nominatim',
       text(provider.id),
-      text(provider.type),
+      boundedText(provider.type, 64),
     ],
   );
   return result.rowCount > 0;

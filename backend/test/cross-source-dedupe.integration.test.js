@@ -35,10 +35,10 @@ async function insertListing(client, row) {
 }
 
 async function bootstrap(client) {
-  await client.query('DROP TABLE IF EXISTS listing_property_clusters CASCADE');
-  await client.query('DROP TABLE IF EXISTS listing_photo_hashes CASCADE');
-  await client.query('DROP TABLE IF EXISTS listing_public_feed_members CASCADE');
-  await client.query('DROP TABLE IF EXISTS listings CASCADE');
+  // This test intentionally replays the historical identity migrations. The
+  // fixture must live outside public because Node's test runner executes files
+  // concurrently and a destructive replay would otherwise remove later
+  // generated columns, relation triggers and indexes from sibling tests.
   await client.query(await migration('001_baseline_listings.sql'));
   await client.query(await migration('010_persisted_dedupe_key.sql'));
   await client.query(await migration('014_public_feed_members.sql'));
@@ -48,8 +48,11 @@ async function bootstrap(client) {
 
 test('property clusters are the authoritative strong cross-source identity', {skip: !connectionString}, async () => {
   const client = new Client({connectionString});
+  const schema = `cross_source_dedupe_test_${process.pid}_${Date.now()}`;
   await client.connect();
   try {
+    await client.query(`CREATE SCHEMA ${schema}`);
+    await client.query(`SET search_path TO ${schema}`);
     await bootstrap(client);
 
     await insertListing(client, {
@@ -145,14 +148,16 @@ test('property clusters are the authoritative strong cross-source identity', {sk
     assert.notEqual(negative.rows[0].dedupe_key, negative.rows[1].dedupe_key,
       'a shared agency phone must not merge different addresses');
   } finally {
+    await client.query('RESET search_path').catch(() => {});
+    await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => {});
     await client.end();
   }
 });
 
 test('property identity stays on the persisted indexed read path', async () => {
   const sql = await migration('020_property_identity_unification.sql');
-  const search = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
-  const fastSearch = await readFile(new URL('../src/postgres-search-fast.js', import.meta.url), 'utf8');
+  const search = await readFile(new URL('../src/postgres-search-core.js', import.meta.url), 'utf8');
+  const fastSearch = await readFile(new URL('../src/postgres-search-fast-core.js', import.meta.url), 'utf8');
 
   assert.match(sql, /propertyClusterId/);
   assert.match(sql, /THEN 'cluster:' \|\| property_cluster_id/);

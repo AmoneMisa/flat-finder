@@ -32,6 +32,19 @@ test('PostgreSQL crawler queue claims by shard, retries and isolates custom work
   };
 
   try {
+    await assert.rejects(
+      () => enqueueTasks([{...pageOne, crawlGeneration: 'g'.repeat(129)}]),
+      /queue crawlGeneration exceeds 128 characters/u,
+    );
+    await assert.rejects(
+      () => enqueueTasks([{...pageOne, type: 't'.repeat(65)}]),
+      /queue type exceeds 64 characters/u,
+    );
+    await assert.rejects(
+      () => enqueueTasks([{...pageOne, country: 'C'.repeat(9)}]),
+      /queue country exceeds 8 characters/u,
+    );
+
     assert.equal(await enqueueTasks([pageOne, pageOne]), 1);
 
     const wrongShard = await claimTask({

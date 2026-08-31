@@ -1,0 +1,86 @@
+name: Verify flat-finder pull request
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/verify-pr.yml'
+      - '.github/workflows/deploy.yml'
+      - 'deploy.sh'
+      - 'scripts/upgrade-postgres-18.sh'
+      - 'scripts/fallback-deploy.sh'
+      - 'scripts/install-fallback-timer.sh'
+      - 'docker-compose.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      POSTGRES_DB: flatfinder
+      POSTGRES_USER: flatfinder
+      POSTGRES_PASSWORD: flatfinder-test
+      TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder-test@127.0.0.1:5432/flatfinder
+      TEST_POSTGRES_SEARCH: '1'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend --no-audit --no-fund
+
+      - name: Check JavaScript syntax
+        run: find backend/src backend/test -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Check deployment syntax
+        run: |
+          bash -n deploy.sh
+          bash -n scripts/upgrade-postgres-18.sh
+          bash -n scripts/fallback-deploy.sh
+          bash -n scripts/install-fallback-timer.sh
+
+      - name: Apply database migrations
+        run: npm run migrate --prefix backend
+
+      - name: Validate PostgreSQL performance report
+        env:
+          PGPASSWORD: flatfinder-test
+        run: >-
+          psql -v ON_ERROR_STOP=1
+          -h 127.0.0.1 -p 5432
+          -U flatfinder -d flatfinder
+          -f backend/scripts/postgres-performance-report.sql
+          > /tmp/postgres-performance-report.txt
+
+      - name: Run backend tests
+        run: npm test --prefix backend
