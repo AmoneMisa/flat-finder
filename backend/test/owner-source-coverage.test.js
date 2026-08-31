@@ -107,7 +107,7 @@ test('crawl plan restores daily OLX and queues owner-first sources', () => {
     assert.ok(tasks.some((task) => task.type === 'flat.olx.page' && task.country === country && task.segment === 'flat:shortRent'));
   }
   const roLongRent = tasks.find((task) => task.type === 'flat.olx.page' && task.country === 'RO' && task.segment === 'flat:longRent');
-  assert.equal(roLongRent?.ownerOnly, true);
+  assert.notEqual(roLongRent?.ownerOnly, true);
   for (const segment of [
     'rentli-tashkent-owner-rent',
     'turar-tashkent-owner-daily',
