@@ -14,6 +14,7 @@ class AppState extends ChangeNotifier {
   AppState(this._api);
 
   static const _kFilters = 'filters';
+  static const _searchDebounce = Duration(milliseconds: 250);
 
   final ApiService _api;
 
@@ -33,6 +34,8 @@ class AppState extends ChangeNotifier {
   String? nextCursor;
   int total = 0;
   int _searchGeneration = 0;
+  Timer? _searchDebounceTimer;
+  Completer<void>? _pendingSearchCompletion;
 
   // Client-side cooldown for the manual "Reload all" button, matching the
   // server's flood protection so the button greys out instead of hitting a 429.
@@ -43,6 +46,10 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
+    final pending = _pendingSearchCompletion;
+    if (pending != null && !pending.isCompleted) pending.complete();
+    _api.cancelListingRequests();
     _reloadAllTimer?.cancel();
     super.dispose();
   }
@@ -220,9 +227,15 @@ class AppState extends ChangeNotifier {
     }
 
     if (_sameFilterPayload(current, normalized)) return false;
+    final sortChanged = current.sort != normalized.sort;
     filters = normalized;
     notifyListeners();
     _saveFilters(); // persist so choices survive restarts
+
+    // The header sort control only updates the filter. Server-backed sorts need
+    // a fresh cursor stream (especially price asc/desc); scheduling here also
+    // makes switching back from a server sort restore the canonical feed order.
+    if (sortChanged) unawaited(search());
     return true;
   }
 
@@ -264,8 +277,22 @@ class AppState extends ChangeNotifier {
     if (listings.length != before) notifyListeners();
   }
 
-  Future<void> search() async {
+  void _completePendingSearch() {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = null;
+    final pending = _pendingSearchCompletion;
+    _pendingSearchCompletion = null;
+    if (pending != null && !pending.isCompleted) pending.complete();
+  }
+
+  /// Apply a short debounce to rapid filter input and actively abort any HTTP
+  /// page request superseded by the new generation. The generation guard still
+  /// protects state from non-cancellable test doubles and other late futures.
+  Future<void> search() {
     final generation = ++_searchGeneration;
+    _api.cancelListingRequests();
+    _completePendingSearch();
+
     // A new root search supersedes any pagination/map request from the previous
     // generation. Their finally blocks intentionally no-op once stale, so clear
     // the flags here or they could remain stuck true forever.
@@ -277,21 +304,46 @@ class AppState extends ChangeNotifier {
       nextCursor = null;
       total = 0;
       error = 'Select at least one country';
+      loading = false;
       notifyListeners();
-      return;
+      return Future.value();
     }
+
+    final requestedFilters = filters;
+    final completion = Completer<void>();
+    _pendingSearchCompletion = completion;
     loading = true;
     mapListings = [];
     error = null;
     notifyListeners();
+
+    _searchDebounceTimer = Timer(_searchDebounce, () {
+      _searchDebounceTimer = null;
+      if (generation != _searchGeneration) {
+        if (!completion.isCompleted) completion.complete();
+        return;
+      }
+      unawaited(_executeSearch(generation, requestedFilters, completion));
+    });
+    return completion.future;
+  }
+
+  Future<void> _executeSearch(
+    int generation,
+    Filters requestedFilters,
+    Completer<void> completion,
+  ) async {
     try {
-      final res = await _api.fetchListings(filters);
+      final res = await _api.fetchListings(requestedFilters);
       if (generation != _searchGeneration) return;
       listings = res.listings;
       nextCursor = res.nextCursor;
       total = res.total;
       degradedCountries = res.degradedCountries;
       sourceErrors = res.sourceErrors;
+      if (res.deferredMarketComparison && res.listings.isNotEmpty) {
+        unawaited(_hydrateMarketComparisons(generation, res.listings));
+      }
     } catch (e) {
       if (generation != _searchGeneration) return;
       error = e.toString();
@@ -302,27 +354,56 @@ class AppState extends ChangeNotifier {
     } finally {
       if (generation == _searchGeneration) {
         loading = false;
+        if (identical(_pendingSearchCompletion, completion)) {
+          _pendingSearchCompletion = null;
+        }
         notifyListeners();
       }
+      if (!completion.isCompleted) completion.complete();
     }
+  }
+
+  Future<void> _hydrateMarketComparisons(
+    int generation,
+    List<Listing> page,
+  ) async {
+    final comparisons = await _api.fetchMarketComparisons(page);
+    if (generation != _searchGeneration || comparisons.isEmpty) return;
+
+    var changed = false;
+    final enriched = listings.map((item) {
+      final market = comparisons[_api.marketComparisonKey(item)];
+      if (market == null) return item;
+      final json = item.toJson();
+      json['marketComparison'] = market.toJson();
+      changed = true;
+      return Listing.fromJson(json);
+    }).toList(growable: false);
+    if (!changed || generation != _searchGeneration) return;
+    listings = enriched;
+    notifyListeners();
   }
 
   Future<void> loadMore() async {
     final cursor = nextCursor;
     if (loading || loadingMore || cursor == null || cursor.isEmpty) return;
     final generation = _searchGeneration;
+    final requestedFilters = filters;
     loadingMore = true;
     notifyListeners();
     try {
-      final res = await _api.fetchListings(filters, cursor: cursor);
+      final res = await _api.fetchListings(requestedFilters, cursor: cursor);
       if (generation != _searchGeneration) return;
       final seen = listings.map(listingKey).toSet();
-      listings = [
-        ...listings,
-        ...res.listings.where((item) => seen.add(listingKey(item))),
-      ];
+      final added = res.listings
+          .where((item) => seen.add(listingKey(item)))
+          .toList(growable: false);
+      listings = [...listings, ...added];
       nextCursor = res.nextCursor;
       total = res.total;
+      if (res.deferredMarketComparison && added.isNotEmpty) {
+        unawaited(_hydrateMarketComparisons(generation, added));
+      }
     } catch (e) {
       if (generation == _searchGeneration) error = e.toString();
     } finally {
@@ -355,6 +436,8 @@ class AppState extends ChangeNotifier {
   /// flight, its stale result must not overwrite the newer filtered search.
   Future<void> reloadAll() async {
     if (loading || reloadAllCoolingDown || filters.countries.isEmpty) return;
+    _api.cancelListingRequests();
+    _completePendingSearch();
     final generation = ++_searchGeneration;
     loadingMore = false;
     mapLoading = false;
