@@ -48,6 +48,16 @@ CREATE INDEX IF NOT EXISTS listing_public_feed_members_country_deal_owner_dedupe
   )
   INCLUDE (freshness_at);
 
+CREATE INDEX IF NOT EXISTS listing_public_feed_members_country_source_dedupe_idx
+  ON listing_public_feed_members (
+    country,
+    source,
+    dedupe_key,
+    created_at DESC NULLS LAST,
+    listing_id DESC
+  )
+  INCLUDE (freshness_at);
+
 -- FX-aware filtering deliberately uses UPPER(m.currency). Match that expression
 -- in the index; an index on the raw currency column cannot service those OR
 -- branches reliably when legacy rows differ in case.
