@@ -86,16 +86,34 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       dealType: 'longRent',
     }),
     Object.freeze({
+      key: 'kn-almaty-owner-daily',
+      url: 'https://www.kn.kz/almaty/arenda-kvartir-posutochno-bez-posrednikov',
+      city: 'Almaty',
+      dealType: 'shortRent',
+    }),
+    Object.freeze({
       key: 'kn-astana-owner-rent',
       url: 'https://www.kn.kz/astana/arenda-kvartir-bez-posrednikov',
       city: 'Astana',
       dealType: 'longRent',
     }),
     Object.freeze({
+      key: 'kn-astana-owner-daily',
+      url: 'https://www.kn.kz/astana/arenda-kvartir-posutochno-bez-posrednikov',
+      city: 'Astana',
+      dealType: 'shortRent',
+    }),
+    Object.freeze({
       key: 'kn-karaganda-owner-rent',
       url: 'https://www.kn.kz/karaganda/arenda-kvartir-bez-posrednikov',
       city: 'Karaganda',
       dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'kn-karaganda-owner-daily',
+      url: 'https://www.kn.kz/karaganda/arenda-kvartir-posutochno-bez-posrednikov',
+      city: 'Karaganda',
+      dealType: 'shortRent',
     }),
     Object.freeze({
       key: 'kn-aktobe-owner-rent',
@@ -113,6 +131,12 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       key: 'kn-oral-owner-rent',
       url: 'https://www.kn.kz/uralsk/arenda-kvartir-bez-posrednikov',
       city: 'Oral',
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'kn-taraz-owner-rent',
+      url: 'https://www.kn.kz/taraz/arenda-kvartir-bez-posrednikov',
+      city: 'Taraz',
       dealType: 'longRent',
     }),
   ]),
