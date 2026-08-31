@@ -65,9 +65,9 @@ class ListingCard extends StatelessWidget {
     final history = context.watch<HistoryState>();
     final hidden = context.watch<HiddenState>();
     final s = settings.s;
-    final isFav = favorites.isFavorite(listing.id);
-    final isViewed = history.isViewed(listing.id);
-    final isHidden = hidden.isHidden(listing.id);
+    final isFav = favorites.isFavorite(listing);
+    final isViewed = history.isViewed(listing);
+    final isHidden = hidden.isHidden(listing);
     final priceState = listingPriceTone(listing, appState.rates);
     final mobile = !grid && MediaQuery.sizeOf(context).width < 700;
     final geographyCountry = appState.countryByCode(listing.country);
