@@ -1,19 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flat_finder/models/filters.dart';
+import 'package:flat_finder/models/listing.dart';
+import 'package:flat_finder/models/listing_identity.dart';
+import 'package:flat_finder/models/map_listing_point.dart';
+import 'package:flat_finder/services/api_service.dart';
+import 'package:flat_finder/state/app_state.dart';
+import 'package:flat_finder/state/favorites.dart';
+import 'package:flat_finder/state/hidden.dart';
+import 'package:flat_finder/state/history.dart';
+import 'package:flat_finder/state/sorted.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import '../lib/models/filters.dart';
-import '../lib/models/listing.dart';
-import '../lib/models/listing_identity.dart';
-import '../lib/models/map_listing_point.dart';
-import '../lib/services/api_service.dart';
-import '../lib/state/app_state.dart';
-import '../lib/state/favorites.dart';
-import '../lib/state/hidden.dart';
-import '../lib/state/history.dart';
-import '../lib/state/sorted.dart';
 
 Listing listing({
   required String source,
