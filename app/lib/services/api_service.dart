@@ -163,6 +163,16 @@ class ApiService {
   bool _canUseMobileStructuredFeed(Filters filters, {required bool force}) =>
       !force && filters.query.trim().isEmpty && filters.customSources.isEmpty;
 
+  String? _serverSort(SortBy sort) => switch (sort) {
+        SortBy.dateNew => 'newest',
+        SortBy.dateOld => 'oldest',
+        SortBy.priceAsc => 'priceAsc',
+        SortBy.priceDesc => 'priceDesc',
+        SortBy.titleAsc => 'titleAsc',
+        SortBy.titleDesc => 'titleDesc',
+        _ => null,
+      };
+
   /// Close in-flight listing HTTP clients immediately. Closing `http.Client`
   /// aborts the underlying request rather than merely ignoring its eventual
   /// result, which keeps rapid filter changes from piling up on the backend.
@@ -185,6 +195,8 @@ class ApiService {
     String? cursor,
   }) async {
     final params = Map<String, String>.from(filters.toQueryParams());
+    final serverSort = _serverSort(filters.sort);
+    if (serverSort != null) params['sort'] = serverSort;
     // Cards are cursor-paginated; twenty rows make the initial render cheaper
     // without shrinking the backend's public 60-row maximum for other clients.
     params['limit'] = '20';
