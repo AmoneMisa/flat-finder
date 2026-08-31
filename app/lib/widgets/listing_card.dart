@@ -59,18 +59,32 @@ class ListingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final settings = context.watch<SettingsState>();
-    final appState = context.watch<AppState>();
-    final favorites = context.watch<FavoritesState>();
-    final history = context.watch<HistoryState>();
-    final hidden = context.watch<HiddenState>();
-    final s = settings.s;
-    final isFav = favorites.isFavorite(listing);
-    final isViewed = history.isViewed(listing);
-    final isHidden = hidden.isHidden(listing);
-    final priceState = listingPriceTone(listing, appState.rates);
+    final settingsView = context.select<SettingsState, (AppStrings, String?)>(
+      (state) => (state.s, state.displayCurrency),
+    );
+    final appView = context.select<AppState, (Map<String, double>, Filters, Country?)>(
+      (state) => (
+        state.rates,
+        state.filters,
+        state.countryByCode(listing.country),
+      ),
+    );
+    final isFav = context.select<FavoritesState, bool>(
+      (state) => state.isFavorite(listing),
+    );
+    final isViewed = context.select<HistoryState, bool>(
+      (state) => state.isViewed(listing),
+    );
+    final isHidden = context.select<HiddenState, bool>(
+      (state) => state.isHidden(listing),
+    );
+    final s = settingsView.$1;
+    final displayCurrency = settingsView.$2;
+    final rates = appView.$1;
+    final filters = appView.$2;
+    final geographyCountry = appView.$3;
+    final priceState = listingPriceTone(listing, rates);
     final mobile = !grid && MediaQuery.sizeOf(context).width < 700;
-    final geographyCountry = appState.countryByCode(listing.country);
 
     final dealTone = _dealTone(listing);
     final photo = Stack(
@@ -162,13 +176,13 @@ class ListingCard extends StatelessWidget {
               ? Icons.visibility_outlined
               : Icons.visibility_off_outlined,
           tooltip: isHidden ? s.t('restoreListing') : s.t('hideListing'),
-          onPressed: () => hidden.toggle(listing),
+          onPressed: () => context.read<HiddenState>().toggle(listing),
         ),
         const SizedBox(width: 4),
         _FavButton(
           isFav: isFav,
           tooltip: isFav ? s.t('removeFavorite') : s.t('addFavorite'),
-          onPressed: () => favorites.toggle(listing),
+          onPressed: () => context.read<FavoritesState>().toggle(listing),
         ),
       ],
     );
@@ -205,9 +219,9 @@ class ListingCard extends StatelessWidget {
                         child: _meta(
                           theme,
                           s,
-                          filters: appState.filters,
-                          rates: appState.rates,
-                          displayCurrency: settings.displayCurrency,
+                          filters: filters,
+                          rates: rates,
+                          displayCurrency: displayCurrency,
                           priceState: priceState,
                           actions: actions,
                           geographyCountry: geographyCountry,
@@ -228,9 +242,9 @@ class ListingCard extends StatelessWidget {
                   _meta(
                     theme,
                     s,
-                    filters: appState.filters,
-                    rates: appState.rates,
-                    displayCurrency: settings.displayCurrency,
+                    filters: filters,
+                    rates: rates,
+                    displayCurrency: displayCurrency,
                     priceState: priceState,
                     actions: actions,
                     geographyCountry: geographyCountry,
@@ -679,16 +693,32 @@ class _CardPhotoCarouselState extends State<_CardPhotoCarousel> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        PageView.builder(
-          controller: _controller,
-          itemCount: photos.length,
-          onPageChanged: (i) => setState(() => _index = i),
-          itemBuilder: (_, i) => CachedNetworkImage(
-            imageUrl: photos[i],
-            fit: BoxFit.cover,
-            placeholder: (_, __) => const ColoredBox(color: Color(0x11000000)),
-            errorWidget: (_, __, ___) => _placeholder,
-          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+            final logicalWidth = constraints.maxWidth;
+            final logicalHeight = constraints.maxHeight;
+            final cacheWidth = logicalWidth.isFinite && logicalWidth > 0
+                ? (logicalWidth * pixelRatio).ceil().clamp(1, 2048).toInt()
+                : null;
+            final cacheHeight = logicalHeight.isFinite && logicalHeight > 0
+                ? (logicalHeight * pixelRatio).ceil().clamp(1, 2048).toInt()
+                : null;
+            return PageView.builder(
+              controller: _controller,
+              itemCount: photos.length,
+              onPageChanged: (i) => setState(() => _index = i),
+              itemBuilder: (_, i) => CachedNetworkImage(
+                imageUrl: photos[i],
+                fit: BoxFit.cover,
+                memCacheWidth: cacheWidth,
+                memCacheHeight: cacheHeight,
+                placeholder: (_, __) =>
+                    const ColoredBox(color: Color(0x11000000)),
+                errorWidget: (_, __, ___) => _placeholder,
+              ),
+            );
+          },
         ),
         if (photos.length > 1)
           Positioned(
