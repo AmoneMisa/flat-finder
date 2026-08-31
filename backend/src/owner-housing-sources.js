@@ -3,6 +3,7 @@
 // owner semantics (no commission, no agency flag) without weakening generic
 // source classification. OLX owner search is intentionally not here: OLX uses
 // its dedicated curl_cffi sidecar because ordinary server fetches are WAF-blocked.
+// Each URL below was checked as a current public catalogue before being enabled.
 
 export const OWNER_HOUSING_SOURCES = Object.freeze({
   UZ: Object.freeze([
