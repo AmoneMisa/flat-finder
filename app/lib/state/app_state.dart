@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/listing_identity.dart';
 import '../services/api_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -216,10 +217,10 @@ class AppState extends ChangeNotifier {
     try {
       final res = await _api.fetchListings(filters, cursor: cursor);
       if (generation != _searchGeneration) return;
-      final seen = listings.map((item) => '${item.source}:${item.id}').toSet();
+      final seen = listings.map(listingKey).toSet();
       listings = [
         ...listings,
-        ...res.listings.where((item) => seen.add('${item.source}:${item.id}')),
+        ...res.listings.where((item) => seen.add(listingKey(item))),
       ];
       nextCursor = res.nextCursor;
       total = res.total;
@@ -250,14 +251,18 @@ class AppState extends ChangeNotifier {
   }
 
   /// Force a fresh scrape (bypasses the backend cache), then start a local
-  /// cooldown so the button can't be spammed into the server's 429.
+  /// cooldown so the button can't be spammed into the server's 429. This is a
+  /// search generation too: if filters change while the force request is in
+  /// flight, its stale result must not overwrite the newer filtered search.
   Future<void> reloadAll() async {
     if (loading || reloadAllCoolingDown || filters.countries.isEmpty) return;
+    final generation = ++_searchGeneration;
     loading = true;
     error = null;
     notifyListeners();
     try {
       final res = await _api.fetchListings(filters, force: true);
+      if (generation != _searchGeneration) return;
       listings = res.listings;
       nextCursor = res.nextCursor;
       total = res.total;
@@ -265,12 +270,16 @@ class AppState extends ChangeNotifier {
       sourceErrors = res.sourceErrors;
       _startReloadAllCooldown(const Duration(seconds: 8));
     } on RateLimitException catch (e) {
-      _startReloadAllCooldown(Duration(milliseconds: e.retryAfterMs));
+      if (generation == _searchGeneration) {
+        _startReloadAllCooldown(Duration(milliseconds: e.retryAfterMs));
+      }
     } catch (e) {
-      error = e.toString();
+      if (generation == _searchGeneration) error = e.toString();
     } finally {
-      loading = false;
-      notifyListeners();
+      if (generation == _searchGeneration) {
+        loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -286,12 +295,10 @@ class AppState extends ChangeNotifier {
 
   /// Re-fetch one listing fresh and, if it's still in the current results,
   /// swap in the updated copy. Returns the fresh listing (or null if gone).
-  Future<Listing?> reloadListing(Listing l) async {
-    final fresh = await _api.reloadListing(l);
+  Future<Listing?> reloadListing(Listing listing) async {
+    final fresh = await _api.reloadListing(listing);
     if (fresh != null) {
-      final i = listings.indexWhere(
-        (x) => x.id == l.id && x.source == l.source,
-      );
+      final i = listings.indexWhere((item) => sameListing(item, listing));
       if (i >= 0) {
         listings[i] = fresh;
         notifyListeners();
