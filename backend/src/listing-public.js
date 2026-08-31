@@ -33,8 +33,15 @@ const RECOMPUTABLE_PARSED_FIELDS = [
   'potentiallyUnsafe',
 ];
 
+function hasFiniteCoordinate(value) {
+  return value !== null
+    && value !== undefined
+    && value !== ''
+    && Number.isFinite(Number(value));
+}
+
 function hasFiniteCoordinates(listing) {
-  return Number.isFinite(Number(listing?.lat)) && Number.isFinite(Number(listing?.lng));
+  return hasFiniteCoordinate(listing?.lat) && hasFiniteCoordinate(listing?.lng);
 }
 
 function copyGeoProvenance(target, source) {
@@ -127,6 +134,7 @@ export async function preparePublicListing(listing, country, {refreshGeo = false
 }
 
 export const __listingPublicTest = {
+  hasFiniteCoordinate,
   hasFiniteCoordinates,
   TRANSIENT_DERIVED_FIELDS,
   RECOMPUTABLE_PARSED_FIELDS,
