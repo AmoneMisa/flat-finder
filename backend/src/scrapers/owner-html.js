@@ -1,5 +1,6 @@
 import { makeListing } from '../normalize.js';
 import {
+  classifyAgency,
   guessPropertyType,
   looksHousingWanted,
   parseAreaFromText,
@@ -7,6 +8,7 @@ import {
   parseRoomsFromText,
 } from '../textparse.js';
 
+// Hosts whose entire curated catalogue is owner/direct by source contract.
 const OWNER_HOSTS = new Set([
   'rentli.uz',
   'easy-house.in.ua',
@@ -27,6 +29,21 @@ const OWNER_HOSTS = new Set([
   'arendator.kg',
   'myhouse.kg',
   'sutochno.kg',
+]);
+
+// Public SSR catalogues that mix owners, agencies, developers, or aggregators.
+// Dedicated owner-filter URLs on these hosts are still enforced downstream by
+// the queue task's ownerOnly policy; the host itself must never imply owner.
+const MIXED_HOSTS = new Set([
+  'uybor.uz',
+  'house.kg',
+  'lalafo.kg',
+  'lun.ua',
+  'rieltor.ua',
+  'imobiliare.ro',
+  'anuntul.ro',
+  'lajumate.ro',
+  'imobiliare-anunturi.ro',
 ]);
 
 const HOUSING_RE = /(apartament|garsonier|studio|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
@@ -110,9 +127,10 @@ function plausibleCard(text, country) {
   return parsed?.amount != null;
 }
 
-function toListing(fragment, text, country, sourceUrl, index) {
+function toListing(fragment, text, country, sourceUrl, index, ownerHost) {
   const parsedPrice = parsePriceFromText(text, country?.currency || '');
   const url = firstHref(fragment, sourceUrl) || sourceUrl;
+  const agency = !ownerHost && classifyAgency(text);
   return makeListing({
     id: `owner-${hash(`${sourceUrl}|${url}|${text.slice(0, 320)}|${index}`)}`,
     source: 'custom',
@@ -120,9 +138,12 @@ function toListing(fragment, text, country, sourceUrl, index) {
     title: heading(fragment, text),
     description: text,
     propertyType: guessPropertyType(text),
-    byAgency: false,
-    commission: false,
-    commissionPercent: 0,
+    // Owner-only hosts keep their source contract. Mixed hosts only set true
+    // when an explicit realtor/agency signal exists; otherwise normalization is
+    // free to apply shared seller semantics instead of us inventing an owner.
+    byAgency: ownerHost ? false : (agency ? true : undefined),
+    commission: ownerHost ? false : undefined,
+    commissionPercent: ownerHost ? 0 : undefined,
     price: parsedPrice.amount,
     currency: parsedPrice.currency || country.currency,
     rooms: parseRoomsFromText(text),
@@ -167,7 +188,8 @@ export function extractKnownOwnerHtml(html, country, sourceUrl) {
   } catch {
     return [];
   }
-  if (!OWNER_HOSTS.has(host)) return [];
+  const ownerHost = OWNER_HOSTS.has(host);
+  if (!ownerHost && !MIXED_HOSTS.has(host)) return [];
 
   const listings = [];
   const seen = new Set();
@@ -177,7 +199,7 @@ export function extractKnownOwnerHtml(html, country, sourceUrl) {
     const key = normalized.toLocaleLowerCase().slice(0, 420);
     if (seen.has(key)) return;
     seen.add(key);
-    listings.push(toListing(fragment, normalized, country, sourceUrl, listings.length));
+    listings.push(toListing(fragment, normalized, country, sourceUrl, listings.length, ownerHost));
   };
 
   for (const block of structuredBlocks(String(html || ''))) {
