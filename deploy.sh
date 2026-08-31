@@ -95,9 +95,31 @@ wait_for_healthy flat-finder-olx-fetcher 90
 wait_for_healthy flat-finder-olx-fetcher-ua 90
 wait_for_healthy flat-finder-social-fetcher 90
 
-# Apply versioned PostgreSQL migrations before either application process starts.
-# The runner takes a PostgreSQL advisory lock, so retries or overlapping deploys
-# cannot apply the same migration concurrently.
+# The old worker can still be writing listings while a new release is preparing.
+# Pause that exact container before schema migrations so large backfills/DDL do
+# not deadlock with listing upserts. If deployment fails before the new worker is
+# started, bring the previous container back so ingestion is not left offline.
+PREVIOUS_WORKER_CID="$(docker compose ps -q flat-finder-worker 2>/dev/null || true)"
+WORKER_PAUSED=false
+restore_previous_worker_on_failure() {
+  local status=$?
+  if [[ $status -ne 0 && "$WORKER_PAUSED" == "true" && -n "$PREVIOUS_WORKER_CID" ]]; then
+    echo "Deployment failed while the previous worker was paused; restarting it."
+    docker start "$PREVIOUS_WORKER_CID" >/dev/null 2>&1 || true
+  fi
+  exit "$status"
+}
+trap restore_previous_worker_on_failure EXIT
+
+if [[ -n "$PREVIOUS_WORKER_CID" ]]; then
+  echo "Pausing existing worker before PostgreSQL migrations: $PREVIOUS_WORKER_CID"
+  docker stop --time 30 "$PREVIOUS_WORKER_CID" >/dev/null
+  WORKER_PAUSED=true
+fi
+
+# Apply versioned PostgreSQL migrations before new application processes start.
+# The runner takes a PostgreSQL advisory lock to serialize migration runners and
+# retries PostgreSQL deadlocks with bounded exponential backoff.
 docker compose run --rm --no-deps flat-finder-backend node src/migrate.js
 
 # The API and direct worker both tolerate Elasticsearch being temporarily
@@ -106,6 +128,8 @@ docker compose run --rm --no-deps flat-finder-backend node src/migrate.js
 docker compose up -d --no-deps \
   flat-finder-backend \
   flat-finder-worker
+WORKER_PAUSED=false
+trap - EXIT
 
 wait_for_healthy flat-finder-backend 120
 
