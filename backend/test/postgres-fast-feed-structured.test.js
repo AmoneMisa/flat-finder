@@ -136,7 +136,7 @@ test('fast member SQL covers scalar, relation, boolean and spatial filters', () 
   assert.match(where, /ACOS/);
 });
 
-test('read-model migrations materialize hot filters and tune indexes for DISTINCT ON', async () => {
+test('read-model migrations materialize hot filters and tune indexes for city-first DISTINCT ON', async () => {
   const readModelMigration = await readFile(
     new URL('../migrations/034_public_feed_search_read_model.sql', import.meta.url),
     'utf8',
@@ -161,8 +161,9 @@ test('read-model migrations materialize hot filters and tune indexes for DISTINC
   assert.match(indexMigration, /DROP INDEX IF EXISTS listing_public_feed_members_country_deal_freshness_idx/);
   assert.match(indexMigration, /country_deal_dedupe_idx[\s\S]*country,[\s\S]*deal_type,[\s\S]*dedupe_key,[\s\S]*created_at DESC NULLS LAST/u);
   assert.match(indexMigration, /country_city_deal_dedupe_idx[\s\S]*country,[\s\S]*city,[\s\S]*deal_type,[\s\S]*dedupe_key/u);
-  assert.match(indexMigration, /country_deal_owner_dedupe_idx[\s\S]*country,[\s\S]*deal_type,[\s\S]*by_agency,[\s\S]*dedupe_key/u);
-  assert.match(indexMigration, /country_deal_currency_price_idx[\s\S]*UPPER\(currency\),[\s\S]*price/u);
+  assert.match(indexMigration, /country_city_deal_owner_dedupe_idx[\s\S]*country,[\s\S]*city,[\s\S]*deal_type,[\s\S]*by_agency,[\s\S]*dedupe_key/u);
+  assert.match(indexMigration, /country_city_deal_currency_price_idx[\s\S]*country,[\s\S]*city,[\s\S]*deal_type,[\s\S]*UPPER\(currency\),[\s\S]*price/u);
+  assert.doesNotMatch(indexMigration, /CREATE INDEX IF NOT EXISTS listing_public_feed_members_country_source_dedupe_idx/u);
   assert.match(indexMigration, /INCLUDE \(freshness_at\)/u);
 });
 
