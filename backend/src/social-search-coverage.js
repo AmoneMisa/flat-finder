@@ -37,6 +37,7 @@ export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
       'Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana',
       'Qarshi', 'Nukus', 'Jizzakh', 'Urgench',
     ]),
+    expandedCities: Object.freeze(['Tashkent']),
   }),
   KZ: Object.freeze({
     languages: Object.freeze(['ru', 'kk']),
@@ -44,6 +45,7 @@ export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
       'Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau',
       'Pavlodar', 'Kostanay', 'Aktau', 'Oskemen',
     ]),
+    expandedCities: Object.freeze(['Almaty', 'Astana']),
   }),
   RO: Object.freeze({
     languages: Object.freeze(['ro']),
@@ -51,6 +53,7 @@ export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
       'Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta',
       'Craiova', 'Sibiu', 'Oradea', 'Ploiesti',
     ]),
+    expandedCities: Object.freeze(['Bucharest']),
   }),
 });
 
@@ -61,9 +64,9 @@ const SEARCH_TOPIC_ENTITIES = Object.freeze([
   { entity: PROPERTY_TYPES.find((item) => item.canonical === 'house'), limit: 1 },
 ].filter((item) => item.entity));
 
-// Keep queries package-backed, but add high-signal wording that people actually
-// use in social posts/search. These are merged after package aliases and only
-// fill gaps up to the per-topic limit above.
+// Social search benefits from wording people actually put into posts. Keep the
+// package aliases as fallback vocabulary, but lead with a bounded set of
+// high-signal offer/short-stay phrases so generic aliases cannot crowd them out.
 const CURATED_SEARCH_ALIASES = Object.freeze({
   longRent: Object.freeze({
     ru: Object.freeze(['аренда', 'сдам', 'сдаю']),
@@ -94,19 +97,23 @@ function topicAliases(descriptor, language) {
     : [];
   const curatedAliases = CURATED_SEARCH_ALIASES[entity?.canonical]?.[language] || [];
   const fallback = entity?.canonical ? [entity.canonical] : [];
-  return [...new Set([...packageAliases, ...curatedAliases, ...fallback].filter(Boolean))].slice(0, limit);
+  return [...new Set([...curatedAliases, ...packageAliases, ...fallback].filter(Boolean))].slice(0, limit);
+}
+
+function allTopics(language) {
+  return SEARCH_TOPIC_ENTITIES.flatMap((descriptor) => topicAliases(descriptor, language));
+}
+
+function compactTopics(language) {
+  return SEARCH_TOPIC_ENTITIES.flatMap((descriptor) => topicAliases(descriptor, language).slice(0, 1));
 }
 
 function cityByCanonical(country, canonical) {
   return CITIES.find((item) => item.country === country && item.canonical === canonical) || null;
 }
 
-function searchVocabulary(country, language) {
-  const countryEntity = countryByCode(country);
-  return {
-    country: preferredAlias(countryEntity, language),
-    topics: SEARCH_TOPIC_ENTITIES.flatMap((descriptor) => topicAliases(descriptor, language)),
-  };
+function countryName(country, language) {
+  return preferredAlias(countryByCode(country), language);
 }
 
 function add(targets, country, target, city = null, region = null) {
@@ -118,23 +125,29 @@ export function buildThreadsHousingCoverage() {
 
   for (const [country, config] of Object.entries(SOCIAL_HOUSING_COUNTRIES)) {
     for (const language of config.languages) {
-      const vocabulary = searchVocabulary(country, language);
-      if (!vocabulary.country) continue;
-      for (const topic of vocabulary.topics) add(targets, country, `${topic} ${vocabulary.country}`);
+      const localCountry = countryName(country, language);
+      if (!localCountry) continue;
+
+      // Country-wide queries carry the full synonym set. For the highest-volume
+      // cities we also use the full set; all other cities use one query per topic
+      // to keep rotation bounded instead of multiplying every synonym by every city.
+      for (const topic of allTopics(language)) add(targets, country, `${topic} ${localCountry}`);
 
       for (const city of config.crawlCities) {
         const localName = preferredAlias(cityByCanonical(country, city), language) || city;
-        for (const topic of vocabulary.topics) add(targets, country, `${topic} ${localName}`, city);
+        const expanded = config.expandedCities.includes(city);
+        const topics = expanded ? allTopics(language) : compactTopics(language);
+        for (const topic of topics) add(targets, country, `${topic} ${localName}`, city);
       }
     }
   }
 
-  const uaVocabulary = searchVocabulary('UA', 'uk');
-  for (const topic of uaVocabulary.topics) add(targets, 'UA', `${topic} ${uaVocabulary.country}`);
+  const uaCountry = countryName('UA', 'uk');
+  for (const topic of allTopics('uk')) add(targets, 'UA', `${topic} ${uaCountry}`);
   for (const oblast of UKRAINE_OBLASTS) {
     // Oblast-wide searches must not be stamped with the regional centre as the
     // listing city; the post itself/normalizer can resolve a real city later.
-    for (const topic of uaVocabulary.topics) add(targets, 'UA', `${topic} ${oblast.ua}`, null, oblast.region);
+    for (const topic of compactTopics('uk')) add(targets, 'UA', `${topic} ${oblast.ua}`, null, oblast.region);
   }
 
   const seen = new Set();
