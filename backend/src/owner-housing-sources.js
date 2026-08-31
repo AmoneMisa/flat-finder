@@ -39,12 +39,36 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       city: null,
       dealType: 'longRent',
     }),
+    Object.freeze({
+      key: 'bezmakler-odesa-owner-rent',
+      url: 'https://bezmakler.com.ua/',
+      city: 'Odesa',
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'dobalux-ukraine-owner-daily',
+      url: 'https://dobalux.com/uk/',
+      city: null,
+      dealType: 'shortRent',
+    }),
   ]),
   KZ: Object.freeze([
     Object.freeze({
       key: 'kn-almaty-owner-rent',
       url: 'https://www.kn.kz/almaty/arenda-kvartir-bez-posrednikov-s-foto',
       city: 'Almaty',
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'kn-astana-owner-rent',
+      url: 'https://www.kn.kz/astana/arenda-kvartir-bez-posrednikov',
+      city: 'Astana',
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'kn-karaganda-owner-rent',
+      url: 'https://www.kn.kz/karaganda/arenda-kvartir-bez-posrednikov',
+      city: 'Karaganda',
       dealType: 'longRent',
     }),
   ]),
@@ -58,6 +82,30 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
     Object.freeze({
       key: 'proprietar-direct-romania-owner-rent',
       url: 'https://proprietar-direct.ro/categorii-anunturi/oferte-de-inchiriat/',
+      city: null,
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'delaproprietar-romania-owner-rent',
+      url: 'https://delaproprietar.ro/apartamente/apartamente-de-inchiriat/',
+      city: null,
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'direct-fara-comision-romania-owner-rent',
+      url: 'https://www.directfaracomision.ro/anunturi?tip_proprietate=apartment&tip_tranzactie=inchiriere',
+      city: null,
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'rentnbuy-romania-owner-rent',
+      url: 'https://rentnbuy.com/s/inchirieri/imobiliare',
+      city: null,
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'garsoniera-romania-owner-rent',
+      url: 'https://garsoniera.ro/anunturi/inchiriere',
       city: null,
       dealType: 'longRent',
     }),
