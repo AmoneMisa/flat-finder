@@ -1,8 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flat_finder/utils/screen_space_clustering.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import '../lib/utils/screen_space_clustering.dart';
 
 class _Item {
   const _Item(this.id, this.x, this.y, this.lat, this.lng);
