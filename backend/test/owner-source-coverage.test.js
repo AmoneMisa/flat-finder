@@ -23,15 +23,15 @@ test('owner registry covers curated direct-owner platforms in every configured c
     'https://www.kn.kz/karaganda/arenda-kvartir-bez-posrednikov',
     'https://www.proprietaripebune.ro/chirii/bucuresti',
     'https://proprietar-direct.ro/categorii-anunturi/oferte-de-inchiriat/',
-    'https://delaproprietar.ro/apartamente/apartamente-de-inchiriat/',
     'https://www.directfaracomision.ro/anunturi?tip_proprietate=apartment&tip_tranzactie=inchiriere',
-    'https://rentnbuy.com/s/inchirieri/imobiliare',
     'https://garsoniera.ro/anunturi/inchiriere',
     'https://arendator.kg/',
     'https://sutochno.kg/bishkek/',
   ]) {
     assert.equal(urls.filter((url) => url === expected).length, 1, expected);
   }
+  assert.ok(!urls.some((url) => url.includes('delaproprietar.ro')));
+  assert.ok(!urls.some((url) => url.includes('rentnbuy.com')));
   assert.equal(ownerHousingSources('UZ').find((source) => source.key === 'turar-tashkent-owner-daily')?.dealType, 'shortRent');
   assert.equal(ownerHousingSources('UA').find((source) => source.key === 'dobalux-ukraine-owner-daily')?.dealType, 'shortRent');
   assert.equal(ownerHousingSources('KG').find((source) => source.key === 'sutochno-bishkek-owner-daily')?.dealType, 'shortRent');
@@ -87,9 +87,7 @@ test('crawl plan restores daily OLX and queues owner-first sources', () => {
     'kn-karaganda-owner-rent',
     'proprietari-pe-bune-bucharest-owner-rent',
     'proprietar-direct-romania-owner-rent',
-    'delaproprietar-romania-owner-rent',
     'direct-fara-comision-romania-owner-rent',
-    'rentnbuy-romania-owner-rent',
     'garsoniera-romania-owner-rent',
     'arendator-bishkek-owner-rent',
     'sutochno-bishkek-owner-daily',
