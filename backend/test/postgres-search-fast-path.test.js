@@ -25,11 +25,20 @@ test('exact source listing requests qualify for the indexed detail path', () => 
 });
 
 test('fast searches use one database request and exact lookups follow the unique index order', async () => {
-  const source = await readFile(new URL('../src/postgres-search-fast.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/postgres-search-fast-core.js', import.meta.url), 'utf8');
 
+  assert.match(source, /from '\.\/postgres-search-core\.js'/u);
+  assert.doesNotMatch(source, /from '\.\/postgres-search\.js'/u);
   assert.match(source, /l\.source = \$1[\s\S]*l\.country = \$2[\s\S]*l\.source_id = \$3/u);
   assert.match(source, /searchPath: 'postgres-listing-id'/u);
+  assert.match(source, /const cursorCount = Number\(cursor\?\.c\)/u);
+  assert.match(source, /const hasCursorCount = useCursor && Number\.isSafeInteger\(cursorCount\) && cursorCount >= 0/u);
+  assert.match(source, /const fetchLimit = limit \+ 1/u);
+  assert.match(source, /const pageSql = hasCursorCount[\s\S]*SELECT p\.db_id, p\.created_at, l\.data[\s\S]*SELECT totals\.count/u);
   assert.match(source, /FROM \(SELECT COUNT\(\*\)::int AS count FROM deduped\) totals/u);
-  assert.match(source, /LEFT JOIN page p ON TRUE/u);
+  assert.match(source, /const hasMore = pageRows\.length > limit/u);
+  assert.match(source, /const rows = pageRows\.slice\(0, limit\)/u);
+  assert.match(source, /encodeCursor\(\{v: CURSOR_VERSION, sort, t: time, id: String\(last\.db_id\), c: count\}\)/u);
+  assert.doesNotMatch(source, /if \(rows\.length === limit\)/u);
   assert.doesNotMatch(source, /Promise\.all/u);
 });

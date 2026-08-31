@@ -7,12 +7,13 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/district_zone.dart';
-import '../models/listing.dart';
+import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
 import '../utils/price_tone.dart';
+import '../utils/screen_space_clustering.dart';
 
 /// Same district colours as whiteslove.me's map (`useDistrictZones.ts`
 /// ZONE_PALETTE) — kept only as a fallback for zones whose stored colour
@@ -55,9 +56,9 @@ class MapView extends StatefulWidget {
     this.onRadiusChanged,
   });
 
-  final List<Listing> listings;
+  final List<MapListingPoint> listings;
   final LatLng center;
-  final void Function(Listing) onTapListing;
+  final void Function(MapListingPoint) onTapListing;
   final Map<String, double>? rates;
   final String? displayCurrency;
   final String country;
@@ -515,11 +516,11 @@ class _MapViewState extends State<MapView> {
   }
 
   /// Listings restricted to the drawn area (once it has at least 3 points).
-  List<Listing> get _visible {
-    final located = widget.listings.where((l) => l.hasLocation).toList();
+  List<MapListingPoint> get _visible {
+    final located = widget.listings;
     if (_area.length < 3) return located;
     return located
-        .where((l) => _pointInPolygon(LatLng(l.lat!, l.lng!), _area))
+        .where((l) => _pointInPolygon(LatLng(l.lat, l.lng), _area))
         .toList();
   }
 
@@ -538,8 +539,7 @@ class _MapViewState extends State<MapView> {
 
   bool get _isFocused => widget.centerZoom >= 17.5;
 
-  String _listingKey(Listing listing) =>
-      '${listing.source}:${listing.country}:${listing.id}';
+  String _listingKey(MapListingPoint listing) => listing.key;
 
   void _scheduleFitToPoints() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -554,8 +554,7 @@ class _MapViewState extends State<MapView> {
     if (_isFocused || widget.city.isNotEmpty || _activeZoneFocusId != null) {
       return;
     }
-    final located =
-        widget.listings.where((listing) => listing.hasLocation).toList();
+    final located = widget.listings;
     if (located.isEmpty) return;
     final keys = located.map(_listingKey).toList()..sort();
     final signature = keys.join(',');
@@ -564,7 +563,7 @@ class _MapViewState extends State<MapView> {
       _controller.fitCamera(
         CameraFit.bounds(
           bounds: LatLngBounds.fromPoints([
-            for (final listing in located) LatLng(listing.lat!, listing.lng!),
+            for (final listing in located) LatLng(listing.lat, listing.lng),
           ]),
           padding: const EdgeInsets.all(30),
           maxZoom: 14,
@@ -576,9 +575,13 @@ class _MapViewState extends State<MapView> {
     }
   }
 
-  Offset _worldPixel(LatLng point, [double? zoom]) {
+  double _worldWidth([double? zoom]) {
     final z = zoom ?? _zoom;
-    final worldSize = 256.0 * math.pow(2, z).toDouble();
+    return 256.0 * math.pow(2, z).toDouble();
+  }
+
+  Offset _worldPixel(LatLng point, [double? zoom]) {
+    final worldSize = _worldWidth(zoom);
     final lat = point.latitude.clamp(-85.05112878, 85.05112878).toDouble();
     final sinLat = math.sin(lat * math.pi / 180);
     final x = (point.longitude + 180) / 360 * worldSize;
@@ -587,56 +590,33 @@ class _MapViewState extends State<MapView> {
     return Offset(x, y);
   }
 
-  double _wrappedDx(double a, double b, [double? zoom]) {
-    final z = zoom ?? _zoom;
-    final worldSize = 256.0 * math.pow(2, z).toDouble();
-    final raw = (a - b).abs();
-    return math.min(raw, worldSize - raw);
-  }
-
-  /// Greedy screen-space clustering, equivalent to FlatMap.client.vue's
-  /// latLngToContainerPoint + 38px distance check.
-  List<_PinGroup> _groupsFor(List<Listing> located, {double? zoom}) {
+  /// Greedy screen-space clustering equivalent to the previous all-cluster
+  /// scan, but backed by a spatial hash. Exact 38px distance checks and the
+  /// earliest matching cluster preserve the existing visual semantics.
+  List<_PinGroup> _groupsFor(List<MapListingPoint> located, {double? zoom}) {
     if (located.isEmpty) return const [];
-    final clusters = <_ClusterAccumulator>[];
-    for (final listing in located) {
-      final point = _worldPixel(LatLng(listing.lat!, listing.lng!), zoom);
-      _ClusterAccumulator? target;
-      for (final cluster in clusters) {
-        final dx = _wrappedDx(cluster.x, point.dx, zoom);
-        final dy = cluster.y - point.dy;
-        if (dx * dx + dy * dy <= _clusterRadiusPx * _clusterRadiusPx) {
-          target = cluster;
-          break;
-        }
-      }
-      if (target == null) {
-        clusters.add(
-          _ClusterAccumulator(
-            x: point.dx,
-            y: point.dy,
-            latSum: listing.lat!,
-            lngSum: listing.lng!,
-            listings: [listing],
-          ),
-        );
-      } else {
-        target.listings.add(listing);
-        target.latSum += listing.lat!;
-        target.lngSum += listing.lng!;
-      }
-    }
+    final clusters = greedyScreenSpaceClusters<MapListingPoint>(
+      located,
+      project: (listing) {
+        final point = _worldPixel(LatLng(listing.lat, listing.lng), zoom);
+        return ScreenCoordinate(point.dx, point.dy);
+      },
+      latitudeOf: (listing) => listing.lat,
+      longitudeOf: (listing) => listing.lng,
+      radiusPx: _clusterRadiusPx,
+      worldWidth: _worldWidth(zoom),
+    );
 
     return [
       for (final cluster in clusters)
         () {
-          final keys = cluster.listings.map(_listingKey).toList()..sort();
+          final keys = cluster.items.map(_listingKey).toList()..sort();
           return _PinGroup(
             keys.join('|'),
-            cluster.listings,
+            cluster.items,
             LatLng(
-              cluster.latSum / cluster.listings.length,
-              cluster.lngSum / cluster.listings.length,
+              cluster.latitudeSum / cluster.items.length,
+              cluster.longitudeSum / cluster.items.length,
             ),
           );
         }(),
@@ -645,26 +625,30 @@ class _MapViewState extends State<MapView> {
 
   String? _expandedGroupKey;
 
-  /// A price pill is wider than a point. Show it only when its complete
-  /// screen rectangle cannot intersect any neighbouring standalone pill or
-  /// cluster marker. Otherwise render the normal 16px point.
-  bool _canShowStandalonePrice(_PinGroup group, List<_PinGroup> groups) {
-    if (group.listings.length != 1) return false;
-    final point = _worldPixel(group.point);
-    for (final other in groups) {
-      if (identical(other, group)) continue;
-      final otherPoint = _worldPixel(other.point);
-      final dx = _wrappedDx(point.dx, otherPoint.dx);
-      final dy = (point.dy - otherPoint.dy).abs();
-      final ownRadius = math.sqrt(
-        math.pow(_priceMarkerWidth / 2, 2) +
-            math.pow(_priceMarkerHeight / 2, 2),
-      );
-      final otherRadius = other.listings.length == 1 ? ownRadius : 16.0;
-      final distance = math.sqrt(dx * dx + dy * dy);
-      if (distance < ownRadius + otherRadius + 6) return false;
-    }
-    return true;
+  /// Price pills use the same conservative collision rule as before, but the
+  /// complete set is computed once per map build through nearby spatial cells
+  /// rather than scanning every group for every singleton marker.
+  Set<String> _standalonePriceGroupKeys(List<_PinGroup> groups) {
+    if (groups.isEmpty) return const {};
+    final ownRadius = math.sqrt(
+      math.pow(_priceMarkerWidth / 2, 2) +
+          math.pow(_priceMarkerHeight / 2, 2),
+    );
+    final indexes = collisionFreePriceMarkerIndexes(
+      points: [
+        for (final group in groups)
+          () {
+            final point = _worldPixel(group.point);
+            return ScreenCoordinate(point.dx, point.dy);
+          }(),
+      ],
+      singleton: [for (final group in groups) group.listings.length == 1],
+      priceMarkerRadius: ownRadius,
+      clusterMarkerRadius: 16,
+      padding: 6,
+      worldWidth: _worldWidth(),
+    );
+    return {for (final index in indexes) groups[index].key};
   }
 
   void _openGroup(_PinGroup group) {
@@ -686,8 +670,8 @@ class _MapViewState extends State<MapView> {
     setState(() => _expandedGroupKey = group.key);
   }
 
-  List<Marker> _markersForGroup(_PinGroup group, List<_PinGroup> groups) {
-    if (group.listings.length == 1 && _canShowStandalonePrice(group, groups)) {
+  List<Marker> _markersForGroup(_PinGroup group, bool showStandalonePrice) {
+    if (group.listings.length == 1 && showStandalonePrice) {
       final listing = group.listings.first;
       return [
         Marker(
@@ -904,6 +888,7 @@ class _MapViewState extends State<MapView> {
     }
     final visible = _visible;
     final groups = _groupsFor(visible);
+    final standalonePriceGroupKeys = _standalonePriceGroupKeys(groups);
     final expandedGroup = _expandedGroup(groups);
     final selectedZone = _zones.byId(_selectedZoneId);
     return Stack(
@@ -1248,7 +1233,10 @@ class _MapViewState extends State<MapView> {
                   ),
                 for (final group in groups)
                   if (expandedGroup == null || group.key != expandedGroup.key)
-                    ..._markersForGroup(group, groups),
+                    ..._markersForGroup(
+                      group,
+                      standalonePriceGroupKeys.contains(group.key),
+                    ),
                 if (expandedGroup != null) _radialMarkerForGroup(expandedGroup),
                 if (_isFocused && expandedGroup == null)
                   Marker(
@@ -1603,26 +1591,10 @@ class _PoiMarker extends StatelessWidget {
       );
 }
 
-class _ClusterAccumulator {
-  _ClusterAccumulator({
-    required this.x,
-    required this.y,
-    required this.latSum,
-    required this.lngSum,
-    required this.listings,
-  });
-
-  final double x;
-  final double y;
-  double latSum;
-  double lngSum;
-  final List<Listing> listings;
-}
-
 class _PinGroup {
   const _PinGroup(this.key, this.listings, this.point);
   final String key;
-  final List<Listing> listings;
+  final List<MapListingPoint> listings;
   final LatLng point;
 }
 
@@ -1663,19 +1635,27 @@ class _StandalonePricePin extends StatelessWidget {
     this.displayCurrency,
   });
 
-  final Listing listing;
+  final MapListingPoint listing;
   final Map<String, double>? rates;
   final String? displayCurrency;
 
   @override
   Widget build(BuildContext context) {
     final ratesOrEmpty = rates ?? const <String, double>{};
-    final label = pinPriceLabel(
-      listing,
+    final label = pinPriceLabelValues(
+      listing.price,
+      listing.currency,
       rates: rates,
       displayCurrency: displayCurrency,
     );
-    final color = priceToneColor(listingPriceTone(listing, ratesOrEmpty));
+    final color = priceToneColor(
+      priceToneForValues(
+        price: listing.price,
+        currency: listing.currency,
+        medianUsd: listing.marketMedianUsd,
+        rates: ratesOrEmpty,
+      ),
+    );
     return Container(
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 7),
@@ -1728,10 +1708,10 @@ class _RadialClusterMarker extends StatelessWidget {
     required this.onClose,
   });
 
-  final List<Listing> items;
+  final List<MapListingPoint> items;
   final Map<String, double>? rates;
   final String? displayCurrency;
-  final void Function(Listing) onTapListing;
+  final void Function(MapListingPoint) onTapListing;
   final VoidCallback onClose;
 
   @override
@@ -1813,7 +1793,7 @@ class _RadialPriceDot extends StatelessWidget {
     required this.onTap,
   });
 
-  final Listing listing;
+  final MapListingPoint listing;
   final Map<String, double>? rates;
   final String? displayCurrency;
   final VoidCallback onTap;
@@ -1821,9 +1801,17 @@ class _RadialPriceDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ratesOrEmpty = rates ?? const <String, double>{};
-    final color = priceToneColor(listingPriceTone(listing, ratesOrEmpty));
-    final price = pinPriceLabel(
-      listing,
+    final color = priceToneColor(
+      priceToneForValues(
+        price: listing.price,
+        currency: listing.currency,
+        medianUsd: listing.marketMedianUsd,
+        rates: ratesOrEmpty,
+      ),
+    );
+    final price = pinPriceLabelValues(
+      listing.price,
+      listing.currency,
       rates: rates,
       displayCurrency: displayCurrency,
     );

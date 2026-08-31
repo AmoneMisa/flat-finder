@@ -17,6 +17,18 @@ const RETRY_MAX_MS = Math.max(
   RETRY_BASE_MS,
   Number(process.env.QUEUE_RETRY_MAX_MS) || 5 * 60_000,
 );
+const RECOVERY_INTERVAL_MS = Math.max(
+  10_000,
+  Math.min(Number(process.env.QUEUE_RECOVERY_INTERVAL_MS) || 30_000, 5 * 60_000),
+);
+const ENQUEUE_BATCH_SIZE = Math.max(
+  50,
+  Math.min(Number(process.env.QUEUE_ENQUEUE_BATCH_SIZE) || 500, 2000),
+);
+const QUEUE_RECOVERY_ADVISORY_LOCK = 742_002;
+
+let lastRecoveryAt = 0;
+let recoveryPromise = null;
 
 function taskIdentity(task) {
   return [
@@ -30,58 +42,89 @@ function taskIdentity(task) {
   ].join(':');
 }
 
+function boundedQueueIdentity(value, fallback, maxLength, field) {
+  const text = String(value || fallback);
+  if (text.length > maxLength) {
+    throw new RangeError(`queue ${field} exceeds ${maxLength} characters`);
+  }
+  return text;
+}
+
 function normalizedTask(task) {
   const payload = {
     ...task,
     priority: Math.max(0, Math.trunc(Number(task.priority) || 0)),
     crawlerShard: Math.max(0, Math.trunc(Number(task.crawlerShard) || 0)),
   };
+  const crawlGeneration = boundedQueueIdentity(payload.crawlGeneration, 'legacy', 128, 'crawlGeneration');
+  const type = boundedQueueIdentity(payload.type, '', 64, 'type');
+  const country = boundedQueueIdentity(payload.country, '', 8, 'country').toUpperCase();
 
   return {
     taskKey: taskIdentity(payload),
-    crawlGeneration: String(payload.crawlGeneration || 'legacy'),
-    type: String(payload.type || ''),
-    country: String(payload.country || '').toUpperCase(),
+    crawlGeneration,
+    type,
+    country,
     crawlerShard: payload.crawlerShard,
     priority: payload.priority,
     payload,
   };
 }
 
-async function insertTask(client, task) {
-  const item = normalizedTask(task);
-  const result = await client.query(
-    `
-      INSERT INTO crawl_tasks (
-        task_key,
-        crawl_generation,
-        type,
-        country,
-        crawler_shard,
-        priority,
-        payload
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-      ON CONFLICT (task_key) DO NOTHING
-      RETURNING id
-    `,
-    [
-      item.taskKey,
-      item.crawlGeneration,
-      item.type,
-      item.country,
-      item.crawlerShard,
-      item.priority,
-      JSON.stringify(item.payload),
-    ],
-  );
-  return result.rowCount > 0;
-}
-
 export async function enqueueTasks(tasks, client = pool) {
-  let inserted = 0;
+  const unique = new Map();
   for (const task of tasks || []) {
-    if (await insertTask(client, task)) inserted += 1;
+    const item = normalizedTask(task);
+    unique.set(item.taskKey, item);
+  }
+  const items = [...unique.values()];
+  if (!items.length) return 0;
+
+  let inserted = 0;
+  for (let offset = 0; offset < items.length; offset += ENQUEUE_BATCH_SIZE) {
+    const batch = items.slice(offset, offset + ENQUEUE_BATCH_SIZE).map((item) => ({
+      task_key: item.taskKey,
+      crawl_generation: item.crawlGeneration,
+      type: item.type,
+      country: item.country,
+      crawler_shard: item.crawlerShard,
+      priority: item.priority,
+      payload: item.payload,
+    }));
+    const result = await client.query(
+      `
+        INSERT INTO crawl_tasks (
+          task_key,
+          crawl_generation,
+          type,
+          country,
+          crawler_shard,
+          priority,
+          payload
+        )
+        SELECT
+          input.task_key,
+          input.crawl_generation,
+          input.type,
+          input.country,
+          input.crawler_shard,
+          input.priority,
+          input.payload
+        FROM jsonb_to_recordset($1::jsonb) AS input (
+          task_key TEXT,
+          crawl_generation TEXT,
+          type TEXT,
+          country TEXT,
+          crawler_shard INTEGER,
+          priority INTEGER,
+          payload JSONB
+        )
+        ON CONFLICT (task_key) DO NOTHING
+        RETURNING id
+      `,
+      [JSON.stringify(batch)],
+    );
+    inserted += result.rowCount;
   }
   return inserted;
 }
@@ -135,9 +178,12 @@ export async function dispatchGenerationIfIdle(tasks, refreshSeconds) {
   }
 }
 
-async function recoverExpiredTasks(maxAttempts = DEFAULT_MAX_ATTEMPTS) {
-  await pool.query(
+export async function recoverExpiredTasks(maxAttempts = DEFAULT_MAX_ATTEMPTS) {
+  const result = await pool.query(
     `
+      WITH recovery_guard AS (
+        SELECT pg_try_advisory_xact_lock($2) AS locked
+      )
       UPDATE crawl_tasks
       SET
         status = CASE WHEN attempts >= $1 THEN 'dead' ELSE 'pending' END,
@@ -154,9 +200,24 @@ async function recoverExpiredTasks(maxAttempts = DEFAULT_MAX_ATTEMPTS) {
       WHERE status = 'running'
         AND locked_until IS NOT NULL
         AND locked_until < NOW()
+        AND (SELECT locked FROM recovery_guard)
     `,
-    [maxAttempts],
+    [maxAttempts, QUEUE_RECOVERY_ADVISORY_LOCK],
   );
+  return result.rowCount;
+}
+
+async function maybeRecoverExpiredTasks(maxAttempts) {
+  const now = Date.now();
+  if (now - lastRecoveryAt < RECOVERY_INTERVAL_MS) return;
+  if (recoveryPromise) return recoveryPromise;
+
+  lastRecoveryAt = now;
+  recoveryPromise = recoverExpiredTasks(maxAttempts)
+    .finally(() => {
+      recoveryPromise = null;
+    });
+  return recoveryPromise;
 }
 
 export async function claimTask({
@@ -166,7 +227,7 @@ export async function claimTask({
   leaseMs = DEFAULT_LEASE_MS,
   maxAttempts = DEFAULT_MAX_ATTEMPTS,
 }) {
-  await recoverExpiredTasks(maxAttempts);
+  await maybeRecoverExpiredTasks(maxAttempts);
 
   const normalizedRole = role === 'telegram' ? 'telegram' : 'olx';
   const normalizedShard = Math.max(0, Math.trunc(Number(shard) || 0));
@@ -322,16 +383,16 @@ export async function failTask({
       `
         UPDATE crawl_tasks
         SET
-          status = $3,
+          status = $3::varchar,
           run_after = CASE
-            WHEN $3 = 'dead' THEN run_after
+            WHEN $3::varchar = 'dead' THEN run_after
             ELSE NOW() + ($4::bigint * INTERVAL '1 millisecond')
           END,
           locked_by = NULL,
           lock_token = NULL,
           locked_until = NULL,
           last_error = $5,
-          finished_at = CASE WHEN $3 = 'dead' THEN NOW() ELSE NULL END,
+          finished_at = CASE WHEN $3::varchar = 'dead' THEN NOW() ELSE NULL END,
           updated_at = NOW()
         WHERE id = $1
           AND lock_token = $2

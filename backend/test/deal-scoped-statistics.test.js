@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const source = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
+const source = await readFile(new URL('../src/postgres-search-core.js', import.meta.url), 'utf8');
 const routes = await readFile(new URL('../src/listing-routes.js', import.meta.url), 'utf8');
 
 test('listing geography statistics are split by sale, rent, short rent and room rent', () => {
@@ -28,5 +28,6 @@ test('stats-only requests do not repeat the full ranked page query', () => {
   assert.match(source, /if \(filters\.includeStats && filters\.statsOnly\)/u);
   assert.match(source, /countOrStatsResult = await pool\.query\(statsSql, baseParams\)/u);
   assert.match(source, /let pageResult = \{rows: \[\]\}/u);
-  assert.match(source, /if \(!filters\.statsOnly && rows\.length === limit/u);
+  assert.match(source, /const hasMore = !filters\.statsOnly && pageResult\.rows\.length > limit/u);
+  assert.match(source, /const rows = filters\.statsOnly \? \[\] : pageResult\.rows\.slice\(0, limit\)/u);
 });

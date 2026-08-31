@@ -7,8 +7,7 @@ const MAX_IMAGE_BYTES = Math.max(256_000, Number(process.env.ANTIFAKE_MAX_IMAGE_
 const FETCH_TIMEOUT_MS = Math.max(2000, Number(process.env.ANTIFAKE_IMAGE_TIMEOUT_MS) || 8000);
 const PRICE_CONFLICT_PCT = Math.max(5, Number(process.env.ANTIFAKE_PRICE_CONFLICT_PCT) || 15);
 const CHRONOLOGY_GAP_MS = Math.max(60_000, (Number(process.env.ANTIFAKE_CHRONOLOGY_GAP_MINUTES) || 15) * 60_000);
-const PERCEPTUAL_MAX_DISTANCE = Math.max(0, Math.min(16, Number(process.env.ANTIFAKE_PERCEPTUAL_MAX_DISTANCE) || 7));
-const PERCEPTUAL_CANDIDATE_LIMIT = Math.max(50, Math.min(5000, Number(process.env.ANTIFAKE_PERCEPTUAL_CANDIDATE_LIMIT) || 800));
+const PERCEPTUAL_MAX_DISTANCE = Math.max(0, Math.min(7, Number(process.env.ANTIFAKE_PERCEPTUAL_MAX_DISTANCE) || 7));
 const PERCEPTUAL_HASH_SCRIPT = fileURLToPath(new URL('./perceptual-hash.py', import.meta.url));
 
 function runPerceptualHash(bytes) {
@@ -316,7 +315,7 @@ async function exactMatches(exactHash, identity) {
 }
 
 async function perceptualMatches(perceptualHash, identity) {
-  if (!perceptualHash) return [];
+  if (!/^[0-9a-f]{16}$/.test(String(perceptualHash || ''))) return [];
   const result = await pool.query(
     `SELECT source, country, source_id, city, district, metro, residence_complex, photo_url,
             hash, perceptual_hash, title, price, currency, by_agency, rooms, area_sqm,
@@ -325,9 +324,18 @@ async function perceptualMatches(perceptualHash, identity) {
       WHERE country = $1
         AND perceptual_hash IS NOT NULL
         AND NOT (source = $2 AND country = $1 AND source_id = $3)
-      ORDER BY last_seen_at DESC
-      LIMIT $4`,
-    [identity.country, identity.source, identity.sourceId, PERCEPTUAL_CANDIDATE_LIMIT],
+        AND (
+          SUBSTRING(perceptual_hash FROM 1 FOR 2) = SUBSTRING($4::text FROM 1 FOR 2)
+          OR SUBSTRING(perceptual_hash FROM 3 FOR 2) = SUBSTRING($4::text FROM 3 FOR 2)
+          OR SUBSTRING(perceptual_hash FROM 5 FOR 2) = SUBSTRING($4::text FROM 5 FOR 2)
+          OR SUBSTRING(perceptual_hash FROM 7 FOR 2) = SUBSTRING($4::text FROM 7 FOR 2)
+          OR SUBSTRING(perceptual_hash FROM 9 FOR 2) = SUBSTRING($4::text FROM 9 FOR 2)
+          OR SUBSTRING(perceptual_hash FROM 11 FOR 2) = SUBSTRING($4::text FROM 11 FOR 2)
+          OR SUBSTRING(perceptual_hash FROM 13 FOR 2) = SUBSTRING($4::text FROM 13 FOR 2)
+          OR SUBSTRING(perceptual_hash FROM 15 FOR 2) = SUBSTRING($4::text FROM 15 FOR 2)
+        )
+      ORDER BY last_seen_at DESC`,
+    [identity.country, identity.source, identity.sourceId, perceptualHash],
   );
   const matches = [];
   for (const row of result.rows) {
@@ -462,52 +470,29 @@ async function assignPropertyCluster(identity, cloneMatches) {
     })),
   ];
   const unique = [...new Map(members.map((member) => [memberKey(member), member])).values()];
-  const keys = unique.map(memberKey);
-  const existing = await pool.query(
-    `SELECT source, country, source_id, cluster_id
-       FROM listing_property_clusters
-      WHERE (source || ':' || country || ':' || source_id) = ANY($1::text[])`,
-    [keys],
+  const keys = unique.map(memberKey).sort();
+  const proposedClusterId = `property:${createHash('sha256').update(keys.join('|')).digest('hex').slice(0, 20)}`;
+  const payload = unique.map((member) => ({
+    source: member.source,
+    country: member.country,
+    source_id: member.sourceId,
+  }));
+  const result = await pool.query(
+    'SELECT merge_listing_property_cluster($1::jsonb, $2::text) AS cluster',
+    [JSON.stringify(payload), proposedClusterId],
   );
-  const existingIds = [...new Set(existing.rows.map((row) => row.cluster_id).filter(Boolean))].sort();
-  const clusterId = existingIds[0]
-    || `property:${createHash('sha256').update([...keys].sort().join('|')).digest('hex').slice(0, 20)}`;
-
-  if (existingIds.length > 1) {
-    await pool.query(
-      `UPDATE listing_property_clusters
-          SET cluster_id = $1, last_seen_at = NOW()
-        WHERE cluster_id = ANY($2::text[])`,
-      [clusterId, existingIds.slice(1)],
-    );
-  }
-
-  for (const member of unique) {
-    await pool.query(
-      `INSERT INTO listing_property_clusters (source, country, source_id, cluster_id)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (source, country, source_id)
-       DO UPDATE SET cluster_id = EXCLUDED.cluster_id, last_seen_at = NOW()`,
-      [member.source, member.country, member.sourceId, clusterId],
-    );
-  }
-
-  const cluster = await pool.query(
-    `SELECT source, country, source_id
-       FROM listing_property_clusters
-      WHERE cluster_id = $1
-      ORDER BY first_joined_at ASC
-      LIMIT 50`,
-    [clusterId],
-  );
+  const cluster = result.rows[0]?.cluster;
+  if (!cluster?.id) return null;
   return {
-    id: clusterId,
-    size: cluster.rows.length,
-    members: cluster.rows.map((row) => ({
-      source: row.source,
-      country: row.country,
-      id: String(row.source_id),
-    })),
+    id: String(cluster.id),
+    size: Number(cluster.size) || 0,
+    members: Array.isArray(cluster.members)
+      ? cluster.members.map((member) => ({
+        source: String(member.source || ''),
+        country: String(member.country || '').toUpperCase(),
+        id: String(member.id || ''),
+      })).filter((member) => member.source && member.country && member.id)
+      : [],
   };
 }
 

@@ -3,6 +3,7 @@ import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 
 const migrationsDir = new URL('../migrations/', import.meta.url);
+const testsDir = new URL('./', import.meta.url);
 
 async function migration(name) {
   return readFile(new URL(name, migrationsDir), 'utf8');
@@ -124,5 +125,19 @@ test('migrated runtime modules never mutate database schema', async () => {
     assert.doesNotMatch(source, /ensureListingSemantics/);
     assert.doesNotMatch(source, /\binitDb\b/);
     assert.doesNotMatch(source, /initPostgresSearchSchema/);
+  }
+});
+
+test('integration tests never drop the shared listings table', async () => {
+  const files = (await readdir(testsDir))
+    .filter((name) => name.endsWith('.integration.test.js'));
+
+  for (const file of files) {
+    const source = await readFile(new URL(file, testsDir), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /\bDROP\s+TABLE(?:\s+IF\s+EXISTS)?\s+(?:public\.)?listings\b/i,
+      `${file} must isolate migration fixtures instead of dropping shared listings`,
+    );
   }
 });

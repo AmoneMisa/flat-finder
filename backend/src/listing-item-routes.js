@@ -7,18 +7,27 @@ import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateCustomSource} from './custom-source-queue.js';
 import {checkRate} from './request-rate-limit.js';
 import {pool} from './db.js';
-import {getRates} from './fx.js';
-import {attachMarketComparisons} from './market-comparison.js';
-import {annotateNearbyTransport} from './transport-nearby.js';
+import {
+  mergeStoredFreshListing,
+  preparePublicListing,
+} from './listing-public.js';
 
-async function attachNearbyTransport(listing, country) {
-  if (!listing || !country) return listing;
-  try {
-    await annotateNearbyTransport([listing], country);
-  } catch (err) {
-    console.warn('[listing-item] transport enrichment failed:', err?.message ?? err);
-  }
-  return listing;
+async function readStoredListing({source, country, id}) {
+  const result = await pool.query(`
+    SELECT id, source, country, source_id, data
+    FROM listings
+    WHERE source = $1 AND country = $2 AND source_id = $3
+    LIMIT 1
+  `, [source, country, id]);
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    ...(row.data || {}),
+    id: String(row.source_id || row.data?.id || id),
+    source: row.source,
+    country: row.country,
+    publicId: Number(row.id),
+  };
 }
 
 export function installListingItemRoutes(app) {
@@ -50,13 +59,7 @@ export function installListingItemRoutes(app) {
         country: row.country,
         publicId: Number(row.id),
       };
-      try {
-        const {rates} = await getRates();
-        [listing] = await attachMarketComparisons([listing], rates);
-      } catch (err) {
-        console.warn('[listing-item] market comparison failed:', err?.message ?? err);
-      }
-      await attachNearbyTransport(listing, COUNTRIES[row.country]);
+      listing = await preparePublicListing(listing, COUNTRIES[row.country]);
 
       return res.json({
         listing,
@@ -90,9 +93,9 @@ export function installListingItemRoutes(app) {
       // feed: they are persisted inactive and removed from search results.
       const cached = await readFreshActiveListing({source, country: code, id});
       if (cached) {
-        await attachNearbyTransport(cached.listing, country);
+        const listing = await preparePublicListing(cached.listing, country);
         return res.json({
-          listing: cached.listing,
+          listing,
           availability: {status: 'active', checkedAt: cached.checkedAt, cached: true},
         });
       }
@@ -101,8 +104,8 @@ export function installListingItemRoutes(app) {
       // called /olx/check and then fetched the offer again, doubling latency and
       // WAF exposure for every click. One source fetch now serves as both the
       // availability check and the fresh listing reload.
-      const listing = await fetchOlxOffer(country, id);
-      if (!listing) {
+      const fresh = await fetchOlxOffer(country, id);
+      if (!fresh) {
         await recordListingAvailability({
           source,
           country: code,
@@ -113,7 +116,15 @@ export function installListingItemRoutes(app) {
         return res.status(404).json({error: 'Listing no longer available'});
       }
 
-      await attachNearbyTransport(listing, country);
+      // A live OLX response is intentionally source-focused. Merge it over the
+      // normalized DB snapshot so package-derived/vision/provenance fields do
+      // not disappear, then rerun geo enrichment before transport. In
+      // particular, geocodeListings stamps valid source coordinates with
+      // locationAccuracyM, which makes geo-catalog bus/tram lookup eligible.
+      const stored = await readStoredListing({source, country: code, id});
+      let listing = mergeStoredFreshListing(stored, fresh);
+      listing = await preparePublicListing(listing, country, {refreshGeo: true});
+
       const availability = await recordListingAvailability({
         source,
         country: code,

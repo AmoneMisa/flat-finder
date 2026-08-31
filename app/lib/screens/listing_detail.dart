@@ -288,8 +288,8 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final favorites = context.watch<FavoritesState>();
     final hidden = context.watch<HiddenState>();
     final s = settings.s;
-    final isFav = favorites.isFavorite(listing.id);
-    final isHidden = hidden.isHidden(listing.id);
+    final isFav = favorites.isFavorite(listing);
+    final isHidden = hidden.isHidden(listing);
     final hasTranslation =
         _translatedText != null && _translatedLang == settings.lang;
     final showTranslated = hasTranslation && _showTranslated;

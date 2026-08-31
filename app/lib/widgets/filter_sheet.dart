@@ -31,6 +31,7 @@ class FilterSheet extends StatefulWidget {
 
 class _FilterSheetState extends State<FilterSheet> {
   Timer? _liveApplyTimer;
+  bool _hydratingControls = false;
   late Set<String> _countries;
   late Set<String> _sources;
   late List<String> _customSources;
@@ -211,6 +212,7 @@ class _FilterSheetState extends State<FilterSheet> {
   ];
 
   void _scheduleLiveApply() {
+    if (_hydratingControls) return;
     _liveApplyTimer?.cancel();
     _liveApplyTimer = Timer(const Duration(milliseconds: 300), () {
       if (mounted && _countries.isNotEmpty && _sources.isNotEmpty) {
@@ -219,8 +221,7 @@ class _FilterSheetState extends State<FilterSheet> {
     });
   }
 
-  @override
-  void setState(VoidCallback fn) {
+  void _setFilterState(VoidCallback fn) {
     super.setState(fn);
     _scheduleLiveApply();
   }
@@ -414,7 +415,8 @@ class _FilterSheetState extends State<FilterSheet> {
 
   /// Load a saved preset into the form.
   void _loadPreset(Filters f) {
-    setState(() {
+    _hydratingControls = true;
+    _setFilterState(() {
       _countries = {...f.countries};
       _sources = {...f.sources};
       _customSources = [...f.customSources];
@@ -463,6 +465,8 @@ class _FilterSheetState extends State<FilterSheet> {
       _withPhotos = f.withPhotos;
       _queryCtl.text = f.query;
     });
+    _hydratingControls = false;
+    _scheduleLiveApply();
   }
 
   /// Build a shareable deep link for a set of filters and offer it via the
@@ -729,7 +733,7 @@ class _FilterSheetState extends State<FilterSheet> {
                               .toList(),
                           onChanged: (value) {
                             if (value == null) return;
-                            setState(() {
+                            _setFilterState(() {
                               _countries = {value};
                               _city = null; // city/district/metro belong to a country
                               _district = null;
@@ -746,7 +750,7 @@ class _FilterSheetState extends State<FilterSheet> {
                           labelOf: (city) =>
                               _selectedCountry?.cityLabel(city) ??
                               cityLabel(city, s.lang),
-                          onChanged: (v) => setState(() {
+                          onChanged: (v) => _setFilterState(() {
                             _city = v;
                             _district = null; // district/metro depend on the chosen city
                             _metro = null;
@@ -762,7 +766,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             options: _cityLoc!.districts,
                             value: _district,
                             labelOf: (d) => _cityLoc!.districtLabels[d] ?? d,
-                            onChanged: (v) => setState(() => _district = v),
+                            onChanged: (v) => _setFilterState(() => _district = v),
                           ),
                         ],
                         if (_cityLoc != null && _cityLoc!.metro.isNotEmpty) ...[
@@ -773,7 +777,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             options: _cityLoc!.metro,
                             value: _metro,
                             labelOf: (m) => _cityLoc!.metroLabels[m] ?? m,
-                            onChanged: (v) => setState(() => _metro = v),
+                            onChanged: (v) => _setFilterState(() => _metro = v),
                           ),
                         ],
                         const SizedBox(height: 8),
@@ -875,7 +879,7 @@ class _FilterSheetState extends State<FilterSheet> {
                                 child: Text(s.t('nearbyKind_$kind')),
                               ),
                           ],
-                          onChanged: (v) => setState(() => _nearbyKind = v),
+                          onChanged: (v) => _setFilterState(() => _nearbyKind = v),
                         ),
                         if (_nearbyKind != null) ...[
                           const SizedBox(height: 8),
@@ -919,7 +923,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             ),
                           ],
                           onChanged: (v) {
-                            if (v != null) setState(() => _type = v);
+                            if (v != null) _setFilterState(() => _type = v);
                           },
                         ),
                         const SizedBox(height: 8),
@@ -939,7 +943,7 @@ class _FilterSheetState extends State<FilterSheet> {
                               )
                               .toList(),
                           onChanged: (v) {
-                            if (v != null) setState(() => _deal = v);
+                            if (v != null) _setFilterState(() => _deal = v);
                           },
                         ),
                         const SizedBox(height: 8),
@@ -965,7 +969,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             ),
                           ],
                           onChanged: (v) {
-                            if (v != null) setState(() => _agency = v);
+                            if (v != null) _setFilterState(() => _agency = v);
                           },
                         ),
                         const SizedBox(height: 8),
@@ -985,7 +989,7 @@ class _FilterSheetState extends State<FilterSheet> {
                               )
                               .toList(),
                           onChanged: (v) {
-                            if (v != null) setState(() => _audience = v);
+                            if (v != null) _setFilterState(() => _audience = v);
                           },
                         ),
                       ],
@@ -1056,7 +1060,7 @@ class _FilterSheetState extends State<FilterSheet> {
                                   ),
                             ],
                             onChanged: (v) =>
-                                setState(() => _priceCurrency = v),
+                                _setFilterState(() => _priceCurrency = v),
                           ),
                         ],
                         // Price per m² only makes sense for a sale — a rental's
@@ -1118,7 +1122,7 @@ class _FilterSheetState extends State<FilterSheet> {
                             return FilterChip(
                               label: Text(s.t('amenity_$key')),
                               selected: selected,
-                              onSelected: (v) => setState(() {
+                              onSelected: (v) => _setFilterState(() {
                                 if (v) {
                                   _amenities.add(key);
                                 } else {
@@ -1131,7 +1135,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         const SizedBox(height: 8),
                         SwitchListTile(
                           value: _withPhotos,
-                          onChanged: (v) => setState(() => _withPhotos = v),
+                          onChanged: (v) => _setFilterState(() => _withPhotos = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('withPhotos')),
                         ),
@@ -1144,19 +1148,19 @@ class _FilterSheetState extends State<FilterSheet> {
                       children: [
                         SwitchListTile(
                           value: _pets,
-                          onChanged: (v) => setState(() => _pets = v),
+                          onChanged: (v) => _setFilterState(() => _pets = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('petsAllowed')),
                         ),
                         SwitchListTile(
                           value: _children,
-                          onChanged: (v) => setState(() => _children = v),
+                          onChanged: (v) => _setFilterState(() => _children = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('childrenAllowed')),
                         ),
                         SwitchListTile(
                           value: _roomOnly,
-                          onChanged: (v) => setState(() => _roomOnly = v),
+                          onChanged: (v) => _setFilterState(() => _roomOnly = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('roomOnly')),
                           subtitle: Text(
@@ -1166,26 +1170,26 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                         SwitchListTile(
                           value: _noElevator,
-                          onChanged: (v) => setState(() => _noElevator = v),
+                          onChanged: (v) => _setFilterState(() => _noElevator = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('noElevator')),
                         ),
                         SwitchListTile(
                           value: _noDeposit,
-                          onChanged: (v) => setState(() => _noDeposit = v),
+                          onChanged: (v) => _setFilterState(() => _noDeposit = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('noDeposit')),
                         ),
                         SwitchListTile(
                           value: _communalIncluded,
                           onChanged: (v) =>
-                              setState(() => _communalIncluded = v),
+                              _setFilterState(() => _communalIncluded = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('communalIncluded')),
                         ),
                         SwitchListTile(
                           value: _noCommission,
-                          onChanged: (v) => setState(() => _noCommission = v),
+                          onChanged: (v) => _setFilterState(() => _noCommission = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('noCommission')),
                         ),
@@ -1233,7 +1237,7 @@ class _FilterSheetState extends State<FilterSheet> {
                               child: Text(s.t('lastMonth')),
                             ),
                           ],
-                          onChanged: (v) => setState(() => _maxAgeDays = v),
+                          onChanged: (v) => _setFilterState(() => _maxAgeDays = v),
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<SortBy>(
@@ -1251,7 +1255,7 @@ class _FilterSheetState extends State<FilterSheet> {
                               )
                               .toList(),
                           onChanged: (v) =>
-                              setState(() => _sort = v ?? SortBy.relevance),
+                              _setFilterState(() => _sort = v ?? SortBy.relevance),
                         ),
                       ],
                     ),

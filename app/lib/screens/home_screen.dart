@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/listing_identity.dart';
+import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/hidden.dart';
@@ -171,14 +173,13 @@ class _HomeScreenState extends State<HomeScreen> {
         initial: state.filters,
         countries: state.countries,
         onChanged: (filters) async {
-          state.updateFilters(filters);
+          if (!state.updateFilters(filters)) return;
           await state.search();
           if (_mapMode) state.loadMapListings();
         },
       ),
     );
-    if (result != null) {
-      state.updateFilters(result);
+    if (result != null && state.updateFilters(result)) {
       await state.search();
       if (_mapMode) state.loadMapListings();
     }
@@ -190,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
     AppState state,
     SettingsState settings,
     String country,
-    List<Listing> listings,
+    List<MapListingPoint> listings,
     LatLng center,
   ) {
     Navigator.of(context).push(
@@ -285,8 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (ok != true || !mounted) return;
     final unique = <String, Listing>{};
     for (final name in selected) {
-      for (final listing in groups[name]!)
-        unique['${listing.source}:${listing.id}'] = listing;
+      for (final listing in groups[name]!) unique[listingKey(listing)] = listing;
     }
     Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => SwipeReviewScreen(listings: unique.values.toList())));
@@ -329,11 +329,11 @@ class _HomeScreenState extends State<HomeScreen> {
     ).push(MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)));
   }
 
-  void _showMapPreview(Listing l) {
+  void _showMapPreview(MapListingPoint point) {
     final state = context.read<AppState>();
-    var initial = l;
+    var initial = point.toPreviewListing();
     for (final item in state.listings) {
-      if (item.id == l.id && item.source == l.source) {
+      if (listingKey(item) == point.key) {
         initial = item;
         break;
       }
@@ -402,7 +402,7 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Image.asset(
-              'assets/icon/icon.png',
+              'assets/icon/runtime.png',
               width: 30,
               height: 30,
               fit: BoxFit.contain,
@@ -608,7 +608,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               QuickPresetsBar(
                 onApply: (filters) async {
-                  state.updateFilters(filters);
+                  if (!state.updateFilters(filters)) return;
                   await state.search();
                   if (_mapMode) await state.loadMapListings();
                 },
@@ -682,14 +682,17 @@ class _HomeScreenState extends State<HomeScreen> {
       final mapCountry = state.filters.countries.isNotEmpty
           ? state.filters.countries.first
           : '';
-      final mapItems = _applyTab(
-        state.mapListings.isNotEmpty ? state.mapListings : listings,
+      final fallbackMapPoints = <MapListingPoint>[
+        for (final listing in listings)
+          if (listing.hasLocation) MapListingPoint.fromListing(listing),
+      ];
+      final mapItems = _applyMapTab(
+        state.mapListings.isNotEmpty ? state.mapListings : fallbackMapPoints,
         hidden,
         sorted,
       );
-      final focusKey = _focusListing == null
-          ? 'browse'
-          : '${_focusListing!.source}:${_focusListing!.id}';
+      final focusKey =
+          _focusListing == null ? 'browse' : listingKey(_focusListing!);
       return Stack(
         children: [
           Positioned.fill(
@@ -837,12 +840,12 @@ class _HomeScreenState extends State<HomeScreen> {
     SortedState sorted,
   ) {
     if (_tab == _ViewTab.hidden) {
-      return listings.where((l) => hidden.isHidden(l.id)).toList();
+      return listings.where(hidden.isHidden).toList();
     }
     // Every other view excludes dismissed listings, matching the site's
     // `activeListings` (hidden ones only ever show up under the Hidden tab).
     final active = listings.where(
-      (l) => !hidden.isHidden(l.id) && !sorted.containsListing(l),
+      (listing) => !hidden.isHidden(listing) && !sorted.containsListing(listing),
     );
     switch (_tab) {
       case _ViewTab.all:
@@ -850,6 +853,22 @@ class _HomeScreenState extends State<HomeScreen> {
       case _ViewTab.hidden:
         return const []; // unreachable, handled above
     }
+  }
+
+  List<MapListingPoint> _applyMapTab(
+    List<MapListingPoint> points,
+    HiddenState hidden,
+    SortedState sorted,
+  ) {
+    if (_tab == _ViewTab.hidden) {
+      return points.where((point) => hidden.isHiddenKey(point.key)).toList();
+    }
+    return points
+        .where(
+          (point) =>
+              !hidden.isHiddenKey(point.key) && !sorted.containsKey(point.key),
+        )
+        .toList();
   }
 
   String _emptyLabel(SettingsState settings) => switch (_tab) {
@@ -1144,6 +1163,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                               quartal: '',
                               area: '',
                               metro: '',
+                              clearRadiusSearch: true,
                             ),
                             immediate: true,
                           );
@@ -1167,6 +1187,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                             quartal: '',
                             area: '',
                             metro: '',
+                            clearRadiusSearch: true,
                           ),
                           immediate: true,
                         ),
