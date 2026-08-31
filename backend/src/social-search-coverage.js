@@ -37,6 +37,7 @@ export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
       'Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana',
       'Qarshi', 'Nukus', 'Jizzakh', 'Urgench',
     ]),
+    expandedCities: Object.freeze(['Tashkent']),
   }),
   KZ: Object.freeze({
     languages: Object.freeze(['ru', 'kk']),
@@ -44,6 +45,7 @@ export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
       'Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau',
       'Pavlodar', 'Kostanay', 'Aktau', 'Oskemen',
     ]),
+    expandedCities: Object.freeze(['Almaty', 'Astana']),
   }),
   RO: Object.freeze({
     languages: Object.freeze(['ro']),
@@ -51,29 +53,67 @@ export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
       'Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta',
       'Craiova', 'Sibiu', 'Oradea', 'Ploiesti',
     ]),
+    expandedCities: Object.freeze(['Bucharest']),
   }),
 });
 
 const SEARCH_TOPIC_ENTITIES = Object.freeze([
-  HOUSING_DEAL_TYPES.find((item) => item.canonical === 'longRent'),
-  PROPERTY_TYPES.find((item) => item.canonical === 'flat'),
-  PROPERTY_TYPES.find((item) => item.canonical === 'house'),
-].filter(Boolean));
+  { entity: HOUSING_DEAL_TYPES.find((item) => item.canonical === 'longRent'), limit: 3 },
+  { entity: HOUSING_DEAL_TYPES.find((item) => item.canonical === 'shortRent'), limit: 3 },
+  { entity: PROPERTY_TYPES.find((item) => item.canonical === 'flat'), limit: 1 },
+  { entity: PROPERTY_TYPES.find((item) => item.canonical === 'house'), limit: 1 },
+].filter((item) => item.entity));
+
+// Social search benefits from wording people actually put into posts. Keep the
+// package aliases as fallback vocabulary, but lead with a bounded set of
+// high-signal offer/short-stay phrases so generic aliases cannot crowd them out.
+const CURATED_SEARCH_ALIASES = Object.freeze({
+  longRent: Object.freeze({
+    ru: Object.freeze(['аренда', 'сдам', 'сдаю']),
+    uk: Object.freeze(['оренда', 'здам', 'здаю']),
+    uzLatn: Object.freeze(['ijara', 'ijaraga beriladi', 'kvartira ijaraga']),
+    uzCyrl: Object.freeze(['ижара', 'ижарага берилади', 'квартира ижарага']),
+    kk: Object.freeze(['жалдау', 'жалға беріледі', 'пәтер жалға']),
+    ro: Object.freeze(['închiriere', 'închiriez', 'apartament de închiriat']),
+  }),
+  shortRent: Object.freeze({
+    ru: Object.freeze(['посуточно', 'на сутки', 'посуточная аренда']),
+    uk: Object.freeze(['подобово', 'погодинно', 'подобова оренда']),
+    uzLatn: Object.freeze(['kunlik ijara', 'sutkalik ijara', 'kunlik kvartira']),
+    uzCyrl: Object.freeze(['кунлик ижара', 'суткалик ижара', 'кунлик квартира']),
+    kk: Object.freeze(['тәуліктік жалға', 'тәулікке пәтер', 'тәуліктік пәтер']),
+    ro: Object.freeze(['regim hotelier', 'pe noapte', 'închiriere pe termen scurt']),
+  }),
+});
 
 function preferredAlias(entity, language) {
   return entity?.aliases?.[language]?.[0] || entity?.canonical || null;
+}
+
+function topicAliases(descriptor, language) {
+  const { entity, limit } = descriptor;
+  const packageAliases = Array.isArray(entity?.aliases?.[language])
+    ? entity.aliases[language]
+    : [];
+  const curatedAliases = CURATED_SEARCH_ALIASES[entity?.canonical]?.[language] || [];
+  const fallback = entity?.canonical ? [entity.canonical] : [];
+  return [...new Set([...curatedAliases, ...packageAliases, ...fallback].filter(Boolean))].slice(0, limit);
+}
+
+function allTopics(language) {
+  return SEARCH_TOPIC_ENTITIES.flatMap((descriptor) => topicAliases(descriptor, language));
+}
+
+function compactTopics(language) {
+  return SEARCH_TOPIC_ENTITIES.flatMap((descriptor) => topicAliases(descriptor, language).slice(0, 1));
 }
 
 function cityByCanonical(country, canonical) {
   return CITIES.find((item) => item.country === country && item.canonical === canonical) || null;
 }
 
-function searchVocabulary(country, language) {
-  const countryEntity = countryByCode(country);
-  return {
-    country: preferredAlias(countryEntity, language),
-    topics: SEARCH_TOPIC_ENTITIES.map((entity) => preferredAlias(entity, language)).filter(Boolean),
-  };
+function countryName(country, language) {
+  return preferredAlias(countryByCode(country), language);
 }
 
 function add(targets, country, target, city = null, region = null) {
@@ -85,23 +125,29 @@ export function buildThreadsHousingCoverage() {
 
   for (const [country, config] of Object.entries(SOCIAL_HOUSING_COUNTRIES)) {
     for (const language of config.languages) {
-      const vocabulary = searchVocabulary(country, language);
-      if (!vocabulary.country) continue;
-      for (const topic of vocabulary.topics) add(targets, country, `${topic} ${vocabulary.country}`);
+      const localCountry = countryName(country, language);
+      if (!localCountry) continue;
+
+      // Country-wide queries carry the full synonym set. For the highest-volume
+      // cities we also use the full set; all other cities use one query per topic
+      // to keep rotation bounded instead of multiplying every synonym by every city.
+      for (const topic of allTopics(language)) add(targets, country, `${topic} ${localCountry}`);
 
       for (const city of config.crawlCities) {
         const localName = preferredAlias(cityByCanonical(country, city), language) || city;
-        for (const topic of vocabulary.topics) add(targets, country, `${topic} ${localName}`, city);
+        const expanded = config.expandedCities.includes(city);
+        const topics = expanded ? allTopics(language) : compactTopics(language);
+        for (const topic of topics) add(targets, country, `${topic} ${localName}`, city);
       }
     }
   }
 
-  const uaVocabulary = searchVocabulary('UA', 'uk');
-  for (const topic of uaVocabulary.topics) add(targets, 'UA', `${topic} ${uaVocabulary.country}`);
+  const uaCountry = countryName('UA', 'uk');
+  for (const topic of allTopics('uk')) add(targets, 'UA', `${topic} ${uaCountry}`);
   for (const oblast of UKRAINE_OBLASTS) {
     // Oblast-wide searches must not be stamped with the regional centre as the
     // listing city; the post itself/normalizer can resolve a real city later.
-    for (const topic of uaVocabulary.topics) add(targets, 'UA', `${topic} ${oblast.ua}`, null, oblast.region);
+    for (const topic of compactTopics('uk')) add(targets, 'UA', `${topic} ${oblast.ua}`, null, oblast.region);
   }
 
   const seen = new Set();

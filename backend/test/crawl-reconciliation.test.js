@@ -11,6 +11,10 @@ test('OLX long-rent segment maps to longRent', () => {
   assert.equal(olxSegmentDealType('flat:longRent'), 'longRent');
 });
 
+test('OLX short-rent segment maps to shortRent', () => {
+  assert.equal(olxSegmentDealType('flat:shortRent'), 'shortRent');
+});
+
 test('unsupported segment does not become an authoritative scope', () => {
-  assert.equal(olxSegmentDealType('flat:shortRent'), null);
+  assert.equal(olxSegmentDealType('flat:unsupported'), null);
 });

@@ -13,12 +13,23 @@ const SOCIAL_FETCHER_URL = String(process.env.SOCIAL_FETCHER_URL || '').replace(
 const SOCIAL_TIMEOUT_MS = Math.max(30_000, Math.min(170_000, Number(process.env.SOCIAL_HOUSING_TIMEOUT_MS) || 150_000));
 const SOCIAL_LIMIT = Math.max(5, Math.min(100, Number(process.env.SOCIAL_HOUSING_LIMIT) || 40));
 
+// Social captions are less structured than portal listings. Keep this fallback
+// deliberately narrow: a short-stay marker must appear with a housing noun.
+// The package intent resolver remains the primary classifier and wanted posts are
+// rejected before this fallback is considered.
+const SHORT_RENT_MARKER_RE = /(?:посуточ|погодин|подобов|на\s+сутк|за\s+добу|за\s+сутк|kunlik|sutkalik|кунлик|суткалик|тәулік|тәуліктік|regim\s+hotelier|pe\s+noapte|termen\s+scurt)/iu;
+const HOUSING_CONTEXT_RE = /(?:квартир|апартамент|apartament|garsonier|studio|kvartira|пәтер|\buy\b|\bуй\b|xona|хона|житл|жиль)/iu;
+
 function housingIntent(value) {
   return resolveHousingIntent(String(value || '').replace(/[ \t]+/g, ' ').trim());
 }
 
 function isHousingWanted(intent) {
   return intent?.listingKind === 'propertyWanted';
+}
+
+function looksShortRentOffer(value) {
+  return SHORT_RENT_MARKER_RE.test(value) && HOUSING_CONTEXT_RE.test(value);
 }
 
 function socialTarget(value) {
@@ -39,6 +50,7 @@ export function classifyHousingOffer(text, forced = null) {
 
   const intent = housingIntent(value);
   if (isHousingWanted(intent)) return null;
+  if (intent?.dealType === 'shortRent' || looksShortRentOffer(value)) return forced || 'shortRent';
   if (!intent?.dealType) return null;
   return forced || intent.dealType;
 }
