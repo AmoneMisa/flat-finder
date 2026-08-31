@@ -22,6 +22,7 @@ import '../state/settings.dart';
 import '../utils/format.dart';
 import '../utils/price_tone.dart';
 import '../utils/share_link.dart';
+import '../widgets/nearby_transport_tables.dart';
 
 class ListingDetailScreen extends StatefulWidget {
   const ListingDetailScreen({super.key, required this.listing});
@@ -512,6 +513,13 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
                         ),
                         const SizedBox(height: 16),
                         _SpecTable(listing: listing, s: s, country: country),
+                        if (listing.nearbyTransport.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          NearbyTransportTables(
+                            stops: listing.nearbyTransport,
+                            s: s,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -808,9 +816,6 @@ class _SpecTable extends StatelessWidget {
             : (country?.locationLabel(l.city, l.metro!, kind: 'metro') ??
                   l.metro),
       ),
-      (Icons.tram_outlined, 'tram', l.transportSummary('tram')),
-      (Icons.directions_bus_outlined, 'bus', l.transportSummary('bus')),
-      (Icons.electric_rickshaw_outlined, 'trolleybus', l.transportSummary('trolleybus')),
       (Icons.location_on_outlined, 'address', l.address),
       (
         Icons.storefront_outlined,
