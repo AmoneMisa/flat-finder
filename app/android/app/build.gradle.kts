@@ -10,7 +10,9 @@ plugins {
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
-    FileInputStream(keystorePropertiesFile).use(keystoreProperties::load)
+    FileInputStream(keystorePropertiesFile).use { input ->
+        keystoreProperties.load(input)
+    }
 }
 
 val releaseSigningConfigured = listOf(
