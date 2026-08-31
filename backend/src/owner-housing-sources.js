@@ -86,20 +86,8 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       dealType: 'longRent',
     }),
     Object.freeze({
-      key: 'delaproprietar-romania-owner-rent',
-      url: 'https://delaproprietar.ro/apartamente/apartamente-de-inchiriat/',
-      city: null,
-      dealType: 'longRent',
-    }),
-    Object.freeze({
       key: 'direct-fara-comision-romania-owner-rent',
       url: 'https://www.directfaracomision.ro/anunturi?tip_proprietate=apartment&tip_tranzactie=inchiriere',
-      city: null,
-      dealType: 'longRent',
-    }),
-    Object.freeze({
-      key: 'rentnbuy-romania-owner-rent',
-      url: 'https://rentnbuy.com/s/inchirieri/imobiliare',
       city: null,
       dealType: 'longRent',
     }),
