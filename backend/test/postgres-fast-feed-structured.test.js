@@ -136,9 +136,13 @@ test('fast member SQL covers scalar, relation, boolean and spatial filters', () 
   assert.match(where, /ACOS/);
 });
 
-test('read-model migration materializes hot filters and keeps them synchronized', async () => {
-  const migration = await readFile(
+test('read-model migrations materialize hot filters and tune indexes for DISTINCT ON', async () => {
+  const readModelMigration = await readFile(
     new URL('../migrations/034_public_feed_search_read_model.sql', import.meta.url),
+    'utf8',
+  );
+  const indexMigration = await readFile(
+    new URL('../migrations/035_public_feed_index_tuning.sql', import.meta.url),
     'utf8',
   );
 
@@ -148,10 +152,30 @@ test('read-model migration materializes hot filters and keeps them synchronized'
     'building_year', 'commission_percent', 'metro_distance_m', 'lat', 'lng',
     'pets_allowed', 'children_allowed', 'has_photos',
   ]) {
-    assert.match(migration, new RegExp(`\\b${column}\\b`));
+    assert.match(readModelMigration, new RegExp(`\\b${column}\\b`));
   }
 
-  assert.match(migration, /CREATE OR REPLACE FUNCTION sync_listing_public_feed_member/);
-  assert.match(migration, /listing_public_feed_members_country_deal_price_idx/);
-  assert.match(migration, /listing_public_feed_members_country_lat_lng_idx/);
+  assert.match(readModelMigration, /CREATE OR REPLACE FUNCTION sync_listing_public_feed_member/);
+  assert.match(readModelMigration, /listing_public_feed_members_country_lat_lng_idx/);
+
+  assert.match(indexMigration, /DROP INDEX IF EXISTS listing_public_feed_members_country_deal_freshness_idx/);
+  assert.match(indexMigration, /country_deal_dedupe_idx[\s\S]*country,[\s\S]*deal_type,[\s\S]*dedupe_key,[\s\S]*created_at DESC NULLS LAST/u);
+  assert.match(indexMigration, /country_city_deal_dedupe_idx[\s\S]*country,[\s\S]*city,[\s\S]*deal_type,[\s\S]*dedupe_key/u);
+  assert.match(indexMigration, /country_deal_owner_dedupe_idx[\s\S]*country,[\s\S]*deal_type,[\s\S]*by_agency,[\s\S]*dedupe_key/u);
+  assert.match(indexMigration, /country_deal_currency_price_idx[\s\S]*UPPER\(currency\),[\s\S]*price/u);
+  assert.match(indexMigration, /INCLUDE \(freshness_at\)/u);
+});
+
+test('production EXPLAIN harness is read-only and bounded', async () => {
+  const explain = await readFile(
+    new URL('../scripts/explain-public-feed.sql', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(explain, /EXPLAIN \(ANALYZE, BUFFERS, SETTINGS, SUMMARY, TIMING OFF\)/u);
+  assert.match(explain, /SET LOCAL statement_timeout = '20s'/u);
+  assert.match(explain, /listing_public_feed_members/u);
+  assert.match(explain, /UPPER\(m\.currency\)/u);
+  assert.match(explain, /ROLLBACK;/u);
+  assert.doesNotMatch(explain, /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|ALTER|CREATE|DROP)\b/u);
 });
