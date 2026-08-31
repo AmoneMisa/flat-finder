@@ -191,7 +191,27 @@ void main() {
     test('identical effective payload is a no-op', () {
       final state = AppState(ControlledApi());
       state.filters = Filters(countries: {'UZ'}, city: 'Tashkent');
-      expect(state.updateFilters(Filters(countries: {'UZ'}, city: 'Tashkent')), isFalse);
+      expect(
+        state.updateFilters(Filters(countries: {'UZ'}, city: 'Tashkent')),
+        isFalse,
+      );
+    });
+
+    test('set insertion order does not turn the same filters into a change', () {
+      final state = AppState(ControlledApi());
+      state.filters = Filters(
+        countries: {'UZ', 'KZ'},
+        sources: {'olx', 'telegram'},
+        amenities: {'parking', 'balcony'},
+      );
+
+      final reordered = Filters(
+        countries: {'KZ', 'UZ'},
+        sources: {'telegram', 'olx'},
+        amenities: {'balcony', 'parking'},
+      );
+
+      expect(state.updateFilters(reordered), isFalse);
     });
   });
 
