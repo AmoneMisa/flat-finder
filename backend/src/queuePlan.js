@@ -142,7 +142,6 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
         }
       } else {
         for (const segment of segments) {
-          const ownerOnly = country.code === 'RO' && segment === 'flat:longRent';
           const task = versionTask({
             type: 'flat.olx.page',
             country: country.code,
@@ -150,7 +149,6 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
             citySlug: null,
             segment,
             page: 1,
-            ownerOnly,
           }, crawlGeneration, shardCount);
           tasks.push({ ...task, priority: taskPriority(task) });
         }

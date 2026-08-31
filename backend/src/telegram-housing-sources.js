@@ -1,4 +1,11 @@
 const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
+  RO: [
+    // Current Romanian rental feeds. These are general/agency feeds and are
+    // intentionally kept mixed alongside the dedicated direct-owner websites.
+    { name: 'bucharest_homes', city: 'Bucharest' },
+    { name: 'apartamenti_bucharest', city: 'Bucharest' },
+    { name: 'kvartirabrasov1', city: 'Brasov' },
+  ],
   UA: [
     // Kyiv: additional active public housing feeds.
     // These two communities explicitly describe themselves as direct/no-realtor.
@@ -14,27 +21,60 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // Dedicated daily/hourly apartment feed.
     { name: 'kyiv_kvartira', city: 'Kyiv', dealType: 'shortRent' },
 
-    // Kharkiv.
+    // Lviv direct-owner feeds. General Lviv channels stay available separately.
+    { name: 'direct_rent', city: 'Lviv', ownerOnly: true, dealType: 'longRent' },
+    {
+      name: 'lviv_no_maklers',
+      city: 'Lviv',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: [
+        '#власник',
+        'від власника',
+        'від власниці',
+        'пряма оренда від власниці',
+        'без комісії',
+      ],
+    },
+
+    // Kharkiv. Keep the general stream: owner and realtor listings can coexist.
     { name: 'KH_Rent', city: 'Kharkiv' },
     { name: 'kh_rent_apartment', city: 'Kharkiv' },
     { name: 'xaarenda', city: 'Kharkiv' },
     { name: 'RENTUA_KHARKIV', city: 'Kharkiv' },
 
-    // Ivano-Frankivsk.
+    // Dnipro: dedicated no-realtor feed in addition to the existing mixed feeds.
+    { name: 'BEZ_rieltoriv_DP', city: 'Dnipro', ownerOnly: true },
+
+    // Ivano-Frankivsk mixed feeds remain mixed by design.
     { name: 'ivano_frankivsk_dom', city: 'Ivano-Frankivsk' },
     { name: 'RENTIN_FRANKIVSK', city: 'Ivano-Frankivsk' },
 
-    // Lutsk.
+    // Lutsk: keep general feeds, and additionally mark the channel whose own
+    // policy says listings are from owners. Wanted posts are rejected downstream.
     { name: 'lutskrent', city: 'Lutsk' },
     { name: 'rentin_lutsk', city: 'Lutsk' },
+    { name: 'LUTSK_ORENDA', city: 'Lutsk', ownerOnly: true },
+
+    // Ternopil: add a separate direct-owner network feed while preserving the
+    // existing general Ternopil channels from the country registry.
+    { name: 'Ternopol_arenda', city: 'Ternopil', ownerOnly: true, dealType: 'longRent' },
 
     // Mukachevo.
     { name: 'orendari_mukachevo', city: 'Mukachevo' },
 
-    // Chernivtsi: additional active public housing feeds.
+    // Chernivtsi: direct-owner network feed, alongside general city feeds.
+    { name: 'direct_rent_cv', city: 'Chernivtsi', ownerOnly: true, dealType: 'longRent' },
     { name: 'centralne', city: 'Chernivtsi' },
     { name: 'housecv', city: 'Chernivtsi' },
     { name: 'realestatechernivtsiID', city: 'Chernivtsi' },
+
+    // Rivne direct-owner network feed, alongside the general city coverage.
+    { name: 'direct_rent_rivne', city: 'Rivne', ownerOnly: true, dealType: 'longRent' },
+
+    // Khmelnytskyi: this source contains both owner and realtor inventory, so
+    // keep the full stream and let normal classification set byAgency/commission.
+    { name: 'rentin_khmelnytskyi', city: 'Khmelnytskyi' },
 
     // Odesa: additional active public housing feeds.
     { name: 'odessa_housing', city: 'Odesa' },
@@ -51,56 +91,35 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'kvartiry2', city: 'Almaty', ownerOnly: true },
     { name: 'kvartiralmaty1', city: 'Almaty', ownerOnly: true },
     { name: 'freehomekz_Almaty', city: 'Almaty', ownerOnly: true, dealType: 'shortRent' },
-    // Mixed owner/roommate feed: require an explicit owner phrase per post.
-    {
-      name: 'kvartira_v_almaty',
-      city: 'Almaty',
-      ownerOnly: true,
-      dealType: 'longRent',
-      ownerMarkers: [
-        'хозяин, не риелтор',
-        'не риелтор и не агенство',
-        'не риелтор и не агентство',
-        'я сама хозяйка',
-        'сама хозяйка',
-        'без риелтора — хозяйка',
-        'без риелтора - хозяйка',
-        'собственник',
-        'от хозяина',
-      ],
-    },
+
+    // Mixed Almaty feed: preserve owners, agencies and roommate listings.
+    { name: 'kvartira_v_almaty', city: 'Almaty', dealType: 'longRent' },
+
+    // Astana: one owner-only channel plus one large mixed channel. Both are kept
+    // so users can see direct-owner and realtor/roommate inventory.
+    { name: 'arenda_kvartiry_astana', city: 'Astana', ownerOnly: true, dealType: 'longRent' },
+    { name: 'rentinastana', city: 'Astana' },
+
+    // Regional public rental feeds. These stay mixed and use normal agency and
+    // wanted-listing classification instead of owner filtering.
+    { name: 'arendaktobe', city: 'Aktobe' },
+    { name: 'arenda_karaganda_kvartira', city: 'Karaganda' },
+    { name: 'atyraukvortira', city: 'Atyrau' },
+    { name: 'kvartiraoral', city: 'Oral' },
   ],
   KG: [
-    // Mixed Bishkek housing stream: accept only posts that explicitly identify
-    // the owner/direct relationship. Wanted posts are rejected downstream too.
-    {
-      name: 'bishkekarendakv',
-      city: 'Bishkek',
-      ownerOnly: true,
-      dealType: 'longRent',
-      ownerMarkers: [
-        'от собственника',
-        'собственник',
-        'от хозяина',
-        'хозяин',
-        'без риэлтор',
-        'без риелтор',
-        'риелторов просьба не беспокоить',
-        'үй ээсинин',
-      ],
-    },
+    // Bishkek stream is mixed; keep both owner and realtor inventory and rely on
+    // the existing wanted/agency classifiers instead of suppressing either side.
+    { name: 'bishkekarendakv', city: 'Bishkek', dealType: 'longRent' },
+
+    // Osh has both a structured search/supply channel and a broad public group.
+    // Both include mixed inventory, so neither is forced owner-only.
+    { name: 'kvartira_osh', city: 'Osh' },
+    { name: 'arendaosh', city: 'Osh' },
   ],
   UZ: [
-    // Mixed Tashkent feed: only accept posts marked as owners (or with a direct-
-    // owner phrase) and explicitly reject the realtor section.
-    {
-      name: 'arentash',
-      city: 'Tashkent',
-      ownerOnly: true,
-      ownerMarkers: ['#хозяева'],
-      ownerRejectMarkers: ['#риелтор'],
-    },
-    // Tashkent: additional active public housing feeds.
+    // Mixed Tashkent feed: keep both #хозяева and #риелтор sections.
+    // Direct-owner-only channels below remain separately available.
     { name: 'kvartira_maklersiz_bezmakler', city: 'Tashkent', ownerOnly: true },
     { name: 'kvartira_bez_posrednika', city: 'Tashkent', ownerOnly: true },
     { name: 'ijaraga_kvartiralar_Bezmakler', city: 'Tashkent', ownerOnly: true, dealType: 'longRent' },
@@ -137,6 +156,27 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // Dedicated daily-rent feeds (Russian and Uzbek wording).
     { name: 'posutochnotashkent', city: 'Tashkent', dealType: 'shortRent' },
     { name: 'kunlik_kvartira_toshkent_arenda', city: 'Tashkent', dealType: 'shortRent' },
+    {
+      name: 'kunlik_kvartira_1',
+      city: 'Tashkent',
+      ownerOnly: true,
+      dealType: 'shortRent',
+      ownerMarkers: ['egasi', 'bezmakler', 'без маклера', 'без посредников'],
+    },
+
+    // Bukhara direct-owner channel: channel policy explicitly says no agents.
+    { name: 'arenda_kvartir_buxara', city: 'Bukhara', ownerOnly: true },
+
+    // Samarkand daily-rent public group supplements the existing general feeds.
+    { name: 'arenda_samarkand_etagi', city: 'Samarkand', dealType: 'shortRent' },
+
+    // Regional mixed feeds: owners, agents and roommate offers are all retained.
+    { name: 'namangan_ijara_kvartiralar', city: 'Namangan' },
+    { name: 'Arenda_Kvartira_Fergane_1', city: 'Fergana' },
+    { name: 'farpi_ijara_kv', city: 'Fergana' },
+    { name: 'andijon_ijara_bor', city: 'Andijan' },
+    { name: 'ijara_arenda_uylari', city: 'Andijan' },
+    { name: 'kvartira_nukus', city: 'Nukus' },
   ],
 };
 
@@ -146,8 +186,8 @@ function channelKey(value) {
 }
 
 export function telegramHousingChannels(countryCode, baseChannels = []) {
-  // Extras are curated overrides. If a base channel later becomes known to be
-  // owner-only, its richer object config must replace the old bare string.
+  // Extras are curated overrides. Rich configs replace older bare channel
+  // configs only when we intentionally know more about that exact feed.
   const merged = new Map();
   for (const item of baseChannels) {
     const key = channelKey(item);
