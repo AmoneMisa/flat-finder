@@ -1,10 +1,12 @@
 const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
   UA: [
     // Kyiv: additional active public housing feeds.
+    // These two communities explicitly describe themselves as direct/no-realtor.
+    { name: 'orenda_kyiv_city', city: 'Kyiv', ownerOnly: true, dealType: 'longRent' },
     { name: 'OrendakvartyrKyiv_UK', city: 'Kyiv' },
     { name: 'ArendaKyiva', city: 'Kyiv' },
     { name: 'ArendaUA', city: 'Kyiv' },
-    { name: 'arendakyiv_ua', city: 'Kyiv' },
+    { name: 'arendakyiv_ua', city: 'Kyiv', ownerOnly: true, dealType: 'longRent' },
     { name: 'rentapartmentkyiv', city: 'Kyiv' },
     // Direct-owner feeds: no agencies/commission by channel policy.
     { name: 'kievrentfree', city: 'Kyiv', ownerOnly: true },
@@ -50,6 +52,26 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'kvartiralmaty1', city: 'Almaty', ownerOnly: true },
     { name: 'freehomekz_Almaty', city: 'Almaty', ownerOnly: true, dealType: 'shortRent' },
   ],
+  KG: [
+    // Mixed Bishkek housing stream: accept only posts that explicitly identify
+    // the owner/direct relationship. Wanted posts are rejected downstream too.
+    {
+      name: 'bishkekarendakv',
+      city: 'Bishkek',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: [
+        'от собственника',
+        'собственник',
+        'от хозяина',
+        'хозяин',
+        'без риэлтор',
+        'без риелтор',
+        'риелторов просьба не беспокоить',
+        'үй ээсинин',
+      ],
+    },
+  ],
   UZ: [
     // Mixed Tashkent feed: only accept posts marked as owners (or with a direct-
     // owner phrase) and explicitly reject the realtor section.
@@ -63,6 +85,7 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // Tashkent: additional active public housing feeds.
     { name: 'kvartira_maklersiz_bezmakler', city: 'Tashkent', ownerOnly: true },
     { name: 'kvartira_bez_posrednika', city: 'Tashkent', ownerOnly: true },
+    { name: 'ijaraga_kvartiralar_Bezmakler', city: 'Tashkent', ownerOnly: true, dealType: 'longRent' },
     { name: 'nedvij_tashkent', city: 'Tashkent' },
     { name: 'iHometashkent', city: 'Tashkent' },
     // Dedicated daily-rent feeds (Russian and Uzbek wording).
