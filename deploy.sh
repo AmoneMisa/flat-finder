@@ -112,8 +112,14 @@ wait_for_healthy flat-finder-backend 120
 curl --fail --silent --show-error --max-time 10 \
   http://127.0.0.1:4000/health >/dev/null
 
+# Cheap generic smoke test plus one realistic first-page UZ request. The latter
+# guards against reintroducing synchronous per-listing enrichment that can leave
+# nginx waiting for response headers until its upstream timeout expires.
 curl --fail --silent --show-error --max-time 20 \
   'http://127.0.0.1:4000/api/listings?limit=1' >/dev/null
+
+curl --fail --silent --show-error --max-time 15 \
+  'http://127.0.0.1:4000/api/listings?countries=UZ&limit=20' >/dev/null
 
 # Remove retired services and any other containers no longer present in Compose.
 docker compose up -d --remove-orphans --no-deps \
