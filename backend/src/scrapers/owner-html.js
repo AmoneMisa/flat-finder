@@ -11,12 +11,17 @@ const OWNER_HOSTS = new Set([
   'rentli.uz',
   'easy-house.in.ua',
   'proprietaripebune.ro',
+  'proprietar-direct.ro',
   'ostona.app',
+  'turar.uz',
+  'kn.kz',
+  'kvarto.app',
   'arendator.kg',
+  'sutochno.kg',
 ]);
 
 const HOUSING_RE = /(apartament|garsonier|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
-const PRICE_RE = /(?:\$|€|₴|грн|uah|usd|eur|lei|ron|сум|so['’]?m|uzs|сом|kgs|тенге|kzt|\bмлн\b|\bmln\b)/iu;
+const PRICE_RE = /(?:\$|€|₴|₸|грн|uah|usd|eur|lei|ron|сум|so['’]?m|uzs|сом|kgs|тенге|kzt|\bмлн\b|\bmln\b)/iu;
 const BLOCK_END_RE = /<\/(?:article|li|section|div|a|p|h[1-6])>/giu;
 
 function decodeHtml(value) {
