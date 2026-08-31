@@ -164,6 +164,9 @@ class ApiService {
     String? cursor,
   }) async {
     final params = Map<String, String>.from(filters.toQueryParams());
+    // Cards are cursor-paginated; twenty rows make the initial render cheaper
+    // without shrinking the backend's public 60-row maximum for other clients.
+    params['limit'] = '20';
     if (force) params['refresh'] = '1';
     if (cursor != null && cursor.isNotEmpty) params['cursor'] = cursor;
     final uri =
