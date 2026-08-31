@@ -32,8 +32,9 @@ test('vision provenance marks only fields that vision actually fills', () => {
   assert.equal(merged.airConditioner, true);
   assert.equal(merged.balcony, true);
   assert.equal(merged.bedrooms, 2);
+  assert.equal(merged.tv, true);
   assert.deepEqual(new Set(merged.amenities), new Set(['tv', 'washing_machine']));
-  assert.deepEqual(merged.vision.derivedFields, ['airConditioner', 'bedrooms', 'washingMachine']);
+  assert.deepEqual(merged.vision.derivedFields, ['airConditioner', 'bedrooms', 'tv', 'washingMachine']);
 });
 
 test('low-confidence and merely agreeing vision values are not marked as derived', () => {
