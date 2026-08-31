@@ -1,6 +1,7 @@
 import { COUNTRIES } from './countries.js';
 import { makeListing } from './normalize.js';
-import { guessPropertyType } from './textparse.js';
+import { classifyAgency, guessPropertyType, looksHousingWanted } from './textparse.js';
+import { isDirectOwner } from './seller-signals.js';
 import { fetchChannel } from './scrapers/telegram.js';
 import { scrapeCustomUrl } from './scrapers/custom.js';
 import { telegramHousingChannels } from './telegram-housing-sources.js';
@@ -11,6 +12,7 @@ import { executeQueueTaskOnce } from './queueTaskDedup.js';
 import { geocodeListingsPersistent } from './geocode-persistent.js';
 import { rejectOutOfAreaCoordinates } from './coordinate-validation.js';
 import { reconcileAuthoritativeOlxSegment } from './crawl-reconciliation.js';
+import { olxSegmentDealType } from './olx-segment.js';
 import { deactivateMissingCustomSourceListings } from './custom-source-repository.js';
 import { scheduleListingsVision } from './vision-enrichment.js';
 
@@ -85,7 +87,7 @@ function normalizeCurrency(code) {
     : code;
 }
 
-function mapOlxStateItem(item, country, forcedCity = null) {
+function mapOlxStateItem(item, country, forcedCity = null, forcedDealType = null) {
   const regularPrice = item.price?.regularPrice ?? {};
   const paramText = (item.params ?? [])
     .map((param) => `${param.name ?? ''} ${Array.isArray(param.value) ? param.value.join(' ') : param.value ?? ''}`)
@@ -108,6 +110,7 @@ function mapOlxStateItem(item, country, forcedCity = null) {
     lat: item.map?.lat ?? null,
     lng: item.map?.lon ?? null,
     photos: Array.isArray(item.photos) ? item.photos.filter(Boolean) : [],
+    dealType: forcedDealType,
     url: item.url ?? country.olxHost,
     createdAt: item.createdTime ?? null,
   });
@@ -168,11 +171,12 @@ async function fetchOlxPage({ country, segment, page, citySlug, city, crawlerSha
 
   const body = await response.json();
   const ads = Array.isArray(body?.ads) ? body.ads : [];
+  const forcedDealType = olxSegmentDealType(segment);
 
   return {
     listings: ads
       .filter((item) => item?.id != null)
-      .map((item) => mapOlxStateItem(item, config, city || null)),
+      .map((item) => mapOlxStateItem(item, config, city || null, forcedDealType)),
     rawCount: Number.isFinite(Number(body?.rawCount))
       ? Number(body.rawCount)
       : ads.length,
@@ -200,6 +204,41 @@ function findTelegramChannel(country, name) {
   }
 
   return null;
+}
+
+function hasMarker(text, markers) {
+  if (!Array.isArray(markers) || !markers.length) return false;
+  const haystack = String(text || '').toLocaleLowerCase();
+  return markers.some((marker) => haystack.includes(String(marker || '').toLocaleLowerCase()));
+}
+
+export function enforceOwnerOnlyListings(listings, policy = {}) {
+  if (!Array.isArray(listings)) return [];
+  if (policy.ownerOnly !== true) return listings;
+
+  return listings
+    .filter((listing) => {
+      const text = `${listing?.title || ''}\n${listing?.description || ''}`.trim();
+      if (!text || looksHousingWanted(text)) return false;
+      if (hasMarker(text, policy.ownerRejectMarkers)) return false;
+
+      const directOwner = isDirectOwner(text);
+      if (listing?.byAgency === true && !directOwner) return false;
+      if (classifyAgency(text) && !directOwner) return false;
+
+      if (Array.isArray(policy.ownerMarkers) && policy.ownerMarkers.length) {
+        return hasMarker(text, policy.ownerMarkers) || directOwner;
+      }
+
+      return true;
+    })
+    .map((listing) => ({
+      ...listing,
+      byAgency: false,
+      commission: false,
+      commissionPercent: 0,
+      dealType: listing.dealType || policy.dealType || null,
+    }));
 }
 
 async function persist(listings, task) {
@@ -265,7 +304,7 @@ async function processQueueTaskInner(task) {
 
   if (type === 'flat.olx.page') {
     const segment = String(task.segment || '');
-    if (!['flat:longRent', 'flat:sale'].includes(segment)) {
+    if (!['flat:longRent', 'flat:shortRent', 'flat:sale'].includes(segment)) {
       throw new Error(`Unsupported OLX segment ${segment}`);
     }
 
@@ -336,12 +375,13 @@ async function processQueueTaskInner(task) {
       throw new Error(`Unknown Telegram channel ${country}/@${channelName}`);
     }
 
-    const listings = await fetchChannel(
+    const fetchedListings = await fetchChannel(
       channel,
       COUNTRIES[country],
       {},
       Date.now() + 120_000,
     );
+    const listings = enforceOwnerOnlyListings(fetchedListings, channel);
 
     return {
       ok: true,
@@ -363,13 +403,16 @@ async function processQueueTaskInner(task) {
     }
 
     const crawlStartedAt = new Date().toISOString();
-    const listings = (await scrapeCustomUrl(sourceUrl, COUNTRIES[country])).map((listing) => ({
+    const fetchedListings = await scrapeCustomUrl(sourceUrl, COUNTRIES[country]);
+    const ownerFiltered = enforceOwnerOnlyListings(fetchedListings, task);
+    const listings = ownerFiltered.map((listing) => ({
       ...listing,
       source: 'custom',
       country,
       city: listing.city || task.city || '',
       customSourceUrl: sourceUrl,
       curatedSource: task.curated === true,
+      dealType: listing.dealType || task.dealType || null,
     }));
     const persisted = await persist(listings, task);
     const deactivated = await deactivateMissingCustomSourceListings({
