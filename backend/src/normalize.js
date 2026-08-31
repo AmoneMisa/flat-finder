@@ -36,6 +36,13 @@ export function makeListing(partial) {
     ?? fields.furnished
     ?? listing.furnished
     ?? (LEGACY_FURNITURE_RE.test(text) ? true : null);
+  const minLeaseTerm = partial?.minLeaseTerm
+    ?? partial?.minRentTerm
+    ?? fields.minLeaseTerm
+    ?? fields.minRentTerm
+    ?? listing.minLeaseTerm
+    ?? listing.minRentTerm
+    ?? null;
 
   return {
     ...listing,
@@ -76,7 +83,10 @@ export function makeListing(partial) {
     deposit: partial?.deposit ?? fields.depositRequired ?? listing.deposit ?? null,
     firstRent: partial?.firstRent ?? fields.firstRent ?? listing.firstRent ?? null,
     firstRental: partial?.firstRental ?? fields.firstRent ?? listing.firstRental ?? listing.firstRent ?? null,
-    minRentTerm: partial?.minRentTerm ?? fields.minRentTerm ?? listing.minRentTerm ?? null,
+    minLeaseTerm,
+    // Temporary compatibility alias for older consumers. New clients should
+    // use minLeaseTerm, matching the public web/Flutter contract.
+    minRentTerm: minLeaseTerm,
     availableFrom: partial?.availableFrom ?? fields.availableFrom ?? listing.availableFrom ?? null,
     utilitiesAmount: partial?.utilitiesAmount ?? fields.utilitiesAmount ?? listing.utilitiesAmount ?? null,
     amenities,
