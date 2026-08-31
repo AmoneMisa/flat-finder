@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 
 const CURSOR_VERSION = 1;
 const SCOPE_VERSION = 1;
+const MAX_CURSOR_TOKEN_LENGTH = 1024;
 const BIGINT_MAX = 9_223_372_036_854_775_807n;
 const NON_SEMANTIC_FILTER_KEYS = new Set([
   'cursor',
@@ -35,8 +36,10 @@ function normalizeScopeValue(value) {
 
 function decodeCursor(value) {
   if (!value) return null;
+  const token = String(value);
+  if (token.length > MAX_CURSOR_TOKEN_LENGTH) return null;
   try {
-    const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+    const parsed = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
     return parsed?.v === CURSOR_VERSION && parsed && typeof parsed === 'object'
       ? parsed
       : null;
