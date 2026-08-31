@@ -129,12 +129,7 @@ class AppState extends ChangeNotifier {
 
   String _filterFingerprint(Filters value) {
     final payload = Map<String, dynamic>.from(value.toJson());
-    for (final key in const [
-      'countries',
-      'sources',
-      'customSources',
-      'amenities',
-    ]) {
+    for (final key in const ['countries', 'sources', 'amenities']) {
       final values = (payload[key] as List? ?? const [])
           .map((item) => item.toString())
           .toList()
