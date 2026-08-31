@@ -55,13 +55,46 @@ export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
 });
 
 const SEARCH_TOPIC_ENTITIES = Object.freeze([
-  HOUSING_DEAL_TYPES.find((item) => item.canonical === 'longRent'),
-  PROPERTY_TYPES.find((item) => item.canonical === 'flat'),
-  PROPERTY_TYPES.find((item) => item.canonical === 'house'),
-].filter(Boolean));
+  { entity: HOUSING_DEAL_TYPES.find((item) => item.canonical === 'longRent'), limit: 3 },
+  { entity: HOUSING_DEAL_TYPES.find((item) => item.canonical === 'shortRent'), limit: 3 },
+  { entity: PROPERTY_TYPES.find((item) => item.canonical === 'flat'), limit: 1 },
+  { entity: PROPERTY_TYPES.find((item) => item.canonical === 'house'), limit: 1 },
+].filter((item) => item.entity));
+
+// Keep queries package-backed, but add high-signal wording that people actually
+// use in social posts/search. These are merged after package aliases and only
+// fill gaps up to the per-topic limit above.
+const CURATED_SEARCH_ALIASES = Object.freeze({
+  longRent: Object.freeze({
+    ru: Object.freeze(['аренда', 'сдам', 'сдаю']),
+    uk: Object.freeze(['оренда', 'здам', 'здаю']),
+    uzLatn: Object.freeze(['ijara', 'ijaraga beriladi', 'kvartira ijaraga']),
+    uzCyrl: Object.freeze(['ижара', 'ижарага берилади', 'квартира ижарага']),
+    kk: Object.freeze(['жалдау', 'жалға беріледі', 'пәтер жалға']),
+    ro: Object.freeze(['închiriere', 'închiriez', 'apartament de închiriat']),
+  }),
+  shortRent: Object.freeze({
+    ru: Object.freeze(['посуточно', 'на сутки', 'посуточная аренда']),
+    uk: Object.freeze(['подобово', 'погодинно', 'подобова оренда']),
+    uzLatn: Object.freeze(['kunlik ijara', 'sutkalik ijara', 'kunlik kvartira']),
+    uzCyrl: Object.freeze(['кунлик ижара', 'суткалик ижара', 'кунлик квартира']),
+    kk: Object.freeze(['тәуліктік жалға', 'тәулікке пәтер', 'тәуліктік пәтер']),
+    ro: Object.freeze(['regim hotelier', 'pe noapte', 'închiriere pe termen scurt']),
+  }),
+});
 
 function preferredAlias(entity, language) {
   return entity?.aliases?.[language]?.[0] || entity?.canonical || null;
+}
+
+function topicAliases(descriptor, language) {
+  const { entity, limit } = descriptor;
+  const packageAliases = Array.isArray(entity?.aliases?.[language])
+    ? entity.aliases[language]
+    : [];
+  const curatedAliases = CURATED_SEARCH_ALIASES[entity?.canonical]?.[language] || [];
+  const fallback = entity?.canonical ? [entity.canonical] : [];
+  return [...new Set([...packageAliases, ...curatedAliases, ...fallback].filter(Boolean))].slice(0, limit);
 }
 
 function cityByCanonical(country, canonical) {
@@ -72,7 +105,7 @@ function searchVocabulary(country, language) {
   const countryEntity = countryByCode(country);
   return {
     country: preferredAlias(countryEntity, language),
-    topics: SEARCH_TOPIC_ENTITIES.map((entity) => preferredAlias(entity, language)).filter(Boolean),
+    topics: SEARCH_TOPIC_ENTITIES.flatMap((descriptor) => topicAliases(descriptor, language)),
   };
 }
 
