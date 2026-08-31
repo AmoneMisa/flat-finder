@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
+import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -19,7 +20,7 @@ class AppState extends ChangeNotifier {
   List<Country> countries = [];
   Filters filters = Filters();
   List<Listing> listings = [];
-  List<Listing> mapListings = [];
+  List<MapListingPoint> mapListings = [];
   List<String> degradedCountries = [];
   List<SourceError> sourceErrors =
       []; // per-source failures from the last search

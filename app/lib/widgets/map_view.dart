@@ -7,7 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/district_zone.dart';
-import '../models/listing.dart';
+import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/settings.dart';
@@ -56,9 +56,9 @@ class MapView extends StatefulWidget {
     this.onRadiusChanged,
   });
 
-  final List<Listing> listings;
+  final List<MapListingPoint> listings;
   final LatLng center;
-  final void Function(Listing) onTapListing;
+  final void Function(MapListingPoint) onTapListing;
   final Map<String, double>? rates;
   final String? displayCurrency;
   final String country;
@@ -516,11 +516,11 @@ class _MapViewState extends State<MapView> {
   }
 
   /// Listings restricted to the drawn area (once it has at least 3 points).
-  List<Listing> get _visible {
-    final located = widget.listings.where((l) => l.hasLocation).toList();
+  List<MapListingPoint> get _visible {
+    final located = widget.listings;
     if (_area.length < 3) return located;
     return located
-        .where((l) => _pointInPolygon(LatLng(l.lat!, l.lng!), _area))
+        .where((l) => _pointInPolygon(LatLng(l.lat, l.lng), _area))
         .toList();
   }
 
@@ -539,8 +539,7 @@ class _MapViewState extends State<MapView> {
 
   bool get _isFocused => widget.centerZoom >= 17.5;
 
-  String _listingKey(Listing listing) =>
-      '${listing.source}:${listing.country}:${listing.id}';
+  String _listingKey(MapListingPoint listing) => listing.key;
 
   void _scheduleFitToPoints() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -555,8 +554,7 @@ class _MapViewState extends State<MapView> {
     if (_isFocused || widget.city.isNotEmpty || _activeZoneFocusId != null) {
       return;
     }
-    final located =
-        widget.listings.where((listing) => listing.hasLocation).toList();
+    final located = widget.listings;
     if (located.isEmpty) return;
     final keys = located.map(_listingKey).toList()..sort();
     final signature = keys.join(',');
@@ -565,7 +563,7 @@ class _MapViewState extends State<MapView> {
       _controller.fitCamera(
         CameraFit.bounds(
           bounds: LatLngBounds.fromPoints([
-            for (final listing in located) LatLng(listing.lat!, listing.lng!),
+            for (final listing in located) LatLng(listing.lat, listing.lng),
           ]),
           padding: const EdgeInsets.all(30),
           maxZoom: 14,
@@ -595,16 +593,16 @@ class _MapViewState extends State<MapView> {
   /// Greedy screen-space clustering equivalent to the previous all-cluster
   /// scan, but backed by a spatial hash. Exact 38px distance checks and the
   /// earliest matching cluster preserve the existing visual semantics.
-  List<_PinGroup> _groupsFor(List<Listing> located, {double? zoom}) {
+  List<_PinGroup> _groupsFor(List<MapListingPoint> located, {double? zoom}) {
     if (located.isEmpty) return const [];
-    final clusters = greedyScreenSpaceClusters<Listing>(
+    final clusters = greedyScreenSpaceClusters<MapListingPoint>(
       located,
       project: (listing) {
-        final point = _worldPixel(LatLng(listing.lat!, listing.lng!), zoom);
+        final point = _worldPixel(LatLng(listing.lat, listing.lng), zoom);
         return ScreenCoordinate(point.dx, point.dy);
       },
-      latitudeOf: (listing) => listing.lat!,
-      longitudeOf: (listing) => listing.lng!,
+      latitudeOf: (listing) => listing.lat,
+      longitudeOf: (listing) => listing.lng,
       radiusPx: _clusterRadiusPx,
       worldWidth: _worldWidth(zoom),
     );
@@ -1596,7 +1594,7 @@ class _PoiMarker extends StatelessWidget {
 class _PinGroup {
   const _PinGroup(this.key, this.listings, this.point);
   final String key;
-  final List<Listing> listings;
+  final List<MapListingPoint> listings;
   final LatLng point;
 }
 
@@ -1637,19 +1635,27 @@ class _StandalonePricePin extends StatelessWidget {
     this.displayCurrency,
   });
 
-  final Listing listing;
+  final MapListingPoint listing;
   final Map<String, double>? rates;
   final String? displayCurrency;
 
   @override
   Widget build(BuildContext context) {
     final ratesOrEmpty = rates ?? const <String, double>{};
-    final label = pinPriceLabel(
-      listing,
+    final label = pinPriceLabelValues(
+      listing.price,
+      listing.currency,
       rates: rates,
       displayCurrency: displayCurrency,
     );
-    final color = priceToneColor(listingPriceTone(listing, ratesOrEmpty));
+    final color = priceToneColor(
+      priceToneForValues(
+        price: listing.price,
+        currency: listing.currency,
+        medianUsd: listing.marketMedianUsd,
+        rates: ratesOrEmpty,
+      ),
+    );
     return Container(
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 7),
@@ -1702,10 +1708,10 @@ class _RadialClusterMarker extends StatelessWidget {
     required this.onClose,
   });
 
-  final List<Listing> items;
+  final List<MapListingPoint> items;
   final Map<String, double>? rates;
   final String? displayCurrency;
-  final void Function(Listing) onTapListing;
+  final void Function(MapListingPoint) onTapListing;
   final VoidCallback onClose;
 
   @override
@@ -1787,7 +1793,7 @@ class _RadialPriceDot extends StatelessWidget {
     required this.onTap,
   });
 
-  final Listing listing;
+  final MapListingPoint listing;
   final Map<String, double>? rates;
   final String? displayCurrency;
   final VoidCallback onTap;
@@ -1795,9 +1801,17 @@ class _RadialPriceDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ratesOrEmpty = rates ?? const <String, double>{};
-    final color = priceToneColor(listingPriceTone(listing, ratesOrEmpty));
-    final price = pinPriceLabel(
-      listing,
+    final color = priceToneColor(
+      priceToneForValues(
+        price: listing.price,
+        currency: listing.currency,
+        medianUsd: listing.marketMedianUsd,
+        rates: ratesOrEmpty,
+      ),
+    );
+    final price = pinPriceLabelValues(
+      listing.price,
+      listing.currency,
       rates: rates,
       displayCurrency: displayCurrency,
     );
