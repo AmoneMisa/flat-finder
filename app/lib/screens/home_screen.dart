@@ -401,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Image.asset(
-              'assets/icon/icon.png',
+              'assets/icon/runtime.png',
               width: 30,
               height: 30,
               fit: BoxFit.contain,
