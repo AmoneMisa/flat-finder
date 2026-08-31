@@ -1,0 +1,28 @@
+name: Verify map perf branch
+
+on:
+  push:
+    branches:
+      - perf/flutter-map-clustering
+
+permissions:
+  contents: read
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Verify Flutter app
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
