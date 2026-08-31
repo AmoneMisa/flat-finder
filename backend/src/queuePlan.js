@@ -183,6 +183,10 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
         dealType: source.dealType || null,
         curated: true,
         ownerOnly: true,
+        ownerMarkers: Array.isArray(source.ownerMarkers) ? [...source.ownerMarkers] : undefined,
+        ownerRejectMarkers: Array.isArray(source.ownerRejectMarkers)
+          ? [...source.ownerRejectMarkers]
+          : undefined,
       }, crawlGeneration, shardCount);
       tasks.push({ ...task, priority: taskPriority(task) });
     }
