@@ -84,6 +84,22 @@ Map<String, String> _stringMap(dynamic v) => v is Map
     ? v.map((k, val) => MapEntry(k.toString(), val.toString()))
     : const {};
 
+Set<String> _storedSources(dynamic value) {
+  final sources = (value is List && value.isNotEmpty)
+      ? value.map((item) => item.toString()).toSet()
+      : {...kAllSources};
+
+  // Before curated websites became a selectable source, the complete/default
+  // source set was exactly OLX + Telegram. Upgrade that persisted default so
+  // existing installs gain Sites too. Narrower explicit selections stay intact.
+  const legacyAllSources = {'olx', 'telegram'};
+  if (sources.length == legacyAllSources.length &&
+      sources.containsAll(legacyAllSources)) {
+    return {...sources, 'custom'};
+  }
+  return sources;
+}
+
 /// Districts and metro/transit stations available within a single city.
 /// The `*Labels` maps (raw name -> localized label) are only populated when
 /// `/api/countries` was fetched with a `locale` — see
@@ -543,7 +559,7 @@ class Filters {
 
     return Filters(
       countries: strSet(j['countries'], {'RO'}),
-      sources: strSet(j['sources'], {...kAllSources}),
+      sources: _storedSources(j['sources']),
       customSources: (j['customSources'] as List?)
               ?.map((e) => e.toString())
               .where((e) => e.isNotEmpty)
