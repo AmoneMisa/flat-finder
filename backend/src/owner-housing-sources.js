@@ -111,6 +111,12 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       city: 'Bishkek',
       dealType: 'shortRent',
     }),
+    Object.freeze({
+      key: 'sutochno-osh-owner-daily',
+      url: 'https://sutochno.kg/osh/',
+      city: 'Osh',
+      dealType: 'shortRent',
+    }),
   ]),
 });
 
