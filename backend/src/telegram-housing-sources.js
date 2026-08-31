@@ -118,6 +118,20 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
         'от собственника',
       ],
     },
+    {
+      name: 'Maklersiz',
+      city: 'Tashkent',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: ['без маклер', 'makler yo‘q', "makler yo'q", '#maklersiz'],
+    },
+    {
+      name: 'bez_makler',
+      city: 'Tashkent',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: ['без маклер', 'bezmakler', 'maklersiz', "makler yo'q"],
+    },
     { name: 'nedvij_tashkent', city: 'Tashkent' },
     { name: 'iHometashkent', city: 'Tashkent' },
     // Dedicated daily-rent feeds (Russian and Uzbek wording).
