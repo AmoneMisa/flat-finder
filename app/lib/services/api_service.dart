@@ -89,6 +89,7 @@ class ApiService {
   ApiService({String? baseUrl}) : baseUrl = baseUrl ?? _defaultBaseUrl();
 
   final String baseUrl;
+  Future<SearchStatistics?>? _statisticsSnapshotRequest;
 
   /// Production backend, reachable from a real device — proxied through
   /// whiteslove.me's existing HTTPS vhost (nginx `location /flat-api/` ->
@@ -363,23 +364,41 @@ class ApiService {
     );
   }
 
-  /// Exchange rates relative to USD (units of currency per 1 USD), used to
-  /// convert listing prices into the user's chosen display currency.
-  /// Aggregate statistics for the current filters (deal-type breakdown,
-  /// median prices, ownership split, top geographies) without paying for a
-  /// page of listings — `statsOnly` skips the row fetch server-side.
-  Future<SearchStatistics?> fetchSearchStatistics(Filters filters) async {
-    final params = Map<String, String>.from(filters.toQueryParams());
-    params['includeStats'] = 'true';
-    params['statsOnly'] = 'true';
-    final uri =
-        Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
-    final res = await http.get(uri).timeout(const Duration(seconds: 20));
+  /// Full market statistics are intentionally independent from the active UI
+  /// filters. The backend serves one canonical snapshot; this ApiService keeps
+  /// the same Future for the lifetime of the screen/service so reopening the
+  /// statistics sheet does not issue another request. [filters] remains in the
+  /// signature for compatibility with existing callers but is not sent.
+  Future<SearchStatistics?> fetchSearchStatistics(Filters filters) {
+    final cached = _statisticsSnapshotRequest;
+    if (cached != null) return cached;
+
+    final request = _fetchSearchStatisticsSnapshot();
+    _statisticsSnapshotRequest = request;
+    request.then(
+      (value) {
+        if (value == null && identical(_statisticsSnapshotRequest, request)) {
+          _statisticsSnapshotRequest = null;
+        }
+      },
+      onError: (_) {
+        if (identical(_statisticsSnapshotRequest, request)) {
+          _statisticsSnapshotRequest = null;
+        }
+      },
+    );
+    return request;
+  }
+
+  Future<SearchStatistics?> _fetchSearchStatisticsSnapshot() async {
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/statistics'))
+        .timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) return null;
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     final stats = json['statistics'];
-    if (stats == null) return null;
-    return SearchStatistics.fromJson(stats as Map<String, dynamic>);
+    if (stats is! Map) return null;
+    return SearchStatistics.fromJson(Map<String, dynamic>.from(stats));
   }
 
   /// All map colour-zone layers (districts, microdistricts, quartals/
