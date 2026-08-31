@@ -1,6 +1,6 @@
 # Flat Finder PostgreSQL performance hardening plan
 
-Status: approved implementation complete; production query/index evidence remains intentionally pending, with cursor-scope binding tracked as follow-up hardening
+Status: approved implementation and CI/deployment validation complete; production query/index evidence remains intentionally pending
 Branch: `perf/postgres-audit-hardening`
 PR: `#71`
 
@@ -24,7 +24,9 @@ This plan records the audit findings, implementation order and remaining validat
 - [x] Add cursor-pagination regression tests.
 - [x] Use `LIMIT + 1` internally so `nextCursor` is emitted only when another row definitely exists, avoiding a terminal empty request.
 - [x] Reject carried counts from cursors whose sort does not match the active request.
-- [ ] Bind newly issued cursors to a fingerprint of the normalized query scope (countries + semantic filters). A cursor with an explicit mismatched scope must be rejected; legacy unscoped cursors may remain positional for compatibility but must not supply a trusted carried count.
+- [x] Bind newly issued cursors to a fingerprint of the normalized query scope (countries + semantic filters). Explicitly mismatched scoped cursors restart from the first page; legacy unscoped cursors remain positional for compatibility but cannot supply a trusted carried count.
+- [x] Validate cursor sort/timestamp/PostgreSQL bigint position before passing it to SQL builders.
+- [x] Add unit plus fast/general PostgreSQL integration regressions for scope mismatch, legacy recount and first-page restart semantics.
 
 ### 3. Move hot scalar JSONB filters to typed columns
 - [x] Inventory scalar filters cast/read from JSONB (`bedrooms`, `floor`, `totalFloors`, `buildingYear`, `commissionPercent`, `metroDistance`, etc.).
@@ -110,8 +112,9 @@ This plan records the audit findings, implementation order and remaining validat
 3. A production-like upgrade test must create a database at schema version `023`, insert representative legacy rows, apply `024–032`, and preserve data while materializing the new search/outbox structures.
 4. Migration `032` must fail before type conversion when an oversized legacy value exists; CI verifies that the failed attempt rolls back without truncating the value, after which a clean retry succeeds.
 5. The production performance-report SQL must execute through real `psql -v ON_ERROR_STOP=1` even when `pg_stat_statements` is unavailable.
-6. Existing backend tests and new regression/integration tests must pass; current hardening gate is **296/296** on PostgreSQL 18.6.
+6. Existing backend tests and new regression/integration tests must pass; current hardening gate is **303/303** on PostgreSQL 18.6.
 7. Multi-process notification delivery must cross the mocked FCM transport boundary only once for one logical delivery.
-8. Compare SQL query count before/after for affected request paths.
-9. Use `EXPLAIN (ANALYZE, BUFFERS)` on representative production-like/production data before deleting or adding final indexes.
-10. Avoid application-local parsing/geography logic that belongs in `@whiteslove/parsing-lexicon` or `@whiteslove/geo-catalog`.
+8. Scoped cursor regressions must prove that countries/semantic filters cannot reuse another query's position or carried count, while legacy cursors preserve position with a one-time recount.
+9. Compare SQL query count before/after for affected request paths.
+10. Use `EXPLAIN (ANALYZE, BUFFERS)` on representative production-like/production data before deleting or adding final indexes.
+11. Avoid application-local parsing/geography logic that belongs in `@whiteslove/parsing-lexicon` or `@whiteslove/geo-catalog`.
