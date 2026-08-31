@@ -8,19 +8,25 @@ import { telegramHousingChannels } from '../src/telegram-housing-sources.js';
 import { buildCrawlPlan } from '../src/queuePlan.js';
 import { enforceOwnerOnlyListings } from '../src/queueTasks.js';
 
-test('owner registry covers the curated direct-owner platforms', () => {
+test('owner registry covers curated direct-owner platforms in every configured country', () => {
   const urls = Object.keys(COUNTRIES).flatMap((country) => ownerHousingSources(country).map((source) => source.url));
   for (const expected of [
     'https://rentli.uz/en/listings',
     'https://ostona.app/en',
+    'https://turar.uz/ru/tashkent',
     'https://easy-house.in.ua/search/',
+    'https://kvarto.app/uk',
+    'https://www.kn.kz/almaty/arenda-kvartir-bez-posrednikov-s-foto',
     'https://www.proprietaripebune.ro/chirii/bucuresti',
+    'https://proprietar-direct.ro/categorii-anunturi/oferte-de-inchiriat/',
     'https://arendator.kg/',
+    'https://sutochno.kg/bishkek/',
   ]) {
     assert.equal(urls.filter((url) => url === expected).length, 1, expected);
   }
   assert.ok(!realtorHousingSources('UZ').some((source) => source.url.includes('rentli.uz')));
   assert.equal(COUNTRIES.KG?.currency, 'KGS');
+  assert.deepEqual(COUNTRIES.KG?.sources, ['telegram']);
 });
 
 test('owner Telegram overrides replace older bare channel entries', () => {
@@ -29,6 +35,7 @@ test('owner Telegram overrides replace older bare channel entries', () => {
   assert.equal(arentash?.ownerOnly, true);
   assert.deepEqual(arentash?.ownerMarkers, ['#хозяева']);
   assert.deepEqual(arentash?.ownerRejectMarkers, ['#риелтор']);
+  assert.equal(uz.find((channel) => channel?.name === 'ijaraga_kvartiralar_Bezmakler')?.ownerOnly, true);
 
   const kz = telegramHousingChannels('KZ', COUNTRIES.KZ.telegramChannels);
   assert.equal(kz.find((channel) => channel?.name === 'kvartiry2')?.ownerOnly, true);
@@ -37,6 +44,14 @@ test('owner Telegram overrides replace older bare channel entries', () => {
   const ua = telegramHousingChannels('UA', COUNTRIES.UA.telegramChannels);
   assert.equal(ua.find((channel) => channel?.name === 'kievrentfree')?.ownerOnly, true);
   assert.equal(ua.find((channel) => channel?.name === 'orenda_bez_rieltora')?.ownerOnly, true);
+  assert.equal(ua.find((channel) => channel?.name === 'orenda_kyiv_city')?.ownerOnly, true);
+  assert.equal(ua.find((channel) => channel?.name === 'arendakyiv_ua')?.ownerOnly, true);
+
+  const kg = telegramHousingChannels('KG', COUNTRIES.KG.telegramChannels);
+  const bishkek = kg.find((channel) => channel?.name === 'bishkekarendakv');
+  assert.equal(bishkek?.ownerOnly, true);
+  assert.equal(bishkek?.dealType, 'longRent');
+  assert.ok(bishkek?.ownerMarkers.includes('от собственника'));
 });
 
 test('crawl plan restores daily OLX and queues owner-first sources', () => {
@@ -48,12 +63,23 @@ test('crawl plan restores daily OLX and queues owner-first sources', () => {
   assert.equal(roLongRent?.ownerOnly, true);
   for (const segment of [
     'rentli-tashkent-owner-rent',
+    'turar-tashkent-owner-daily',
     'easyhouse-ukraine-owner-rent',
+    'kvarto-ukraine-owner-rent',
+    'kn-almaty-owner-rent',
     'proprietari-pe-bune-bucharest-owner-rent',
+    'proprietar-direct-romania-owner-rent',
     'arendator-bishkek-owner-rent',
+    'sutochno-bishkek-owner-daily',
   ]) {
     assert.ok(tasks.some((task) => task.type === 'flat.custom.url' && task.segment === segment && task.ownerOnly));
   }
+  assert.ok(tasks.some((task) =>
+    task.type === 'flat.telegram.channel'
+    && task.country === 'KG'
+    && task.channel === 'bishkekarendakv'
+    && task.ownerOnly,
+  ));
 });
 
 test('owner policy rejects realtor-marked inventory', () => {
