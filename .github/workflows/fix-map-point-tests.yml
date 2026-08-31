@@ -1,0 +1,50 @@
+name: Fix compact map point tests
+
+on:
+  push:
+    branches:
+      - perf/flutter-map-point-model
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: perf/flutter-map-point-model
+      - name: Align test map API contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/test/state_correctness_test.dart')
+          text = path.read_text(encoding='utf-8')
+          marker = "import '../lib/models/listing_identity.dart';\n"
+          if marker not in text:
+              raise SystemExit('state test import marker missing')
+          text = text.replace(marker, marker + "import '../lib/models/map_listing_point.dart';\n", 1)
+          text = text.replace('Completer<List<Listing>>? mapCompleter;', 'Completer<List<MapListingPoint>>? mapCompleter;', 1)
+          text = text.replace('Future<List<Listing>> fetchMapListings(Filters filters)', 'Future<List<MapListingPoint>> fetchMapListings(Filters filters)', 1)
+          text = text.replace('Future.value(const <Listing>[])', 'Future.value(const <MapListingPoint>[])', 1)
+          text = text.replace('..mapCompleter = Completer<List<Listing>>();', '..mapCompleter = Completer<List<MapListingPoint>>();', 1)
+          text = text.replace('api.mapCompleter!.complete([old]);', 'api.mapCompleter!.complete([MapListingPoint.fromListing(old)]);', 1)
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('app/test/map_listing_point_test.dart')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace("import '../lib/models/listing.dart';", "import 'package:flat_finder/models/listing.dart';")
+          text = text.replace("import '../lib/models/map_listing_point.dart';", "import 'package:flat_finder/models/map_listing_point.dart';")
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm .github/workflows/fix-map-point-tests.yml
+      - name: Commit test contract fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/test .github/workflows/fix-map-point-tests.yml
+          git commit -m 'fix(app): align compact map point test contract'
+          git push
