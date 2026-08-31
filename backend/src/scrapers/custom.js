@@ -5,7 +5,7 @@
 // structured data the page exposes:
 //   1. schema.org JSON-LD  (<script type="application/ld+json">)
 //   2. RSS / Atom feed items
-//   3. conservative SSR card extraction for allowlisted owner-only catalogues
+//   3. conservative SSR card extraction for allowlisted housing catalogues
 //
 // It deliberately does NOT try to scrape login-walled, JS-rendered, or bot-
 // protected platforms (Facebook, Instagram, Airbnb, Booking, Agoda, …): those
@@ -17,6 +17,7 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { makeListing } from '../normalize.js';
+import { classifyAgency } from '../textparse.js';
 import { fetchChannel } from './telegram.js';
 import { extractKnownOwnerHtml } from './owner-html.js';
 
@@ -234,6 +235,20 @@ function structuredAddress(node, country) {
   };
 }
 
+function sellerText(node, offer) {
+  const names = [
+    node.name,
+    node.headline,
+    node.description,
+    node.seller?.name,
+    node.provider?.name,
+    node.author?.name,
+    offer.seller?.name,
+    offer.offeredBy?.name,
+  ];
+  return names.map((value) => String(value || '')).filter(Boolean).join(' ');
+}
+
 function mapLdNode(node, country, sourceUrl, idx) {
   const offer = firstOffer(node);
   const price = numFrom(offer.price ?? offer.lowPrice ?? node.price);
@@ -246,6 +261,7 @@ function mapLdNode(node, country, sourceUrl, idx) {
     (typeof node.url === 'string' && node.url) ||
     (typeof offer.url === 'string' && offer.url) ||
     sourceUrl;
+  const agency = classifyAgency(sellerText(node, offer));
 
   return makeListing({
     id: `custom-${hash(sourceUrl + '|' + url + '|' + idx)}`,
@@ -254,7 +270,9 @@ function mapLdNode(node, country, sourceUrl, idx) {
     title: node.name ?? node.headline ?? 'Listing',
     description: node.description ?? '',
     propertyType: ldType(node).includes('house') ? 'house' : 'flat',
-    byAgency: false,
+    // Generic structured data is not owner-only. Preserve an explicit agency
+    // signal and otherwise let makeListing/shared lexicon infer the seller.
+    byAgency: agency ? true : undefined,
     price,
     currency,
     rooms: numFrom(node.numberOfRooms ?? node.numberOfBedroomsTotal),
@@ -309,15 +327,17 @@ function extractFeed(xml, country, sourceUrl) {
     const desc =
       tag(block, 'description') || tag(block, 'summary') || tag(block, 'content') || '';
     const date = tag(block, 'pubDate') || tag(block, 'updated') || null;
+    const decodedTitle = decodeXml(title);
+    const decodedDesc = decodeXml(desc);
     items.push(
       makeListing({
         id: `custom-${hash(sourceUrl + '|' + link + '|' + items.length)}`,
         source: 'custom',
         country: country.code,
-        title: decodeXml(title),
-        description: decodeXml(desc),
+        title: decodedTitle,
+        description: decodedDesc,
         propertyType: 'flat',
-        byAgency: false,
+        byAgency: classifyAgency(`${decodedTitle} ${decodedDesc}`) ? true : undefined,
         price: null,
         currency: country.currency,
         city: '',
@@ -477,7 +497,7 @@ async function scrapeTelegramUrl(u, country) {
 // Fetch + parse a single custom-source URL. Recognizes common social platforms
 // and routes them to a dedicated reader; otherwise falls back to reading any
 // structured data (JSON-LD), RSS/Atom feeds, and (only for explicitly
-// allowlisted direct-owner sites) conservative server-rendered listing-card
+// allowlisted housing sites) conservative server-rendered listing-card
 // extraction. Domza's catalog keeps listing JSON-LD on individual offer pages,
 // so we discover those links first and parse the detail pages in parallel.
 export async function scrapeCustomUrl(url, country) {
@@ -502,7 +522,7 @@ export async function scrapeCustomUrl(url, country) {
 
   if (!listings.length) {
     throw new SourceError(
-      'No listings found — the page has no readable structured data, feed, or supported owner catalogue cards',
+      'No listings found — the page has no readable structured data, feed, or supported housing catalogue cards',
     );
   }
   return listings.slice(0, MAX_ITEMS);
