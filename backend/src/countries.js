@@ -11,8 +11,8 @@ import {countryByCode} from '@whiteslove/parsing-lexicon/countries';
 //   olx      - OLX public listing pages through the dedicated sidecar
 //   telegram - public Telegram channels via the separate MTProto worker
 //
-// KG currently enters through curated direct-owner sources only; it has no OLX
-// or Telegram crawl enabled until those transports have verified targets.
+// KG has curated direct-owner web sources plus a strict owner-filtered Telegram
+// feed. OLX is intentionally not enabled until a dedicated KG transport exists.
 
 const SOURCE_COUNTRIES = {
   RO: {
@@ -211,7 +211,7 @@ const SOURCE_COUNTRIES = {
     callingCode: '+996',
     center: { lat: 42.8746, lng: 74.5698 }, // Bishkek
     currency: 'KGS',
-    sources: [],
+    sources: ['telegram'],
     crawlCities: ['Bishkek'],
     telegramChannels: [],
   },
