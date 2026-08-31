@@ -1,4 +1,10 @@
 const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
+  RO: [
+    // Current Bucharest rental feeds. These are general/agency feeds and are
+    // intentionally kept mixed alongside the dedicated direct-owner websites.
+    { name: 'bucharest_homes', city: 'Bucharest' },
+    { name: 'apartamenti_bucharest', city: 'Bucharest' },
+  ],
   UA: [
     // Kyiv: additional active public housing feeds.
     // These two communities explicitly describe themselves as direct/no-realtor.
@@ -97,6 +103,8 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // wanted-listing classification instead of owner filtering.
     { name: 'arendaktobe', city: 'Aktobe' },
     { name: 'arenda_karaganda_kvartira', city: 'Karaganda' },
+    { name: 'atyraukvortira', city: 'Atyrau' },
+    { name: 'kvartiraoral', city: 'Oral' },
   ],
   KG: [
     // Bishkek stream is mixed; keep both owner and realtor inventory and rely on
@@ -167,6 +175,7 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'farpi_ijara_kv', city: 'Fergana' },
     { name: 'andijon_ijara_bor', city: 'Andijan' },
     { name: 'ijara_arenda_uylari', city: 'Andijan' },
+    { name: 'kvartira_nukus', city: 'Nukus' },
   ],
 };
 
