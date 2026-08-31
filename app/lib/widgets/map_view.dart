@@ -12,6 +12,7 @@ import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/settings.dart';
 import '../utils/format.dart';
+import '../utils/map_group_pagination.dart';
 import '../utils/price_tone.dart';
 import '../utils/screen_space_clustering.dart';
 
@@ -161,7 +162,12 @@ class _MapViewState extends State<MapView> {
 
     final cityChanged =
         old.country != widget.country || old.city != widget.city;
+    final listingsChanged = !identical(old.listings, widget.listings);
     final localeChanged = old.locale != widget.locale;
+    if (cityChanged || listingsChanged) {
+      _expandedGroupKey = null;
+      _expandedGroupPage = 0;
+    }
     if (cityChanged) {
       _selectedDistrictId = null;
       _selectedZoneId = null;
@@ -172,7 +178,7 @@ class _MapViewState extends State<MapView> {
       _loadZones();
     }
 
-    if ((cityChanged || !identical(old.listings, widget.listings)) &&
+    if ((cityChanged || listingsChanged) &&
         widget.city.isEmpty &&
         _activeZoneFocusId == null) {
       _scheduleFitToPoints();
@@ -225,8 +231,9 @@ class _MapViewState extends State<MapView> {
 
   void _focusZone(DistrictZone zone, {double? maxZoom}) {
     final points = <LatLng>[for (final ring in _ringsFor(zone)) ...ring];
-    final fallbackZoom =
-        math.min(maxZoom ?? _maxZoomForZone(zone.type), 19.0).toDouble();
+    final fallbackZoom = math
+        .min(maxZoom ?? _maxZoomForZone(zone.type), 19.0)
+        .toDouble();
     try {
       if (points.length >= 2) {
         _controller.fitCamera(
@@ -344,44 +351,41 @@ class _MapViewState extends State<MapView> {
 
     final next = switch (zone.type) {
       'district' => scoped.copyWith(
-          district: zone.name,
-          microdistrict: '',
-          quartal: '',
-          area: '',
-          metro: '',
-        ),
+        district: zone.name,
+        microdistrict: '',
+        quartal: '',
+        area: '',
+        metro: '',
+      ),
       'microdistrict' => scoped.copyWith(
-          district: district?.name ?? current.district,
-          microdistrict: zone.name,
-          quartal: '',
-          area: '',
-          metro: '',
-        ),
+        district: district?.name ?? current.district,
+        microdistrict: zone.name,
+        quartal: '',
+        area: '',
+        metro: '',
+      ),
       'mahalla' => scoped.copyWith(
-          district: district?.name ?? current.district,
-          microdistrict: microdistrict?.name ?? current.microdistrict,
-          quartal: zone.name,
-          area: '',
-          metro: '',
-        ),
+        district: district?.name ?? current.district,
+        microdistrict: microdistrict?.name ?? current.microdistrict,
+        quartal: zone.name,
+        area: '',
+        metro: '',
+      ),
       'local_area' => scoped.copyWith(
-          district: district?.name ?? current.district,
-          microdistrict: microdistrict?.name ?? current.microdistrict,
-          quartal: mahalla?.name ?? current.quartal,
-          area: zone.name,
-          metro: '',
-        ),
+        district: district?.name ?? current.district,
+        microdistrict: microdistrict?.name ?? current.microdistrict,
+        quartal: mahalla?.name ?? current.quartal,
+        area: zone.name,
+        metro: '',
+      ),
       'development_area' => scoped.copyWith(
-          district: district?.name ?? current.district,
-          microdistrict: microdistrict?.name ?? current.microdistrict,
-          quartal: mahalla?.name ?? current.quartal,
-          area: zone.name,
-          metro: '',
-        ),
-      'metro' => scoped.copyWith(
-          metro: zone.name,
-          metroMaxM: metroRadiusM,
-        ),
+        district: district?.name ?? current.district,
+        microdistrict: microdistrict?.name ?? current.microdistrict,
+        quartal: mahalla?.name ?? current.quartal,
+        area: zone.name,
+        metro: '',
+      ),
+      'metro' => scoped.copyWith(metro: zone.name, metroMaxM: metroRadiusM),
       _ => current,
     };
 
@@ -397,16 +401,16 @@ class _MapViewState extends State<MapView> {
     final current = state.filters;
     final next = switch (zone.type) {
       'district' => current.copyWith(
-          district: '',
-          microdistrict: '',
-          quartal: '',
-          area: '',
-        ),
+        district: '',
+        microdistrict: '',
+        quartal: '',
+        area: '',
+      ),
       'microdistrict' => current.copyWith(
-          microdistrict: '',
-          quartal: '',
-          area: '',
-        ),
+        microdistrict: '',
+        quartal: '',
+        area: '',
+      ),
       'mahalla' => current.copyWith(quartal: '', area: ''),
       'local_area' || 'development_area' => current.copyWith(area: ''),
       'metro' => current.copyWith(metro: '', clearMetroMaxM: true),
@@ -418,10 +422,7 @@ class _MapViewState extends State<MapView> {
     await state.loadMapListings();
   }
 
-  Future<void> _selectZone(
-    DistrictZone zone, {
-    num? metroRadiusM,
-  }) async {
+  Future<void> _selectZone(DistrictZone zone, {num? metroRadiusM}) async {
     final current = context.read<AppState>().filters;
     final sameZone = _selectedZoneId == zone.id;
 
@@ -429,7 +430,8 @@ class _MapViewState extends State<MapView> {
     // the station and reveals its label/rings. The second tap applies it as a
     // search filter. A further tap on an already-filtered station clears it.
     if (zone.type == 'metro') {
-      final alreadyFiltered = current.metro == zone.name &&
+      final alreadyFiltered =
+          current.metro == zone.name &&
           (metroRadiusM == null || current.metroMaxM == metroRadiusM);
 
       if (!sameZone) {
@@ -530,7 +532,8 @@ class _MapViewState extends State<MapView> {
     for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
       final xi = poly[i].longitude, yi = poly[i].latitude;
       final xj = poly[j].longitude, yj = poly[j].latitude;
-      final intersect = ((yi > p.latitude) != (yj > p.latitude)) &&
+      final intersect =
+          ((yi > p.latitude) != (yj > p.latitude)) &&
           (p.longitude < (xj - xi) * (p.latitude - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
     }
@@ -585,7 +588,8 @@ class _MapViewState extends State<MapView> {
     final lat = point.latitude.clamp(-85.05112878, 85.05112878).toDouble();
     final sinLat = math.sin(lat * math.pi / 180);
     final x = (point.longitude + 180) / 360 * worldSize;
-    final y = (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
+    final y =
+        (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) *
         worldSize;
     return Offset(x, y);
   }
@@ -624,6 +628,7 @@ class _MapViewState extends State<MapView> {
   }
 
   String? _expandedGroupKey;
+  int _expandedGroupPage = 0;
 
   /// Price pills use the same conservative collision rule as before, but the
   /// complete set is computed once per map build through nearby spatial cells
@@ -631,8 +636,7 @@ class _MapViewState extends State<MapView> {
   Set<String> _standalonePriceGroupKeys(List<_PinGroup> groups) {
     if (groups.isEmpty) return const {};
     final ownRadius = math.sqrt(
-      math.pow(_priceMarkerWidth / 2, 2) +
-          math.pow(_priceMarkerHeight / 2, 2),
+      math.pow(_priceMarkerWidth / 2, 2) + math.pow(_priceMarkerHeight / 2, 2),
     );
     final indexes = collisionFreePriceMarkerIndexes(
       points: [
@@ -656,18 +660,21 @@ class _MapViewState extends State<MapView> {
       widget.onTapListing(group.listings.first);
       return;
     }
-    if (group.listings.length > _radialCapacity) {
-      if (_zoom < _clusterZoomMax - 0.01) {
-        final targetZoom = math.min(_zoom + 1.0, _clusterZoomMax);
-        setState(() => _expandedGroupKey = null);
-        _controller.move(group.point, targetZoom);
-      } else {
-        _controller.move(group.point, _zoom);
-      }
+    if (group.listings.length > _radialCapacity &&
+        _zoom < _clusterZoomMax - 0.01) {
+      final targetZoom = math.min(_zoom + 1.0, _clusterZoomMax);
+      setState(() {
+        _expandedGroupKey = null;
+        _expandedGroupPage = 0;
+      });
+      _controller.move(group.point, targetZoom);
       return;
     }
     _controller.move(group.point, _zoom);
-    setState(() => _expandedGroupKey = group.key);
+    setState(() {
+      _expandedGroupKey = group.key;
+      _expandedGroupPage = 0;
+    });
   }
 
   List<Marker> _markersForGroup(_PinGroup group, bool showStandalonePrice) {
@@ -719,17 +726,33 @@ class _MapViewState extends State<MapView> {
   }
 
   Marker _radialMarkerForGroup(_PinGroup group) {
+    final page = paginateMapGroup(
+      group.listings,
+      pageIndex: _expandedGroupPage,
+      pageSize: _radialCapacity,
+    );
     return Marker(
       point: group.point,
       width: 280,
       height: 280,
       alignment: Alignment.center,
       child: _RadialClusterMarker(
-        items: group.listings.take(_radialCapacity).toList(),
+        items: page.items,
+        pageIndex: page.pageIndex,
+        pageCount: page.pageCount,
         rates: widget.rates,
         displayCurrency: widget.displayCurrency,
         onTapListing: widget.onTapListing,
-        onClose: () => setState(() => _expandedGroupKey = null),
+        onPreviousPage: page.hasPrevious
+            ? () => setState(() => _expandedGroupPage = page.pageIndex - 1)
+            : null,
+        onNextPage: page.hasNext
+            ? () => setState(() => _expandedGroupPage = page.pageIndex + 1)
+            : null,
+        onClose: () => setState(() {
+          _expandedGroupKey = null;
+          _expandedGroupPage = 0;
+        }),
       ),
     );
   }
@@ -740,7 +763,8 @@ class _MapViewState extends State<MapView> {
     final lat2 = b.latitude * math.pi / 180;
     final dLat = (b.latitude - a.latitude) * math.pi / 180;
     final dLng = (b.longitude - a.longitude) * math.pi / 180;
-    final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final h =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(lat1) *
             math.cos(lat2) *
             math.sin(dLng / 2) *
@@ -762,8 +786,8 @@ class _MapViewState extends State<MapView> {
     final radius = nearestM <= 200
         ? 200
         : nearestM <= 500
-            ? 500
-            : 1000;
+        ? 500
+        : 1000;
     return (nearest, radius);
   }
 
@@ -777,7 +801,10 @@ class _MapViewState extends State<MapView> {
 
   void _onMapTap(LatLng point) {
     if (_expandedGroupKey != null) {
-      setState(() => _expandedGroupKey = null);
+      setState(() {
+        _expandedGroupKey = null;
+        _expandedGroupPage = 0;
+      });
     }
     if (_drawing) {
       setState(() => _area.add(point));
@@ -823,7 +850,8 @@ class _MapViewState extends State<MapView> {
     double borderWidth = 2,
   }) {
     final selected = zone.id == _selectedZoneId;
-    final districtDimmed = _selectedDistrictId != null &&
+    final districtDimmed =
+        _selectedDistrictId != null &&
         zone.type == 'district' &&
         zone.id != _selectedDistrictId;
     final base = _parseHexColor(zone.colorHex);
@@ -855,25 +883,25 @@ class _MapViewState extends State<MapView> {
   }
 
   List<Marker> _poiMarkers(List<DistrictZone> pois, IconData icon) => [
-        for (final poi in pois)
-          Marker(
-            point: LatLng(poi.lat, poi.lng),
-            width: 34,
-            height: 34,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _handlePointTap(
-                LatLng(poi.lat, poi.lng),
-                () => unawaited(_selectZone(poi)),
-              ),
-              child: _PoiMarker(
-                icon: icon,
-                color: _parseHexColor(poi.colorHex),
-                selected: poi.id == _selectedZoneId,
-              ),
-            ),
+    for (final poi in pois)
+      Marker(
+        point: LatLng(poi.lat, poi.lng),
+        width: 34,
+        height: 34,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _handlePointTap(
+            LatLng(poi.lat, poi.lng),
+            () => unawaited(_selectZone(poi)),
           ),
-      ];
+          child: _PoiMarker(
+            icon: icon,
+            color: _parseHexColor(poi.colorHex),
+            selected: poi.id == _selectedZoneId,
+          ),
+        ),
+      ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -909,6 +937,7 @@ class _MapViewState extends State<MapView> {
                 setState(() {
                   _zoom = z;
                   _expandedGroupKey = null;
+                  _expandedGroupPage = 0;
                 });
               }
             },
@@ -978,7 +1007,8 @@ class _MapViewState extends State<MapView> {
                       station,
                       1000,
                       _metro1000Color,
-                      selected: station.id == _selectedZoneId &&
+                      selected:
+                          station.id == _selectedZoneId &&
                           selectedMetroRadius == 1000,
                     ),
                   for (final station in _zones.metroStations)
@@ -986,7 +1016,8 @@ class _MapViewState extends State<MapView> {
                       station,
                       500,
                       _metro500Color,
-                      selected: station.id == _selectedZoneId &&
+                      selected:
+                          station.id == _selectedZoneId &&
                           selectedMetroRadius == 500,
                     ),
                   for (final station in _zones.metroStations)
@@ -994,7 +1025,8 @@ class _MapViewState extends State<MapView> {
                       station,
                       200,
                       _metro200Color,
-                      selected: station.id == _selectedZoneId &&
+                      selected:
+                          station.id == _selectedZoneId &&
                           selectedMetroRadius == 200,
                     ),
                 ],
@@ -1060,7 +1092,8 @@ class _MapViewState extends State<MapView> {
                               color: Colors.black.withValues(alpha: 0.55),
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color: (_selectedDistrictId != null &&
+                                color:
+                                    (_selectedDistrictId != null &&
                                         zone.id != _selectedDistrictId)
                                     ? _desaturate(
                                         _parseHexColor(zone.colorHex),
@@ -1073,7 +1106,8 @@ class _MapViewState extends State<MapView> {
                               zone.label,
                               style: TextStyle(
                                 color: Colors.white.withValues(
-                                  alpha: (_selectedDistrictId != null &&
+                                  alpha:
+                                      (_selectedDistrictId != null &&
                                           zone.id != _selectedDistrictId)
                                       ? 0.55
                                       : 1,
@@ -1174,9 +1208,7 @@ class _MapViewState extends State<MapView> {
                     points: _area,
                     borderStrokeWidth: 2,
                     borderColor: Theme.of(context).colorScheme.primary,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
+                    color: Theme.of(context).colorScheme.primary
                         .withValues(alpha: 0.15),
                   ),
                 ],
@@ -1185,8 +1217,11 @@ class _MapViewState extends State<MapView> {
               PolygonLayer(
                 polygons: [
                   Polygon(
-                    points: _circleRingAt(widget.radiusCenter!.latitude,
-                        widget.radiusCenter!.longitude, widget.radiusM!),
+                    points: _circleRingAt(
+                      widget.radiusCenter!.latitude,
+                      widget.radiusCenter!.longitude,
+                      widget.radiusM!,
+                    ),
                     borderStrokeWidth: 2.5,
                     borderColor: const Color(0xFF2563EB),
                     color: const Color(0xFF2563EB).withValues(alpha: 0.14),
@@ -1228,8 +1263,11 @@ class _MapViewState extends State<MapView> {
                     point: widget.radiusCenter!,
                     width: 46,
                     height: 46,
-                    child: const Icon(Icons.work,
-                        color: Color(0xFF2563EB), size: 36),
+                    child: const Icon(
+                      Icons.work,
+                      color: Color(0xFF2563EB),
+                      size: 36,
+                    ),
                   ),
                 for (final group in groups)
                   if (expandedGroup == null || group.key != expandedGroup.key)
@@ -1286,7 +1324,8 @@ class _MapViewState extends State<MapView> {
                   heroTag: 'radiusCenter',
                   tooltip: 'Указать работу на карте',
                   onPressed: () => setState(
-                      () => _placingRadiusCenter = !_placingRadiusCenter),
+                    () => _placingRadiusCenter = !_placingRadiusCenter,
+                  ),
                   backgroundColor: _placingRadiusCenter
                       ? Theme.of(context).colorScheme.primary
                       : Theme.of(context).colorScheme.surface,
@@ -1335,20 +1374,23 @@ class _MapViewState extends State<MapView> {
             right: 76,
             bottom: 18,
             child: Card(
-              child: Row(children: [
-                const SizedBox(width: 12),
-                const Icon(Icons.work_outline, size: 20),
-                Expanded(
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  const Icon(Icons.work_outline, size: 20),
+                  Expanded(
                     child: Slider(
-                  min: 500,
-                  max: 30000,
-                  divisions: 59,
-                  value: widget.radiusM!.clamp(500, 30000),
-                  onChanged: widget.onRadiusChanged,
-                )),
-                Text('${(widget.radiusM! / 1000).toStringAsFixed(1)} км'),
-                const SizedBox(width: 12),
-              ]),
+                      min: 500,
+                      max: 30000,
+                      divisions: 59,
+                      value: widget.radiusM!.clamp(500, 30000),
+                      onChanged: widget.onRadiusChanged,
+                    ),
+                  ),
+                  Text('${(widget.radiusM! / 1000).toStringAsFixed(1)} км'),
+                  const SizedBox(width: 12),
+                ],
+              ),
             ),
           ),
         if (_zones.cityZone?.boundaryRings.isNotEmpty == true ||
@@ -1464,8 +1506,9 @@ class _ZoneToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color:
-                active ? scheme.primary : Colors.black.withValues(alpha: 0.55),
+            color: active
+                ? scheme.primary
+                : Colors.black.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: active ? scheme.primary : Colors.white24),
           ),
@@ -1575,20 +1618,20 @@ class _PoiMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.black.withValues(alpha: 0.78),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? Colors.white : color,
-            width: selected ? 2.5 : 2,
-          ),
-          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
-        ),
-        child: Icon(icon, size: 18, color: Colors.white),
-      );
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: selected
+          ? Theme.of(context).colorScheme.primary
+          : Colors.black.withValues(alpha: 0.78),
+      shape: BoxShape.circle,
+      border: Border.all(
+        color: selected ? Colors.white : color,
+        width: selected ? 2.5 : 2,
+      ),
+      boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
+    ),
+    child: Icon(icon, size: 18, color: Colors.white),
+  );
 }
 
 class _PinGroup {
@@ -1702,27 +1745,37 @@ class _FocusMarker extends StatelessWidget {
 class _RadialClusterMarker extends StatelessWidget {
   const _RadialClusterMarker({
     required this.items,
+    required this.pageIndex,
+    required this.pageCount,
     required this.rates,
     required this.displayCurrency,
     required this.onTapListing,
+    required this.onPreviousPage,
+    required this.onNextPage,
     required this.onClose,
   });
 
   final List<MapListingPoint> items;
+  final int pageIndex;
+  final int pageCount;
   final Map<String, double>? rates;
   final String? displayCurrency;
   final void Function(MapListingPoint) onTapListing;
+  final VoidCallback? onPreviousPage;
+  final VoidCallback? onNextPage;
   final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     const size = 280.0;
     const center = size / 2;
-    final radius = switch (items.length) {
-      <= 4 => 66.0,
-      <= 7 => 84.0,
-      _ => 104.0,
-    };
+    final radius = pageCount > 1
+        ? 104.0
+        : switch (items.length) {
+            <= 4 => 66.0,
+            <= 7 => 84.0,
+            _ => 104.0,
+          };
     return SizedBox(
       width: size,
       height: size,
@@ -1749,6 +1802,17 @@ class _RadialClusterMarker extends StatelessWidget {
             top: center - 18,
             child: _RadialHub(onClose: onClose),
           ),
+          if (pageCount > 1)
+            Positioned(
+              left: center - 59,
+              top: center + 28,
+              child: _RadialPager(
+                pageIndex: pageIndex,
+                pageCount: pageCount,
+                onPreviousPage: onPreviousPage,
+                onNextPage: onNextPage,
+              ),
+            ),
         ],
       ),
     );
@@ -1779,6 +1843,81 @@ class _RadialHub extends StatelessWidget {
             border: Border.all(color: Colors.white, width: 2),
           ),
           child: const Icon(Icons.close, size: 18, color: Colors.white),
+        ),
+      ),
+    );
+  }
+}
+
+class _RadialPager extends StatelessWidget {
+  const _RadialPager({
+    required this.pageIndex,
+    required this.pageCount,
+    required this.onPreviousPage,
+    required this.onNextPage,
+  });
+
+  final int pageIndex;
+  final int pageCount;
+  final VoidCallback? onPreviousPage;
+  final VoidCallback? onNextPage;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.80),
+      borderRadius: BorderRadius.circular(18),
+      elevation: 6,
+      child: Container(
+        width: 118,
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(
+          children: [
+            _RadialPagerButton(icon: Icons.chevron_left, onTap: onPreviousPage),
+            Expanded(
+              child: Center(
+                child: Text(
+                  '${pageIndex + 1}/$pageCount',
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            _RadialPagerButton(icon: Icons.chevron_right, onTap: onNextPage),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RadialPagerButton extends StatelessWidget {
+  const _RadialPagerButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(15),
+        onTap: onTap,
+        child: Icon(
+          icon,
+          size: 19,
+          color: onTap == null ? Colors.white30 : Colors.white,
         ),
       ),
     );
