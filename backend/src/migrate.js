@@ -3,6 +3,14 @@ import pg from 'pg';
 import {listMigrationFiles} from './migration-files.js';
 
 const { Pool } = pg;
+const MIGRATION_MAX_ATTEMPTS = Math.max(
+  1,
+  Number.parseInt(process.env.MIGRATION_MAX_ATTEMPTS || '4', 10) || 4,
+);
+const MIGRATION_RETRY_BASE_MS = Math.max(
+  100,
+  Number.parseInt(process.env.MIGRATION_RETRY_BASE_MS || '1000', 10) || 1000,
+);
 
 const pool = new Pool({
   host: process.env.PGHOST || 'flat-finder-postgres',
@@ -13,6 +21,33 @@ const pool = new Pool({
   max: 1,
   connectionTimeoutMillis: 10_000,
 });
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function applyMigration(client, file, sql) {
+  for (let attempt = 1; attempt <= MIGRATION_MAX_ATTEMPTS; attempt += 1) {
+    await client.query('BEGIN');
+    try {
+      await client.query(sql);
+      await client.query('INSERT INTO schema_migrations(version) VALUES ($1)', [file]);
+      await client.query('COMMIT');
+      console.log(`[migrate] applied ${file}`);
+      return;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+
+      const retryableDeadlock = error?.code === '40P01' && attempt < MIGRATION_MAX_ATTEMPTS;
+      if (!retryableDeadlock) throw error;
+
+      const delayMs = MIGRATION_RETRY_BASE_MS * (2 ** (attempt - 1));
+      console.warn(
+        `[migrate] deadlock while applying ${file}; ` +
+        `retrying ${attempt + 1}/${MIGRATION_MAX_ATTEMPTS} in ${delayMs}ms`,
+      );
+      await sleep(delayMs);
+    }
+  }
+}
 
 async function runMigrations() {
   const client = await pool.connect();
@@ -32,17 +67,7 @@ async function runMigrations() {
     for (const file of files) {
       if (applied.has(file)) continue;
       const sql = await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8');
-
-      await client.query('BEGIN');
-      try {
-        await client.query(sql);
-        await client.query('INSERT INTO schema_migrations(version) VALUES ($1)', [file]);
-        await client.query('COMMIT');
-        console.log(`[migrate] applied ${file}`);
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-      }
+      await applyMigration(client, file, sql);
     }
   } finally {
     await client.query("SELECT pg_advisory_unlock(hashtext('flat_finder_migrations'))").catch(() => {});
