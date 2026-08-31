@@ -24,12 +24,15 @@ enum SortBy {
 }
 
 /// All selectable listing sources. Empty selection on the server means "all".
-/// Reddit/Threads are omitted: their public APIs can't be read from the server
-/// (datacenter IPs are blocked / no public search), so they never return
-/// results and only added dead filter chips.
-const kAllSources = ['olx', 'telegram'];
+/// Curated owner/realtor websites are persisted as `custom`, so it must be part
+/// of the default set or those listings disappear from normal mobile searches.
+const kAllSources = ['olx', 'telegram', 'custom'];
 
-const kSourceLabels = {'olx': 'OLX', 'telegram': 'Telegram'};
+const kSourceLabels = {
+  'olx': 'OLX',
+  'telegram': 'Telegram',
+  'custom': 'Sites',
+};
 
 /// Boolean amenity filters the backend accepts as bare `?key=true` query
 /// params (`parseListingFilters` in listing-routes.js) and stores generically
