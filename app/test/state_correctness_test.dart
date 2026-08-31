@@ -38,6 +38,8 @@ class ControlledApi extends ApiService {
 
   final forceResult = Completer<ListingsResult>();
   final searchResult = Completer<ListingsResult>();
+  Completer<ListingsResult>? pageCompleter;
+  Completer<List<Listing>>? mapCompleter;
   ListingsResult? pageResult;
 
   @override
@@ -47,11 +49,19 @@ class ControlledApi extends ApiService {
     String? cursor,
   }) {
     if (cursor != null) {
+      final pending = pageCompleter;
+      if (pending != null) return pending.future;
       return Future.value(
         pageResult ?? ListingsResult(const [], const [], const []),
       );
     }
     return force ? forceResult.future : searchResult.future;
+  }
+
+  @override
+  Future<List<Listing>> fetchMapListings(Filters filters) {
+    final pending = mapCompleter;
+    return pending?.future ?? Future.value(const <Listing>[]);
   }
 }
 
@@ -273,6 +283,44 @@ void main() {
         'olx:UZ:42',
         'olx:KZ:42',
       });
+    });
+
+    test('new search clears superseded pagination and map loading flags', () async {
+      final api = ControlledApi()
+        ..pageCompleter = Completer<ListingsResult>()
+        ..mapCompleter = Completer<List<Listing>>();
+      final state = AppState(api)..filters = Filters(countries: {'UZ'});
+      final old = listing(source: 'olx', country: 'UZ', id: 'old');
+      final fresh = listing(source: 'olx', country: 'UZ', id: 'fresh');
+      state.listings = [old];
+      state.nextCursor = 'next';
+
+      final pageFuture = state.loadMore();
+      final mapFuture = state.loadMapListings();
+      expect(state.loadingMore, isTrue);
+      expect(state.mapLoading, isTrue);
+
+      state.updateFilters(state.filters.copyWith(query: 'fresh query'));
+      final searchFuture = state.search();
+      expect(state.loadingMore, isFalse);
+      expect(state.mapLoading, isFalse);
+
+      api.searchResult.complete(
+        ListingsResult([fresh], const [], const [], total: 1),
+      );
+      await searchFuture;
+
+      api.pageCompleter!.complete(
+        ListingsResult([old], const [], const [], total: 1),
+      );
+      api.mapCompleter!.complete([old]);
+      await pageFuture;
+      await mapFuture;
+
+      expect(state.loadingMore, isFalse);
+      expect(state.mapLoading, isFalse);
+      expect(state.listings.single.id, 'fresh');
+      expect(state.mapListings, isEmpty);
     });
   });
 }
