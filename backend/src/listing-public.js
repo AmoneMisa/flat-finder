@@ -106,13 +106,14 @@ async function attachTransport(listing, country) {
 
 /**
  * Final response pipeline shared by every single-listing endpoint.
- * A live source refresh opts into geo refinement so source coordinates receive
- * the same locationAccuracyM/provenance used by the normal ingestion pipeline
- * before transport eligibility is evaluated.
+ * Stored DB snapshots are already normalized and must not be reparsed here.
+ * A live source refresh opts into parsing + geo refinement so source coordinates
+ * receive the same locationAccuracyM/provenance used by normal ingestion before
+ * transport eligibility is evaluated.
  */
 export async function preparePublicListing(listing, country, {refreshGeo = false} = {}) {
   if (!listing) return listing;
-  let prepared = enrichListingDetails(listing);
+  let prepared = refreshGeo ? enrichListingDetails(listing) : {...listing};
   if (refreshGeo && country) {
     try {
       [prepared] = await geocodeListings([prepared], country);
