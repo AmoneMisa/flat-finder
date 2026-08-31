@@ -108,14 +108,19 @@ export async function searchCanonicalFeed({filters, countries, rates}) {
   const offsetParam = addPage(offset);
 
   let orderBy;
+  let finalOrderBy;
   if (sort === 'oldest') {
     orderBy = 'm.created_at ASC NULLS LAST, m.listing_id ASC';
+    finalOrderBy = 'page.created_at ASC NULLS LAST, page.db_id ASC';
   } else if (sort === 'priceAsc') {
     orderBy = `${priceUsdExpr} ASC NULLS LAST, m.listing_id ASC`;
+    finalOrderBy = 'page.price_usd ASC NULLS LAST, page.db_id ASC';
   } else if (sort === 'priceDesc') {
     orderBy = `${priceUsdExpr} DESC NULLS LAST, m.listing_id DESC`;
+    finalOrderBy = 'page.price_usd DESC NULLS LAST, page.db_id DESC';
   } else {
     orderBy = 'm.created_at DESC NULLS LAST, m.listing_id DESC';
+    finalOrderBy = 'page.created_at DESC NULLS LAST, page.db_id DESC';
   }
 
   const includeWindowCount = !useCursor;
@@ -138,7 +143,7 @@ export async function searchCanonicalFeed({filters, countries, rates}) {
     SELECT page.*, l.data
     FROM page
     LEFT JOIN listings AS l ON l.id = page.db_id
-    ORDER BY ${orderBy.replaceAll('m.', 'page.')}
+    ORDER BY ${finalOrderBy}
   `;
 
   const countSql = `
