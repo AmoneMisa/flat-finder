@@ -16,16 +16,21 @@ test('owner registry covers curated direct-owner platforms in every configured c
     'https://turar.uz/ru/tashkent',
     'https://easy-house.in.ua/search/',
     'https://kvarto.app/uk',
+    'https://www.norieltor.com.ua/',
     'https://bezmakler.com.ua/',
     'https://dobalux.com/uk/',
     'https://www.kn.kz/almaty/arenda-kvartir-bez-posrednikov-s-foto',
     'https://www.kn.kz/astana/arenda-kvartir-bez-posrednikov',
     'https://www.kn.kz/karaganda/arenda-kvartir-bez-posrednikov',
+    'https://www.kn.kz/aktobe/arenda-kvartir-bez-posrednikov',
+    'https://www.kn.kz/atyrau/arenda-kvartir-bez-posrednikov',
+    'https://www.kn.kz/uralsk/arenda-kvartir-bez-posrednikov',
     'https://www.proprietaripebune.ro/chirii/bucuresti',
     'https://proprietar-direct.ro/categorii-anunturi/oferte-de-inchiriat/',
     'https://www.directfaracomision.ro/anunturi?tip_proprietate=apartment&tip_tranzactie=inchiriere',
     'https://garsoniera.ro/anunturi/inchiriere',
     'https://arendator.kg/',
+    'https://myhouse.kg/rent/apartment/',
     'https://sutochno.kg/bishkek/',
     'https://sutochno.kg/osh/',
   ]) {
@@ -37,9 +42,11 @@ test('owner registry covers curated direct-owner platforms in every configured c
   assert.equal(ownerHousingSources('UA').find((source) => source.key === 'dobalux-ukraine-owner-daily')?.dealType, 'shortRent');
   assert.equal(ownerHousingSources('KG').find((source) => source.key === 'sutochno-bishkek-owner-daily')?.dealType, 'shortRent');
   assert.equal(ownerHousingSources('KG').find((source) => source.key === 'sutochno-osh-owner-daily')?.city, 'Osh');
+  assert.ok(ownerHousingSources('KG').find((source) => source.key === 'myhouse-kyrgyzstan-owner-rent')?.ownerMarkers?.includes('собственник'));
   assert.ok(!realtorHousingSources('UZ').some((source) => source.url.includes('rentli.uz')));
   assert.equal(COUNTRIES.KG?.currency, 'KGS');
   assert.deepEqual(COUNTRIES.KG?.sources, ['telegram']);
+  assert.ok(COUNTRIES.KG?.crawlCities.includes('Osh'));
 });
 
 test('owner Telegram overrides replace older bare channel entries', () => {
@@ -49,6 +56,9 @@ test('owner Telegram overrides replace older bare channel entries', () => {
   assert.deepEqual(arentash?.ownerMarkers, ['#хозяева']);
   assert.deepEqual(arentash?.ownerRejectMarkers, ['#риелтор']);
   assert.equal(uz.find((channel) => channel?.name === 'ijaraga_kvartiralar_Bezmakler')?.ownerOnly, true);
+  const extraBezMakler = uz.find((channel) => channel?.name === 'bezmakler_ijara');
+  assert.equal(extraBezMakler?.ownerOnly, true);
+  assert.ok(extraBezMakler?.ownerMarkers.includes('egasi'));
 
   const kz = telegramHousingChannels('KZ', COUNTRIES.KZ.telegramChannels);
   assert.equal(kz.find((channel) => channel?.name === 'kvartiry2')?.ownerOnly, true);
@@ -82,21 +92,28 @@ test('crawl plan restores daily OLX and queues owner-first sources', () => {
     'turar-tashkent-owner-daily',
     'easyhouse-ukraine-owner-rent',
     'kvarto-ukraine-owner-rent',
+    'norieltor-ukraine-owner-rent',
     'bezmakler-odesa-owner-rent',
     'dobalux-ukraine-owner-daily',
     'kn-almaty-owner-rent',
     'kn-astana-owner-rent',
     'kn-karaganda-owner-rent',
+    'kn-aktobe-owner-rent',
+    'kn-atyrau-owner-rent',
+    'kn-oral-owner-rent',
     'proprietari-pe-bune-bucharest-owner-rent',
     'proprietar-direct-romania-owner-rent',
     'direct-fara-comision-romania-owner-rent',
     'garsoniera-romania-owner-rent',
     'arendator-bishkek-owner-rent',
+    'myhouse-kyrgyzstan-owner-rent',
     'sutochno-bishkek-owner-daily',
     'sutochno-osh-owner-daily',
   ]) {
     assert.ok(tasks.some((task) => task.type === 'flat.custom.url' && task.segment === segment && task.ownerOnly));
   }
+  const myHouse = tasks.find((task) => task.type === 'flat.custom.url' && task.segment === 'myhouse-kyrgyzstan-owner-rent');
+  assert.ok(myHouse?.ownerMarkers.includes('собственник'));
   assert.ok(tasks.some((task) =>
     task.type === 'flat.telegram.channel'
     && task.country === 'KG'
@@ -122,4 +139,19 @@ test('owner policy rejects realtor-marked inventory', () => {
   assert.equal(filtered[0].commission, false);
   assert.equal(filtered[0].commissionPercent, 0);
   assert.equal(filtered[0].dealType, 'longRent');
+});
+
+test('mixed custom catalog requires an explicit owner marker', () => {
+  const listings = [
+    { title: '2 комнаты, Собственник', description: 'Бишкек 50 000 сом', byAgency: false },
+    { title: '2 комнаты', description: 'Бишкек 50 000 сом', byAgency: false },
+    { title: '2 комнаты', description: 'Агентство недвижимости, Бишкек', byAgency: true },
+  ];
+  const filtered = enforceOwnerOnlyListings(listings, {
+    ownerOnly: true,
+    ownerMarkers: ['собственник', 'частное лицо'],
+    dealType: 'longRent',
+  });
+  assert.equal(filtered.length, 1);
+  assert.match(filtered[0].title, /Собственник/);
 });
