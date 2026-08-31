@@ -14,13 +14,38 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // Dedicated daily/hourly apartment feed.
     { name: 'kyiv_kvartira', city: 'Kyiv', dealType: 'shortRent' },
 
+    // Lviv: one owner-only network feed plus a mixed feed with a reliable
+    // #власник/direct-owner convention. Wanted posts are rejected downstream.
+    { name: 'direct_rent', city: 'Lviv', ownerOnly: true, dealType: 'longRent' },
+    {
+      name: 'lviv_no_maklers',
+      city: 'Lviv',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: [
+        '#власник',
+        'від власника',
+        'від власниці',
+        'пряма оренда від власниці',
+        'без комісії',
+      ],
+    },
+
     // Kharkiv.
     { name: 'KH_Rent', city: 'Kharkiv' },
     { name: 'kh_rent_apartment', city: 'Kharkiv' },
     { name: 'xaarenda', city: 'Kharkiv' },
     { name: 'RENTUA_KHARKIV', city: 'Kharkiv' },
 
-    // Ivano-Frankivsk.
+    // Ivano-Frankivsk: channel is mixed owners + agencies, but owner listings
+    // consistently carry #власник/direct-owner wording.
+    {
+      name: 'rent_frankivsk',
+      city: 'Ivano-Frankivsk',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: ['#власник', 'від власника', 'власник', 'без комісії'],
+    },
     { name: 'ivano_frankivsk_dom', city: 'Ivano-Frankivsk' },
     { name: 'RENTIN_FRANKIVSK', city: 'Ivano-Frankivsk' },
 
@@ -31,10 +56,48 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // Mukachevo.
     { name: 'orendari_mukachevo', city: 'Mukachevo' },
 
-    // Chernivtsi: additional active public housing feeds.
+    // Chernivtsi: the direct_rent network feed explicitly publishes rentals
+    // from owners without realtor commission.
+    { name: 'direct_rent_cv', city: 'Chernivtsi', ownerOnly: true, dealType: 'longRent' },
     { name: 'centralne', city: 'Chernivtsi' },
     { name: 'housecv', city: 'Chernivtsi' },
     { name: 'realestatechernivtsiID', city: 'Chernivtsi' },
+
+    // Rivne direct-owner network feed.
+    { name: 'direct_rent_rivne', city: 'Rivne', ownerOnly: true, dealType: 'longRent' },
+
+    // Khmelnytskyi mixed feed: only retain posts with explicit owner/no-commission
+    // wording. Deal type remains inferred because the feed carries long + daily.
+    {
+      name: 'rentin_khmelnytskyi',
+      city: 'Khmelnytskyi',
+      ownerOnly: true,
+      ownerMarkers: [
+        'без комісії ріелтора',
+        'без комісії',
+        'від власника',
+        'власник',
+        'от собственника',
+        'без посредников',
+      ],
+    },
+
+    // Mykolaiv SMARTIN is mixed; accept only explicitly owner-marked offers.
+    {
+      name: 'SMARTIN_MYKOLAYIV',
+      city: 'Mykolaiv',
+      ownerOnly: true,
+      ownerMarkers: [
+        'від власника',
+        'власник',
+        'от собственника',
+        'собственник',
+        'свою квартиру',
+        'сдаю свою',
+        'без комісії ріелтора',
+        'без посредников',
+      ],
+    },
 
     // Odesa: additional active public housing feeds.
     { name: 'odessa_housing', city: 'Odesa' },
@@ -137,6 +200,13 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     // Dedicated daily-rent feeds (Russian and Uzbek wording).
     { name: 'posutochnotashkent', city: 'Tashkent', dealType: 'shortRent' },
     { name: 'kunlik_kvartira_toshkent_arenda', city: 'Tashkent', dealType: 'shortRent' },
+    {
+      name: 'kunlik_kvartira_1',
+      city: 'Tashkent',
+      ownerOnly: true,
+      dealType: 'shortRent',
+      ownerMarkers: ['egasi', 'bezmakler', 'без маклера', 'без посредников'],
+    },
   ],
 };
 
