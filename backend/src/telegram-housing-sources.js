@@ -6,6 +6,8 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'ArendaUA', city: 'Kyiv' },
     { name: 'arendakyiv_ua', city: 'Kyiv' },
     { name: 'rentapartmentkyiv', city: 'Kyiv' },
+    // Dedicated daily/hourly apartment feed.
+    { name: 'kyiv_kvartira', city: 'Kyiv', dealType: 'shortRent' },
 
     // Kharkiv.
     { name: 'KH_Rent', city: 'Kharkiv' },
@@ -35,6 +37,9 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'arenda_odessa_oblast', city: 'Odesa' },
     { name: 'arenda_kv_odessa', city: 'Odesa' },
     { name: 'arenda_odesa_kvartiry', city: 'Odesa' },
+    // Dedicated daily-rent feeds verified as public Telegram channels.
+    { name: 'posutochnaya_arenda_odessa', city: 'Odesa', dealType: 'shortRent' },
+    { name: 'OdessaDailyRentUar', city: 'Odesa', dealType: 'shortRent' },
   ],
   UZ: [
     // Tashkent: additional active public housing feeds.
@@ -42,6 +47,9 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'kvartira_bez_posrednika', city: 'Tashkent' },
     { name: 'nedvij_tashkent', city: 'Tashkent' },
     { name: 'iHometashkent', city: 'Tashkent' },
+    // Dedicated daily-rent feeds (Russian and Uzbek wording).
+    { name: 'posutochnotashkent', city: 'Tashkent', dealType: 'shortRent' },
+    { name: 'kunlik_kvartira_toshkent_arenda', city: 'Tashkent', dealType: 'shortRent' },
   ],
 };
 
