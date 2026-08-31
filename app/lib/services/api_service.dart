@@ -31,12 +31,14 @@ class ListingsResult {
   final List<SourceError> sourceErrors; // per-source failures to surface
   final String? nextCursor;
   final int total;
+  final bool deferredMarketComparison;
   ListingsResult(
     this.listings,
     this.degradedCountries,
     this.sourceErrors, {
     this.nextCursor,
     this.total = 0,
+    this.deferredMarketComparison = false,
   });
 }
 
@@ -90,6 +92,7 @@ class ApiService {
 
   final String baseUrl;
   Future<SearchStatistics?>? _statisticsSnapshotRequest;
+  final Set<http.Client> _listingClients = <http.Client>{};
 
   /// Production backend, reachable from a real device — proxied through
   /// whiteslove.me's existing HTTPS vhost (nginx `location /flat-api/` ->
@@ -157,8 +160,25 @@ class ApiService {
     return hdr != null ? hdr * 1000 : 3000;
   }
 
+  bool _canUseMobileStructuredFeed(Filters filters, {required bool force}) =>
+      !force && filters.query.trim().isEmpty && filters.customSources.isEmpty;
+
+  /// Close in-flight listing HTTP clients immediately. Closing `http.Client`
+  /// aborts the underlying request rather than merely ignoring its eventual
+  /// result, which keeps rapid filter changes from piling up on the backend.
+  void cancelListingRequests() {
+    final clients = _listingClients.toList(growable: false);
+    _listingClients.clear();
+    for (final client in clients) {
+      client.close();
+    }
+  }
+
   /// [force] triggers a fresh backend scrape (bypasses the cache) — used by the
-  /// manual "Reload all" action. It is flood-protected server-side (429).
+  /// manual "Reload all" action. Ordinary structured card searches use the
+  /// mobile endpoint, which deliberately leaves market-comparison aggregation
+  /// off the critical path. Free text/custom-source/forced searches retain the
+  /// compatibility endpoint.
   Future<ListingsResult> fetchListings(
     Filters filters, {
     bool force = false,
@@ -170,33 +190,88 @@ class ApiService {
     params['limit'] = '20';
     if (force) params['refresh'] = '1';
     if (cursor != null && cursor.isNotEmpty) params['cursor'] = cursor;
-    final uri =
-        Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
-    final res = await http.get(uri).timeout(const Duration(seconds: 30));
-    if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
-    if (res.statusCode != 200) {
-      throw Exception('listings HTTP ${res.statusCode}');
+
+    final mobileStructured = _canUseMobileStructuredFeed(filters, force: force);
+    final path = mobileStructured ? '/api/mobile/listings' : '/api/listings';
+    final uri = Uri.parse('$baseUrl$path').replace(queryParameters: params);
+    final client = http.Client();
+    _listingClients.add(client);
+    try {
+      final res = await client.get(uri).timeout(const Duration(seconds: 30));
+      if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
+      if (res.statusCode != 200) {
+        throw Exception('listings HTTP ${res.statusCode}');
+      }
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      final listings = (json['listings'] as List)
+          .map(
+            (e) => Listing.fromJson(
+              _absolutizePhotos(Map<String, dynamic>.from(e as Map)),
+            ),
+          )
+          .toList();
+      final degraded = (json['degradedCountries'] as List? ?? [])
+          .map((e) => e.toString())
+          .toList();
+      final errors = (json['sourceErrors'] as List? ?? [])
+          .map((e) => SourceError.fromJson(e as Map<String, dynamic>))
+          .toList();
+      return ListingsResult(
+        listings,
+        degraded,
+        errors,
+        nextCursor: json['nextCursor']?.toString(),
+        total: (json['count'] as num?)?.toInt() ?? listings.length,
+        deferredMarketComparison: mobileStructured,
+      );
+    } finally {
+      _listingClients.remove(client);
+      client.close();
     }
-    final json = jsonDecode(res.body) as Map<String, dynamic>;
-    final listings = (json['listings'] as List)
-        .map(
-          (e) => Listing.fromJson(_absolutizePhotos(e as Map<String, dynamic>)),
-        )
-        .toList();
-    final degraded = (json['degradedCountries'] as List? ?? [])
-        .map((e) => e.toString())
-        .toList();
-    final errors = (json['sourceErrors'] as List? ?? [])
-        .map((e) => SourceError.fromJson(e as Map<String, dynamic>))
-        .toList();
-    return ListingsResult(
-      listings,
-      degraded,
-      errors,
-      nextCursor: json['nextCursor']?.toString(),
-      total: (json['count'] as num?)?.toInt() ?? listings.length,
-    );
   }
+
+  String _comparisonKey(Listing listing) =>
+      '${listing.source.toLowerCase()}:${listing.country.toUpperCase()}:${listing.id}';
+
+  /// Best-effort second-phase market enrichment for already rendered cards.
+  /// The mobile list response is intentionally returned before this aggregate
+  /// work starts; callers merge these values only if their search generation is
+  /// still current.
+  Future<Map<String, MarketComparison>> fetchMarketComparisons(
+    List<Listing> listings,
+  ) async {
+    if (listings.isEmpty) return const <String, MarketComparison>{};
+    final requested = listings.take(60).toList(growable: false);
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/api/mobile/market-comparisons'),
+            headers: const {'content-type': 'application/json'},
+            body: jsonEncode({
+              'listings': requested.map((listing) => listing.toJson()).toList(),
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+      if (res.statusCode != 200) return const <String, MarketComparison>{};
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      final out = <String, MarketComparison>{};
+      for (final raw in (json['comparisons'] as List? ?? const [])) {
+        if (raw is! Map) continue;
+        final row = Map<String, dynamic>.from(raw);
+        final key = row['key']?.toString();
+        final market = row['marketComparison'];
+        if (key == null || key.isEmpty || market is! Map) continue;
+        out[key] = MarketComparison.fromJson(Map<String, dynamic>.from(market));
+      }
+      return out;
+    } catch (_) {
+      return const <String, MarketComparison>{};
+    }
+  }
+
+  /// Helper exposed for state-layer merges so key normalization exactly matches
+  /// the batch endpoint contract.
+  String marketComparisonKey(Listing listing) => _comparisonKey(listing);
 
   /// Compact full-map feed. The backend walks every result cursor internally,
   /// so Flutter shows the same flats as the web map instead of one card page.
