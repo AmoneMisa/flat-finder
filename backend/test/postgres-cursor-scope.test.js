@@ -72,6 +72,25 @@ test('scoped cursor is accepted only for its exact query scope', () => {
   assert.equal(decodeCursor(scoped).c, 7);
 });
 
+test('price cursor preserves its converted price position and scope', () => {
+  const coreCursor = encodeCursor({
+    v: 1,
+    sort: 'priceAsc',
+    p: 123.45,
+    id: '123',
+    c: 7,
+  });
+  const scoped = attachScopeToCursor(coreCursor, 'scope-a');
+  const parsed = decodeCursor(prepareCursorForScope(scoped, 'scope-a'));
+
+  assert.equal(parsed.sort, 'priceAsc');
+  assert.equal(parsed.p, 123.45);
+  assert.equal(parsed.id, '123');
+  assert.equal(parsed.c, 7);
+  assert.equal(parsed.s, 'scope-a');
+  assert.equal(prepareCursorForScope(scoped, 'scope-b'), '');
+});
+
 test('invalid cursors are rejected instead of reaching SQL builders', () => {
   assert.equal(prepareCursorForScope('not-a-cursor', 'scope-a'), '');
   assert.equal(prepareCursorForScope('a'.repeat(1025), 'scope-a'), '');
@@ -82,7 +101,7 @@ test('invalid cursors are rejected instead of reaching SQL builders', () => {
     {v: 1, sort: 'newest', t: null, id: '-1', c: 3, s: 'scope-a'},
     {v: 1, sort: 'newest', t: null, id: '9223372036854775808', c: 3, s: 'scope-a'},
     {v: 1, sort: 'newest', t: 'not-a-date', id: '123', c: 3, s: 'scope-a'},
-    {v: 1, sort: 'priceAsc', t: null, id: '123', c: 3, s: 'scope-a'},
+    {v: 1, sort: 'priceAsc', p: 'not-a-price', id: '123', c: 3, s: 'scope-a'},
   ]) {
     assert.equal(prepareCursorForScope(encodeCursor(cursor), 'scope-a'), '');
   }
