@@ -56,17 +56,14 @@ export const EXTERNAL_HOUSING_SOURCES = Object.freeze({
       dealType: 'longRent',
     }),
     // Anuntul exposes separate stable owner/particular catalogue URLs by room
-    // count, so keep all three rather than silently covering only one segment.
+    // count. The URL itself is the source-side owner contract; requiring every
+    // card to repeat "proprietar" would incorrectly discard valid inventory.
     Object.freeze({
       key: 'anuntul-bucharest-owner-studio-rent',
       url: 'https://www.anuntul.ro/inchirieri-garsoniere-particular-bucuresti/',
       city: 'Bucharest',
       dealType: 'longRent',
       ownerOnly: true,
-      ownerMarkers: Object.freeze([
-        'proprietar', 'particular', 'direct proprietar',
-        'exclus intermediari', 'fara comision', 'fără comision',
-      ]),
     }),
     Object.freeze({
       key: 'anuntul-bucharest-owner-2-room-rent',
@@ -74,10 +71,6 @@ export const EXTERNAL_HOUSING_SOURCES = Object.freeze({
       city: 'Bucharest',
       dealType: 'longRent',
       ownerOnly: true,
-      ownerMarkers: Object.freeze([
-        'proprietar', 'particular', 'direct proprietar',
-        'exclus intermediari', 'fara comision', 'fără comision',
-      ]),
     }),
     Object.freeze({
       key: 'anuntul-bucharest-owner-3-room-rent',
@@ -85,10 +78,6 @@ export const EXTERNAL_HOUSING_SOURCES = Object.freeze({
       city: 'Bucharest',
       dealType: 'longRent',
       ownerOnly: true,
-      ownerMarkers: Object.freeze([
-        'proprietar', 'particular', 'direct proprietar',
-        'exclus intermediari', 'fara comision', 'fără comision',
-      ]),
     }),
     Object.freeze({
       key: 'imobiliare-anunturi-bucharest-owner-rent',
@@ -96,9 +85,6 @@ export const EXTERNAL_HOUSING_SOURCES = Object.freeze({
       city: 'Bucharest',
       dealType: 'longRent',
       ownerOnly: true,
-      ownerMarkers: Object.freeze([
-        'proprietar', 'direct proprietar', 'de la proprietar',
-      ]),
     }),
   ]),
   KG: Object.freeze([
