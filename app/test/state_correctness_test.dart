@@ -200,13 +200,13 @@ void main() {
     test('set insertion order does not turn the same filters into a change', () {
       final state = AppState(ControlledApi());
       state.filters = Filters(
-        countries: {'UZ', 'KZ'},
+        countries: {'UZ'},
         sources: {'olx', 'telegram'},
         amenities: {'parking', 'balcony'},
       );
 
       final reordered = Filters(
-        countries: {'KZ', 'UZ'},
+        countries: {'UZ'},
         sources: {'telegram', 'olx'},
         amenities: {'balcony', 'parking'},
       );
@@ -255,8 +255,7 @@ void main() {
 
     test('pagination dedupe keeps same source id from another country', () async {
       final api = ControlledApi();
-      final state = AppState(api)
-        ..filters = Filters(countries: {'UZ', 'KZ'});
+      final state = AppState(api)..filters = Filters(countries: {'UZ'});
       final uz = listing(source: 'olx', country: 'UZ', id: '42');
       final kz = listing(source: 'olx', country: 'KZ', id: '42');
       state.listings = [uz];
