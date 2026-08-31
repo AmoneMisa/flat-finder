@@ -10,6 +10,7 @@ import {
 
 const STALE_TTL_MS = 60 * 60 * 1000;
 const FULL_FEED_VERSION = 'full-feed-v8';
+const MAX_VISION_PHOTOS = 10;
 const antiFakeRunning = new Set();
 
 function defaultCacheKey(countryCode) {
@@ -37,7 +38,7 @@ function listingImages(listing) {
       ? [listing.photo]
       : [];
   return [...new Set(source.map(absolutePhotoUrl).filter(Boolean))]
-    .slice(0, 4)
+    .slice(0, MAX_VISION_PHOTOS)
     .map((url, index) => ({ id: `photo_${index + 1}`, url }));
 }
 
