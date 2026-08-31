@@ -127,8 +127,25 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  String _filterFingerprint(Filters value) {
+    final payload = Map<String, dynamic>.from(value.toJson());
+    for (final key in const [
+      'countries',
+      'sources',
+      'customSources',
+      'amenities',
+    ]) {
+      final values = (payload[key] as List? ?? const [])
+          .map((item) => item.toString())
+          .toList()
+        ..sort();
+      payload[key] = values;
+    }
+    return jsonEncode(payload);
+  }
+
   bool _sameFilterPayload(Filters a, Filters b) =>
-      jsonEncode(a.toJson()) == jsonEncode(b.toJson());
+      _filterFingerprint(a) == _filterFingerprint(b);
 
   bool _sameLocationScope(Filters a, Filters b) =>
       setEquals(a.countries, b.countries) &&
