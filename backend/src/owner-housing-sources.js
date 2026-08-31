@@ -1,7 +1,8 @@
 // Curated public housing sources that explicitly advertise direct-owner inventory.
 // These are kept separate from realtor/agency sources so the queue can enforce
 // owner semantics (no commission, no agency flag) without weakening generic
-// source classification.
+// source classification. OLX owner search is intentionally not here: OLX uses
+// its dedicated curl_cffi sidecar because ordinary server fetches are WAF-blocked.
 
 export const OWNER_HOUSING_SOURCES = Object.freeze({
   UZ: Object.freeze([
@@ -32,13 +33,6 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       url: 'https://www.proprietaripebune.ro/chirii/bucuresti',
       city: 'Bucharest',
       dealType: 'longRent',
-    }),
-    Object.freeze({
-      key: 'olx-ro-bucharest-direct-owner-rent',
-      url: 'https://www.olx.ro/imobiliare/apartamente-garsoniere-de-inchiriat/bucuresti/q-proprietar-direct/',
-      city: 'Bucharest',
-      dealType: 'longRent',
-      olxOwnerSearch: true,
     }),
   ]),
   KG: Object.freeze([
