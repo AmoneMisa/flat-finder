@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../lib/models/filters.dart';
 import '../lib/models/listing.dart';
 import '../lib/models/listing_identity.dart';
+import '../lib/models/map_listing_point.dart';
 import '../lib/services/api_service.dart';
 import '../lib/state/app_state.dart';
 import '../lib/state/favorites.dart';
@@ -39,7 +40,7 @@ class ControlledApi extends ApiService {
   final forceResult = Completer<ListingsResult>();
   final searchResult = Completer<ListingsResult>();
   Completer<ListingsResult>? pageCompleter;
-  Completer<List<Listing>>? mapCompleter;
+  Completer<List<MapListingPoint>>? mapCompleter;
   ListingsResult? pageResult;
 
   @override
@@ -59,9 +60,9 @@ class ControlledApi extends ApiService {
   }
 
   @override
-  Future<List<Listing>> fetchMapListings(Filters filters) {
+  Future<List<MapListingPoint>> fetchMapListings(Filters filters) {
     final pending = mapCompleter;
-    return pending?.future ?? Future.value(const <Listing>[]);
+    return pending?.future ?? Future.value(const <MapListingPoint>[]);
   }
 }
 
@@ -288,7 +289,7 @@ void main() {
     test('new search clears superseded pagination and map loading flags', () async {
       final api = ControlledApi()
         ..pageCompleter = Completer<ListingsResult>()
-        ..mapCompleter = Completer<List<Listing>>();
+        ..mapCompleter = Completer<List<MapListingPoint>>();
       final state = AppState(api)..filters = Filters(countries: {'UZ'});
       final old = listing(source: 'olx', country: 'UZ', id: 'old');
       final fresh = listing(source: 'olx', country: 'UZ', id: 'fresh');
@@ -313,7 +314,7 @@ void main() {
       api.pageCompleter!.complete(
         ListingsResult([old], const [], const [], total: 1),
       );
-      api.mapCompleter!.complete([old]);
+      api.mapCompleter!.complete([MapListingPoint.fromListing(old)]);
       await pageFuture;
       await mapFuture;
 

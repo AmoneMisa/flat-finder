@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/models/listing.dart';
-import '../lib/models/map_listing_point.dart';
+import 'package:flat_finder/models/listing.dart';
+import 'package:flat_finder/models/map_listing_point.dart';
 
 void main() {
   test('parses backend compact map point without full listing DTO', () {
