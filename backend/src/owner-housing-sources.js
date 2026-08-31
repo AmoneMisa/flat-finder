@@ -46,6 +46,12 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       dealType: 'longRent',
     }),
     Object.freeze({
+      key: 'dimria-ukraine-owner-rent',
+      url: 'https://dom.ria.com/uk/arenda-kvartir/bez-rieltora/',
+      city: null,
+      dealType: 'longRent',
+    }),
+    Object.freeze({
       key: 'bezmakler-odesa-owner-rent',
       url: 'https://bezmakler.com.ua/',
       city: 'Odesa',
@@ -59,6 +65,20 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
     }),
   ]),
   KZ: Object.freeze([
+    Object.freeze({
+      key: 'krisha-kazakhstan-owner-rent',
+      url: 'https://krisha.kz/arenda/kvartiry/kazakhstan/?das%5Bwho%5D=1',
+      city: null,
+      dealType: 'longRent',
+      ownerMarkers: Object.freeze(['хозяин недвижимости']),
+    }),
+    Object.freeze({
+      key: 'krisha-kazakhstan-owner-daily',
+      url: 'https://krisha.kz/arenda/kvartiry-posutochno/kazakhstan/?das%5Bwho%5D=1',
+      city: null,
+      dealType: 'shortRent',
+      ownerMarkers: Object.freeze(['хозяин недвижимости']),
+    }),
     Object.freeze({
       key: 'kn-almaty-owner-rent',
       url: 'https://www.kn.kz/almaty/arenda-kvartir-bez-posrednikov-s-foto',
@@ -120,6 +140,19 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       url: 'https://garsoniera.ro/anunturi/inchiriere',
       city: null,
       dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'publi24-romania-owner-rent',
+      url: 'https://www.publi24.ro/anunturi/imobiliare/de-inchiriat/?commercial=false&q=proprietari',
+      city: null,
+      dealType: 'longRent',
+      ownerMarkers: Object.freeze([
+        'direct proprietar',
+        'de la proprietar',
+        'proprietar',
+        'fără comision',
+        'fara comision',
+      ]),
     }),
   ]),
   KG: Object.freeze([
