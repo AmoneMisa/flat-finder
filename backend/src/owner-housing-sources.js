@@ -40,6 +40,12 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       dealType: 'longRent',
     }),
     Object.freeze({
+      key: 'norieltor-ukraine-owner-rent',
+      url: 'https://www.norieltor.com.ua/',
+      city: null,
+      dealType: 'longRent',
+    }),
+    Object.freeze({
       key: 'bezmakler-odesa-owner-rent',
       url: 'https://bezmakler.com.ua/',
       city: 'Odesa',
@@ -69,6 +75,24 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       key: 'kn-karaganda-owner-rent',
       url: 'https://www.kn.kz/karaganda/arenda-kvartir-bez-posrednikov',
       city: 'Karaganda',
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'kn-aktobe-owner-rent',
+      url: 'https://www.kn.kz/aktobe/arenda-kvartir-bez-posrednikov',
+      city: 'Aktobe',
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'kn-atyrau-owner-rent',
+      url: 'https://www.kn.kz/atyrau/arenda-kvartir-bez-posrednikov',
+      city: 'Atyrau',
+      dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'kn-oral-owner-rent',
+      url: 'https://www.kn.kz/uralsk/arenda-kvartir-bez-posrednikov',
+      city: 'Oral',
       dealType: 'longRent',
     }),
   ]),
@@ -104,6 +128,19 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
       url: 'https://arendator.kg/',
       city: 'Bishkek',
       dealType: 'longRent',
+    }),
+    Object.freeze({
+      key: 'myhouse-kyrgyzstan-owner-rent',
+      url: 'https://myhouse.kg/rent/apartment/',
+      city: null,
+      dealType: 'longRent',
+      ownerMarkers: Object.freeze([
+        'собственник',
+        'частное лицо',
+        'не являюсь риэлтором',
+        'без посредников',
+        'от собственника',
+      ]),
     }),
     Object.freeze({
       key: 'sutochno-bishkek-owner-daily',
