@@ -21,6 +21,17 @@ def offer_page(public_id="ID4saUY"):
 
 
 class AvailabilityClassifierTests(unittest.TestCase):
+    def test_short_rent_paths_exist_for_all_portals(self):
+        expected = {
+            "UZ": "nedvizhimost/posutochno_pochasovo/kvartira",
+            "KZ": "nedvizhimost/arenda-pochasovo-posutochno/kvartiry",
+            "UA": "nedvizhimost/posutochno-pochasovo/posutochno-pochasovo-kvartiry",
+            "RO": "cazare-turism/cazare-turism",
+        }
+        for country, path in expected.items():
+            with self.subTest(country=country):
+                self.assertEqual(PORTALS[country]["paths"]["flat:shortRent"], path)
+
     def test_not_found_is_inactive(self):
         self.assertEqual(
             classify_offer_response(404, "", "65813684", "https://www.olx.uz/"),
