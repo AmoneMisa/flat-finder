@@ -27,20 +27,24 @@ class NearbyTransportTables extends StatelessWidget {
       ('trolleybus', s.t('specTrolleybus'), Icons.electric_rickshaw_outlined),
       ('tram', s.t('specTram'), Icons.tram_outlined),
     ];
+    final sections = <_TransportSection>[];
 
-    return [
-      for (final (mode, title, icon) in definitions)
-        if (stops
-            .where((stop) => stop.mode.trim().toLowerCase() == mode)
-            .toList(growable: false)
-            case final modeStops when modeStops.isNotEmpty)
-          _TransportSection(
-            mode: mode,
-            title: title,
-            icon: icon,
-            stops: modeStops,
-          ),
-    ];
+    for (final (mode, title, icon) in definitions) {
+      final modeStops = stops
+          .where((stop) => stop.mode.trim().toLowerCase() == mode)
+          .toList(growable: false);
+      if (modeStops.isEmpty) continue;
+      sections.add(
+        _TransportSection(
+          mode: mode,
+          title: title,
+          icon: icon,
+          stops: modeStops,
+        ),
+      );
+    }
+
+    return sections;
   }
 
   @override
@@ -147,6 +151,7 @@ class NearbyTransportModeTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final border = theme.dividerColor.withValues(alpha: .58);
+    final orderedStops = _orderedStops;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -185,11 +190,11 @@ class NearbyTransportModeTable extends StatelessWidget {
                 ],
               ),
             ),
-            for (var index = 0; index < _orderedStops.length; index++)
+            for (var index = 0; index < orderedStops.length; index++)
               _TransportStopRow(
-                stop: _orderedStops[index],
-                routes: _routes(_orderedStops[index]),
-                drawBorder: index < _orderedStops.length - 1,
+                stop: orderedStops[index],
+                routes: _routes(orderedStops[index]),
+                drawBorder: index < orderedStops.length - 1,
               ),
           ],
         ),
