@@ -10,8 +10,14 @@ import {
 const OWNER_HOSTS = new Set([
   'rentli.uz',
   'easy-house.in.ua',
+  'bezmakler.com.ua',
+  'dobalux.com',
   'proprietaripebune.ro',
   'proprietar-direct.ro',
+  'delaproprietar.ro',
+  'directfaracomision.ro',
+  'rentnbuy.com',
+  'garsoniera.ro',
   'ostona.app',
   'turar.uz',
   'kn.kz',
@@ -20,7 +26,7 @@ const OWNER_HOSTS = new Set([
   'sutochno.kg',
 ]);
 
-const HOUSING_RE = /(apartament|garsonier|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
+const HOUSING_RE = /(apartament|garsonier|studio|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
 const PRICE_RE = /(?:\$|€|₴|₸|грн|uah|usd|eur|lei|ron|сум|so['’]?m|uzs|сом|kgs|тенге|kzt|\bмлн\b|\bmln\b)/iu;
 const BLOCK_END_RE = /<\/(?:article|li|section|div|a|p|h[1-6])>/giu;
 
