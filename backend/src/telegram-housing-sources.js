@@ -104,6 +104,20 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'kvartira_maklersiz_bezmakler', city: 'Tashkent', ownerOnly: true },
     { name: 'kvartira_bez_posrednika', city: 'Tashkent', ownerOnly: true },
     { name: 'ijaraga_kvartiralar_Bezmakler', city: 'Tashkent', ownerOnly: true, dealType: 'longRent' },
+    {
+      name: 'bezmakler_ijara',
+      city: 'Tashkent',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: [
+        'egasi',
+        'bezmakler',
+        'без маклера',
+        'без посредников',
+        'собственник',
+        'от собственника',
+      ],
+    },
     { name: 'nedvij_tashkent', city: 'Tashkent' },
     { name: 'iHometashkent', city: 'Tashkent' },
     // Dedicated daily-rent feeds (Russian and Uzbek wording).
