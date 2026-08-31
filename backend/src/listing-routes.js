@@ -1,4 +1,4 @@
-import {COUNTRIES, COUNTRY_CODES} from './countries.js';
+import {COUNTRY_CODES} from './countries.js';
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 import {getRates} from './fx.js';
 import {refreshAll} from './scheduler.js';
@@ -8,9 +8,10 @@ import {attachMarketComparisons} from './market-comparison.js';
 import {searchListingMatches} from './elasticsearch.js';
 import {checkRate} from './request-rate-limit.js';
 import {prepareCustomSources} from './custom-source-queue.js';
-import {annotateNearbyTransport} from './transport-nearby.js';
 
 const LISTING_MAX_AGE_DAYS = 14;
+const LISTING_PAGE_SIZE = 20;
+const LISTING_MAX_PAGE_SIZE = 60;
 const VALID_SOURCES = ['olx', 'telegram', 'facebook', 'threads'];
 const VALID_SORTS = [
   'newest',
@@ -41,7 +42,13 @@ export function parseListingFilters(q) {
     ),
   ].slice(0, 10);
   const offset = Math.max(0, Math.trunc(num(q.offset) ?? 0));
-  const limit = Math.max(1, Math.min(Math.trunc(num(q.limit) ?? 40), 60));
+  const limit = Math.max(
+    1,
+    Math.min(
+      Math.trunc(num(q.limit) ?? LISTING_PAGE_SIZE),
+      LISTING_MAX_PAGE_SIZE,
+    ),
+  );
   const requestedMaxAgeDays = num(q.maxAgeDays);
   const maxAgeDays = requestedMaxAgeDays != null && requestedMaxAgeDays > 0
     ? Math.min(requestedMaxAgeDays, LISTING_MAX_AGE_DAYS)
@@ -224,20 +231,11 @@ async function tryPostgresSearch({filters, codes, force}) {
     }
   }
 
-  // Transport was added after many rows were already persisted. Enrich the
-  // returned UZ/Tashkent rows from their stored coordinates as well, so users
-  // do not have to wait for a recrawl before the details table can show the
-  // nearest bus/metro context.
-  if (listings.length && codes.length === 1) {
-    const country = COUNTRIES[codes[0]];
-    if (country) {
-      try {
-        await annotateNearbyTransport(listings, country);
-      } catch (err) {
-        console.warn('[transport] read-time enrichment failed:', err?.message ?? err);
-      }
-    }
-  }
+  // Keep the list endpoint cheap. Nearby transport is intentionally hydrated
+  // only by the single-listing response pipeline (preparePublicListing), where
+  // at most one listing pays for the geo-catalog lookup. Running it here used
+  // to make UZ page latency scale roughly linearly with the page size and could
+  // exceed nginx/client timeouts before response headers were written.
 
   return {
     count: result.count,
