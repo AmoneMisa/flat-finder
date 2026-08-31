@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/listing.dart';
+import '../models/listing_identity.dart';
 
 /// Listings the user dismissed as "not interested", persisted locally and
 /// excluded from the main results — mirrors the site's hide/restore
@@ -17,7 +18,10 @@ class HiddenState extends ChangeNotifier {
   List<Listing> get items => List.unmodifiable(_items);
   bool get isEmpty => _items.isEmpty;
 
-  bool isHidden(String id) => _items.any((l) => l.id == id);
+  bool isHidden(Listing listing) {
+    final key = listingKey(listing);
+    return _items.any((item) => listingKey(item) == key);
+  }
 
   Future<void> load() async {
     try {
@@ -37,12 +41,13 @@ class HiddenState extends ChangeNotifier {
     }
   }
 
-  Future<void> toggle(Listing l) async {
-    final i = _items.indexWhere((e) => e.id == l.id);
+  Future<void> toggle(Listing listing) async {
+    final key = listingKey(listing);
+    final i = _items.indexWhere((item) => listingKey(item) == key);
     if (i >= 0) {
       _items.removeAt(i);
     } else {
-      _items.insert(0, l);
+      _items.insert(0, listing);
       if (_items.length > _limit) _items.removeLast();
     }
     notifyListeners();
