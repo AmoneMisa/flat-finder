@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/listing.dart';
+import '../models/listing_identity.dart';
 
 class SortedCollection {
   const SortedCollection({
@@ -25,14 +26,13 @@ class SortedCollection {
     bool? isPreset,
     String? presetName,
     List<Listing>? items,
-  }) =>
-      SortedCollection(
-        id: id,
-        title: title ?? this.title,
-        isPreset: isPreset ?? this.isPreset,
-        presetName: presetName ?? this.presetName,
-        items: items ?? this.items,
-      );
+  }) => SortedCollection(
+    id: id,
+    title: title ?? this.title,
+    isPreset: isPreset ?? this.isPreset,
+    presetName: presetName ?? this.presetName,
+    items: items ?? this.items,
+  );
 
   factory SortedCollection.fromJson(Map<String, dynamic> json) =>
       SortedCollection(
@@ -47,37 +47,33 @@ class SortedCollection {
       );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'isPreset': isPreset,
-        if (presetName != null) 'presetName': presetName,
-        'items': items.map((item) => item.toJson()).toList(),
-      };
+    'id': id,
+    'title': title,
+    'isPreset': isPreset,
+    if (presetName != null) 'presetName': presetName,
+    'items': items.map((item) => item.toJson()).toList(),
+  };
 }
 
 class SortedState extends ChangeNotifier {
   static const _key = 'sortedListings';
-  static const _version = 2;
+  static const _version = 3;
 
   final List<SortedCollection> _collections = [];
 
   List<SortedCollection> get collections => List.unmodifiable(_collections);
   List<Listing> get items => List.unmodifiable([
-        for (final collection in _collections) ...collection.items,
-      ]);
+    for (final collection in _collections) ...collection.items,
+  ]);
 
-  String _listingKey(Listing listing) =>
-      '${listing.source}:${listing.country}:${listing.id}';
-
-  bool contains(String id) =>
-      _collections.any((collection) => collection.items.any((item) => item.id == id));
-
-  bool containsListing(Listing listing) {
-    final key = _listingKey(listing);
+  bool contains(Listing listing) {
+    final key = listingKey(listing);
     return _collections.any(
-      (collection) => collection.items.any((item) => _listingKey(item) == key),
+      (collection) => collection.items.any((item) => listingKey(item) == key),
     );
   }
+
+  bool containsListing(Listing listing) => contains(listing);
 
   Future<void> load() async {
     try {
@@ -113,8 +109,10 @@ class SortedState extends ChangeNotifier {
                   Map<String, dynamic>.from(item),
                 ),
               )
-              .where((collection) =>
-                  collection.id.isNotEmpty && collection.items.isNotEmpty),
+              .where(
+                (collection) =>
+                    collection.id.isNotEmpty && collection.items.isNotEmpty,
+              ),
         );
       }
       notifyListeners();
@@ -128,14 +126,13 @@ class SortedState extends ChangeNotifier {
     bool isPreset = false,
     String? presetName,
   }) async {
-    final listingKey = _listingKey(listing);
+    final key = listingKey(listing);
 
     // One apartment belongs to one sorted collection. Sorting it from another
     // search/preset moves it instead of creating duplicates in several lists.
     for (var i = _collections.length - 1; i >= 0; i--) {
-      final remaining = _collections[i]
-          .items
-          .where((item) => _listingKey(item) != listingKey)
+      final remaining = _collections[i].items
+          .where((item) => listingKey(item) != key)
           .toList();
       if (remaining.isEmpty) {
         _collections.removeAt(i);
@@ -144,7 +141,9 @@ class SortedState extends ChangeNotifier {
       }
     }
 
-    var index = _collections.indexWhere((collection) => collection.id == collectionId);
+    var index = _collections.indexWhere(
+      (collection) => collection.id == collectionId,
+    );
     if (index < 0) {
       _collections.insert(
         0,
@@ -174,10 +173,13 @@ class SortedState extends ChangeNotifier {
     await _save();
   }
 
-  Future<void> remove(String id, {String? collectionId}) async {
+  Future<void> remove(Listing listing, {String? collectionId}) async {
+    final key = listingKey(listing);
     for (var i = _collections.length - 1; i >= 0; i--) {
       if (collectionId != null && _collections[i].id != collectionId) continue;
-      final remaining = _collections[i].items.where((item) => item.id != id).toList();
+      final remaining = _collections[i].items
+          .where((item) => listingKey(item) != key)
+          .toList();
       if (remaining.isEmpty) {
         _collections.removeAt(i);
       } else if (remaining.length != _collections[i].items.length) {

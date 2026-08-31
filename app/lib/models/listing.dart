@@ -5,23 +5,31 @@ class MarketComparison {
   final bool goodPrice;
   final num? medianUsd;
   final int comparableCount;
+  final num? priceUsd;
+  final num? priceRatio;
 
   const MarketComparison({
     required this.goodPrice,
     required this.medianUsd,
     required this.comparableCount,
+    this.priceUsd,
+    this.priceRatio,
   });
 
   factory MarketComparison.fromJson(Map<String, dynamic> j) => MarketComparison(
     goodPrice: j['goodPrice'] == true,
     medianUsd: j['medianUsd'] as num?,
     comparableCount: (j['comparableCount'] as num?)?.toInt() ?? 0,
+    priceUsd: j['priceUsd'] as num?,
+    priceRatio: j['priceRatio'] as num?,
   );
 
   Map<String, dynamic> toJson() => {
     'goodPrice': goodPrice,
     'medianUsd': medianUsd,
     'comparableCount': comparableCount,
+    'priceUsd': priceUsd,
+    'priceRatio': priceRatio,
   };
 }
 
@@ -49,13 +57,15 @@ class MoneyAmount {
   };
 }
 
-
 class NearbyTransportStop {
   final String id;
   final String name;
   final String mode;
   final int distanceM;
   final List<String> routeRefs;
+  final String? geoEntityId;
+  final Map<String, dynamic>? osm;
+  final String? source;
 
   const NearbyTransportStop({
     required this.id,
@@ -63,15 +73,26 @@ class NearbyTransportStop {
     required this.mode,
     required this.distanceM,
     this.routeRefs = const [],
+    this.geoEntityId,
+    this.osm,
+    this.source,
   });
 
-  factory NearbyTransportStop.fromJson(Map<String, dynamic> j) => NearbyTransportStop(
-    id: j['id']?.toString() ?? '',
-    name: j['name']?.toString() ?? '',
-    mode: j['mode']?.toString() ?? '',
-    distanceM: (j['distanceM'] as num?)?.round() ?? 0,
-    routeRefs: (j['routeRefs'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-  );
+  factory NearbyTransportStop.fromJson(Map<String, dynamic> j) =>
+      NearbyTransportStop(
+        id: j['id']?.toString() ?? '',
+        name: j['name']?.toString() ?? '',
+        mode: j['mode']?.toString() ?? '',
+        distanceM: (j['distanceM'] as num?)?.round() ?? 0,
+        routeRefs:
+            (j['routeRefs'] as List?)?.map((e) => e.toString()).toList() ??
+            const [],
+        geoEntityId: j['geoEntityId']?.toString(),
+        osm: j['osm'] is Map
+            ? Map<String, dynamic>.from(j['osm'] as Map)
+            : null,
+        source: j['source']?.toString(),
+      );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -79,6 +100,9 @@ class NearbyTransportStop {
     'mode': mode,
     'distanceM': distanceM,
     'routeRefs': routeRefs,
+    if (geoEntityId != null) 'geoEntityId': geoEntityId,
+    if (osm != null) 'osm': osm,
+    if (source != null) 'source': source,
   };
 
   String get displayLabel {
@@ -169,8 +193,6 @@ class Listing {
   final String? address;
   final String? residenceComplex; // named residential complex
   final String? kvartal; // city sub-area / quarter
-  // Amenity/feature booleans — spec-table rows, same fields the site's
-  // UiSpecTable amenities group shows.
   final bool? parking;
   final bool? elevator;
   final bool? furnished;
@@ -217,6 +239,11 @@ class Listing {
   /// onto every row by a DB trigger) used for single-listing share links —
   /// `source`+`id` alone isn't enough since `id` is source-specific.
   final int? publicId;
+
+  /// Original public DTO. Typed fields below overwrite this map in [toJson],
+  /// while fields introduced by the backend but not modeled by this app remain
+  /// intact when a listing is persisted in favorites/history/sorted storage.
+  final Map<String, dynamic> rawData;
 
   Listing({
     required this.id,
@@ -300,7 +327,10 @@ class Listing {
     required this.tags,
     this.marketComparison,
     this.publicId,
-  });
+    Map<String, dynamic>? rawData,
+  }) : rawData = rawData == null
+           ? const <String, dynamic>{}
+           : Map<String, dynamic>.unmodifiable(rawData);
 
   bool get hasLocation => lat != null && lng != null;
 
@@ -337,14 +367,24 @@ class Listing {
       contact: j['contact'] as String?,
       district: _locationName(j['district']),
       metro: _locationName(j['metro']),
-      nearbyMetro: (j['nearbyMetro'] as List?)
+      nearbyMetro:
+          (j['nearbyMetro'] as List?)
               ?.whereType<Map>()
-              .map((e) => NearbyTransportStop.fromJson(Map<String, dynamic>.from(e)))
+              .map(
+                (e) => NearbyTransportStop.fromJson(
+                  Map<String, dynamic>.from(e),
+                ),
+              )
               .toList() ??
           const [],
-      nearbyTransport: (j['nearbyTransport'] as List?)
+      nearbyTransport:
+          (j['nearbyTransport'] as List?)
               ?.whereType<Map>()
-              .map((e) => NearbyTransportStop.fromJson(Map<String, dynamic>.from(e)))
+              .map(
+                (e) => NearbyTransportStop.fromJson(
+                  Map<String, dynamic>.from(e),
+                ),
+              )
               .toList() ??
           const [],
       nearby:
@@ -396,7 +436,7 @@ class Listing {
       potentiallyUnsafe: j['potentiallyUnsafe'] == true,
       studentTarget: j['studentTarget'] as bool?,
       landlordPresent: j['landlordPresent'] as bool?,
-      minLeaseTerm: j['minLeaseTerm']?.toString(),
+      minLeaseTerm: (j['minLeaseTerm'] ?? j['minRentTerm'])?.toString(),
       availableFrom: j['availableFrom']?.toString(),
       utilitiesAmount: j['utilitiesAmount'] is Map
           ? MoneyAmount.fromJson(
@@ -433,11 +473,15 @@ class Listing {
           ? MarketComparison.fromJson(Map<String, dynamic>.from(market))
           : null,
       publicId: (j['publicId'] as num?)?.toInt(),
+      rawData: Map<String, dynamic>.from(j),
     );
   }
 
   /// Round-trips through [Listing.fromJson]; used to persist favorites locally.
+  /// Unknown backend fields are retained so local storage cannot silently
+  /// downgrade a newer public DTO to the subset understood by this app build.
   Map<String, dynamic> toJson() => {
+    ...rawData,
     'id': id,
     'source': source,
     'country': country,

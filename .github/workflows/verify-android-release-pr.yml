@@ -1,0 +1,55 @@
+name: Verify Flat Finder Android release
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'app/android/**'
+      - '.github/workflows/verify-android-release-pr.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-android-release-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  android-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Create ephemeral CI signing key
+        run: |
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/flat-finder-ci-release.jks" \
+            -storepass ci-test-password \
+            -keypass ci-test-password \
+            -alias flat-finder-ci \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 1 \
+            -dname "CN=Flat Finder CI, OU=CI, O=WhitesLove, L=CI, ST=CI, C=RO"
+          printf '%s\n' \
+            "storeFile=$RUNNER_TEMP/flat-finder-ci-release.jks" \
+            "storePassword=ci-test-password" \
+            "keyAlias=flat-finder-ci" \
+            "keyPassword=ci-test-password" \
+            > app/android/key.properties
+
+      - name: Verify Flutter and signed release build
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+          flutter build apk --release

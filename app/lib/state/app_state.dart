@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/listing_identity.dart';
 import '../services/api_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -126,10 +127,86 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  void updateFilters(Filters next) {
-    filters = next;
+  String _filterFingerprint(Filters value) {
+    final payload = Map<String, dynamic>.from(value.toJson());
+    for (final key in const ['countries', 'sources', 'amenities']) {
+      final values = (payload[key] as List? ?? const [])
+          .map((item) => item.toString())
+          .toList()
+        ..sort();
+      payload[key] = values;
+    }
+    return jsonEncode(payload);
+  }
+
+  bool _sameFilterPayload(Filters a, Filters b) =>
+      _filterFingerprint(a) == _filterFingerprint(b);
+
+  bool _sameLocationScope(Filters a, Filters b) =>
+      setEquals(a.countries, b.countries) &&
+      a.city == b.city &&
+      a.district == b.district &&
+      a.microdistrict == b.microdistrict &&
+      a.quartal == b.quartal &&
+      a.area == b.area &&
+      a.metro == b.metro;
+
+  bool _sameRadius(Filters a, Filters b) =>
+      a.centerLat == b.centerLat &&
+      a.centerLng == b.centerLng &&
+      a.radiusM == b.radiusM;
+
+  /// Normalizes filter updates coming from controls that do not expose every
+  /// field. The advanced sheet, for example, builds a fresh [Filters] object
+  /// without map radius or price-tolerance fields. Those hidden values survive
+  /// unrelated edits, but changing the geographic scope invalidates an old map
+  /// radius and changing the visible price range invalidates an inherited
+  /// tolerance. Returns whether the effective filter payload actually changed.
+  bool updateFilters(Filters next) {
+    final current = filters;
+    var normalized = next;
+
+    final locationChanged = !_sameLocationScope(current, next);
+    final radiusWasImplicitlyCarried = _sameRadius(current, next);
+    final radiusWasOmitted =
+        next.centerLat == null && next.centerLng == null && next.radiusM == null;
+    final currentHasRadius = current.centerLat != null ||
+        current.centerLng != null ||
+        current.radiusM != null;
+
+    if (locationChanged && radiusWasImplicitlyCarried && currentHasRadius) {
+      // copyWith() preserves radius fields by default; an explicit country/city/
+      // district change must not keep searching around the old map point.
+      normalized = normalized.copyWith(clearRadiusSearch: true);
+    } else if (!locationChanged && radiusWasOmitted && currentHasRadius) {
+      // A control that simply does not model radius search must not erase it.
+      normalized = normalized.copyWith(
+        centerLat: current.centerLat,
+        centerLng: current.centerLng,
+        radiusM: current.radiusM,
+      );
+    }
+
+    final priceScopeChanged = normalized.priceMin != current.priceMin ||
+        normalized.priceMax != current.priceMax ||
+        normalized.priceCurrency != current.priceCurrency;
+    final toleranceWasImplicitlyCarried =
+        normalized.priceTolerance == current.priceTolerance;
+    if (priceScopeChanged &&
+        toleranceWasImplicitlyCarried &&
+        current.priceTolerance != null) {
+      normalized = normalized.copyWith(clearPriceTolerance: true);
+    } else if (!priceScopeChanged &&
+        normalized.priceTolerance == null &&
+        current.priceTolerance != null) {
+      normalized = normalized.copyWith(priceTolerance: current.priceTolerance);
+    }
+
+    if (_sameFilterPayload(current, normalized)) return false;
+    filters = normalized;
     notifyListeners();
     _saveFilters(); // persist so choices survive restarts
+    return true;
   }
 
   /// Validate a candidate custom-source URL against the backend (uses the first
@@ -172,8 +249,14 @@ class AppState extends ChangeNotifier {
 
   Future<void> search() async {
     final generation = ++_searchGeneration;
+    // A new root search supersedes any pagination/map request from the previous
+    // generation. Their finally blocks intentionally no-op once stale, so clear
+    // the flags here or they could remain stuck true forever.
+    loadingMore = false;
+    mapLoading = false;
     if (filters.countries.isEmpty) {
       listings = [];
+      mapListings = [];
       nextCursor = null;
       total = 0;
       error = 'Select at least one country';
@@ -216,10 +299,10 @@ class AppState extends ChangeNotifier {
     try {
       final res = await _api.fetchListings(filters, cursor: cursor);
       if (generation != _searchGeneration) return;
-      final seen = listings.map((item) => '${item.source}:${item.id}').toSet();
+      final seen = listings.map(listingKey).toSet();
       listings = [
         ...listings,
-        ...res.listings.where((item) => seen.add('${item.source}:${item.id}')),
+        ...res.listings.where((item) => seen.add(listingKey(item))),
       ];
       nextCursor = res.nextCursor;
       total = res.total;
@@ -250,14 +333,21 @@ class AppState extends ChangeNotifier {
   }
 
   /// Force a fresh scrape (bypasses the backend cache), then start a local
-  /// cooldown so the button can't be spammed into the server's 429.
+  /// cooldown so the button can't be spammed into the server's 429. This is a
+  /// search generation too: if filters change while the force request is in
+  /// flight, its stale result must not overwrite the newer filtered search.
   Future<void> reloadAll() async {
     if (loading || reloadAllCoolingDown || filters.countries.isEmpty) return;
+    final generation = ++_searchGeneration;
+    loadingMore = false;
+    mapLoading = false;
+    mapListings = [];
     loading = true;
     error = null;
     notifyListeners();
     try {
       final res = await _api.fetchListings(filters, force: true);
+      if (generation != _searchGeneration) return;
       listings = res.listings;
       nextCursor = res.nextCursor;
       total = res.total;
@@ -265,12 +355,16 @@ class AppState extends ChangeNotifier {
       sourceErrors = res.sourceErrors;
       _startReloadAllCooldown(const Duration(seconds: 8));
     } on RateLimitException catch (e) {
-      _startReloadAllCooldown(Duration(milliseconds: e.retryAfterMs));
+      if (generation == _searchGeneration) {
+        _startReloadAllCooldown(Duration(milliseconds: e.retryAfterMs));
+      }
     } catch (e) {
-      error = e.toString();
+      if (generation == _searchGeneration) error = e.toString();
     } finally {
-      loading = false;
-      notifyListeners();
+      if (generation == _searchGeneration) {
+        loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -286,12 +380,10 @@ class AppState extends ChangeNotifier {
 
   /// Re-fetch one listing fresh and, if it's still in the current results,
   /// swap in the updated copy. Returns the fresh listing (or null if gone).
-  Future<Listing?> reloadListing(Listing l) async {
-    final fresh = await _api.reloadListing(l);
+  Future<Listing?> reloadListing(Listing listing) async {
+    final fresh = await _api.reloadListing(listing);
     if (fresh != null) {
-      final i = listings.indexWhere(
-        (x) => x.id == l.id && x.source == l.source,
-      );
+      final i = listings.indexWhere((item) => sameListing(item, listing));
       if (i >= 0) {
         listings[i] = fresh;
         notifyListeners();

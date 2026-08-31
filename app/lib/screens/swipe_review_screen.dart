@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/listing_identity.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
 import '../state/hidden.dart';
@@ -26,9 +27,6 @@ class SwipeReviewScreen extends StatefulWidget {
 
 class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
   var _index = 0;
-
-  String _listingKey(Listing listing) =>
-      '${listing.source}:${listing.country}:${listing.id}';
 
   FilterPreset? _matchingPreset(Filters filters) {
     final encoded = jsonEncode(filters.toJson());
@@ -162,14 +160,14 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
       case DismissDirection.endToStart:
         // Explicitly: swipe LEFT => hidden/dismissed.
         final hidden = context.read<HiddenState>();
-        if (!hidden.isHidden(listing.id)) await hidden.toggle(listing);
+        if (!hidden.isHidden(listing)) await hidden.toggle(listing);
       default:
         return;
     }
 
     // Review is fed from saved selections. Once the apartment is classified it
     // must leave the source list instead of remaining there to be reviewed again.
-    await context.read<FavoritesState>().remove(listing.id);
+    await context.read<FavoritesState>().remove(listing);
 
     if (!mounted) return;
     setState(() => _index++);
@@ -215,7 +213,7 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
                   ),
                   Expanded(
                     child: Dismissible(
-                      key: ValueKey(_listingKey(widget.listings[_index])),
+                      key: ValueKey(listingKey(widget.listings[_index])),
                       direction: DismissDirection.horizontal,
                       confirmDismiss: (direction) async {
                         await _decide(direction);

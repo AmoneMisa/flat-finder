@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/listing.dart';
+import '../models/listing_identity.dart';
 
 /// Saved listings, persisted locally. Exposes them grouped into
 /// country → city "folders" for the favorites screen.
@@ -15,7 +16,10 @@ class FavoritesState extends ChangeNotifier {
   List<Listing> get items => List.unmodifiable(_items);
   bool get isEmpty => _items.isEmpty;
 
-  bool isFavorite(String id) => _items.any((l) => l.id == id);
+  bool isFavorite(Listing listing) {
+    final key = listingKey(listing);
+    return _items.any((item) => listingKey(item) == key);
+  }
 
   Future<void> load() async {
     try {
@@ -35,19 +39,21 @@ class FavoritesState extends ChangeNotifier {
     }
   }
 
-  Future<void> toggle(Listing l) async {
-    final i = _items.indexWhere((e) => e.id == l.id);
+  Future<void> toggle(Listing listing) async {
+    final key = listingKey(listing);
+    final i = _items.indexWhere((item) => listingKey(item) == key);
     if (i >= 0) {
       _items.removeAt(i);
     } else {
-      _items.insert(0, l);
+      _items.insert(0, listing);
     }
     notifyListeners();
     await _save();
   }
 
-  Future<void> remove(String id) async {
-    _items.removeWhere((e) => e.id == id);
+  Future<void> remove(Listing listing) async {
+    final key = listingKey(listing);
+    _items.removeWhere((item) => listingKey(item) == key);
     notifyListeners();
     await _save();
   }
