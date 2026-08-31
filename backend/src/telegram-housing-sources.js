@@ -1,9 +1,10 @@
 const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
   RO: [
-    // Current Bucharest rental feeds. These are general/agency feeds and are
+    // Current Romanian rental feeds. These are general/agency feeds and are
     // intentionally kept mixed alongside the dedicated direct-owner websites.
     { name: 'bucharest_homes', city: 'Bucharest' },
     { name: 'apartamenti_bucharest', city: 'Bucharest' },
+    { name: 'kvartirabrasov1', city: 'Brasov' },
   ],
   UA: [
     // Kyiv: additional active public housing feeds.
