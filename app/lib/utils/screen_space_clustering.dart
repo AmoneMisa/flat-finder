@@ -33,7 +33,9 @@ typedef CoordinateValue<T> = double Function(T item);
 double wrappedScreenDx(double a, double b, double worldWidth) {
   final raw = (a - b).abs();
   if (worldWidth <= 0 || !worldWidth.isFinite) return raw;
-  return raw <= worldWidth ? raw.clamp(0, worldWidth - raw).toDouble() : raw % worldWidth;
+  final normalized = raw % worldWidth;
+  final wrapped = worldWidth - normalized;
+  return normalized < wrapped ? normalized : wrapped;
 }
 
 (int, int) _cellFor(double x, double y, double cellSize) =>
