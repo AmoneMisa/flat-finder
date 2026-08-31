@@ -55,7 +55,11 @@ class MapListingPoint {
   /// Backend compact map points intentionally do not carry market analytics.
   final num? marketMedianUsd;
 
-  String get key => listingKeyParts(source, country, id);
+  String get key => listingKeyParts(
+        source: source,
+        country: country,
+        id: id,
+      );
 
   factory MapListingPoint.fromJson(Map<String, dynamic> json) {
     final lat = (json['lat'] as num?)?.toDouble();
