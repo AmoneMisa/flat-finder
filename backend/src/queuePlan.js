@@ -83,6 +83,7 @@ function versionTask(task, crawlGeneration, shardCount) {
 export function taskPriority(task) {
   if (task.type === 'flat.olx.page') {
     if (task.country === 'UA' && task.page === 1 && task.city) return 10;
+    if (task.segment === 'flat:ownerRent') return 9;
     if (task.page === 1 && task.city) return 9;
     if (task.page === 1) return 7;
     return Math.max(1, 7 - task.page);
@@ -111,7 +112,12 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
 
   for (const country of Object.values(COUNTRIES)) {
     if (country.sources?.includes('olx')) {
-      const segments = ['flat:longRent', 'flat:shortRent', 'flat:sale'];
+      const segments = [
+        'flat:longRent',
+        'flat:shortRent',
+        'flat:sale',
+        ...(country.code === 'RO' ? ['flat:ownerRent'] : []),
+      ];
 
       if (country.code === 'UA' && Array.isArray(country.olxCities)) {
         for (const target of country.olxCities) {
@@ -144,10 +150,11 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
           const task = versionTask({
             type: 'flat.olx.page',
             country: country.code,
-            city: null,
+            city: segment === 'flat:ownerRent' ? 'Bucharest' : null,
             citySlug: null,
             segment,
             page: 1,
+            ownerOnly: segment === 'flat:ownerRent',
           }, crawlGeneration, shardCount);
           tasks.push({ ...task, priority: taskPriority(task) });
         }
@@ -180,7 +187,6 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
         dealType: source.dealType || null,
         curated: true,
         ownerOnly: true,
-        olxOwnerSearch: source.olxOwnerSearch === true,
       }, crawlGeneration, shardCount);
       tasks.push({ ...task, priority: taskPriority(task) });
     }
