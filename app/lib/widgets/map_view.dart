@@ -517,7 +517,7 @@ class _MapViewState extends State<MapView> {
 
   /// Listings restricted to the drawn area (once it has at least 3 points).
   List<MapListingPoint> get _visible {
-    final located = widget.listings.where((l) => true).toList();
+    final located = widget.listings;
     if (_area.length < 3) return located;
     return located
         .where((l) => _pointInPolygon(LatLng(l.lat, l.lng), _area))
@@ -554,8 +554,7 @@ class _MapViewState extends State<MapView> {
     if (_isFocused || widget.city.isNotEmpty || _activeZoneFocusId != null) {
       return;
     }
-    final located =
-        widget.listings.where((listing) => true).toList();
+    final located = widget.listings;
     if (located.isEmpty) return;
     final keys = located.map(_listingKey).toList()..sort();
     final signature = keys.join(',');
