@@ -10,16 +10,23 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "lint": "eslint src test",
+    "lint:fix": "eslint src test --fix",
     "test": "node --test",
     "migrate": "node src/migrate.js",
     "reindex": "node src/reindex.js"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.0",
-    "@whiteslove/geo-catalog": "^0.6.0",
-    "@whiteslove/parsing-lexicon": "^0.5.2",
+    "@whiteslove/geo-catalog": "^0.7.0",
+    "@whiteslove/parsing-lexicon": "^0.5.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0"
   }
 }

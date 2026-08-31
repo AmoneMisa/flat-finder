@@ -93,6 +93,9 @@ jobs:
           bash -n scripts/fallback-deploy.sh
           bash -n scripts/install-fallback-timer.sh
 
+      - name: Run backend ESLint
+        run: npm run lint --prefix backend
+
       - name: Validate Compose and retired infrastructure
         run: |
           touch .env

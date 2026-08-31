@@ -32,7 +32,6 @@ const AUDIENCE_TAGS = { women: 'girls only', men: 'men only', family: 'family' }
 export function extractTags({
   title = '',
   description = '',
-  propertyType,
   byAgency,
   rooms,
   dealType,

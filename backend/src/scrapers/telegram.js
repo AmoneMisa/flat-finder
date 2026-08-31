@@ -138,7 +138,7 @@ async function fetchWorkerPage(channel, beforeId, deadline) {
 
 const TG_MAX_PAGES = 8;
 
-export async function fetchChannel(channelConfig, country, filters = {}, deadline = Infinity) {
+export async function fetchChannel(channelConfig, country, _filters = {}, deadline = Infinity) {
   const channel = channelConfig.name;
   const listings = [];
   let beforeId = 0;
