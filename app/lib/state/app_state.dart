@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
+import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -19,7 +20,7 @@ class AppState extends ChangeNotifier {
   List<Country> countries = [];
   Filters filters = Filters();
   List<Listing> listings = [];
-  List<Listing> mapListings = [];
+  List<MapListingPoint> mapListings = [];
   List<String> degradedCountries = [];
   List<SourceError> sourceErrors =
       []; // per-source failures from the last search
@@ -46,8 +47,12 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
+  static const _countriesLocaleRetryDelay = Duration(seconds: 30);
+
   String _countriesLocale = '';
   String? _countriesLocaleLoading;
+  String? _countriesLocaleFailed;
+  DateTime? _countriesLocaleRetryAfter;
 
   Future<void> init() async {
     // Restore the user's last-used filters (country, type, price, etc.) so the
@@ -81,8 +86,12 @@ class AppState extends ChangeNotifier {
   /// with unlocalized (raw) names. Cheap to call from `build()`: no-ops once
   /// already fetched for this locale.
   Future<void> ensureCountriesLocale(String locale) async {
+    final retryBlocked = locale == _countriesLocaleFailed &&
+        _countriesLocaleRetryAfter != null &&
+        DateTime.now().isBefore(_countriesLocaleRetryAfter!);
     if (locale == _countriesLocale ||
         locale == _countriesLocaleLoading ||
+        retryBlocked ||
         countries.isEmpty) {
       return;
     }
@@ -92,10 +101,18 @@ class AppState extends ChangeNotifier {
       if (locale != _countriesLocaleLoading) return; // superseded
       countries = localized;
       _countriesLocale = locale;
+      _countriesLocaleFailed = null;
+      _countriesLocaleRetryAfter = null;
       notifyListeners();
     } catch (_) {
-      // Do not mark the locale as loaded after a transient failure. The next
-      // build can retry instead of leaving raw canonical names forever.
+      // A build-triggered retry must not become a tight request loop during a
+      // transient outage. Keep the raw canonical labels and retry this locale
+      // after a short cooldown; a different locale is still allowed instantly.
+      if (_countriesLocaleLoading == locale) {
+        _countriesLocaleFailed = locale;
+        _countriesLocaleRetryAfter =
+            DateTime.now().add(_countriesLocaleRetryDelay);
+      }
     } finally {
       if (_countriesLocaleLoading == locale) _countriesLocaleLoading = null;
     }

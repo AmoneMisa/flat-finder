@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
+import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
 import '../state/hidden.dart';
@@ -190,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
     AppState state,
     SettingsState settings,
     String country,
-    List<Listing> listings,
+    List<MapListingPoint> listings,
     LatLng center,
   ) {
     Navigator.of(context).push(
@@ -328,11 +329,11 @@ class _HomeScreenState extends State<HomeScreen> {
     ).push(MaterialPageRoute(builder: (_) => ListingDetailScreen(listing: l)));
   }
 
-  void _showMapPreview(Listing l) {
+  void _showMapPreview(MapListingPoint point) {
     final state = context.read<AppState>();
-    var initial = l;
+    var initial = point.toPreviewListing();
     for (final item in state.listings) {
-      if (sameListing(item, l)) {
+      if (listingKey(item) == point.key) {
         initial = item;
         break;
       }
@@ -401,7 +402,7 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Image.asset(
-              'assets/icon/icon.png',
+              'assets/icon/runtime.png',
               width: 30,
               height: 30,
               fit: BoxFit.contain,
@@ -681,8 +682,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final mapCountry = state.filters.countries.isNotEmpty
           ? state.filters.countries.first
           : '';
-      final mapItems = _applyTab(
-        state.mapListings.isNotEmpty ? state.mapListings : listings,
+      final fallbackMapPoints = <MapListingPoint>[
+        for (final listing in listings)
+          if (listing.hasLocation) MapListingPoint.fromListing(listing),
+      ];
+      final mapItems = _applyMapTab(
+        state.mapListings.isNotEmpty ? state.mapListings : fallbackMapPoints,
         hidden,
         sorted,
       );
@@ -848,6 +853,22 @@ class _HomeScreenState extends State<HomeScreen> {
       case _ViewTab.hidden:
         return const []; // unreachable, handled above
     }
+  }
+
+  List<MapListingPoint> _applyMapTab(
+    List<MapListingPoint> points,
+    HiddenState hidden,
+    SortedState sorted,
+  ) {
+    if (_tab == _ViewTab.hidden) {
+      return points.where((point) => hidden.isHiddenKey(point.key)).toList();
+    }
+    return points
+        .where(
+          (point) =>
+              !hidden.isHiddenKey(point.key) && !sorted.containsKey(point.key),
+        )
+        .toList();
   }
 
   String _emptyLabel(SettingsState settings) => switch (_tab) {

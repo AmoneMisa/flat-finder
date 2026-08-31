@@ -41,18 +41,37 @@ PriceTone? flatPriceTone(double? priceUsd, double? medianUsd) {
 /// [listing]'s price converted to USD via [rates] (units of currency per 1
 /// USD, as returned by /api/rates), or null if that currency's rate isn't
 /// known.
-double? listingPriceUsd(Listing listing, Map<String, double> rates) {
-  final price = listing.price?.toDouble();
-  final rate = rates[listing.currency];
-  if (price == null || rate == null || rate <= 0) return null;
-  return price / rate;
+double? priceUsdForValues(
+  num? price,
+  String currency,
+  Map<String, double> rates,
+) {
+  final value = price?.toDouble();
+  final rate = rates[currency];
+  if (value == null || rate == null || rate <= 0) return null;
+  return value / rate;
+}
+
+double? listingPriceUsd(Listing listing, Map<String, double> rates) =>
+    priceUsdForValues(listing.price, listing.currency, rates);
+
+PriceTone priceToneForValues({
+  required num? price,
+  required String currency,
+  required num? medianUsd,
+  required Map<String, double> rates,
+}) {
+  final priceUsd = priceUsdForValues(price, currency, rates);
+  return flatPriceTone(priceUsd, medianUsd?.toDouble()) ?? PriceTone.pink;
 }
 
 /// The tone for one listing, defaulting to pink when there's no market
 /// comparison — matches the site's card/popup behavior of never falling
 /// back to a neutral/white price.
-PriceTone listingPriceTone(Listing listing, Map<String, double> rates) {
-  final priceUsd = listingPriceUsd(listing, rates);
-  final medianUsd = listing.marketComparison?.medianUsd?.toDouble();
-  return flatPriceTone(priceUsd, medianUsd) ?? PriceTone.pink;
-}
+PriceTone listingPriceTone(Listing listing, Map<String, double> rates) =>
+    priceToneForValues(
+      price: listing.price,
+      currency: listing.currency,
+      medianUsd: listing.marketComparison?.medianUsd,
+      rates: rates,
+    );

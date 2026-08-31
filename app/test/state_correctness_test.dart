@@ -1,18 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flat_finder/models/filters.dart';
+import 'package:flat_finder/models/listing.dart';
+import 'package:flat_finder/models/listing_identity.dart';
+import 'package:flat_finder/models/map_listing_point.dart';
+import 'package:flat_finder/services/api_service.dart';
+import 'package:flat_finder/state/app_state.dart';
+import 'package:flat_finder/state/favorites.dart';
+import 'package:flat_finder/state/hidden.dart';
+import 'package:flat_finder/state/history.dart';
+import 'package:flat_finder/state/sorted.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import '../lib/models/filters.dart';
-import '../lib/models/listing.dart';
-import '../lib/models/listing_identity.dart';
-import '../lib/services/api_service.dart';
-import '../lib/state/app_state.dart';
-import '../lib/state/favorites.dart';
-import '../lib/state/hidden.dart';
-import '../lib/state/history.dart';
-import '../lib/state/sorted.dart';
 
 Listing listing({
   required String source,
@@ -39,7 +39,7 @@ class ControlledApi extends ApiService {
   final forceResult = Completer<ListingsResult>();
   final searchResult = Completer<ListingsResult>();
   Completer<ListingsResult>? pageCompleter;
-  Completer<List<Listing>>? mapCompleter;
+  Completer<List<MapListingPoint>>? mapCompleter;
   ListingsResult? pageResult;
 
   @override
@@ -59,9 +59,9 @@ class ControlledApi extends ApiService {
   }
 
   @override
-  Future<List<Listing>> fetchMapListings(Filters filters) {
+  Future<List<MapListingPoint>> fetchMapListings(Filters filters) {
     final pending = mapCompleter;
-    return pending?.future ?? Future.value(const <Listing>[]);
+    return pending?.future ?? Future.value(const <MapListingPoint>[]);
   }
 }
 
@@ -288,7 +288,7 @@ void main() {
     test('new search clears superseded pagination and map loading flags', () async {
       final api = ControlledApi()
         ..pageCompleter = Completer<ListingsResult>()
-        ..mapCompleter = Completer<List<Listing>>();
+        ..mapCompleter = Completer<List<MapListingPoint>>();
       final state = AppState(api)..filters = Filters(countries: {'UZ'});
       final old = listing(source: 'olx', country: 'UZ', id: 'old');
       final fresh = listing(source: 'olx', country: 'UZ', id: 'fresh');
@@ -313,7 +313,19 @@ void main() {
       api.pageCompleter!.complete(
         ListingsResult([old], const [], const [], total: 1),
       );
-      api.mapCompleter!.complete([old]);
+      api.mapCompleter!.complete([
+        MapListingPoint(
+          id: old.id,
+          source: old.source,
+          country: old.country,
+          lat: 41.31,
+          lng: 69.28,
+          title: old.title,
+          currency: old.currency,
+          city: old.city,
+          propertyType: old.propertyType,
+        ),
+      ]);
       await pageFuture;
       await mapFuture;
 

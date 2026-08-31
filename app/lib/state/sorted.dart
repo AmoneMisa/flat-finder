@@ -66,12 +66,12 @@ class SortedState extends ChangeNotifier {
     for (final collection in _collections) ...collection.items,
   ]);
 
-  bool contains(Listing listing) {
-    final key = listingKey(listing);
-    return _collections.any(
-      (collection) => collection.items.any((item) => listingKey(item) == key),
-    );
-  }
+  bool containsKey(String key) => _collections.any(
+        (collection) =>
+            collection.items.any((item) => listingKey(item) == key),
+      );
+
+  bool contains(Listing listing) => containsKey(listingKey(listing));
 
   bool containsListing(Listing listing) => contains(listing);
 
