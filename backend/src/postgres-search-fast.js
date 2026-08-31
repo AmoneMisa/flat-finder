@@ -4,9 +4,9 @@ import {
   searchPostgresListings as searchPostgresListingsCore,
 } from './postgres-search-fast-core.js';
 import {
-  canUsePriceFeedPath,
-  searchPriceSortedFeed,
-} from './postgres-price-feed.js';
+  canUseCanonicalFeedPath,
+  searchCanonicalFeed,
+} from './postgres-canonical-feed.js';
 import {
   attachScopeToCursor,
   prepareCursorForScope,
@@ -27,8 +27,8 @@ export async function searchPostgresListings(args) {
   };
 
   const scopedArgs = {...args, filters: scopedFilters};
-  const result = canUsePriceFeedPath(scopedFilters, args?.searchMatches)
-    ? await searchPriceSortedFeed(scopedArgs)
+  const result = canUseCanonicalFeedPath(scopedFilters, args?.searchMatches)
+    ? await searchCanonicalFeed(scopedArgs)
     : await searchPostgresListingsCore(scopedArgs);
   return {
     ...result,
