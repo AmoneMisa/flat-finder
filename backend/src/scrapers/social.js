@@ -50,10 +50,9 @@ export function classifyHousingOffer(text, forced = null) {
 
   const intent = housingIntent(value);
   if (isHousingWanted(intent)) return null;
-  if (forced) return forced;
-  if (intent?.dealType === 'shortRent' || looksShortRentOffer(value)) return 'shortRent';
+  if (intent?.dealType === 'shortRent' || looksShortRentOffer(value)) return forced || 'shortRent';
   if (!intent?.dealType) return null;
-  return intent.dealType;
+  return forced || intent.dealType;
 }
 
 function itemToListing(item, source, targetConfig, country) {
