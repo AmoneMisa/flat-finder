@@ -82,7 +82,7 @@ class SortedScreen extends StatelessWidget {
                           ),
                           direction: DismissDirection.endToStart,
                           onDismissed: (_) => sorted.remove(
-                            listing.id,
+                            listing,
                             collectionId: collection.id,
                           ),
                           background: Container(
