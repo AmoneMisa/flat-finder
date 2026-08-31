@@ -207,7 +207,10 @@ export function extractKnownOwnerHtml(html, country, sourceUrl) {
     if (listings.length >= 40) break;
   }
 
-  if (listings.length < 3) {
+  // Text windows are a last-resort path for catalogues without semantic card
+  // wrappers. Running them after even one structured card creates overlapping
+  // duplicates around price lines, so never mix the two extraction modes.
+  if (listings.length === 0) {
     for (const window of textWindows(String(html || ''))) {
       add('', window);
       if (listings.length >= 40) break;
