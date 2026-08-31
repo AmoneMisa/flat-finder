@@ -49,3 +49,16 @@ test('Domza structured Tashkent address keeps district separate from city', () =
   assert.match(customScraper, /localityIsDistrict/);
   assert.match(customScraper, /district: address\.district \|\| null/);
 });
+
+test('Domza adapter keeps the fields exposed by an offer RealEstateListing', () => {
+  // Observed in a saved Domza offer: Offer price/currency, room count, floorSize,
+  // GeoCoordinates, images and datePosted are all present in schema.org JSON-LD.
+  assert.match(customScraper, /offer\.price/);
+  assert.match(customScraper, /offer\.priceCurrency/);
+  assert.match(customScraper, /node\.numberOfRooms/);
+  assert.match(customScraper, /node\.floorSize/);
+  assert.match(customScraper, /geo\.latitude/);
+  assert.match(customScraper, /geo\.longitude/);
+  assert.match(customScraper, /collectImages\(node\)/);
+  assert.match(customScraper, /node\.datePosted/);
+});
