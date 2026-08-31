@@ -1,0 +1,8 @@
+# Copy this file to app/android/key.properties and replace every placeholder.
+# key.properties and *.jks/*.keystore are ignored by git.
+# Prefer an absolute storeFile path in CI/local release environments.
+
+storeFile=/absolute/path/to/flat-finder-upload-key.jks
+storePassword=CHANGE_ME
+keyAlias=flat-finder-upload
+keyPassword=CHANGE_ME
