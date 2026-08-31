@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - perf/flutter-map-clustering
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/verify-map-perf-temp.yml'
 
 permissions:
   contents: read
