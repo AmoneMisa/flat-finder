@@ -344,8 +344,12 @@ const UPSERT_SQL = `
     updated_at =
       NOW(),
 
+    -- Existing normalized/enriched keys that are absent from the new source
+    -- snapshot survive the crawl. Keys explicitly present in EXCLUDED.data,
+    -- including null/false/empty values, remain authoritative because the
+    -- right-hand JSONB operand wins on duplicate keys.
     data =
-      EXCLUDED.data;
+      listings.data || EXCLUDED.data;
 `;
 
 export async function upsertListings(
