@@ -16,6 +16,7 @@
 import {makeListing} from '../normalize.js';
 import {guessPropertyType} from '../textparse.js';
 import {sleep, throttle} from '../ratelimit.js';
+import {olxSegmentDealType} from '../olx-segment.js';
 
 // Rate limiting: keep at least OLX_MIN_INTERVAL_MS (+ up to OLX_JITTER_MS random)
 // between requests to the same OLX portal so we don't hammer it. Keyed per host,
@@ -39,6 +40,7 @@ function isHardOlxError(error) {
 }
 const OLX_SEGMENTS = [
   'flat:longRent',
+  'flat:shortRent',
   'flat:sale',
 ];
 
@@ -402,6 +404,7 @@ async function scrapeSegment(
           mapStateItem(
               item,
               country,
+              segment,
           );
 
       /*
@@ -490,10 +493,12 @@ async function scrapeSegment(
 
 // Map one ad from a page's __PRERENDERED_STATE__ (a richer shape than /api/v1).
 // The structured pieces we can get cheaply are passed to makeListing; the rest
-// (dealType, floor, audience, tags, ...) is parsed from title/description there.
+// (floor, audience, tags, ...) is parsed from title/description there. The
+// category segment is authoritative for dealType, including dedicated daily-rent
+// categories whose individual titles may omit "daily" wording.
 // Note: web-state ads carry real coordinates + city/district, so they need no
 // geocoding downstream.
-function mapStateItem(item, country) {
+function mapStateItem(item, country, segment = null) {
   const rp = item.price?.regularPrice ?? {};
   const paramText = (item.params ?? [])
     .map((p) => `${p.name ?? ''} ${Array.isArray(p.value) ? p.value.join(' ') : p.value ?? ''}`)
@@ -515,6 +520,7 @@ function mapStateItem(item, country) {
     lat: item.map?.lat ?? null,
     lng: item.map?.lon ?? null,
     photos: Array.isArray(item.photos) ? item.photos.filter(Boolean) : [],
+    dealType: olxSegmentDealType(segment),
     url: item.url ?? country.olxHost,
     createdAt: item.createdTime ?? null,
   });
