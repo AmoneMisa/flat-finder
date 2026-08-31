@@ -1,0 +1,40 @@
+name: Apply nearby transport detail integration
+
+on:
+  push:
+    branches:
+      - feat/flat-transport-tables
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/flat-transport-tables
+          fetch-depth: 0
+
+      - name: Integrate transport tables
+        run: python3 .github/scripts/integrate_nearby_transport_tables.py
+
+      - name: Validate patch
+        run: |
+          git diff --check
+          grep -q "NearbyTransportTables(" app/lib/screens/listing_detail.dart
+          ! grep -q "transportSummary('tram')" app/lib/screens/listing_detail.dart
+          ! grep -q "transportSummary('bus')" app/lib/screens/listing_detail.dart
+          ! grep -q "transportSummary('trolleybus')" app/lib/screens/listing_detail.dart
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/scripts/integrate_nearby_transport_tables.py
+          git rm .github/workflows/apply-nearby-transport-tables.yml
+          git add app/lib/screens/listing_detail.dart
+          git commit -m "feat(app): integrate nearby transport tables"
+          git push origin HEAD:feat/flat-transport-tables
