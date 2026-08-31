@@ -16,15 +16,24 @@ test('owner registry covers curated direct-owner platforms in every configured c
     'https://turar.uz/ru/tashkent',
     'https://easy-house.in.ua/search/',
     'https://kvarto.app/uk',
+    'https://bezmakler.com.ua/',
+    'https://dobalux.com/uk/',
     'https://www.kn.kz/almaty/arenda-kvartir-bez-posrednikov-s-foto',
+    'https://www.kn.kz/astana/arenda-kvartir-bez-posrednikov',
+    'https://www.kn.kz/karaganda/arenda-kvartir-bez-posrednikov',
     'https://www.proprietaripebune.ro/chirii/bucuresti',
     'https://proprietar-direct.ro/categorii-anunturi/oferte-de-inchiriat/',
+    'https://delaproprietar.ro/apartamente/apartamente-de-inchiriat/',
+    'https://www.directfaracomision.ro/anunturi?tip_proprietate=apartment&tip_tranzactie=inchiriere',
+    'https://rentnbuy.com/s/inchirieri/imobiliare',
+    'https://garsoniera.ro/anunturi/inchiriere',
     'https://arendator.kg/',
     'https://sutochno.kg/bishkek/',
   ]) {
     assert.equal(urls.filter((url) => url === expected).length, 1, expected);
   }
   assert.equal(ownerHousingSources('UZ').find((source) => source.key === 'turar-tashkent-owner-daily')?.dealType, 'shortRent');
+  assert.equal(ownerHousingSources('UA').find((source) => source.key === 'dobalux-ukraine-owner-daily')?.dealType, 'shortRent');
   assert.equal(ownerHousingSources('KG').find((source) => source.key === 'sutochno-bishkek-owner-daily')?.dealType, 'shortRent');
   assert.ok(!realtorHousingSources('UZ').some((source) => source.url.includes('rentli.uz')));
   assert.equal(COUNTRIES.KG?.currency, 'KGS');
@@ -42,6 +51,9 @@ test('owner Telegram overrides replace older bare channel entries', () => {
   const kz = telegramHousingChannels('KZ', COUNTRIES.KZ.telegramChannels);
   assert.equal(kz.find((channel) => channel?.name === 'kvartiry2')?.ownerOnly, true);
   assert.equal(kz.find((channel) => channel?.name === 'freehomekz_Almaty')?.dealType, 'shortRent');
+  const almatyMixed = kz.find((channel) => channel?.name === 'kvartira_v_almaty');
+  assert.equal(almatyMixed?.ownerOnly, true);
+  assert.ok(almatyMixed?.ownerMarkers.includes('собственник'));
 
   const ua = telegramHousingChannels('UA', COUNTRIES.UA.telegramChannels);
   assert.equal(ua.find((channel) => channel?.name === 'kievrentfree')?.ownerOnly, true);
@@ -68,9 +80,17 @@ test('crawl plan restores daily OLX and queues owner-first sources', () => {
     'turar-tashkent-owner-daily',
     'easyhouse-ukraine-owner-rent',
     'kvarto-ukraine-owner-rent',
+    'bezmakler-odesa-owner-rent',
+    'dobalux-ukraine-owner-daily',
     'kn-almaty-owner-rent',
+    'kn-astana-owner-rent',
+    'kn-karaganda-owner-rent',
     'proprietari-pe-bune-bucharest-owner-rent',
     'proprietar-direct-romania-owner-rent',
+    'delaproprietar-romania-owner-rent',
+    'direct-fara-comision-romania-owner-rent',
+    'rentnbuy-romania-owner-rent',
+    'garsoniera-romania-owner-rent',
     'arendator-bishkek-owner-rent',
     'sutochno-bishkek-owner-daily',
   ]) {
