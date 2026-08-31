@@ -314,7 +314,19 @@ void main() {
       api.pageCompleter!.complete(
         ListingsResult([old], const [], const [], total: 1),
       );
-      api.mapCompleter!.complete([MapListingPoint.fromListing(old)]);
+      api.mapCompleter!.complete([
+        MapListingPoint(
+          id: old.id,
+          source: old.source,
+          country: old.country,
+          lat: 41.31,
+          lng: 69.28,
+          title: old.title,
+          currency: old.currency,
+          city: old.city,
+          propertyType: old.propertyType,
+        ),
+      ]);
       await pageFuture;
       await mapFuture;
 
