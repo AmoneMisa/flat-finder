@@ -201,7 +201,7 @@ const SOURCE_COUNTRIES = {
     sources: ['olx', 'telegram'],
     olxHost: 'https://www.olx.kz',
     realEstateRoot: 1,
-    crawlCities: ['Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau', 'Oral'],
+    crawlCities: ['Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau', 'Oral', 'Taraz'],
     telegramChannels: [
       'kvartiry2', 'arendakvartirastana2022', 'arendam0',
     ],
