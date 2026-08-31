@@ -5,17 +5,21 @@ import { COUNTRIES } from '../src/countries.js';
 import { telegramHousingChannels } from '../src/telegram-housing-sources.js';
 import { buildCrawlPlan } from '../src/queuePlan.js';
 
-test('Romania keeps live Bucharest general feeds alongside owner sources', () => {
+test('Romania keeps live general feeds alongside owner sources', () => {
   const channels = telegramHousingChannels('RO', COUNTRIES.RO.telegramChannels);
   const byName = (name) => channels.find((channel) => channel?.name === name);
 
-  for (const name of ['bucharest_homes', 'apartamenti_bucharest']) {
-    assert.equal(byName(name)?.city, 'Bucharest', name);
+  for (const [name, city] of [
+    ['bucharest_homes', 'Bucharest'],
+    ['apartamenti_bucharest', 'Bucharest'],
+    ['kvartirabrasov1', 'Brasov'],
+  ]) {
+    assert.equal(byName(name)?.city, city, name);
     assert.notEqual(byName(name)?.ownerOnly, true, name);
   }
 
   const { tasks } = buildCrawlPlan({ shardCount: 2 });
-  for (const name of ['bucharest_homes', 'apartamenti_bucharest']) {
+  for (const name of ['bucharest_homes', 'apartamenti_bucharest', 'kvartirabrasov1']) {
     assert.ok(tasks.some((task) =>
       task.type === 'flat.telegram.channel'
       && task.country === 'RO'
