@@ -50,9 +50,9 @@ test('canonical public feed chooses and maintains the winner at write time', {sk
     assert.equal(older.dedupe_key, newer.dedupe_key);
 
     let canonical = await client.query(`
-      SELECT c.dedupe_key, c.listing_id, m.source_id
+      SELECT c.dedupe_key, c.listing_id, l.source_id
       FROM listing_public_feed_canonical c
-      JOIN listing_public_feed_members m ON m.listing_id = c.listing_id
+      JOIN listings l ON l.id = c.listing_id
     `);
     assert.equal(canonical.rows.length, 1);
     assert.equal(canonical.rows[0].source_id, 'newer');
@@ -60,9 +60,9 @@ test('canonical public feed chooses and maintains the winner at write time', {sk
 
     await client.query(`UPDATE listings SET active = FALSE WHERE id = $1`, [newer.id]);
     canonical = await client.query(`
-      SELECT c.listing_id, m.source_id
+      SELECT c.listing_id, l.source_id
       FROM listing_public_feed_canonical c
-      JOIN listing_public_feed_members m ON m.listing_id = c.listing_id
+      JOIN listings l ON l.id = c.listing_id
     `);
     assert.equal(canonical.rows.length, 1);
     assert.equal(canonical.rows[0].source_id, 'older');
@@ -70,9 +70,9 @@ test('canonical public feed chooses and maintains the winner at write time', {sk
 
     await client.query(`UPDATE listings SET active = TRUE WHERE id = $1`, [newer.id]);
     canonical = await client.query(`
-      SELECT c.listing_id, m.source_id
+      SELECT c.listing_id, l.source_id
       FROM listing_public_feed_canonical c
-      JOIN listing_public_feed_members m ON m.listing_id = c.listing_id
+      JOIN listings l ON l.id = c.listing_id
     `);
     assert.equal(canonical.rows.length, 1);
     assert.equal(canonical.rows[0].source_id, 'newer');
