@@ -6,6 +6,7 @@ on:
     paths:
       - 'backend/**'
       - 'olx-fetcher/**'
+      - 'social-fetcher/**'
       - '.github/workflows/verify-pr.yml'
       - '.github/workflows/deploy.yml'
       - 'deploy.sh'
@@ -117,4 +118,27 @@ jobs:
 
       - name: Run OLX fetcher tests
         working-directory: olx-fetcher
+        run: python -m unittest -v test_app.py
+
+  social-fetcher:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: social-fetcher/requirements.txt
+
+      - name: Install social fetcher dependencies
+        run: python -m pip install -r social-fetcher/requirements.txt
+
+      - name: Check social fetcher syntax
+        run: python -m py_compile social-fetcher/app.py social-fetcher/main.py social-fetcher/test_app.py
+
+      - name: Run social fetcher tests
+        working-directory: social-fetcher
         run: python -m unittest -v test_app.py
