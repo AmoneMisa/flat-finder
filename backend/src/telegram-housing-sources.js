@@ -51,6 +51,24 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     { name: 'kvartiry2', city: 'Almaty', ownerOnly: true },
     { name: 'kvartiralmaty1', city: 'Almaty', ownerOnly: true },
     { name: 'freehomekz_Almaty', city: 'Almaty', ownerOnly: true, dealType: 'shortRent' },
+    // Mixed owner/roommate feed: require an explicit owner phrase per post.
+    {
+      name: 'kvartira_v_almaty',
+      city: 'Almaty',
+      ownerOnly: true,
+      dealType: 'longRent',
+      ownerMarkers: [
+        'хозяин, не риелтор',
+        'не риелтор и не агенство',
+        'не риелтор и не агентство',
+        'я сама хозяйка',
+        'сама хозяйка',
+        'без риелтора — хозяйка',
+        'без риелтора - хозяйка',
+        'собственник',
+        'от хозяина',
+      ],
+    },
   ],
   KG: [
     // Mixed Bishkek housing stream: accept only posts that explicitly identify
