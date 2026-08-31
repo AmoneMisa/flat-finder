@@ -13,9 +13,6 @@ const OWNER_HOSTS = new Set([
   'proprietaripebune.ro',
   'ostona.app',
   'arendator.kg',
-  // A curated OLX Romania search for direct-owner wording. The generic OLX
-  // category crawler remains independent and still contains mixed sellers.
-  'olx.ro',
 ]);
 
 const HOUSING_RE = /(apartament|garsonier|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
