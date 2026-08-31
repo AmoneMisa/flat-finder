@@ -19,6 +19,8 @@ import { makeListing } from '../normalize.js';
 import { fetchChannel } from './telegram.js';
 
 const FETCH_TIMEOUT_MS = 12_000;
+const DOMZA_FETCH_TIMEOUT_MS = 20_000;
+const DOMZA_DETAIL_CONCURRENCY = 6;
 const MAX_REDIRECTS = 5;
 const MAX_BYTES = 4 * 1024 * 1024; // cap the response we'll parse (4 MB)
 const MAX_ITEMS = 40;
@@ -85,13 +87,13 @@ async function assertSafeUrl(raw) {
   return u;
 }
 
-async function fetchText(u) {
+async function fetchText(u, timeoutMs = FETCH_TIMEOUT_MS) {
   const startedAt = Date.now();
   let current = u;
   let res = null;
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
-    const remainingMs = FETCH_TIMEOUT_MS - (Date.now() - startedAt);
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) throw new SourceError('Source timed out');
 
     try {
@@ -212,15 +214,29 @@ function numFrom(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function structuredAddress(node, country) {
+  const raw = node.address ?? {};
+  const address = raw && typeof raw === 'object' ? raw : {};
+  const locality = String(address.addressLocality ?? node.addressLocality ?? '').trim();
+  const region = String(address.addressRegion ?? node.addressRegion ?? '').trim();
+
+  // Domza uses schema.org addressLocality for the Tashkent district and
+  // addressRegion for the city (e.g. "Яккасарайский район" / "город Ташкент").
+  // Preserve that structured district instead of letting it become the city.
+  const localityIsDistrict = country.code === 'UZ' &&
+    /(?:район|tumani|tuman|district)/iu.test(locality);
+
+  return {
+    city: localityIsDistrict ? (region || locality) : (locality || region),
+    district: localityIsDistrict ? locality : null,
+  };
+}
+
 function mapLdNode(node, country, sourceUrl, idx) {
   const offer = firstOffer(node);
   const price = numFrom(offer.price ?? offer.lowPrice ?? node.price);
   const currency = offer.priceCurrency ?? node.priceCurrency ?? country.currency;
-  const address = node.address ?? {};
-  const city =
-    (typeof address === 'object' && (address.addressLocality || address.addressRegion)) ||
-    node.addressLocality ||
-    '';
+  const address = structuredAddress(node, country);
   const geo = node.geo ?? {};
   const area =
     numFrom(node.floorSize?.value ?? node.floorSize) ?? numFrom(node.area?.value);
@@ -241,7 +257,8 @@ function mapLdNode(node, country, sourceUrl, idx) {
     currency,
     rooms: numFrom(node.numberOfRooms ?? node.numberOfBedroomsTotal),
     areaSqm: area,
-    city: String(city || ''),
+    city: String(address.city || ''),
+    district: address.district || null,
     lat: numFrom(geo.latitude),
     lng: numFrom(geo.longitude),
     photos: collectImages(node),
@@ -344,6 +361,94 @@ function hash(s) {
   return h.toString(36);
 }
 
+// ---- Domza -----------------------------------------------------------------
+
+function isDomzaHost(u) {
+  return u.hostname.replace(/^www\./, '').toLowerCase() === 'domza.uz';
+}
+
+function isDomzaCatalogUrl(u) {
+  return isDomzaHost(u) && /^\/offers\/?$/i.test(u.pathname);
+}
+
+function extractDomzaOfferUrls(html, sourceUrl) {
+  const urls = [];
+  const seen = new Set();
+  const hrefRe = /href=["']([^"']+)["']/gi;
+  let match;
+
+  while ((match = hrefRe.exec(html)) && urls.length < MAX_ITEMS) {
+    let url;
+    try {
+      url = new URL(decodeXml(match[1]), sourceUrl);
+    } catch {
+      continue;
+    }
+
+    if (!isDomzaHost(url)) continue;
+    if (!/^\/offers\/[^/?#]+\/?$/i.test(url.pathname)) continue;
+    url.search = '';
+    url.hash = '';
+
+    const key = url.href.replace(/\/$/, '');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    urls.push(key);
+  }
+
+  return urls;
+}
+
+async function concurrentMap(values, concurrency, mapper) {
+  const results = new Array(values.length);
+  let cursor = 0;
+
+  async function worker() {
+    for (;;) {
+      const index = cursor++;
+      if (index >= values.length) return;
+      try {
+        results[index] = await mapper(values[index], index);
+      } catch {
+        // One stale/removed offer must not fail the whole Domza crawl.
+        results[index] = [];
+      }
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, concurrency), values.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+async function scrapeDomzaCatalog(safe, country) {
+  const body = await fetchText(safe, DOMZA_FETCH_TIMEOUT_MS);
+  const offerUrls = extractDomzaOfferUrls(body, safe.href);
+  if (!offerUrls.length) {
+    throw new SourceError('No Domza offer links found in the catalog');
+  }
+
+  const groups = await concurrentMap(
+    offerUrls,
+    DOMZA_DETAIL_CONCURRENCY,
+    async (url) => {
+      const detailUrl = await assertSafeUrl(url);
+      const detailBody = await fetchText(detailUrl, DOMZA_FETCH_TIMEOUT_MS);
+      return extractJsonLd(detailBody, country, detailUrl.href)
+        .filter((listing) => /^https:\/\/(?:www\.)?domza\.uz\/offers\//i.test(listing.url || ''));
+    },
+  );
+
+  const listings = groups.flat().slice(0, MAX_ITEMS);
+  if (!listings.length) {
+    throw new SourceError('Domza offer pages did not expose readable RealEstateListing JSON-LD');
+  }
+  return listings;
+}
+
 // ---- public API ------------------------------------------------------------
 
 // Identify well-known social platforms so we can use a dedicated reader instead
@@ -369,8 +474,9 @@ async function scrapeTelegramUrl(u, country) {
 
 // Fetch + parse a single custom-source URL. Recognizes common social platforms
 // and routes them to a dedicated reader; otherwise falls back to reading any
-// structured data (JSON-LD) or RSS/Atom feed on the page. Throws SourceError
-// with a clear, user-facing message when nothing can be extracted.
+// structured data (JSON-LD) or RSS/Atom feed on the page. Domza's catalog is
+// server-rendered but keeps listing JSON-LD on the individual offer pages, so
+// we discover those links first and then parse the detail pages in parallel.
 export async function scrapeCustomUrl(url, country) {
   const safe = await assertSafeUrl(url);
   const platform = detectPlatform(safe);
@@ -381,6 +487,9 @@ export async function scrapeCustomUrl(url, country) {
     throw new SourceError(
       'Facebook groups require login and cannot be read automatically — not supported',
     );
+  }
+  if (isDomzaCatalogUrl(safe)) {
+    return scrapeDomzaCatalog(safe, country);
   }
 
   const body = await fetchText(safe);
