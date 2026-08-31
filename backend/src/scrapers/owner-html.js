@@ -10,6 +10,7 @@ import {
 const OWNER_HOSTS = new Set([
   'rentli.uz',
   'easy-house.in.ua',
+  'norieltor.com.ua',
   'bezmakler.com.ua',
   'dobalux.com',
   'proprietaripebune.ro',
@@ -21,6 +22,7 @@ const OWNER_HOSTS = new Set([
   'kn.kz',
   'kvarto.app',
   'arendator.kg',
+  'myhouse.kg',
   'sutochno.kg',
 ]);
 
