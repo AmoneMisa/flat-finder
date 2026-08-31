@@ -249,8 +249,14 @@ class AppState extends ChangeNotifier {
 
   Future<void> search() async {
     final generation = ++_searchGeneration;
+    // A new root search supersedes any pagination/map request from the previous
+    // generation. Their finally blocks intentionally no-op once stale, so clear
+    // the flags here or they could remain stuck true forever.
+    loadingMore = false;
+    mapLoading = false;
     if (filters.countries.isEmpty) {
       listings = [];
+      mapListings = [];
       nextCursor = null;
       total = 0;
       error = 'Select at least one country';
@@ -333,6 +339,9 @@ class AppState extends ChangeNotifier {
   Future<void> reloadAll() async {
     if (loading || reloadAllCoolingDown || filters.countries.isEmpty) return;
     final generation = ++_searchGeneration;
+    loadingMore = false;
+    mapLoading = false;
+    mapListings = [];
     loading = true;
     error = null;
     notifyListeners();
