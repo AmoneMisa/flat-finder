@@ -29,6 +29,7 @@ PORTALS = {
         "lang": "ru-RU,ru;q=0.9,uz;q=0.7,en;q=0.5",
         "paths": {
             "flat:longRent": "nedvizhimost/kvartiry/arenda-dolgosrochnaya",
+            "flat:shortRent": "nedvizhimost/posutochno_pochasovo/kvartira",
             "flat:sale": "nedvizhimost/kvartiry/prodazha",
         },
     },
@@ -37,6 +38,7 @@ PORTALS = {
         "lang": "ru-RU,ru;q=0.9,kk;q=0.7,en;q=0.5",
         "paths": {
             "flat:longRent": "nedvizhimost/arenda-kvartiry",
+            "flat:shortRent": "nedvizhimost/arenda-pochasovo-posutochno/kvartiry",
             "flat:sale": "nedvizhimost/prodazha-kvartiry",
         },
     },
@@ -45,6 +47,7 @@ PORTALS = {
         "lang": "uk-UA,uk;q=0.9,ru;q=0.7,en;q=0.5",
         "paths": {
             "flat:longRent": "nedvizhimost/kvartiry/dolgosrochnaya-arenda-kvartir",
+            "flat:shortRent": "nedvizhimost/posutochno-pochasovo/posutochno-pochasovo-kvartiry",
             "flat:sale": "nedvizhimost/kvartiry/prodazha-kvartir",
         },
     },
@@ -53,6 +56,7 @@ PORTALS = {
         "lang": "ro-RO,ro;q=0.9,en;q=0.7",
         "paths": {
             "flat:longRent": "imobiliare/apartamente-garsoniere-de-inchiriat",
+            "flat:shortRent": "cazare-turism/cazare-turism",
             "flat:sale": "imobiliare/apartamente-garsoniere-de-vanzare",
         },
     },
