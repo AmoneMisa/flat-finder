@@ -16,7 +16,7 @@ export const REALTOR_HOUSING_SOURCES = {
       city: 'Tashkent',
     },
     {
-      key: 'domza-tashkent-rent',
+      key: 'domza-tashkent',
       url: 'https://domza.uz/offers',
       city: 'Tashkent',
     },
