@@ -14,6 +14,25 @@ const TRANSIENT_DERIVED_FIELDS = [
   'marketComparison',
 ];
 
+// These values are deterministic derivatives of the current listing payload.
+// If the live adapter did not provide them, do not inherit an old parsed value:
+// enrichListingDetails must derive it again from the fresh title/description.
+const RECOMPUTABLE_PARSED_FIELDS = [
+  'addressStreet',
+  'addressHouseNumber',
+  'addressBuilding',
+  'commissionAmount',
+  'cadastral',
+  'audienceAlternatives',
+  'studentTarget',
+  'landlordPresent',
+  'priceScope',
+  'perPersonPrice',
+  'transitRoutes',
+  'utilitiesAmount',
+  'potentiallyUnsafe',
+];
+
 function hasFiniteCoordinates(listing) {
   return Number.isFinite(Number(listing?.lat)) && Number.isFinite(Number(listing?.lng));
 }
@@ -30,13 +49,18 @@ function copyGeoProvenance(target, source) {
  * in PostgreSQL. Fresh source fields win, while fields the source adapter does
  * not know how to produce (vision/provenance/etc.) survive the refresh.
  *
- * Transport and market fields are deliberately removed: they depend on the
- * final coordinates/price and must be recalculated rather than copied stale.
+ * Recomputable parsed fields, transport and market data are deliberately not
+ * inherited from the old snapshot: they depend on current source text,
+ * coordinates or price and therefore must be rebuilt rather than copied stale.
  */
 export function mergeStoredFreshListing(stored, fresh) {
   const previous = stored && typeof stored === 'object' ? stored : {};
   const current = fresh && typeof fresh === 'object' ? fresh : {};
   const merged = {...previous, ...current};
+
+  for (const key of RECOMPUTABLE_PARSED_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(current, key)) delete merged[key];
+  }
 
   const freshHasCoordinates = hasFiniteCoordinates(current);
   const storedHasCoordinates = hasFiniteCoordinates(previous);
@@ -104,4 +128,5 @@ export async function preparePublicListing(listing, country, {refreshGeo = false
 export const __listingPublicTest = {
   hasFiniteCoordinates,
   TRANSIENT_DERIVED_FIELDS,
+  RECOMPUTABLE_PARSED_FIELDS,
 };
