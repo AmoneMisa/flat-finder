@@ -7,6 +7,7 @@ from app import (
     _parse_linkedin_jobs_html,
     _threads_username,
     _validate_public_url,
+    fetch_facebook,
 )
 from main import (
     _duckduckgo_target,
@@ -28,6 +29,74 @@ class SocialFetcherTests(unittest.TestCase):
             _facebook_target('some.public.page'),
             {'kind': 'page', 'value': 'some.public.page'},
         )
+
+    def test_facebook_keeps_existing_scraper_as_primary_path(self):
+        post = {
+            'post_id': 'post-123',
+            'text': 'Сдам квартиру в Ташкенте, 2 комнаты, 500 USD',
+            'post_url': 'https://www.facebook.com/groups/123/posts/456/',
+            'time': '2026-08-31T12:00:00+00:00',
+            'images': ['https://example.com/flat.jpg'],
+        }
+        with (
+            patch('app.get_posts', return_value=iter([post])),
+            patch('app._fetch_facebook_playwright') as fallback,
+        ):
+            result = fetch_facebook({
+                'target': 'https://www.facebook.com/groups/123/',
+                'limit': 20,
+            })
+
+        fallback.assert_not_called()
+        self.assertEqual(result['fetchMode'], 'facebook-scraper')
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(result['items'][0]['id'], 'post-123')
+
+    def test_facebook_empty_primary_response_uses_playwright_fallback(self):
+        browser_item = {
+            'id': '456',
+            'source': 'facebook',
+            'target': 'https://www.facebook.com/groups/123/',
+            'author': 'Owner',
+            'text': 'Сдам квартиру в Ташкенте, 2 комнаты, 500 USD',
+            'url': 'https://www.facebook.com/groups/123/posts/456/',
+            'createdAt': None,
+            'images': ['https://example.com/flat.jpg'],
+            'video': None,
+            'likes': None,
+            'comments': None,
+            'shares': None,
+        }
+        with (
+            patch('app.get_posts', return_value=iter([])),
+            patch('app._fetch_facebook_playwright', return_value=[browser_item]) as fallback,
+        ):
+            result = fetch_facebook({
+                'target': 'https://www.facebook.com/groups/123/',
+                'limit': 20,
+            })
+
+        fallback.assert_called_once()
+        self.assertEqual(result['fetchMode'], 'playwright')
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(result['items'][0]['id'], '456')
+
+    def test_facebook_reports_both_transport_failures(self):
+        with (
+            patch('app.get_posts', side_effect=RuntimeError('Unsupported Browser')),
+            patch(
+                'app._fetch_facebook_playwright',
+                side_effect=RuntimeError('Facebook public page is restricted: login wall'),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r'facebook-scraper=.*Unsupported Browser.*playwright=.*login wall',
+            ):
+                fetch_facebook({
+                    'target': 'https://www.facebook.com/groups/123/',
+                    'limit': 20,
+                })
 
     def test_threads_username_validation(self):
         self.assertEqual(_threads_username('@white.love'), 'white.love')
