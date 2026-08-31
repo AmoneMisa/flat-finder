@@ -41,20 +41,42 @@ function listingImages(listing) {
     .map((url, index) => ({ id: `photo_${index + 1}`, url }));
 }
 
+// Fields that can be established from listing photos. Contractual/policy fields
+// such as commission, pets, lease term and utilities intentionally remain in the
+// text parser: vision must not infer them from how a property looks.
+const VISION_LISTING_FIELDS = [
+  'rooms',
+  'bedrooms',
+  'bathrooms',
+  'bathroomLayout',
+  'airConditioner',
+  'balcony',
+  'terrace',
+  'privateYard',
+  'furnished',
+  'parking',
+  'elevator',
+  'dishwasher',
+  'tv',
+  'microwave',
+  'oven',
+  'bidet',
+  'walkInCloset',
+  'bathtub',
+  'shower',
+  'gas',
+  'heating',
+  'hotWater',
+  'internet',
+  'euroLayout',
+  'newBuilding',
+  'condition',
+];
+
 function needsVision(listing) {
   if (!listing || String(listing.source || '').startsWith('mock')) return false;
   if (!listingImages(listing).length) return false;
-  return [
-    listing.airConditioner,
-    listing.balcony,
-    listing.bathrooms,
-    listing.bathroomLayout,
-    listing.bedrooms,
-    listing.furnished,
-    listing.parking,
-    listing.elevator,
-    listing.condition,
-  ].some((value) => value == null || value === '');
+  return VISION_LISTING_FIELDS.some((field) => listing[field] == null || listing[field] === '');
 }
 
 function accepted(item, minConfidence = 0.75) {
@@ -67,21 +89,43 @@ export function mergeVision(listing, result) {
   const derivedFields = new Set(
     Array.isArray(listing?.vision?.derivedFields) ? listing.vision.derivedFields.map(String) : [],
   );
-  const fill = (field, item, provenanceField = field) => {
-    if ((merged[field] == null || merged[field] === '') && accepted(item)) {
+  const fill = (field, item, provenanceField = field, minConfidence = 0.75) => {
+    if ((merged[field] == null || merged[field] === '') && accepted(item, minConfidence)) {
       merged[field] = item.value;
       derivedFields.add(provenanceField);
     }
   };
 
-  fill('airConditioner', data.airConditioner);
-  fill('balcony', data.balcony);
+  fill('rooms', data.roomsVisible);
+  fill('bedrooms', data.bedroomsVisible);
   fill('bathrooms', data.bathroomsVisible);
   fill('bathroomLayout', data.bathroomLayoutVisible);
-  fill('bedrooms', data.bedroomsVisible);
+  fill('airConditioner', data.airConditioner);
+  fill('balcony', data.balcony);
+  fill('terrace', data.terrace);
+  fill('privateYard', data.privateYard);
   fill('furnished', data.furnished);
   fill('parking', data.parkingVisible);
   fill('elevator', data.elevatorVisible);
+  fill('dishwasher', data.dishwasherVisible);
+  fill('tv', data.tvVisible);
+  fill('microwave', data.microwaveVisible);
+  fill('oven', data.ovenVisible);
+  fill('bidet', data.bidetVisible);
+  fill('walkInCloset', data.walkInClosetVisible);
+  fill('bathtub', data.bathtubVisible);
+  fill('shower', data.showerVisible);
+  fill('gas', data.gasVisible);
+  if (merged.gas == null || merged.gas === '') fill('gas', data.gasWaterHeaterVisible);
+  fill('heating', data.heatingVisible);
+  fill('hotWater', data.hotWaterVisible);
+  if (merged.hotWater == null || merged.hotWater === '') fill('hotWater', data.gasWaterHeaterVisible);
+  if (merged.hotWater == null || merged.hotWater === '') fill('hotWater', data.waterBoilerVisible);
+  // Visible network equipment is good supporting evidence, but weaker than an
+  // explicit service statement, so require a higher threshold before filling.
+  fill('internet', data.internetEquipmentVisible, 'internet', 0.9);
+  fill('euroLayout', data.euroLayoutVisible, 'euroLayout', 0.85);
+  fill('newBuilding', data.newBuildingVisible, 'newBuilding', 0.9);
   fill('condition', data.renovationLevel);
 
   const amenityMap = {
@@ -90,6 +134,12 @@ export function mergeVision(listing, result) {
     washingMachineVisible: { amenity: 'washing_machine', field: 'washingMachine' },
     dishwasherVisible: { amenity: 'dishwasher', field: 'dishwasher' },
     tvVisible: { amenity: 'tv', field: 'tv' },
+    microwaveVisible: { amenity: 'microwave', field: 'microwave' },
+    ovenVisible: { amenity: 'oven', field: 'oven' },
+    bidetVisible: { amenity: 'bidet', field: 'bidet' },
+    walkInClosetVisible: { amenity: 'walk_in_closet', field: 'walkInCloset' },
+    bathtubVisible: { amenity: 'bathtub', field: 'bathtub' },
+    showerVisible: { amenity: 'shower', field: 'shower' },
     gasWaterHeaterVisible: { amenity: 'gas_water_heater', field: 'gasWaterHeater' },
     waterBoilerVisible: { amenity: 'water_boiler', field: 'waterBoiler' },
   };
