@@ -95,6 +95,7 @@ test('performance migrations own materialization, relations, delivery leases and
   assert.match(bands, /listing_photo_hashes_phash_band_8_idx/u);
   assert.match(clusters, /CREATE OR REPLACE FUNCTION merge_listing_property_cluster/u);
   assert.match(clusters, /pg_advisory_xact_lock/u);
+  assert.match(clusters, /property-cluster-merge-global/u);
   assert.match(clusters, /jsonb_to_recordset\(p_members\)/u);
   assert.match(feed, /ON CONFLICT \(listing_id\) DO UPDATE/u);
   assert.doesNotMatch(feed, /DELETE FROM listing_public_feed_members[\s\S]*INSERT INTO listing_public_feed_members/u);
