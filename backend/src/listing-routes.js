@@ -11,6 +11,7 @@ import {prepareCustomSources} from './custom-source-queue.js';
 
 const LISTING_MAX_AGE_DAYS = 14;
 const LISTING_PAGE_SIZE = 20;
+const LISTING_MAX_PAGE_SIZE = 60;
 const VALID_SOURCES = ['olx', 'telegram', 'facebook', 'threads'];
 const VALID_SORTS = [
   'newest',
@@ -43,7 +44,10 @@ export function parseListingFilters(q) {
   const offset = Math.max(0, Math.trunc(num(q.offset) ?? 0));
   const limit = Math.max(
     1,
-    Math.min(Math.trunc(num(q.limit) ?? LISTING_PAGE_SIZE), LISTING_PAGE_SIZE),
+    Math.min(
+      Math.trunc(num(q.limit) ?? LISTING_PAGE_SIZE),
+      LISTING_MAX_PAGE_SIZE,
+    ),
   );
   const requestedMaxAgeDays = num(q.maxAgeDays);
   const maxAgeDays = requestedMaxAgeDays != null && requestedMaxAgeDays > 0
