@@ -127,10 +127,74 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  void updateFilters(Filters next) {
-    filters = next;
+  bool _sameFilterPayload(Filters a, Filters b) =>
+      jsonEncode(a.toJson()) == jsonEncode(b.toJson());
+
+  bool _sameLocationScope(Filters a, Filters b) =>
+      setEquals(a.countries, b.countries) &&
+      a.city == b.city &&
+      a.district == b.district &&
+      a.microdistrict == b.microdistrict &&
+      a.quartal == b.quartal &&
+      a.area == b.area &&
+      a.metro == b.metro;
+
+  bool _sameRadius(Filters a, Filters b) =>
+      a.centerLat == b.centerLat &&
+      a.centerLng == b.centerLng &&
+      a.radiusM == b.radiusM;
+
+  /// Normalizes filter updates coming from controls that do not expose every
+  /// field. The advanced sheet, for example, builds a fresh [Filters] object
+  /// without map radius or price-tolerance fields. Those hidden values survive
+  /// unrelated edits, but changing the geographic scope invalidates an old map
+  /// radius and changing the visible price range invalidates an inherited
+  /// tolerance. Returns whether the effective filter payload actually changed.
+  bool updateFilters(Filters next) {
+    final current = filters;
+    var normalized = next;
+
+    final locationChanged = !_sameLocationScope(current, next);
+    final radiusWasImplicitlyCarried = _sameRadius(current, next);
+    final radiusWasOmitted =
+        next.centerLat == null && next.centerLng == null && next.radiusM == null;
+    final currentHasRadius = current.centerLat != null ||
+        current.centerLng != null ||
+        current.radiusM != null;
+
+    if (locationChanged && radiusWasImplicitlyCarried && currentHasRadius) {
+      // copyWith() preserves radius fields by default; an explicit country/city/
+      // district change must not keep searching around the old map point.
+      normalized = normalized.copyWith(clearRadiusSearch: true);
+    } else if (!locationChanged && radiusWasOmitted && currentHasRadius) {
+      // A control that simply does not model radius search must not erase it.
+      normalized = normalized.copyWith(
+        centerLat: current.centerLat,
+        centerLng: current.centerLng,
+        radiusM: current.radiusM,
+      );
+    }
+
+    final priceScopeChanged = normalized.priceMin != current.priceMin ||
+        normalized.priceMax != current.priceMax ||
+        normalized.priceCurrency != current.priceCurrency;
+    final toleranceWasImplicitlyCarried =
+        normalized.priceTolerance == current.priceTolerance;
+    if (priceScopeChanged &&
+        toleranceWasImplicitlyCarried &&
+        current.priceTolerance != null) {
+      normalized = normalized.copyWith(clearPriceTolerance: true);
+    } else if (!priceScopeChanged &&
+        normalized.priceTolerance == null &&
+        current.priceTolerance != null) {
+      normalized = normalized.copyWith(priceTolerance: current.priceTolerance);
+    }
+
+    if (_sameFilterPayload(current, normalized)) return false;
+    filters = normalized;
     notifyListeners();
     _saveFilters(); // persist so choices survive restarts
+    return true;
   }
 
   /// Validate a candidate custom-source URL against the backend (uses the first
