@@ -1,16 +1,37 @@
 -- Flat Finder production performance report.
 -- Run against the production database after representative traffic has warmed
--- pg_stat_statements. This script is read-only and still reports index/table
--- pressure when pg_stat_statements is unavailable.
+-- pg_stat_statements. This script is read-only and still reports index/table,
+-- relation-size, vacuum, and database IO pressure when pg_stat_statements is
+-- unavailable.
 
 \echo '=== database / connection summary ==='
 SELECT
   current_database() AS database,
+  current_setting('server_version') AS server_version,
   current_setting('max_connections')::integer AS max_connections,
   COUNT(*) AS current_connections,
   COUNT(*) FILTER (WHERE state = 'active') AS active_connections,
   COUNT(*) FILTER (WHERE wait_event IS NOT NULL) AS waiting_connections
 FROM pg_stat_activity
+WHERE datname = current_database();
+
+\echo '=== database IO / statistics window ==='
+SELECT
+  datname,
+  numbackends,
+  xact_commit,
+  xact_rollback,
+  blks_read,
+  blks_hit,
+  ROUND(
+    100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0),
+    2
+  ) AS cache_hit_pct,
+  temp_files,
+  pg_size_pretty(temp_bytes) AS temp_bytes,
+  deadlocks,
+  stats_reset
+FROM pg_stat_database
 WHERE datname = current_database();
 
 SELECT EXISTS (
@@ -19,6 +40,11 @@ SELECT EXISTS (
   WHERE extname = 'pg_stat_statements'
 ) AS has_pg_stat_statements
 \gset
+
+\echo '=== pg_stat_statements configuration ==='
+SELECT
+  :'has_pg_stat_statements'::boolean AS extension_installed,
+  current_setting('shared_preload_libraries') AS shared_preload_libraries;
 
 \if :has_pg_stat_statements
 \echo '=== top statements by total execution time ==='
@@ -54,8 +80,29 @@ ORDER BY mean_exec_time DESC
 LIMIT 30;
 \else
 \echo '=== pg_stat_statements unavailable ==='
-\echo 'Enable/load pg_stat_statements to collect statement timing; continuing with index/table statistics.'
+\echo 'Enable/load pg_stat_statements to collect statement timing; continuing with relation/index/table statistics.'
 \endif
+
+\echo '=== largest user relations / TOAST ==='
+SELECT
+  n.nspname AS schema_name,
+  c.relname AS table_name,
+  pg_size_pretty(pg_relation_size(c.oid)) AS heap_size,
+  pg_size_pretty(pg_indexes_size(c.oid)) AS indexes_size,
+  pg_size_pretty(
+    CASE
+      WHEN c.reltoastrelid <> 0 THEN pg_total_relation_size(c.reltoastrelid)
+      ELSE 0
+    END
+  ) AS toast_size,
+  pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind = 'r'
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND n.nspname NOT LIKE 'pg_toast%'
+ORDER BY pg_total_relation_size(c.oid) DESC
+LIMIT 30;
 
 \echo '=== listing indexes by scan count / size ==='
 SELECT
@@ -78,7 +125,7 @@ WHERE s.relname IN (
 )
 ORDER BY s.relname, s.idx_scan DESC, pg_relation_size(s.indexrelid) DESC;
 
-\echo '=== table IO / dead tuple pressure ==='
+\echo '=== table IO / vacuum / dead tuple pressure ==='
 SELECT
   schemaname,
   relname,
@@ -86,11 +133,21 @@ SELECT
   idx_scan,
   n_live_tup,
   n_dead_tup,
+  ROUND(
+    100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0),
+    2
+  ) AS dead_pct,
   n_tup_ins,
   n_tup_upd,
   n_tup_del,
+  last_vacuum,
   last_autovacuum,
-  last_autoanalyze
+  last_analyze,
+  last_autoanalyze,
+  vacuum_count,
+  autovacuum_count,
+  analyze_count,
+  autoanalyze_count
 FROM pg_stat_user_tables
 WHERE (schemaname = 'public' AND relname IN (
   'listings',
