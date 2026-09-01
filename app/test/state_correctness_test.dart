@@ -175,7 +175,7 @@ void main() {
       expect(state.filters.agency, AgencyFilter.owner);
     });
 
-    test('changing geography clears stale radius and changing price clears tolerance', () {
+    test('changing geography resets city-scoped filters and changing price clears tolerance', () {
       final state = AppState(ControlledApi());
       state.filters = Filters(
         countries: {'UZ'},
@@ -192,9 +192,15 @@ void main() {
       expect(state.filters.centerLat, isNull);
       expect(state.filters.centerLng, isNull);
       expect(state.filters.radiusM, isNull);
-      expect(state.filters.priceTolerance, 75);
+      expect(state.filters.priceMin, isNull);
+      expect(state.filters.priceMax, isNull);
+      expect(state.filters.priceTolerance, isNull);
 
-      state.updateFilters(state.filters.copyWith(priceMax: 1200));
+      state.updateFilters(
+        state.filters.copyWith(priceMax: 1200, priceTolerance: 75),
+      );
+      expect(state.filters.priceTolerance, 75);
+      state.updateFilters(state.filters.copyWith(priceMax: 1300));
       expect(state.filters.priceTolerance, isNull);
     });
 
