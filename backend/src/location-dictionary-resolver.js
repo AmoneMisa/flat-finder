@@ -150,7 +150,12 @@ function applyCentralAsiaLocations(result, central) {
 
     if (item.type === 'district' && !result.district) result.district = item.name;
     else if (item.type === 'microdistrict' && !result.microdistrict) result.microdistrict = item.name;
-    else if (item.type === 'mahalla') pushUnique(result.mahallas, item.name);
+    else if (item.type === 'mahalla') {
+      pushUnique(result.mahallas, item.name);
+      // Keep the legacy flat location field populated while retaining the
+      // more precise entity type in mahallas and locationEntities.
+      result.microdistrict ||= item.name;
+    }
     else if (item.type === 'local_area') pushUnique(result.localAreas, item.name);
     else if (item.type === 'suburb') {
       pushUnique(result.suburbs, item.name);
