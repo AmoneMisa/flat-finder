@@ -750,12 +750,11 @@ class _FilterSheetState extends State<FilterSheet> {
                           labelOf: (city) =>
                               _selectedCountry?.cityLabel(city) ??
                               cityLabel(city, s.lang),
-                          // A city switch starts a fresh search scope. Rehydrate
-                          // the whole form from Filters.copyWith so every other
-                          // filter visibly resets while country + deal type stay.
-                          onChanged: (v) => _loadPreset(
-                            _currentFilters().copyWith(city: v ?? ''),
-                          ),
+                          onChanged: (v) => _setFilterState(() {
+                            _city = v;
+                            _district = null; // district/metro depend on the chosen city
+                            _metro = null;
+                          }),
                         ),
                         // District & metro inputs only appear when the picked city has data.
                         if (_cityLoc != null &&
@@ -863,7 +862,6 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String?>(
-                          key: ValueKey('nearby-kind-$_nearbyKind'),
                           initialValue: _nearbyKind,
                           isExpanded: true,
                           decoration: InputDecoration(
@@ -1044,7 +1042,6 @@ class _FilterSheetState extends State<FilterSheet> {
                                 .isNotEmpty) ...[
                           const SizedBox(height: 8),
                           DropdownButtonFormField<String?>(
-                            key: ValueKey('price-currency-$_priceCurrency'),
                             initialValue: _priceCurrency,
                             decoration: InputDecoration(
                               labelText: s.t('priceCurrency'),
@@ -1213,7 +1210,6 @@ class _FilterSheetState extends State<FilterSheet> {
                       title: s.t('sectionSortAndTiming'),
                       children: [
                         DropdownButtonFormField<int?>(
-                          key: ValueKey('max-age-$_maxAgeDays'),
                           initialValue: _maxAgeDays,
                           isExpanded: true,
                           decoration: const InputDecoration(
@@ -1245,7 +1241,6 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<SortBy>(
-                          key: ValueKey('sort-$_sort'),
                           initialValue: _sort,
                           isExpanded: true,
                           decoration: const InputDecoration(
