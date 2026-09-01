@@ -9,21 +9,21 @@
 // cached because geocoding runs during background refreshes, never on the
 // request path.
 
-import { cacheGet, cacheSet } from './cache.js'
 import { canonicalCityName } from './countries.js'
 import { assignNearestMetro } from './metro-nearest.js'
 import { loadCityPlaces } from './places-db.js'
 import { annotateListings } from './nearby-places.js'
 import { applyReverseGeo } from './reverse-geo.js'
+import {
+  cachedNominatimPoint,
+  fetchNominatimPoint,
+  geocodeBbox,
+  geocodeQuery,
+} from './nominatim-client.js'
+import { solveSpatialPoint } from './geocode-spatial.js'
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
-const UA = 'flat-finder/1.0 (housing aggregator; contact: admin@whiteslove.me)'
-const HIT_TTL_MS = 30 * 24 * 60 * 60 * 1000
-const MISS_TTL_MS = 24 * 60 * 60 * 1000
-const ERR_TTL_MS = 60 * 1000
-const MIN_INTERVAL_MS = 1100
 const MAX_LOOKUPS_PER_RUN = Number(process.env.GEOCODE_BUDGET) || 60
-const EARTH_RADIUS_M = 6_371_000
+const MAX_LOOKUPS_PER_LISTING = Math.max(1, Number(process.env.GEOCODE_LISTING_BUDGET) || 3)
 
 const POI_ALIASES = {
   Korzinka: 'korzinka|корзинк\\p{L}*',
@@ -36,82 +36,7 @@ const POI_ALIASES = {
   School: 'school|школ\\p{L}*|maktab\\p{L}*',
 }
 
-let lastCallAt = 0
-async function throttle() {
-  const wait = lastCallAt + MIN_INTERVAL_MS - Date.now()
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
-  lastCallAt = Date.now()
-}
-
-function geoKey(query, countryCode) {
-  return `geo:v3:${countryCode ? countryCode.toLowerCase() + ':' : ''}${query.toLowerCase().replace(/\s+/g, ' ').trim()}`
-}
-
-async function getCachedGeo(query, countryCode) {
-  const cached = await cacheGet(geoKey(query, countryCode))
-  return cached ? cached.coords : undefined
-}
-
-// Without `countrycodes`, Nominatim's global relevance ranking can outrank a
-// correct-but-obscure local match with an unrelated same-named place abroad
-// (e.g. a Tashkent mahalla query once resolved to "Agram", a mountain pass in
-// Afghanistan). The candidate query text already carries city/country as
-// words, which isn't a hard constraint the way this param is.
-async function fetchGeo(query, countryCode) {
-  await throttle()
-  try {
-    const params = new URLSearchParams({ q: query, format: 'json', limit: '1' })
-    if (countryCode) params.set('countrycodes', countryCode.toLowerCase())
-    const res = await fetch(`${NOMINATIM_URL}?${params}`, {
-      headers: { 'User-Agent': UA, 'Accept-Language': 'en' },
-      signal: AbortSignal.timeout(10_000),
-    })
-    if (!res.ok) throw new Error(`nominatim ${res.status}`)
-    const data = await res.json()
-    const first = Array.isArray(data) ? data[0] : null
-    const coords = first ? { lat: Number(first.lat), lng: Number(first.lon) } : null
-    await cacheSet(geoKey(query, countryCode), { coords }, coords ? HIT_TTL_MS : MISS_TTL_MS)
-    return coords
-  } catch {
-    await cacheSet(geoKey(query, countryCode), { coords: null }, ERR_TTL_MS)
-    return null
-  }
-}
-
-export async function geocodeQuery(query, countryCode) {
-  if (!query) return null
-  const cached = await getCachedGeo(query, countryCode)
-  if (cached !== undefined) return cached
-  return fetchGeo(query, countryCode)
-}
-
-export async function geocodeBbox(query) {
-  if (!query) return null
-  const key = `geo:bbox:v1:${query.toLowerCase().trim()}`
-  const cached = await cacheGet(key)
-  if (cached) return cached.bbox
-
-  await throttle()
-  try {
-    const params = new URLSearchParams({ q: query, format: 'json', limit: '1' })
-    const res = await fetch(`${NOMINATIM_URL}?${params}`, {
-      headers: { 'User-Agent': UA, 'Accept-Language': 'en' },
-      signal: AbortSignal.timeout(10_000),
-    })
-    if (!res.ok) throw new Error(`nominatim ${res.status}`)
-    const data = await res.json()
-    const raw = Array.isArray(data) ? data[0]?.boundingbox : null
-    const numbers = (raw || []).map(Number)
-    const bbox = numbers.length === 4 && numbers.every(Number.isFinite)
-      ? [numbers[0], numbers[2], numbers[1], numbers[3]]
-      : null
-    await cacheSet(key, { bbox }, bbox ? HIT_TTL_MS : MISS_TTL_MS)
-    return bbox
-  } catch {
-    await cacheSet(key, { bbox: null }, ERR_TTL_MS)
-    return null
-  }
-}
+export { geocodeBbox, geocodeQuery }
 
 function jitter(id, amount) {
   if (!amount) return [0, 0]
@@ -253,7 +178,7 @@ export function geocodeCandidates(listing, country) {
   const localContext = [listing.district, city, countryName]
   const candidates = [
     listing.address && {
-      q: [listing.address, city, countryName].filter(Boolean).join(', '),
+      q: [listing.address, listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'address',
       jit: 0,
       accuracyM: 40,
@@ -318,116 +243,22 @@ export function geocodeCandidates(listing, country) {
   return dedupeCandidates(candidates)
 }
 
-function projectPoint(point, origin) {
-  const lat0 = (origin.lat * Math.PI) / 180
-  return {
-    x: ((point.lng - origin.lng) * Math.PI / 180) * EARTH_RADIUS_M * Math.cos(lat0),
-    y: ((point.lat - origin.lat) * Math.PI / 180) * EARTH_RADIUS_M,
-  }
-}
-
-function unprojectPoint(point, origin) {
-  const lat0 = (origin.lat * Math.PI) / 180
-  return {
-    lat: origin.lat + (point.y / EARTH_RADIUS_M) * (180 / Math.PI),
-    lng: origin.lng + (point.x / (EARTH_RADIUS_M * Math.cos(lat0))) * (180 / Math.PI),
-  }
-}
-
-function spatialResidual(point, anchors) {
-  const squared = anchors.map((anchor) => {
-    const d = Math.hypot(point.x - anchor.x, point.y - anchor.y)
-    return (d - anchor.distanceM) ** 2
-  })
-  return Math.sqrt(squared.reduce((sum, value) => sum + value, 0) / squared.length)
-}
-
-function circlePairCandidates(a, b) {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const d = Math.hypot(dx, dy)
-  if (d < 0.001) return []
-
-  const ux = dx / d
-  const uy = dy / d
-  const along = (a.distanceM ** 2 - b.distanceM ** 2 + d ** 2) / (2 * d)
-  const base = { x: a.x + along * ux, y: a.y + along * uy }
-  const h2 = a.distanceM ** 2 - along ** 2
-
-  if (h2 >= 0) {
-    const h = Math.sqrt(h2)
-    return [
-      { x: base.x - uy * h, y: base.y + ux * h },
-      { x: base.x + uy * h, y: base.y - ux * h },
-    ]
-  }
-
-  const edgeA = { x: a.x + ux * a.distanceM, y: a.y + uy * a.distanceM }
-  const edgeB = { x: b.x - ux * b.distanceM, y: b.y - uy * b.distanceM }
-  return [{ x: (edgeA.x + edgeB.x) / 2, y: (edgeA.y + edgeB.y) / 2 }]
-}
-
-export function solveSpatialPoint(rawAnchors, prior = null) {
-  const anchors = (rawAnchors || []).filter(
-    (anchor) => Number.isFinite(anchor?.lat) && Number.isFinite(anchor?.lng) && Number(anchor?.distanceM) > 0,
-  )
-  if (anchors.length < 2) return null
-
-  const origin = {
-    lat: anchors.reduce((sum, anchor) => sum + anchor.lat, 0) / anchors.length,
-    lng: anchors.reduce((sum, anchor) => sum + anchor.lng, 0) / anchors.length,
-  }
-  const localAnchors = anchors.map((anchor) => ({
-    ...projectPoint(anchor, origin),
-    distanceM: Number(anchor.distanceM),
-  }))
-  const priorLocal = prior && Number.isFinite(prior.lat) && Number.isFinite(prior.lng)
-    ? projectPoint(prior, origin)
-    : null
-
-  const candidates = []
-  for (let i = 0; i < localAnchors.length; i++) {
-    for (let j = i + 1; j < localAnchors.length; j++) {
-      candidates.push(...circlePairCandidates(localAnchors[i], localAnchors[j]))
-    }
-  }
-
-  const totalWeight = localAnchors.reduce((sum, anchor) => sum + 1 / anchor.distanceM, 0)
-  candidates.push({
-    x: localAnchors.reduce((sum, anchor) => sum + anchor.x / anchor.distanceM, 0) / totalWeight,
-    y: localAnchors.reduce((sum, anchor) => sum + anchor.y / anchor.distanceM, 0) / totalWeight,
-  })
-  if (priorLocal) candidates.push(priorLocal)
-
-  let best = null
-  for (const candidate of candidates) {
-    const residualM = spatialResidual(candidate, localAnchors)
-    const priorPenalty = priorLocal ? Math.hypot(candidate.x - priorLocal.x, candidate.y - priorLocal.y) * 0.01 : 0
-    const score = residualM + priorPenalty
-    if (!best || score < best.score) best = { point: candidate, residualM, score }
-  }
-  if (!best) return null
-
-  return {
-    ...unprojectPoint(best.point, origin),
-    residualM: best.residualM,
-    anchorCount: anchors.length,
-  }
-}
+export { solveSpatialPoint }
 
 export async function geocodeListings(listings, country) {
   if (!Array.isArray(listings) || !country) return listings
   const center = cityCenter(country)
-  const defaultCity = country?.cities?.[0] || ''
   let budget = MAX_LOOKUPS_PER_RUN
+  let listingBudget = MAX_LOOKUPS_PER_LISTING
 
   async function lookup(candidate) {
     if (!candidate?.q) return null
-    let coords = await getCachedGeo(candidate.q, country.code)
+    let coords = await cachedNominatimPoint(candidate.q, country.code)
     if (coords === undefined) {
-      if (budget <= 0) return null
-      coords = await fetchGeo(candidate.q, country.code)
+      if (budget <= 0 || listingBudget <= 0) return null
+      coords = await fetchNominatimPoint(candidate.q, country.code)
       budget--
+      listingBudget--
     }
     return coords || null
   }
@@ -441,6 +272,7 @@ export async function geocodeListings(listings, country) {
   }
 
   for (const listing of listings) {
+    listingBudget = MAX_LOOKUPS_PER_LISTING
     const canonicalCity = canonicalCityName(country?.code, listing.city || '')
     if (canonicalCity) listing.city = canonicalCity
 
@@ -457,7 +289,7 @@ export async function geocodeListings(listings, country) {
     const nearbyCandidates = candidates.filter((candidate) => candidate.source === 'nearby')
     const broadCandidates = candidates.filter((candidate) => [
       'microdistrict', 'area', 'localArea', 'locality', 'developmentArea',
-      'informalArea', 'suburb', 'settlement', 'searchCluster', 'district', 'city',
+      'informalArea', 'suburb', 'settlement', 'searchCluster', 'district',
     ].includes(candidate.source))
 
     let placed = false
@@ -512,14 +344,9 @@ export async function geocodeListings(listings, country) {
       break
     }
 
-    const listingCity = canonicalCityName(country?.code, listing.city || defaultCity)
-    if (!placed && center && (!listing.city || listingCity === defaultCity)) {
-      const [dLat, dLng] = jitter(String(listing.id || ''), 0.02)
-      listing.lat = center.lat + dLat
-      listing.lng = center.lng + dLng
-      listing.locationSource = 'city'
-      listing.locationAccuracyM = 8000
-    }
+    // A city centroid is viewport metadata, not an apartment location. When no
+    // address/ЖК/microdistrict/district signal resolves, keep the listing off
+    // the point layer instead of manufacturing a plausible-looking marker.
   }
 
   await applyReverseGeo(listings, country)

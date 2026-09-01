@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { geocodeCandidates, poiDistanceM, solveSpatialPoint } from '../src/geocode.js';
+import { geocodeCandidates, geocodeListings, poiDistanceM, solveSpatialPoint } from '../src/geocode.js';
 
 const country = {
   name: 'Uzbekistan',
@@ -26,6 +26,49 @@ test('orders geocoding signals from exact to broad with street and metro above n
     geocodeCandidates(listing, country).map((candidate) => candidate.source),
     ['address', 'street', 'metro', 'nearby', 'nearby', 'area', 'district', 'city'],
   );
+});
+
+test('scopes an address lookup with its district', () => {
+  const [candidate] = geocodeCandidates({
+    city: 'Tashkent',
+    district: 'Yashnabad',
+    address: 'Qodisheva bozori, songgi bekat',
+  }, country);
+
+  assert.equal(candidate.source, 'address');
+  assert.equal(candidate.q, 'Qodisheva bozori, songgi bekat, Yashnabad, Tashkent, Uzbekistan');
+});
+
+test('does not manufacture an apartment point from the city centroid', async () => {
+  const [listing] = await geocodeListings([{ id: 'city-only', city: 'Tashkent' }], country);
+
+  assert.equal(listing.lat, undefined);
+  assert.equal(listing.lng, undefined);
+  assert.equal(listing.locationSource, undefined);
+});
+
+test('caps uncached Nominatim attempts per listing', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return { ok: true, json: async () => [] };
+  };
+
+  try {
+    await geocodeListings([{
+      id: `budget-${Date.now()}`,
+      city: 'Tashkent',
+      district: 'Yashnabad',
+      microdistrict: `Missing microdistrict ${Date.now()}`,
+      address: `Missing address ${Date.now()}`,
+      street: `Missing street ${Date.now()}`,
+      residenceComplex: `Missing complex ${Date.now()}`,
+    }], { ...country, code: 'UZ' });
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('uses expanded shared geography before district and city', () => {
