@@ -80,9 +80,6 @@ Set<String> _singleCountry(Set<String>? values, [String fallback = 'RO']) {
   return {values.first};
 }
 
-bool _sameStringSet(Set<String> a, Set<String> b) =>
-    a.length == b.length && a.containsAll(b);
-
 Map<String, String> _stringMap(dynamic v) => v is Map
     ? v.map((k, val) => MapEntry(k.toString(), val.toString()))
     : const {};
@@ -425,28 +422,8 @@ class Filters {
     bool clearMaxAgeDays = false,
     SortBy? sort,
   }) {
-    final requestedCountries = countries ?? this.countries;
-    final requestedCity = city?.trim();
-    final cityChangedWithinCountry = requestedCity != null &&
-        requestedCity != this.city.trim() &&
-        _sameStringSet(requestedCountries, this.countries);
-
-    // A city is a fresh search scope. When the user switches it, old price,
-    // room, seller, amenity, geo, source, timing and sort constraints are much
-    // more likely to hide valid inventory than to remain intentional. Preserve
-    // only the country and the deal semantics (room rental is longRent +
-    // roomOnly), plus the newly selected city itself.
-    if (cityChangedWithinCountry) {
-      return Filters(
-        countries: requestedCountries,
-        dealType: dealType ?? this.dealType,
-        roomOnly: roomOnly ?? this.roomOnly,
-        city: requestedCity,
-      );
-    }
-
     return Filters(
-      countries: requestedCountries,
+      countries: countries ?? this.countries,
       sources: sources ?? this.sources,
       customSources: customSources ?? this.customSources,
       propertyType: propertyType ?? this.propertyType,
@@ -747,9 +724,8 @@ class Filters {
     if (noDeposit) p['noDeposit'] = 'true';
     if (communalIncluded) p['communalIncluded'] = 'true';
     if (noCommission) p['noCommission'] = 'true';
-    if (maxAgeDays != null && maxAgeDays! > 0) {
+    if (maxAgeDays != null && maxAgeDays! > 0)
       p['maxAgeDays'] = maxAgeDays.toString();
-    }
     // Only send when it's a real subset; all-selected means "all" server-side.
     if (sources.isNotEmpty && sources.length < kAllSources.length) {
       p['sources'] = sources.join(',');
@@ -788,9 +764,8 @@ class Filters {
     }
     if (metroMaxM != null) p['metroMaxM'] = metroMaxM.toString();
     if (nearbyMaxM != null) p['nearbyMaxM'] = nearbyMaxM.toString();
-    if (nearbyKind != null && nearbyKind!.isNotEmpty) {
+    if (nearbyKind != null && nearbyKind!.isNotEmpty)
       p['nearbyKind'] = nearbyKind!;
-    }
     if (centerLat != null && centerLng != null && radiusM != null) {
       p['centerLat'] = centerLat.toString();
       p['centerLng'] = centerLng.toString();
@@ -799,9 +774,8 @@ class Filters {
     if (withPhotos) p['withPhotos'] = 'true';
     if (city.trim().isNotEmpty) p['city'] = city.trim();
     if (district.trim().isNotEmpty) p['district'] = district.trim();
-    if (microdistrict.trim().isNotEmpty) {
+    if (microdistrict.trim().isNotEmpty)
       p['microdistrict'] = microdistrict.trim();
-    }
     if (quartal.trim().isNotEmpty) p['quartal'] = quartal.trim();
     if (area.trim().isNotEmpty) p['area'] = area.trim();
     if (metro.trim().isNotEmpty) p['metro'] = metro.trim();
