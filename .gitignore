@@ -1,12 +1,7 @@
-flatfinder.env
 *.env
-!sample.env
 node_modules/
 *.log
 app/build/
 release/
-backend/node_modules/
-telegram-worker/node_modules/
-telegram-worker/photo-cache/
 /.idea/
 /app/.idea/
