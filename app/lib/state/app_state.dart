@@ -10,13 +10,53 @@ import '../models/listing_identity.dart';
 import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
 
+/// A response held for [_feedCacheTtl] and keyed by the exact filter
+/// combination that produced it, so re-visiting a combination -- most often a
+/// checkbox toggled off and back on -- repaints instantly instead of paying
+/// for another round trip. Mirrors the same cache added to the web client.
+class _CacheEntry<T> {
+  _CacheEntry(this.value) : at = DateTime.now();
+  final T value;
+  final DateTime at;
+}
+
 class AppState extends ChangeNotifier {
   AppState(this._api);
 
   static const _kFilters = 'filters';
   static const _searchDebounce = Duration(milliseconds: 250);
+  static const _feedCacheTtl = Duration(seconds: 60);
+  static const _feedCacheMaxEntries = 40;
 
   final ApiService _api;
+  final _listingsCache = <String, _CacheEntry<ListingsResult>>{};
+  final _mapCache = <String, _CacheEntry<List<MapListingPoint>>>{};
+
+  /// Stable regardless of the order [Filters.toQueryParams] happened to build
+  /// its map in.
+  String _cacheKey(Filters f) {
+    final params = f.toQueryParams();
+    final keys = params.keys.toList()..sort();
+    return keys.map((k) => '$k=${params[k]}').join('&');
+  }
+
+  T? _readCache<T>(Map<String, _CacheEntry<T>> cache, String key) {
+    final entry = cache[key];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.at) > _feedCacheTtl) {
+      cache.remove(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  void _writeCache<T>(Map<String, _CacheEntry<T>> cache, String key, T value) {
+    cache.remove(key);
+    cache[key] = _CacheEntry(value);
+    while (cache.length > _feedCacheMaxEntries) {
+      cache.remove(cache.keys.first);
+    }
+  }
 
   List<Country> countries = [];
   Filters filters = Filters();
@@ -310,20 +350,51 @@ class AppState extends ChangeNotifier {
     }
 
     final requestedFilters = filters;
+    final cacheKey = _cacheKey(requestedFilters);
+    final cached = _readCache(_listingsCache, cacheKey);
     final completion = Completer<void>();
     _pendingSearchCompletion = completion;
-    loading = true;
-    mapListings = [];
     error = null;
+
+    // mapListings belongs to loadMapListings' own cache (below), issued
+    // separately right after this call resolves -- cleared here unconditionally,
+    // same as before this cache existed, so a cache hit never leaves the
+    // *previous* filter combination's markers on screen while the map's own
+    // cache lookup catches up.
+    mapListings = [];
+    if (cached != null) {
+      // Paint the held answer now -- `loading` stays false so the full-screen
+      // overlay never flashes for a combination already in hand -- then
+      // confirm it is still current behind the paint.
+      listings = cached.listings;
+      nextCursor = cached.nextCursor;
+      total = cached.total;
+      degradedCountries = cached.degradedCountries;
+      sourceErrors = cached.sourceErrors;
+    } else {
+      loading = true;
+    }
     notifyListeners();
 
-    _searchDebounceTimer = Timer(_searchDebounce, () {
+    // An answer already in hand costs the server nothing to re-apply, so it
+    // also skips the debounce that exists to protect the backend from
+    // combinations it has not answered yet.
+    final delay = cached != null ? Duration.zero : _searchDebounce;
+    _searchDebounceTimer = Timer(delay, () {
       _searchDebounceTimer = null;
       if (generation != _searchGeneration) {
         if (!completion.isCompleted) completion.complete();
         return;
       }
-      unawaited(_executeSearch(generation, requestedFilters, completion));
+      unawaited(
+        _executeSearch(
+          generation,
+          requestedFilters,
+          completion,
+          cacheKey: cacheKey,
+          background: cached != null,
+        ),
+      );
     });
     return completion.future;
   }
@@ -331,8 +402,10 @@ class AppState extends ChangeNotifier {
   Future<void> _executeSearch(
     int generation,
     Filters requestedFilters,
-    Completer<void> completion,
-  ) async {
+    Completer<void> completion, {
+    required String cacheKey,
+    bool background = false,
+  }) async {
     try {
       final res = await _api.fetchListings(requestedFilters);
       if (generation != _searchGeneration) return;
@@ -341,16 +414,21 @@ class AppState extends ChangeNotifier {
       total = res.total;
       degradedCountries = res.degradedCountries;
       sourceErrors = res.sourceErrors;
+      _writeCache(_listingsCache, cacheKey, res);
       if (res.deferredMarketComparison && res.listings.isNotEmpty) {
         unawaited(_hydrateMarketComparisons(generation, res.listings));
       }
     } catch (e) {
       if (generation != _searchGeneration) return;
-      error = e.toString();
-      listings = [];
-      nextCursor = null;
-      total = 0;
-      sourceErrors = [];
+      // A background revalidation failure leaves the cached, already-painted
+      // results on screen rather than clearing them out from under the user.
+      if (!background) {
+        error = e.toString();
+        listings = [];
+        nextCursor = null;
+        total = 0;
+        sourceErrors = [];
+      }
     } finally {
       if (generation == _searchGeneration) {
         loading = false;
@@ -417,11 +495,32 @@ class AppState extends ChangeNotifier {
   Future<void> loadMapListings() async {
     if (mapLoading || filters.countries.isEmpty) return;
     final generation = _searchGeneration;
-    mapLoading = true;
+    final requestedFilters = filters;
+    final cacheKey = _cacheKey(requestedFilters);
+    final cached = _readCache(_mapCache, cacheKey);
+
+    if (cached != null) {
+      // Paint the held pins now, without the blocking overlay mapLoading
+      // drives -- the fetch below still confirms them behind the paint.
+      mapListings = cached;
+    } else {
+      mapLoading = true;
+    }
     notifyListeners();
+
     try {
-      final points = await _api.fetchMapListings(filters);
-      if (generation == _searchGeneration) mapListings = points;
+      final points = await _api.fetchMapListings(requestedFilters);
+      if (generation == _searchGeneration) {
+        mapListings = points;
+        _writeCache(_mapCache, cacheKey, points);
+      }
+    } catch (_) {
+      // Previously an uncached failure here could throw past this method
+      // (several call sites invoke it fire-and-forget, with no catch of
+      // their own). Swallowing it and leaving whatever pins were already on
+      // screen -- cached or from the last successful fetch -- is strictly
+      // better than an unhandled exception surfacing from a secondary feed;
+      // the mirrored web map applies the same rule to its own fetch.
     } finally {
       if (generation == _searchGeneration) {
         mapLoading = false;
@@ -445,14 +544,19 @@ class AppState extends ChangeNotifier {
     loading = true;
     error = null;
     notifyListeners();
+    final requestedFilters = filters;
     try {
-      final res = await _api.fetchListings(filters, force: true);
+      final res = await _api.fetchListings(requestedFilters, force: true);
       if (generation != _searchGeneration) return;
       listings = res.listings;
       nextCursor = res.nextCursor;
       total = res.total;
       degradedCountries = res.degradedCountries;
       sourceErrors = res.sourceErrors;
+      // A forced scrape is the freshest possible answer for this exact filter
+      // combination -- update the cache so a plain search() back to it, right
+      // after, does not serve what reloadAll just deliberately bypassed.
+      _writeCache(_listingsCache, _cacheKey(requestedFilters), res);
       _startReloadAllCooldown(const Duration(seconds: 8));
     } on RateLimitException catch (e) {
       if (generation == _searchGeneration) {
