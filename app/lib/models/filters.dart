@@ -10,14 +10,17 @@ enum AgencyFilter { any, owner, agency }
 enum Audience { any, women, men, family }
 
 /// Client-side result ordering. `relevance` keeps the server's original order.
+///
+/// Title ordering was removed: it is the one sort the backend cannot serve off
+/// the public-feed read model, so it fell through to the general search path
+/// and paid for a full sort of the result set. A stored or shared `titleAsc`/
+/// `titleDesc` value now decodes to `relevance` like any other unknown name.
 enum SortBy {
   relevance,
   dateNew,
   dateOld,
   priceAsc,
   priceDesc,
-  titleAsc,
-  titleDesc,
   areaDesc,
   distanceCenter,
   distanceMetro,

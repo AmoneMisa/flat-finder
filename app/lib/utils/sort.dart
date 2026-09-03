@@ -12,8 +12,6 @@ String sortLabel(AppStrings s, SortBy v) => switch (v) {
       SortBy.dateOld => s.t('sortDateOld'),
       SortBy.priceAsc => s.t('sortPriceAsc'),
       SortBy.priceDesc => s.t('sortPriceDesc'),
-      SortBy.titleAsc => s.t('sortTitleAsc'),
-      SortBy.titleDesc => s.t('sortTitleDesc'),
       SortBy.areaDesc => s.t('sortArea'),
       SortBy.distanceCenter => s.t('sortCenter'),
       SortBy.distanceMetro => s.t('sortMetro'),
@@ -104,14 +102,6 @@ List<Listing> sortListings(
           _comparablePrice(b, rates, displayCurrency),
           asc: false,
         ),
-      );
-    case SortBy.titleAsc:
-      out.sort(
-        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
-      );
-    case SortBy.titleDesc:
-      out.sort(
-        (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()),
       );
     case SortBy.areaDesc:
       out.sort((a, b) => byNum(a.areaSqm, b.areaSqm, asc: false));

@@ -591,8 +591,6 @@ class _FilterSheetState extends State<FilterSheet> {
     SortBy.dateOld => s.t('sortDateOld'),
     SortBy.priceAsc => s.t('sortPriceAsc'),
     SortBy.priceDesc => s.t('sortPriceDesc'),
-    SortBy.titleAsc => s.t('sortTitleAsc'),
-    SortBy.titleDesc => s.t('sortTitleDesc'),
     SortBy.areaDesc => s.t('sortArea'),
     SortBy.distanceCenter => s.t('sortCenter'),
     SortBy.distanceMetro => s.t('sortMetro'),
