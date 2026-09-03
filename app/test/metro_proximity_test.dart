@@ -118,4 +118,69 @@ void main() {
     expect(arcForCompassPoint('W'), (247.5, 292.5));
     expect(arcForCompassPoint('N'), (337.5, 22.5));
   });
+
+  group('what a map tap near a station means', () {
+    test('a tap on the dot picks the station at the default radius', () {
+      expect(
+        metroTapRadiusM(
+          screenDistancePx: 5,
+          metresFromStation: 40,
+          hasSelection: false,
+        ),
+        defaultMetroRadiusM,
+      );
+      expect(
+        metroTapRadiusM(
+          screenDistancePx: 5,
+          metresFromStation: 40,
+          hasSelection: true,
+        ),
+        defaultMetroRadiusM,
+      );
+    });
+
+    test('with rings drawn, a tap inside one adopts that band', () {
+      double? tap(double metres) => metroTapRadiusM(
+            screenDistancePx: 200,
+            metresFromStation: metres,
+            hasSelection: false,
+          );
+      expect(tap(150), 200);
+      expect(tap(400), 500);
+      expect(tap(900), 1000);
+      // Outside the outermost ring the tap belongs to whatever is under it.
+      expect(tap(1400), isNull);
+    });
+
+    test('with a selection active, only the dot counts -- not the old 1km grab',
+        () {
+      // This is the misclick the pixel rule exists to stop: far from the dot
+      // in screen terms, but well within the metre radius that used to
+      // swallow the tap and silently change the search.
+      expect(
+        metroTapRadiusM(
+          screenDistancePx: 200,
+          metresFromStation: 400,
+          hasSelection: true,
+        ),
+        isNull,
+      );
+    });
+
+    test('the slop is a pixel budget, so zoom does not change the target', () {
+      // Same station, same tap offset on screen, wildly different metre
+      // distances (zoomed out vs zoomed in): the answer must not differ.
+      for (final metres in [30.0, 300.0, 3000.0]) {
+        expect(
+          metroTapRadiusM(
+            screenDistancePx: 10,
+            metresFromStation: metres,
+            hasSelection: true,
+          ),
+          defaultMetroRadiusM,
+          reason: 'at $metres m',
+        );
+      }
+    });
+  });
 }

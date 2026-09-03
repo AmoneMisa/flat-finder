@@ -182,6 +182,38 @@ String compassPointFor(double from, double to) {
   return (normalizeBearing(centre - 22.5), normalizeBearing(centre + 22.5));
 }
 
+/// How close a tap must land to a station dot to count as hitting it, in
+/// logical pixels. Deliberately pixels rather than metres: a fixed metre
+/// radius covers most of the screen when zoomed out to a city and a sliver
+/// when zoomed into a street, whereas the dot being aimed at is the same
+/// size at every zoom.
+const double metroTapSlopPx = 24;
+
+/// What a map tap near the nearest metro station means: the radius to adopt,
+/// or null when the tap belongs to whatever is underneath (a district or
+/// local-area polygon) instead.
+///
+/// The rule follows what is actually drawn. With no selection the three
+/// preset rings are on screen and are genuinely clickable, so a tap inside
+/// the outermost one picks that band's distance. Once a station is chosen
+/// those rings are gone, so only the dot itself can mean a station -- before
+/// this, any tap within 1000m of a station was swallowed by it, which at
+/// city zoom is most of the visible map.
+double? metroTapRadiusM({
+  required double screenDistancePx,
+  required double metresFromStation,
+  required bool hasSelection,
+  double slopPx = metroTapSlopPx,
+}) {
+  final onDot = screenDistancePx <= slopPx;
+  if (hasSelection) return onDot ? defaultMetroRadiusM : null;
+  if (onDot) return defaultMetroRadiusM;
+  if (metresFromStation > 1000) return null;
+  if (metresFromStation <= 200) return 200;
+  if (metresFromStation <= 500) return 500;
+  return 1000;
+}
+
 /// The radius a freshly picked station starts at, before any drag.
 const double defaultMetroRadiusM = 500;
 const double metroMinRadiusM = 100;

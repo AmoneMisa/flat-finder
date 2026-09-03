@@ -661,6 +661,31 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
     }
   }
 
+  /// The manual "frame my results" action behind the fit button. Unlike
+  /// _fitToPoints, this ignores the city/zone-focus and signature guards --
+  /// those exist to stop the *automatic* fit from fighting a deliberate
+  /// scope, which is exactly what someone pressing this button is asking to
+  /// override.
+  void _fitToResultsNow() {
+    final located = widget.listings;
+    if (located.isEmpty) return;
+    try {
+      final bounds = CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints([
+          for (final listing in located) LatLng(listing.lat, listing.lng),
+        ]),
+        padding: const EdgeInsets.all(30),
+        maxZoom: 16,
+      );
+      _animatedFitCamera(bounds);
+      // Let the automatic fit run again for the next result set rather than
+      // treating this manual framing as the one already applied.
+      _lastFitSignature = '';
+    } catch (_) {
+      // The controller can still be attaching on the very first frame.
+    }
+  }
+
   double _worldWidth([double? zoom]) {
     final z = zoom ?? _zoom;
     return 256.0 * math.pow(2, z).toDouble();
@@ -856,7 +881,17 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
     return 2 * earthRadiusM * math.asin(math.sqrt(h));
   }
 
-  (DistrictZone, num)? _metroHit(LatLng point) {
+  /// Screen distance between two coordinates, in logical pixels at the
+  /// current zoom. Rotation preserves distance, so the magnitude is correct
+  /// whether or not the camera is rotated.
+  double _screenDistancePx(LatLng a, LatLng b) =>
+      (_worldPixel(a) - _worldPixel(b)).distance;
+
+  /// Which station (and starting radius) a map tap means, or null to let the
+  /// tap fall through to the districts/areas underneath. The rule itself
+  /// lives in metroTapRadiusM (utils/metro_proximity.dart) so it can be
+  /// exercised without pumping a whole map widget.
+  (DistrictZone, num)? _metroHit(LatLng point, Set<String> chosen) {
     DistrictZone? nearest;
     var nearestM = double.infinity;
     for (final station in _zones.metroStations) {
@@ -866,13 +901,17 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
         nearestM = distance;
       }
     }
-    if (nearest == null || nearestM > 1000) return null;
-    final radius = nearestM <= 200
-        ? 200
-        : nearestM <= 500
-            ? 500
-            : 1000;
-    return (nearest, radius);
+    if (nearest == null) return null;
+
+    final radius = metroTapRadiusM(
+      screenDistancePx: _screenDistancePx(
+        point,
+        LatLng(nearest.lat, nearest.lng),
+      ),
+      metresFromStation: nearestM,
+      hasSelection: chosen.isNotEmpty,
+    );
+    return radius == null ? null : (nearest, radius);
   }
 
   /// Adds or removes one station from the multi-select set. The first
@@ -1039,7 +1078,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
     }
 
     if (_showMetro) {
-      final metroHit = _metroHit(point);
+      final metroHit = _metroHit(point, context.read<AppState>().filters.metro);
       if (metroHit != null) {
         unawaited(_toggleMetroStation(metroHit.$1, presetRadiusM: metroHit.$2));
         return;
@@ -1191,6 +1230,14 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                 initialZoom: widget.centerZoom,
                 minZoom: 2,
                 maxZoom: 19,
+                // Rotation was on by default (InteractiveFlag.all), so a
+                // slightly uneven pinch left the map tilted with no
+                // reset-north control anywhere to put it back. Nothing here
+                // needs a rotated map, and dropping the gesture removes a
+                // whole category of "how did it end up like this".
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                ),
                 onTap: (_, point) => _onMapTap(point),
                 onPositionChanged: (position, hasGesture) {
                   final z = position.zoom;
@@ -1403,15 +1450,15 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                         ),
                     ],
                   ),
-                // Once anything is chosen, only chosen stations stay on screen --
-                // same "no longer the question being asked" rule as the rings
-                // above, applied to the dots themselves.
+                // Every station keeps its dot, even once a selection exists:
+                // it was their three overlapping rings that made the map
+                // unreadable, not the dots, and hiding the unchosen ones
+                // would leave no way to add a second station by tapping the
+                // map at all. Unchosen ones just recede.
                 if (_showMetro && _zones.metroStations.isNotEmpty)
                   MarkerLayer(
                     markers: [
-                      for (final station in appState.filters.metro.isEmpty
-                          ? _zones.metroStations
-                          : _selectedMetroStations(appState.filters))
+                      for (final station in _zones.metroStations)
                         Marker(
                           point: LatLng(station.lat, station.lng),
                           width: 34,
@@ -1425,6 +1472,10 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                             child: _MetroStationMarker(
                               selected:
                                   appState.filters.metro.contains(station.name),
+                              dimmed: appState.filters.metro.isNotEmpty &&
+                                  !appState.filters.metro.contains(
+                                    station.name,
+                                  ),
                             ),
                           ),
                         ),
@@ -1599,6 +1650,22 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   backgroundColor: Theme.of(context).colorScheme.surface,
                   foregroundColor: Theme.of(context).colorScheme.onSurface,
                   child: const Icon(Icons.fullscreen),
+                ),
+                const SizedBox(height: 8),
+              ],
+              // Panning away from the results used to be one-way: the
+              // automatic fit only runs when the result set itself changes
+              // (and not at all while a city or zone is focused), so there
+              // was no way back to "show me what I searched for" short of
+              // touching a filter.
+              if (widget.listings.isNotEmpty) ...[
+                FloatingActionButton.small(
+                  heroTag: 'fitResults',
+                  tooltip: s.t('mapFitResults'),
+                  onPressed: _fitToResultsNow,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                  child: const Icon(Icons.center_focus_strong_outlined),
                 ),
                 const SizedBox(height: 8),
               ],
@@ -1876,25 +1943,32 @@ class _LegendItem extends StatelessWidget {
 }
 
 class _MetroStationMarker extends StatelessWidget {
-  const _MetroStationMarker({required this.selected});
+  const _MetroStationMarker({required this.selected, this.dimmed = false});
   final bool selected;
+
+  /// A station that is not part of an existing selection: still tappable
+  /// (that is how a second station gets added), just visually out of the way.
+  final bool dimmed;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: selected
-            ? Theme.of(context).colorScheme.primary
-            : Colors.black.withValues(alpha: 0.78),
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: selected ? Colors.white : _metro200Color,
-          width: selected ? 2.5 : 2,
+    return Opacity(
+      opacity: dimmed ? 0.45 : 1,
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : Colors.black.withValues(alpha: 0.78),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? Colors.white : _metro200Color,
+            width: selected ? 2.5 : 2,
+          ),
+          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
         ),
-        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
+        child: const Icon(Icons.subway_outlined, size: 18, color: Colors.white),
       ),
-      child: const Icon(Icons.subway_outlined, size: 18, color: Colors.white),
     );
   }
 }
