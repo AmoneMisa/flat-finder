@@ -88,9 +88,14 @@ class MapView extends StatefulWidget {
   State<MapView> createState() => _MapViewState();
 }
 
-class _MapViewState extends State<MapView> {
+class _MapViewState extends State<MapView>
+    with SingleTickerProviderStateMixin {
   final MapController _controller = MapController();
   final ApiService _api = ApiService();
+  late final AnimationController _cameraAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 320),
+  )..addListener(_onCameraAnimTick);
 
   // Freeform search area the user outlines by tapping the map.
   bool _drawing = false;
@@ -105,6 +110,14 @@ class _MapViewState extends State<MapView> {
 
   double _zoom = 6;
   String _lastFitSignature = '';
+
+  // Screen-space clustering is the most expensive part of every build. A
+  // pinch-zoom gesture fires many onPositionChanged updates in quick
+  // succession, so the raw zoom is bucketed before it invalidates the cache —
+  // this keeps rebuilds during a gesture cheap without changing the clusters
+  // actually shown at rest.
+  List<_PinGroup>? _groupsCache;
+  String? _groupsCacheKey;
 
   // Canonical geography overlay layers.
   MapZones _zones = const MapZones();
@@ -130,6 +143,65 @@ class _MapViewState extends State<MapView> {
     _zoom = widget.centerZoom;
     _loadZones(focusCity: widget.city.isNotEmpty);
     if (widget.city.isEmpty) _scheduleFitToPoints();
+  }
+
+  @override
+  void dispose() {
+    _cameraAnim.dispose();
+    super.dispose();
+  }
+
+  LatLng _animStartCenter = const LatLng(0, 0);
+  double _animStartZoom = 0;
+  LatLng _animDestCenter = const LatLng(0, 0);
+  double _animDestZoom = 0;
+
+  void _onCameraAnimTick() {
+    if (!mounted) return;
+    final t = Curves.easeInOutCubic.transform(_cameraAnim.value);
+    try {
+      _controller.move(
+        LatLng(
+          _animStartCenter.latitude +
+              (_animDestCenter.latitude - _animStartCenter.latitude) * t,
+          _animStartCenter.longitude +
+              (_animDestCenter.longitude - _animStartCenter.longitude) * t,
+        ),
+        _animStartZoom + (_animDestZoom - _animStartZoom) * t,
+      );
+    } catch (_) {}
+  }
+
+  /// Eases the camera to [destCenter]/[destZoom] instead of snapping there —
+  /// used for every programmatic move (zone focus, result auto-fit, cluster
+  /// expand) so the map reads as one continuous motion rather than a jump cut.
+  void _animatedMoveTo(LatLng destCenter, double destZoom) {
+    try {
+      _animStartCenter = _controller.camera.center;
+      _animStartZoom = _controller.camera.zoom;
+    } catch (_) {
+      // Not attached yet (e.g. called from the very first didUpdateWidget).
+      try {
+        _controller.move(destCenter, destZoom);
+      } catch (_) {}
+      return;
+    }
+    _animDestCenter = destCenter;
+    _animDestZoom = destZoom;
+    _cameraAnim
+      ..stop()
+      ..value = 0;
+    _cameraAnim.forward();
+  }
+
+  void _animatedFitCamera(CameraFit fit) {
+    try {
+      final target = fit.fit(_controller.camera);
+      _animatedMoveTo(target.center, target.zoom);
+    } catch (_) {
+      // Falls back to an instant fit if the camera isn't attached yet.
+      _controller.fitCamera(fit);
+    }
   }
 
   Future<void> _loadZones({bool focusCity = false}) async {
@@ -160,7 +232,7 @@ class _MapViewState extends State<MapView> {
   void didUpdateWidget(covariant MapView old) {
     super.didUpdateWidget(old);
     if (old.center != widget.center || old.centerZoom != widget.centerZoom) {
-      _controller.move(widget.center, widget.centerZoom);
+      _animatedMoveTo(widget.center, widget.centerZoom);
     }
 
     final cityChanged =
@@ -239,7 +311,7 @@ class _MapViewState extends State<MapView> {
         .toDouble();
     try {
       if (points.length >= 2) {
-        _controller.fitCamera(
+        _animatedFitCamera(
           CameraFit.bounds(
             bounds: LatLngBounds.fromPoints(points),
             padding: const EdgeInsets.all(34),
@@ -247,7 +319,7 @@ class _MapViewState extends State<MapView> {
           ),
         );
       } else {
-        _controller.move(LatLng(zone.lat, zone.lng), fallbackZoom);
+        _animatedMoveTo(LatLng(zone.lat, zone.lng), fallbackZoom);
       }
     } catch (_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -566,15 +638,21 @@ class _MapViewState extends State<MapView> {
     final signature = keys.join(',');
     if (signature == _lastFitSignature) return;
     try {
-      _controller.fitCamera(
-        CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints([
-            for (final listing in located) LatLng(listing.lat, listing.lng),
-          ]),
-          padding: const EdgeInsets.all(30),
-          maxZoom: 14,
-        ),
+      // The very first fit (no prior signature) should land immediately —
+      // animating from the default world view reads as a needless swoop.
+      final isInitialFit = _lastFitSignature.isEmpty;
+      final bounds = CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints([
+          for (final listing in located) LatLng(listing.lat, listing.lng),
+        ]),
+        padding: const EdgeInsets.all(30),
+        maxZoom: 14,
       );
+      if (isInitialFit) {
+        _controller.fitCamera(bounds);
+      } else {
+        _animatedFitCamera(bounds);
+      }
       _lastFitSignature = signature;
     } catch (_) {
       // The controller can still be attaching on the very first frame.
@@ -602,6 +680,19 @@ class _MapViewState extends State<MapView> {
   /// earliest matching cluster preserve the existing visual semantics.
   List<_PinGroup> _groupsFor(List<MapListingPoint> located, {double? zoom}) {
     if (located.isEmpty) return const [];
+    final z = zoom ?? _zoom;
+    final bucketedZoom = (z * 8).round() / 8;
+    final key =
+        '$bucketedZoom|${located.length}|${identityHashCode(located)}';
+    final cached = _groupsCache;
+    if (cached != null && _groupsCacheKey == key) return cached;
+    final groups = _computeGroups(located, bucketedZoom);
+    _groupsCache = groups;
+    _groupsCacheKey = key;
+    return groups;
+  }
+
+  List<_PinGroup> _computeGroups(List<MapListingPoint> located, double zoom) {
     final clusters = greedyScreenSpaceClusters<MapListingPoint>(
       located,
       project: (listing) {
@@ -663,7 +754,7 @@ class _MapViewState extends State<MapView> {
       widget.onTapListing(group.listings.first);
       return;
     }
-    _controller.move(group.point, _zoom);
+    _animatedMoveTo(group.point, _zoom);
     setState(() {
       _expandedGroupKey = group.key;
       _expandedGroupPage = 0;
@@ -942,6 +1033,14 @@ class _MapViewState extends State<MapView> {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.flat_finder',
                 maxZoom: 19,
+                // Keep a ring of off-screen tiles cached and fade new tiles
+                // in instead of popping them in, so panning/zooming doesn't
+                // flash blank tiles while the network catches up.
+                keepBuffer: 3,
+                panBuffer: 2,
+                tileDisplay: const TileDisplay.fadeIn(
+                  duration: Duration(milliseconds: 150),
+                ),
               ),
             if (_showCity && _zones.cityZone?.boundaryRings.isNotEmpty == true)
               PolygonLayer(
