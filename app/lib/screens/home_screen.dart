@@ -286,7 +286,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (ok != true || !mounted) return;
     final unique = <String, Listing>{};
     for (final name in selected) {
-      for (final listing in groups[name]!) unique[listingKey(listing)] = listing;
+      for (final listing in groups[name]!)
+        unique[listingKey(listing)] = listing;
     }
     Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => SwipeReviewScreen(listings: unique.values.toList())));
@@ -602,41 +603,47 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Stack(
+      // The loading indicator used to be a Positioned.fill sibling of this
+      // whole Column, dimming the quick filters, summary bar and banners
+      // along with the results on every search -- so re-narrowing a filter
+      // (or the metro wedge settling after a drag) blocked interaction with
+      // the very controls someone would reach for next. Scoped to only the
+      // results Stack below, everything above keeps working while a search
+      // is in flight.
+      body: Column(
         children: [
-          Column(
-            children: [
-              QuickPresetsBar(
-                onApply: (filters) async {
-                  if (!state.updateFilters(filters)) return;
-                  await state.search();
-                  if (_mapMode) await state.loadMapListings();
-                },
-                onManage: _openPresets,
-              ),
-              _SummaryBar(state: state, settings: settings),
-              if (state.degradedCountries.isNotEmpty)
-                _Banner(
-                  text: settings.t('demoBanner', {
-                    'countries': state.degradedCountries.join(', '),
-                  }),
-                ),
-              if (state.sourceErrors.isNotEmpty)
-                _SourceErrorBanner(
-                  errors: state.sourceErrors,
-                  settings: settings,
-                ),
-              Expanded(child: _body(state, settings, hidden, sorted)),
-            ],
+          QuickPresetsBar(
+            onApply: (filters) async {
+              if (!state.updateFilters(filters)) return;
+              await state.search();
+              if (_mapMode) await state.loadMapListings();
+            },
+            onManage: _openPresets,
           ),
-          if (state.loading || state.mapLoading)
-            Positioned.fill(
-              child: _DataLoadingOverlay(
-                label: settings.lang == 'ru'
-                    ? 'Загружаем данные…'
-                    : 'Loading data…',
-              ),
+          _SummaryBar(state: state, settings: settings),
+          if (state.degradedCountries.isNotEmpty)
+            _Banner(
+              text: settings.t('demoBanner', {
+                'countries': state.degradedCountries.join(', '),
+              }),
             ),
+          if (state.sourceErrors.isNotEmpty)
+            _SourceErrorBanner(errors: state.sourceErrors, settings: settings),
+          Expanded(
+            child: Stack(
+              children: [
+                _body(state, settings, hidden, sorted),
+                if (state.loading || state.mapLoading)
+                  Positioned.fill(
+                    child: _DataLoadingOverlay(
+                      label: settings.lang == 'ru'
+                          ? 'Загружаем данные…'
+                          : 'Loading data…',
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -845,7 +852,8 @@ class _HomeScreenState extends State<HomeScreen> {
     // Every other view excludes dismissed listings, matching the site's
     // `activeListings` (hidden ones only ever show up under the Hidden tab).
     final active = listings.where(
-      (listing) => !hidden.isHidden(listing) && !sorted.containsListing(listing),
+      (listing) =>
+          !hidden.isHidden(listing) && !sorted.containsListing(listing),
     );
     switch (_tab) {
       case _ViewTab.all:
@@ -1162,7 +1170,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                               microdistrict: '',
                               quartal: '',
                               area: '',
-                              metro: '',
+                              metro: const {},
                               clearRadiusSearch: true,
                             ),
                             immediate: true,
@@ -1186,7 +1194,7 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                             microdistrict: '',
                             quartal: '',
                             area: '',
-                            metro: '',
+                            metro: const {},
                             clearRadiusSearch: true,
                           ),
                           immediate: true,

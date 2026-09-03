@@ -78,6 +78,21 @@ const kNearbyKinds = [
   'transport',
 ];
 
+/// Parses the `<from>,<to>` pair `metroArc` carries. Anything malformed (one
+/// side missing, non-numeric, wrong arity) is treated as absent -- a partial
+/// arc is not a filter, it is a bug in whatever wrote the link.
+double? _arcFrom(String? raw) => _parseArc(raw)?.$1;
+double? _arcTo(String? raw) => _parseArc(raw)?.$2;
+(double, double)? _parseArc(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  final parts = raw.split(',');
+  if (parts.length != 2) return null;
+  final from = double.tryParse(parts[0].trim());
+  final to = double.tryParse(parts[1].trim());
+  if (from == null || to == null) return null;
+  return (from, to);
+}
+
 Set<String> _singleCountry(Set<String>? values, [String fallback = 'RO']) {
   if (values == null || values.isEmpty) return {fallback};
   return {values.first};
@@ -277,7 +292,15 @@ class Filters {
   String microdistrict;
   String quartal;
   String area;
-  String metro;
+  // Several stations can be picked at once; the filter reads as a union
+  // ("near any of these"). Kept Set-shaped even for one station so state,
+  // the map and query-param serialization all speak the same shape.
+  Set<String> metro;
+  // Directional restriction around the selected stations, in degrees
+  // clockwise from north (270 = due west). Both null means the whole circle.
+  // Evaluated client-side -- see utils/metro_proximity.dart for why.
+  num? metroBearingFrom;
+  num? metroBearingTo;
   String query;
   bool pets; // require "pets allowed"
   bool children; // require "children allowed"
@@ -330,7 +353,9 @@ class Filters {
     this.microdistrict = '',
     this.quartal = '',
     this.area = '',
-    this.metro = '',
+    Set<String>? metro,
+    this.metroBearingFrom,
+    this.metroBearingTo,
     this.query = '',
     this.pets = false,
     this.children = false,
@@ -345,6 +370,7 @@ class Filters {
   })  : countries = _singleCountry(countries),
         sources = sources ?? {...kAllSources},
         customSources = customSources ?? [],
+        metro = metro ?? {},
         amenities = amenities ?? {};
 
   Filters copyWith({
@@ -411,7 +437,10 @@ class Filters {
     String? microdistrict,
     String? quartal,
     String? area,
-    String? metro,
+    Set<String>? metro,
+    num? metroBearingFrom,
+    num? metroBearingTo,
+    bool clearMetroBearing = false,
     String? query,
     bool? pets,
     bool? children,
@@ -476,6 +505,11 @@ class Filters {
       quartal: quartal ?? this.quartal,
       area: area ?? this.area,
       metro: metro ?? this.metro,
+      metroBearingFrom: clearMetroBearing
+          ? null
+          : (metroBearingFrom ?? this.metroBearingFrom),
+      metroBearingTo:
+          clearMetroBearing ? null : (metroBearingTo ?? this.metroBearingTo),
       query: query ?? this.query,
       pets: pets ?? this.pets,
       children: children ?? this.children,
@@ -532,7 +566,9 @@ class Filters {
         'microdistrict': microdistrict,
         'quartal': quartal,
         'area': area,
-        'metro': metro,
+        'metro': metro.toList(),
+        'metroBearingFrom': metroBearingFrom,
+        'metroBearingTo': metroBearingTo,
         'query': query,
         'pets': pets,
         'children': children,
@@ -608,7 +644,9 @@ class Filters {
       microdistrict: (j['microdistrict'] ?? '').toString(),
       quartal: (j['quartal'] ?? '').toString(),
       area: (j['area'] ?? '').toString(),
-      metro: (j['metro'] ?? '').toString(),
+      metro: strSet(j['metro'], const {}),
+      metroBearingFrom: n(j['metroBearingFrom']),
+      metroBearingTo: n(j['metroBearingTo']),
       query: (j['query'] ?? '').toString(),
       pets: j['pets'] == true,
       children: j['children'] == true,
@@ -695,7 +733,9 @@ class Filters {
       microdistrict: (q['microdistrict'] ?? '').trim(),
       quartal: (q['quartal'] ?? '').trim(),
       area: (q['area'] ?? '').trim(),
-      metro: (q['metro'] ?? '').trim(),
+      metro: csv(q['metro']),
+      metroBearingFrom: _arcFrom(q['metroArc']),
+      metroBearingTo: _arcTo(q['metroArc']),
       query: (q['query'] ?? '').trim(),
       pets: q['pets'] == 'true',
       children: q['children'] == 'true',
@@ -781,8 +821,32 @@ class Filters {
       p['microdistrict'] = microdistrict.trim();
     if (quartal.trim().isNotEmpty) p['quartal'] = quartal.trim();
     if (area.trim().isNotEmpty) p['area'] = area.trim();
-    if (metro.trim().isNotEmpty) p['metro'] = metro.trim();
+    if (metro.isNotEmpty) p['metro'] = metro.join(',');
+    // Both ends or neither: half an arc is not a filter, and writing one
+    // alone would restore as a wedge of undefined width.
+    if (metroBearingFrom != null && metroBearingTo != null) {
+      p['metroArc'] = '${metroBearingFrom!.round()},${metroBearingTo!.round()}';
+    }
     if (query.trim().isNotEmpty) p['query'] = query.trim();
+    return p;
+  }
+
+  /// [toQueryParams] serves double duty: it also builds the params for the
+  /// *live* API request, but the backend understands exactly one metro
+  /// station plus a plain radius and has no notion of an arc at all -- see
+  /// utils/metro_proximity.dart. Sending it the CSV of several station names
+  /// or the metroArc param would not be ignored gracefully so much as
+  /// misinterpreted (an unrecognized "metro" value most likely reads as a
+  /// station that does not exist, yielding zero results instead of the
+  /// client-side proximity filter AppState applies afterwards). This strips
+  /// what the backend cannot use; only ApiService should call it.
+  Map<String, String> toUpstreamQueryParams() {
+    final p = toQueryParams();
+    p.remove('metroArc');
+    if (metro.length != 1) {
+      p.remove('metro');
+      p.remove('metroMaxM');
+    }
     return p;
   }
 }

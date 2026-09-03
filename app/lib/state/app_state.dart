@@ -2,13 +2,16 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
 import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
+import '../utils/metro_proximity.dart';
 
 /// A response held for [_feedCacheTtl] and keyed by the exact filter
 /// combination that produced it, so re-visiting a combination -- most often a
@@ -31,6 +34,75 @@ class AppState extends ChangeNotifier {
   final ApiService _api;
   final _listingsCache = <String, _CacheEntry<ListingsResult>>{};
   final _mapCache = <String, _CacheEntry<List<MapListingPoint>>>{};
+
+  // Metro station coordinates for the proximity filter below. The backend
+  // has no endpoint for "just these station names' coordinates" -- only the
+  // full per-city geography catalog (districts, microdistricts, POIs, metro
+  // together) that the map screen also loads. Cached per city so switching
+  // filters back and forth doesn't refetch it, and never fetched at all
+  // unless a metro filter is actually active.
+  MapZones _metroZones = const MapZones();
+  String _metroZonesKey = '';
+
+  Future<MapZones> _zonesForMetroProximity(Filters filters) async {
+    if (filters.metro.isEmpty) return const MapZones();
+    final country = filters.countries.isEmpty ? '' : filters.countries.first;
+    if (country.isEmpty || filters.city.isEmpty) return const MapZones();
+    final key = '$country|${filters.city}';
+    if (key == _metroZonesKey) return _metroZones;
+    final zones = await _api.fetchMapZones(country, filters.city);
+    _metroZonesKey = key;
+    _metroZones = zones;
+    return zones;
+  }
+
+  /// Built from the *live* filter set against whatever station coordinates
+  /// are cached -- if a station's coordinates never arrived (offline, or a
+  /// city the zones fetch hasn't covered yet), that station simply drops out
+  /// of the filter rather than the whole search failing.
+  ///
+  /// The distance limit is enforced here only when more than one station is
+  /// selected. With exactly one, the backend already narrowed by metroMaxM
+  /// (see Filters.toUpstreamQueryParams), and re-checking coordinates the
+  /// feed may not carry for every listing would drop results the server
+  /// deliberately kept. The arc has no backend equivalent at all and is
+  /// always enforced here, regardless of station count. Mirrors the web
+  /// client's useMetroProximity.ts exactly.
+  MetroProximity _metroProximityFor(Filters filters, MapZones zones) {
+    if (filters.metro.isEmpty) return const MetroProximity();
+    final stations = [
+      for (final name in filters.metro)
+        for (final zone in zones.metroStations)
+          if (zone.name == name)
+            MetroPoint(name: zone.name, lat: zone.lat, lng: zone.lng),
+    ];
+    return MetroProximity(
+      stations: stations,
+      maxM: filters.metro.length > 1 ? filters.metroMaxM?.toDouble() : null,
+      bearingFrom: filters.metroBearingFrom?.toDouble(),
+      bearingTo: filters.metroBearingTo?.toDouble(),
+    );
+  }
+
+  List<Listing> _narrowListingsByMetro(
+    List<Listing> items,
+    MetroProximity proximity,
+  ) =>
+      applyMetroProximity(
+        items,
+        proximity,
+        (item) => item.hasLocation ? LatLng(item.lat!, item.lng!) : null,
+      );
+
+  List<MapListingPoint> _narrowMapPointsByMetro(
+    List<MapListingPoint> items,
+    MetroProximity proximity,
+  ) =>
+      applyMetroProximity(
+        items,
+        proximity,
+        (item) => LatLng(item.lat, item.lng),
+      );
 
   /// Stable regardless of the order [Filters.toQueryParams] happened to build
   /// its map in.
@@ -107,13 +179,10 @@ class AppState extends ChangeNotifier {
     await _loadFilters();
 
     // Rates are non-critical: fetch best-effort so a failure never blocks search.
-    _api
-        .fetchRates()
-        .then((r) {
-          rates = r;
-          notifyListeners();
-        })
-        .catchError((_) {});
+    _api.fetchRates().then((r) {
+      rates = r;
+      notifyListeners();
+    }).catchError((_) {});
     try {
       countries = await _api.fetchCountries();
       if (countries.isNotEmpty && filters.countries.isEmpty) {
@@ -193,7 +262,7 @@ class AppState extends ChangeNotifier {
 
   String _filterFingerprint(Filters value) {
     final payload = Map<String, dynamic>.from(value.toJson());
-    for (final key in const ['countries', 'sources', 'amenities']) {
+    for (final key in const ['countries', 'sources', 'amenities', 'metro']) {
       final values = (payload[key] as List? ?? const [])
           .map((item) => item.toString())
           .toList()
@@ -213,7 +282,7 @@ class AppState extends ChangeNotifier {
       a.microdistrict == b.microdistrict &&
       a.quartal == b.quartal &&
       a.area == b.area &&
-      a.metro == b.metro;
+      setEquals(a.metro, b.metro);
 
   bool _sameRadius(Filters a, Filters b) =>
       a.centerLat == b.centerLat &&
@@ -232,8 +301,9 @@ class AppState extends ChangeNotifier {
 
     final locationChanged = !_sameLocationScope(current, next);
     final radiusWasImplicitlyCarried = _sameRadius(current, next);
-    final radiusWasOmitted =
-        next.centerLat == null && next.centerLng == null && next.radiusM == null;
+    final radiusWasOmitted = next.centerLat == null &&
+        next.centerLng == null &&
+        next.radiusM == null;
     final currentHasRadius = current.centerLat != null ||
         current.centerLng != null ||
         current.radiusM != null;
@@ -248,6 +318,31 @@ class AppState extends ChangeNotifier {
         centerLat: current.centerLat,
         centerLng: current.centerLng,
         radiusM: current.radiusM,
+      );
+    }
+
+    // The arc only means something relative to the stations it was drawn
+    // against; a geography change (which _sameLocationScope already treats
+    // metro selection as part of) must not keep an old direction pinned to
+    // whatever station the user has since moved on from. Mirrors the radius
+    // handling just above it.
+    final metroChanged = !setEquals(current.metro, normalized.metro);
+    final arcWasImplicitlyCarried =
+        normalized.metroBearingFrom == current.metroBearingFrom &&
+            normalized.metroBearingTo == current.metroBearingTo;
+    final currentHasArc =
+        current.metroBearingFrom != null || current.metroBearingTo != null;
+    if (metroChanged && arcWasImplicitlyCarried && currentHasArc) {
+      normalized = normalized.copyWith(clearMetroBearing: true);
+    }
+    // No stations left means no anchor for either the radius or the arc.
+    if (normalized.metro.isEmpty &&
+        (normalized.metroMaxM != null ||
+            normalized.metroBearingFrom != null ||
+            normalized.metroBearingTo != null)) {
+      normalized = normalized.copyWith(
+        clearMetroMaxM: true,
+        clearMetroBearing: true,
       );
     }
 
@@ -282,9 +377,8 @@ class AppState extends ChangeNotifier {
   /// Validate a candidate custom-source URL against the backend (uses the first
   /// selected country for currency/context).
   Future<SourceValidation> validateSource(String url) {
-    final country = filters.countries.isNotEmpty
-        ? filters.countries.first
-        : null;
+    final country =
+        filters.countries.isNotEmpty ? filters.countries.first : null;
     return _api.validateSource(url, country: country);
   }
 
@@ -365,8 +459,15 @@ class AppState extends ChangeNotifier {
     if (cached != null) {
       // Paint the held answer now -- `loading` stays false so the full-screen
       // overlay never flashes for a combination already in hand -- then
-      // confirm it is still current behind the paint.
-      listings = cached.listings;
+      // confirm it is still current behind the paint. The proximity filter
+      // uses whatever station coordinates are already cached synchronously
+      // (an async zones fetch here would defeat the instant paint); if they
+      // don't cover this city yet, filtering is a no-op for this one frame
+      // and self-corrects once _executeSearch's own await resolves below.
+      listings = _narrowListingsByMetro(
+        cached.listings,
+        _metroProximityFor(requestedFilters, _metroZones),
+      );
       nextCursor = cached.nextCursor;
       total = cached.total;
       degradedCountries = cached.degradedCountries;
@@ -409,7 +510,17 @@ class AppState extends ChangeNotifier {
     try {
       final res = await _api.fetchListings(requestedFilters);
       if (generation != _searchGeneration) return;
-      listings = res.listings;
+      final zones = await _zonesForMetroProximity(requestedFilters);
+      if (generation != _searchGeneration) return;
+      // Cache carries the server's own answer, unfiltered -- this way total
+      // and nextCursor (pagination) always reflect what the server actually
+      // has, and a cache hit re-applies the filter against whatever station
+      // coordinates are current at that later moment rather than baking in
+      // today's.
+      listings = _narrowListingsByMetro(
+        res.listings,
+        _metroProximityFor(requestedFilters, zones),
+      );
       nextCursor = res.nextCursor;
       total = res.total;
       degradedCountries = res.degradedCountries;
@@ -502,7 +613,11 @@ class AppState extends ChangeNotifier {
     if (cached != null) {
       // Paint the held pins now, without the blocking overlay mapLoading
       // drives -- the fetch below still confirms them behind the paint.
-      mapListings = cached;
+      // Same synchronous-zones caveat as search()'s cache-hit path.
+      mapListings = _narrowMapPointsByMetro(
+        cached,
+        _metroProximityFor(requestedFilters, _metroZones),
+      );
     } else {
       mapLoading = true;
     }
@@ -510,10 +625,14 @@ class AppState extends ChangeNotifier {
 
     try {
       final points = await _api.fetchMapListings(requestedFilters);
-      if (generation == _searchGeneration) {
-        mapListings = points;
-        _writeCache(_mapCache, cacheKey, points);
-      }
+      if (generation != _searchGeneration) return;
+      final zones = await _zonesForMetroProximity(requestedFilters);
+      if (generation != _searchGeneration) return;
+      mapListings = _narrowMapPointsByMetro(
+        points,
+        _metroProximityFor(requestedFilters, zones),
+      );
+      _writeCache(_mapCache, cacheKey, points);
     } catch (_) {
       // Previously an uncached failure here could throw past this method
       // (several call sites invoke it fire-and-forget, with no catch of

@@ -62,7 +62,8 @@ class ListingCard extends StatelessWidget {
     final settingsView = context.select<SettingsState, (AppStrings, String?)>(
       (state) => (state.s, state.displayCurrency),
     );
-    final appView = context.select<AppState, (Map<String, double>, Filters, Country?)>(
+    final appView =
+        context.select<AppState, (Map<String, double>, Filters, Country?)>(
       (state) => (
         state.rates,
         state.filters,
@@ -401,7 +402,7 @@ class ListingCard extends StatelessWidget {
   List<String> _contextBadges(Filters filters, AppStrings s, Country? country) {
     final result = <String>[];
     final geoFiltered = filters.district.trim().isNotEmpty ||
-        filters.metro.trim().isNotEmpty ||
+        filters.metro.isNotEmpty ||
         filters.microdistrict.trim().isNotEmpty ||
         filters.quartal.trim().isNotEmpty ||
         filters.area.trim().isNotEmpty;

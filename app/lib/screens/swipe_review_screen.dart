@@ -63,8 +63,7 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
     final city = listing.city.trim();
     if (city.isNotEmpty) parts.add(country?.cityLabel(city) ?? city);
 
-    final filtersApplyToListing =
-        filters.countries.contains(listing.country) &&
+    final filtersApplyToListing = filters.countries.contains(listing.country) &&
         (filters.city.isEmpty || filters.city == listing.city);
     if (filtersApplyToListing) {
       void add(String value) {
@@ -99,13 +98,16 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
         filters.microdistrict,
         filters.quartal,
         filters.area,
-        filters.metro,
       ]) {
         add(value);
       }
+      for (final station in filters.metro) {
+        add(station);
+      }
 
       String range(num? min, num? max, String unit) {
-        if (min != null && max != null) return '${min.toString()}–${max.toString()} $unit';
+        if (min != null && max != null)
+          return '${min.toString()}–${max.toString()} $unit';
         if (min != null) return '≥ ${min.toString()} $unit';
         if (max != null) return '≤ ${max.toString()} $unit';
         return '';
@@ -121,11 +123,13 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
       final priceCurrency = filters.priceCurrency ?? listing.currency;
       add(range(filters.priceMin, filters.priceMax, priceCurrency));
 
-      if (filters.pets) add(settings.lang == 'ru' ? 'Можно с животными' : 'Pets allowed');
+      if (filters.pets)
+        add(settings.lang == 'ru' ? 'Можно с животными' : 'Pets allowed');
       if (filters.children) {
         add(settings.lang == 'ru' ? 'Можно с детьми' : 'Children allowed');
       }
-      if (filters.withPhotos) add(settings.lang == 'ru' ? 'С фото' : 'With photos');
+      if (filters.withPhotos)
+        add(settings.lang == 'ru' ? 'С фото' : 'With photos');
       if (filters.query.trim().isNotEmpty) add('“${filters.query.trim()}”');
       for (final amenity in filters.amenities.toList()..sort()) {
         add(amenity);
@@ -266,15 +270,13 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
                         FloatingActionButton(
                           heroTag: 'swipe-hide',
                           backgroundColor: const Color(0xFFB23A48),
-                          onPressed: () =>
-                              _decide(DismissDirection.endToStart),
+                          onPressed: () => _decide(DismissDirection.endToStart),
                           child: const Icon(Icons.close),
                         ),
                         FloatingActionButton(
                           heroTag: 'swipe-save',
                           backgroundColor: const Color(0xFF159957),
-                          onPressed: () =>
-                              _decide(DismissDirection.startToEnd),
+                          onPressed: () => _decide(DismissDirection.startToEnd),
                           child: const Icon(Icons.done_all),
                         ),
                       ],

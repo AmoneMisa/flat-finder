@@ -200,7 +200,7 @@ class ApiService {
     bool force = false,
     String? cursor,
   }) async {
-    final params = Map<String, String>.from(filters.toQueryParams());
+    final params = Map<String, String>.from(filters.toUpstreamQueryParams());
     final serverSort = _serverSort(filters.sort);
     if (serverSort != null) params['sort'] = serverSort;
     // Cards are cursor-paginated; twenty rows make the initial render cheaper
@@ -294,7 +294,7 @@ class ApiService {
   /// Compact full-map feed. The backend walks every result cursor internally,
   /// so Flutter shows the same flats as the web map instead of one card page.
   Future<List<MapListingPoint>> fetchMapListings(Filters filters) async {
-    final params = Map<String, String>.from(filters.toQueryParams())
+    final params = Map<String, String>.from(filters.toUpstreamQueryParams())
       ..['mapOnly'] = 'true';
     final uri =
         Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
@@ -303,7 +303,8 @@ class ApiService {
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     return ((json['mapPoints'] as List?) ?? const []).map((raw) {
       final point = Map<String, dynamic>.from(raw as Map);
-      if (point['photo'] != null) point['photo'] = _resolvePhoto(point['photo']);
+      if (point['photo'] != null)
+        point['photo'] = _resolvePhoto(point['photo']);
       return MapListingPoint.fromJson(point);
     }).toList();
   }
