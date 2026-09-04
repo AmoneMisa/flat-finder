@@ -1172,27 +1172,47 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   /// snapping to 10m), two for the arc edges. Anchored at the first chosen
   /// station -- several stations share one shape, so three grips per station
   /// would be a thicket, and moving one would have to move the rest anyway.
-  List<Marker> _metroHandleMarkers(Filters filters) {
+  ///
+  /// These are Positioned widgets in the overlay Stack *above* FlutterMap, not
+  /// Markers inside it. As Markers they rendered correctly but could not be
+  /// dragged: a marker child sits inside the map's own gesture tree, so the
+  /// map's pan recognizer won the arena and panned the view instead (verified
+  /// on a device -- the handle tracked the finger while the radius never
+  /// changed). A sibling above the map is hit-tested first and keeps the drag.
+  List<Widget> _metroHandleOverlay(Filters filters) {
     final stations = _selectedMetroStations(filters);
-    if (stations.isEmpty) return const [];
+    if (stations.isEmpty || !_showMetro) return const [];
     final anchor = LatLng(stations.first.lat, stations.first.lng);
     final radius = _shapeRadiusM(filters).toDouble();
 
-    Marker handle(String kind) {
-      final bearing = _handleBearing(filters, kind);
-      final point = destinationPoint(anchor, bearing, radius);
-      return Marker(
-        point: point,
-        width: 40,
-        height: 40,
-        // Larger than the visual dot: this is the actual drag/tap target,
-        // sized for a fingertip rather than the ~14px the dot itself needs.
+    final camera = _controller.camera;
+    final box = _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return const [];
+
+    Widget? handle(String kind) {
+      final at =
+          destinationPoint(anchor, _handleBearing(filters, kind), radius);
+      final point = camera.latLngToScreenPoint(at);
+      // Off-screen grips are simply not built; the wedge may be far larger
+      // than the viewport at close zoom.
+      if (point.x < -40 ||
+          point.y < -40 ||
+          point.x > box.size.width + 40 ||
+          point.y > box.size.height + 40) {
+        return null;
+      }
+      return Positioned(
+        left: point.x - 22,
+        top: point.y - 22,
+        width: 44,
+        height: 44,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onPanStart: (_) => setState(() => _draggingMetroHandle = kind),
           onPanUpdate: (details) =>
               _onMetroHandlePanUpdate(kind, anchor, filters, details),
           onPanEnd: (_) => unawaited(_onMetroHandlePanEnd()),
+          onPanCancel: () => setState(() => _draggingMetroHandle = null),
           child: _MetroHandleMarker(
             kind: kind,
             active: _draggingMetroHandle == kind,
@@ -1201,7 +1221,10 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
       );
     }
 
-    return [handle('radius'), handle('from'), handle('to')];
+    return [
+      for (final kind in const ['radius', 'from', 'to'])
+        if (handle(kind) case final Widget widget) widget,
+    ];
   }
 
   @override
@@ -1243,7 +1266,14 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   final z = position.zoom;
                   final zoomChanged = (z - _zoom).abs() > 0.05;
                   final closeRadial = hasGesture && _expandedGroupKey != null;
-                  if (zoomChanged || closeRadial) {
+                  // The metro grips are positioned in screen space above the
+                  // map, so every camera move has to repaint them or they
+                  // drift off the wedge they belong to. Only while a
+                  // selection actually exists -- otherwise this is the old
+                  // zoom-bucketed behaviour.
+                  final trackingHandles =
+                      context.read<AppState>().filters.metro.isNotEmpty;
+                  if (zoomChanged || closeRadial || trackingHandles) {
                     setState(() {
                       _zoom = z;
                       _expandedGroupKey = null;
@@ -1481,11 +1511,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                         ),
                     ],
                   ),
-                if (_showMetro &&
-                    _selectedMetroStations(appState.filters).isNotEmpty)
-                  MarkerLayer(
-                    markers: _metroHandleMarkers(appState.filters),
-                  ),
                 if (_showParks && _zones.parks.isNotEmpty)
                   MarkerLayer(
                     markers: _poiMarkers(_zones.parks, Icons.park_outlined),
@@ -1638,6 +1663,9 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                 ),
               ],
             )),
+        // Above the map, so a grip keeps its own drag instead of losing the
+        // gesture to the map's pan recognizer.
+        ..._metroHandleOverlay(appState.filters),
         Positioned(
           top: 12,
           right: 12,
