@@ -55,6 +55,10 @@ class _FilterSheetState extends State<FilterSheet> {
   Set<String> _metro = {};
   num? _metroBearingFrom;
   num? _metroBearingTo;
+  // Three rows of chips plus their run spacing. Enough to show the shape of
+  // the list and invite a scroll, without the station picker owning the sheet.
+  static const double _metroPickerMaxHeight = 132;
+  final ScrollController _metroScroll = ScrollController();
   late TextEditingController _minCtl;
   late TextEditingController _maxCtl;
   late TextEditingController _roomsMinCtl;
@@ -249,6 +253,7 @@ class _FilterSheetState extends State<FilterSheet> {
     _pricePerSqmMaxCtl.dispose();
     _commissionPercentMinCtl.dispose();
     _commissionPercentMaxCtl.dispose();
+    _metroScroll.dispose();
     _metroMaxMCtl.dispose();
     _nearbyMaxMCtl.dispose();
     _microdistrictCtl.dispose();
@@ -785,30 +790,54 @@ class _FilterSheetState extends State<FilterSheet> {
                           // either", not "near both". Mirrors the amenities
                           // chips above rather than a single-value dropdown,
                           // since more than one station is now a real choice.
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _cityLoc!.metro.map((station) {
-                              final selected = _metro.contains(station);
-                              return FilterChip(
-                                label: Text(
-                                    _cityLoc!.metroLabels[station] ?? station),
-                                selected: selected,
-                                onSelected: (v) => _setFilterState(() {
-                                  if (v) {
-                                    _metro.add(station);
-                                  } else {
-                                    _metro.remove(station);
-                                  }
-                                  // No stations left means no anchor for the
-                                  // direction either.
-                                  if (_metro.isEmpty) {
-                                    _metroBearingFrom = null;
-                                    _metroBearingTo = null;
-                                  }
-                                }),
-                              );
-                            }).toList(),
+                          //
+                          // Capped at roughly three rows and scrolled inside
+                          // its own box: Tashkent alone has 50 stations, and
+                          // laid out flat they pushed every filter below them
+                          // (price, rooms, amenities) off the bottom of the
+                          // sheet. The box scrolls by drag on its own, so it
+                          // does not fight the sheet's scroll -- a drag that
+                          // starts on the chips moves the chips.
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxHeight: _metroPickerMaxHeight,
+                            ),
+                            child: Scrollbar(
+                              controller: _metroScroll,
+                              thumbVisibility: true,
+                              child: SingleChildScrollView(
+                                controller: _metroScroll,
+                                primary: false,
+                                padding: const EdgeInsets.only(right: 10),
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: _cityLoc!.metro.map((station) {
+                                    final selected = _metro.contains(station);
+                                    return FilterChip(
+                                      label: Text(
+                                        _cityLoc!.metroLabels[station] ??
+                                            station,
+                                      ),
+                                      selected: selected,
+                                      onSelected: (v) => _setFilterState(() {
+                                        if (v) {
+                                          _metro.add(station);
+                                        } else {
+                                          _metro.remove(station);
+                                        }
+                                        // No stations left means no anchor
+                                        // for the direction either.
+                                        if (_metro.isEmpty) {
+                                          _metroBearingFrom = null;
+                                          _metroBearingTo = null;
+                                        }
+                                      }),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                         const SizedBox(height: 8),
