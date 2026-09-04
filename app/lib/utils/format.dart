@@ -109,12 +109,13 @@ String pinPriceLabel(
   Listing l, {
   Map<String, double>? rates,
   String? displayCurrency,
-}) => pinPriceLabelValues(
-  l.price,
-  l.currency,
-  rates: rates,
-  displayCurrency: displayCurrency,
-);
+}) =>
+    pinPriceLabelValues(
+      l.price,
+      l.currency,
+      rates: rates,
+      displayCurrency: displayCurrency,
+    );
 
 String _shortNum(num v) {
   if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
@@ -247,5 +248,17 @@ String? dealTypeLabel(String? dealType, [AppStrings? s]) => switch (dealType) {
       'sale' => s?.t('saleLong') ?? 'Sale',
       'longRent' => s?.t('longRentLong') ?? 'Long-term rent',
       'shortRent' => s?.t('shortRentLong') ?? 'Short-term rent',
+      _ => null,
+    };
+
+/// Human label for a listing's renovation condition, or null when unknown.
+/// Shared so the card and the detail screen cannot drift apart on wording.
+String? conditionLabel(String? condition, [AppStrings? s]) =>
+    switch (condition) {
+      'needs_renovation' => s?.t('condNeeds') ?? 'Needs renovation',
+      'basic' => s?.t('condBasic') ?? 'Basic',
+      'good' => s?.t('condGood') ?? 'Good',
+      'modern' => s?.t('condModern') ?? 'Modern',
+      'luxury' => s?.t('condLuxury') ?? 'Luxury',
       _ => null,
     };

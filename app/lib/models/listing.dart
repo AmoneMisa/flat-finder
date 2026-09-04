@@ -17,20 +17,20 @@ class MarketComparison {
   });
 
   factory MarketComparison.fromJson(Map<String, dynamic> j) => MarketComparison(
-    goodPrice: j['goodPrice'] == true,
-    medianUsd: j['medianUsd'] as num?,
-    comparableCount: (j['comparableCount'] as num?)?.toInt() ?? 0,
-    priceUsd: j['priceUsd'] as num?,
-    priceRatio: j['priceRatio'] as num?,
-  );
+        goodPrice: j['goodPrice'] == true,
+        medianUsd: j['medianUsd'] as num?,
+        comparableCount: (j['comparableCount'] as num?)?.toInt() ?? 0,
+        priceUsd: j['priceUsd'] as num?,
+        priceRatio: j['priceRatio'] as num?,
+      );
 
   Map<String, dynamic> toJson() => {
-    'goodPrice': goodPrice,
-    'medianUsd': medianUsd,
-    'comparableCount': comparableCount,
-    'priceUsd': priceUsd,
-    'priceRatio': priceRatio,
-  };
+        'goodPrice': goodPrice,
+        'medianUsd': medianUsd,
+        'comparableCount': comparableCount,
+        'priceUsd': priceUsd,
+        'priceRatio': priceRatio,
+      };
 }
 
 class MoneyAmount {
@@ -45,16 +45,16 @@ class MoneyAmount {
   });
 
   factory MoneyAmount.fromJson(Map<String, dynamic> j) => MoneyAmount(
-    amount: j['amount'] as num? ?? 0,
-    currency: j['currency']?.toString(),
-    approximate: j['approximate'] == true,
-  );
+        amount: j['amount'] as num? ?? 0,
+        currency: j['currency']?.toString(),
+        approximate: j['approximate'] == true,
+      );
 
   Map<String, dynamic> toJson() => {
-    'amount': amount,
-    'currency': currency,
-    if (approximate) 'approximate': true,
-  };
+        'amount': amount,
+        'currency': currency,
+        if (approximate) 'approximate': true,
+      };
 }
 
 class NearbyTransportStop {
@@ -86,24 +86,23 @@ class NearbyTransportStop {
         distanceM: (j['distanceM'] as num?)?.round() ?? 0,
         routeRefs:
             (j['routeRefs'] as List?)?.map((e) => e.toString()).toList() ??
-            const [],
+                const [],
         geoEntityId: j['geoEntityId']?.toString(),
-        osm: j['osm'] is Map
-            ? Map<String, dynamic>.from(j['osm'] as Map)
-            : null,
+        osm:
+            j['osm'] is Map ? Map<String, dynamic>.from(j['osm'] as Map) : null,
         source: j['source']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'mode': mode,
-    'distanceM': distanceM,
-    'routeRefs': routeRefs,
-    if (geoEntityId != null) 'geoEntityId': geoEntityId,
-    if (osm != null) 'osm': osm,
-    if (source != null) 'source': source,
-  };
+        'id': id,
+        'name': name,
+        'mode': mode,
+        'distanceM': distanceM,
+        'routeRefs': routeRefs,
+        if (geoEntityId != null) 'geoEntityId': geoEntityId,
+        if (osm != null) 'osm': osm,
+        if (source != null) 'source': source,
+      };
 
   String get displayLabel {
     final routes = routeRefs.isEmpty ? '' : ' · ${routeRefs.join(', ')}';
@@ -153,6 +152,47 @@ String _capitalizeFirstLetter(String value) {
 }
 
 /// A normalized listing as returned by the backend `/api/listings` endpoint.
+/// What the backend's AI Vision pass concluded from a listing's photos.
+///
+/// [derivedFields] names the listing fields whose value came from looking at
+/// the pictures rather than from the advert's own text. The UI marks those so
+/// a reader can tell which claims the seller made and which a model inferred
+/// -- the same distinction the web client draws.
+///
+/// The backend also returns per-field evidence and confidence under `data`;
+/// nothing displays it yet, so it is deliberately left unparsed rather than
+/// modelled speculatively (rawData still carries it for anything that wants
+/// it later).
+class ListingVision {
+  const ListingVision({
+    this.provider,
+    this.analyzedAt,
+    this.derivedFields = const {},
+  });
+
+  final String? provider;
+  final String? analyzedAt;
+  final Set<String> derivedFields;
+
+  bool derived(String field) => derivedFields.contains(field);
+  bool get isEmpty => derivedFields.isEmpty;
+
+  factory ListingVision.fromJson(Map<String, dynamic> j) => ListingVision(
+        provider: j['provider']?.toString(),
+        analyzedAt: j['analyzedAt']?.toString(),
+        derivedFields: ((j['derivedFields'] as List?) ?? const [])
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toSet(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        if (provider != null) 'provider': provider,
+        if (analyzedAt != null) 'analyzedAt': analyzedAt,
+        'derivedFields': derivedFields.toList(),
+      };
+}
+
 class Listing {
   final String id;
   final String source; // olx | telegram | mock
@@ -235,6 +275,10 @@ class Listing {
   final List<String> tags;
   final MarketComparison? marketComparison;
 
+  /// Null when the backend has not analyzed this listing's photos (or is not
+  /// returning the field on this endpoint at all).
+  final ListingVision? vision;
+
   /// Stable, source-independent id (the listings table's BIGSERIAL, stamped
   /// onto every row by a DB trigger) used for single-listing share links —
   /// `source`+`id` alone isn't enough since `id` is source-specific.
@@ -298,6 +342,7 @@ class Listing {
     this.hotWater,
     this.internet,
     this.tv,
+    this.vision,
     this.microwave,
     this.oven,
     this.bidet,
@@ -329,8 +374,8 @@ class Listing {
     this.publicId,
     Map<String, dynamic>? rawData,
   }) : rawData = rawData == null
-           ? const <String, dynamic>{}
-           : Map<String, dynamic>.unmodifiable(rawData);
+            ? const <String, dynamic>{}
+            : Map<String, dynamic>.unmodifiable(rawData);
 
   bool get hasLocation => lat != null && lng != null;
 
@@ -367,8 +412,7 @@ class Listing {
       contact: j['contact'] as String?,
       district: _locationName(j['district']),
       metro: _locationName(j['metro']),
-      nearbyMetro:
-          (j['nearbyMetro'] as List?)
+      nearbyMetro: (j['nearbyMetro'] as List?)
               ?.whereType<Map>()
               .map(
                 (e) => NearbyTransportStop.fromJson(
@@ -377,8 +421,7 @@ class Listing {
               )
               .toList() ??
           const [],
-      nearbyTransport:
-          (j['nearbyTransport'] as List?)
+      nearbyTransport: (j['nearbyTransport'] as List?)
               ?.whereType<Map>()
               .map(
                 (e) => NearbyTransportStop.fromJson(
@@ -387,14 +430,13 @@ class Listing {
               )
               .toList() ??
           const [],
-      nearby:
-          (j['nearby'] as List?)
+      nearby: (j['nearby'] as List?)
               ?.map((e) => _capitalizeFirstLetter(e.toString()))
               .toList() ??
           const [],
       nearbyShops:
           (j['nearbyShops'] as List?)?.map((e) => e.toString()).toList() ??
-          const [],
+              const [],
       petsAllowed: j['petsAllowed'] as bool?,
       childrenAllowed: j['childrenAllowed'] as bool?,
       roomOnly: j['roomOnly'] == true,
@@ -424,6 +466,10 @@ class Listing {
       hotWater: j['hotWater'] as bool?,
       internet: j['internet'] as bool?,
       tv: j['tv'] as bool?,
+      vision: j['vision'] is Map
+          ? ListingVision.fromJson(
+              Map<String, dynamic>.from(j['vision'] as Map))
+          : null,
       microwave: j['microwave'] as bool?,
       oven: j['oven'] as bool?,
       bidet: j['bidet'] as bool?,
@@ -455,18 +501,16 @@ class Listing {
           : null,
       transitRoutes:
           (j['transitRoutes'] as List?)?.map((e) => e.toString()).toList() ??
-          const [],
+              const [],
       city: _locationName(j['city']) ?? '',
       lat: toD(j['lat']),
       lng: toD(j['lng']),
       photo: j['photo'],
-      photos:
-          (j['photos'] as List?)?.map((e) => e.toString()).toList() ??
+      photos: (j['photos'] as List?)?.map((e) => e.toString()).toList() ??
           (j['photo'] != null ? [j['photo'].toString()] : const []),
       url: j['url'] ?? '',
-      createdAt: j['createdAt'] != null
-          ? DateTime.tryParse(j['createdAt'])
-          : null,
+      createdAt:
+          j['createdAt'] != null ? DateTime.tryParse(j['createdAt']) : null,
       description: j['description'] ?? '',
       tags: (j['tags'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       marketComparison: market is Map
@@ -481,89 +525,91 @@ class Listing {
   /// Unknown backend fields are retained so local storage cannot silently
   /// downgrade a newer public DTO to the subset understood by this app build.
   Map<String, dynamic> toJson() => {
-    ...rawData,
-    'id': id,
-    'source': source,
-    'country': country,
-    'title': title,
-    'propertyType': propertyType,
-    'dealType': dealType,
-    'byAgency': byAgency,
-    'price': price,
-    'currency': currency,
-    'rooms': rooms,
-    'areaSqm': areaSqm,
-    'floor': floor,
-    'totalFloors': totalFloors,
-    'buildingYear': buildingYear,
-    'bedrooms': bedrooms,
-    'audience': audience,
-    'contact': contact,
-    'district': district,
-    'metro': metro,
-    'nearbyMetro': nearbyMetro.map((e) => e.toJson()).toList(),
-    'nearbyTransport': nearbyTransport.map((e) => e.toJson()).toList(),
-    'nearby': nearby,
-    'nearbyShops': nearbyShops,
-    'petsAllowed': petsAllowed,
-    'childrenAllowed': childrenAllowed,
-    'roomOnly': roomOnly,
-    'deposit': deposit,
-    'depositAmount': depositAmount,
-    'commission': commission,
-    'commissionPercent': commissionPercent,
-    'negotiable': negotiable,
-    'smokingAllowed': smokingAllowed,
-    'newBuilding': newBuilding,
-    'communalSeparated': communalSeparated,
-    'condition': condition,
-    'bathrooms': bathrooms,
-    'address': address,
-    'residenceComplex': residenceComplex,
-    'kvartal': kvartal,
-    'parking': parking,
-    'elevator': elevator,
-    'furnished': furnished,
-    'balcony': balcony,
-    'terrace': terrace,
-    'privateYard': privateYard,
-    'dishwasher': dishwasher,
-    'airConditioner': airConditioner,
-    'gas': gas,
-    'heating': heating,
-    'hotWater': hotWater,
-    'internet': internet,
-    'tv': tv,
-    'microwave': microwave,
-    'oven': oven,
-    'bidet': bidet,
-    'walkInCloset': walkInCloset,
-    'bathtub': bathtub,
-    'shower': shower,
-    'euroLayout': euroLayout,
-    'cadastral': cadastral,
-    'firstRental': firstRental,
-    'potentiallyUnsafe': potentiallyUnsafe,
-    'studentTarget': studentTarget,
-    'landlordPresent': landlordPresent,
-    'minLeaseTerm': minLeaseTerm,
-    'availableFrom': availableFrom,
-    if (utilitiesAmount != null) 'utilitiesAmount': utilitiesAmount!.toJson(),
-    if (commissionAmount != null)
-      'commissionAmount': commissionAmount!.toJson(),
-    if (perPersonPrice != null) 'perPersonPrice': perPersonPrice!.toJson(),
-    'transitRoutes': transitRoutes,
-    'city': city,
-    'lat': lat,
-    'lng': lng,
-    'photo': photo,
-    'photos': photos,
-    'url': url,
-    'createdAt': createdAt?.toIso8601String(),
-    'description': description,
-    'tags': tags,
-    if (marketComparison != null)
-      'marketComparison': marketComparison!.toJson(),
-    if (publicId != null) 'publicId': publicId,
-  };
+        ...rawData,
+        'id': id,
+        'source': source,
+        'country': country,
+        'title': title,
+        'propertyType': propertyType,
+        'dealType': dealType,
+        'byAgency': byAgency,
+        'price': price,
+        'currency': currency,
+        'rooms': rooms,
+        'areaSqm': areaSqm,
+        'floor': floor,
+        'totalFloors': totalFloors,
+        'buildingYear': buildingYear,
+        'bedrooms': bedrooms,
+        'audience': audience,
+        'contact': contact,
+        'district': district,
+        'metro': metro,
+        'nearbyMetro': nearbyMetro.map((e) => e.toJson()).toList(),
+        'nearbyTransport': nearbyTransport.map((e) => e.toJson()).toList(),
+        'nearby': nearby,
+        'nearbyShops': nearbyShops,
+        'petsAllowed': petsAllowed,
+        'childrenAllowed': childrenAllowed,
+        'roomOnly': roomOnly,
+        'deposit': deposit,
+        'depositAmount': depositAmount,
+        'commission': commission,
+        'commissionPercent': commissionPercent,
+        'negotiable': negotiable,
+        'smokingAllowed': smokingAllowed,
+        'newBuilding': newBuilding,
+        'communalSeparated': communalSeparated,
+        'condition': condition,
+        'bathrooms': bathrooms,
+        'address': address,
+        'residenceComplex': residenceComplex,
+        'kvartal': kvartal,
+        'parking': parking,
+        'elevator': elevator,
+        'furnished': furnished,
+        'balcony': balcony,
+        'terrace': terrace,
+        'privateYard': privateYard,
+        'dishwasher': dishwasher,
+        'airConditioner': airConditioner,
+        'gas': gas,
+        'heating': heating,
+        'hotWater': hotWater,
+        'internet': internet,
+        'tv': tv,
+        'vision': vision?.toJson(),
+        'microwave': microwave,
+        'oven': oven,
+        'bidet': bidet,
+        'walkInCloset': walkInCloset,
+        'bathtub': bathtub,
+        'shower': shower,
+        'euroLayout': euroLayout,
+        'cadastral': cadastral,
+        'firstRental': firstRental,
+        'potentiallyUnsafe': potentiallyUnsafe,
+        'studentTarget': studentTarget,
+        'landlordPresent': landlordPresent,
+        'minLeaseTerm': minLeaseTerm,
+        'availableFrom': availableFrom,
+        if (utilitiesAmount != null)
+          'utilitiesAmount': utilitiesAmount!.toJson(),
+        if (commissionAmount != null)
+          'commissionAmount': commissionAmount!.toJson(),
+        if (perPersonPrice != null) 'perPersonPrice': perPersonPrice!.toJson(),
+        'transitRoutes': transitRoutes,
+        'city': city,
+        'lat': lat,
+        'lng': lng,
+        'photo': photo,
+        'photos': photos,
+        'url': url,
+        'createdAt': createdAt?.toIso8601String(),
+        'description': description,
+        'tags': tags,
+        if (marketComparison != null)
+          'marketComparison': marketComparison!.toJson(),
+        if (publicId != null) 'publicId': publicId,
+      };
 }

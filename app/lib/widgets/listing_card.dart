@@ -321,7 +321,7 @@ class ListingCard extends StatelessWidget {
                 itemCount: badges.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 5),
                 itemBuilder: (_, i) =>
-                    _TagChip(text: badges[i], compact: compact),
+                    _TagChip(badge: badges[i], compact: compact),
               ),
             ),
           ],
@@ -399,18 +399,28 @@ class ListingCard extends StatelessWidget {
     return parts.isEmpty ? '—' : parts.join(', ');
   }
 
-  List<String> _contextBadges(Filters filters, AppStrings s, Country? country) {
-    final result = <String>[];
+  List<_Badge> _contextBadges(Filters filters, AppStrings s, Country? country) {
+    final result = <_Badge>[];
+    final vision = listing.vision;
     final geoFiltered = filters.district.trim().isNotEmpty ||
         filters.metro.isNotEmpty ||
         filters.microdistrict.trim().isNotEmpty ||
         filters.quartal.trim().isNotEmpty ||
         filters.area.trim().isNotEmpty;
 
-    void add(String value) {
+    // `visionField` names the listing field this badge reports. When the
+    // vision pass derived that field, the badge is marked; otherwise it
+    // renders exactly as before.
+    void add(String value, [String? visionField]) {
       final label = value.trim();
-      if (label.isEmpty || result.contains(label)) return;
-      result.add(label);
+      if (label.isEmpty || result.any((badge) => badge.label == label)) return;
+      result.add(
+        _Badge(
+          label,
+          fromVision:
+              visionField != null && vision?.derived(visionField) == true,
+        ),
+      );
     }
 
     // Do not repeat a seller value that the user has already selected in filters.
@@ -446,11 +456,11 @@ class ListingCard extends StatelessWidget {
       add(s.t('badgeCommission'));
     }
     if (listing.newBuilding == true) add(s.t('badgeNew'));
-    if (listing.furnished == true) add(s.t('badgeFurnished'));
-    if (listing.airConditioner == true) add(s.t('badgeAC'));
-    if (listing.balcony == true) add(s.t('badgeBalcony'));
-    if (listing.parking == true) add(s.t('badgeParking'));
-    if (listing.elevator == true) add(s.t('badgeElevator'));
+    if (listing.furnished == true) add(s.t('badgeFurnished'), 'furnished');
+    if (listing.airConditioner == true) add(s.t('badgeAC'), 'airConditioner');
+    if (listing.balcony == true) add(s.t('badgeBalcony'), 'balcony');
+    if (listing.parking == true) add(s.t('badgeParking'), 'parking');
+    if (listing.elevator == true) add(s.t('badgeElevator'), 'elevator');
     if (listing.internet == true) add(s.t('badgeInternet'));
     if (listing.negotiable == true) add(s.t('badgeNegotiable'));
     if (listing.petsAllowed == true) add(s.t('badgePet'));
@@ -461,6 +471,32 @@ class ListingCard extends StatelessWidget {
     if (listing.audience == 'women') add(s.t('badgeWomen'));
     if (listing.audience == 'men') add(s.t('badgeMen'));
 
+    // Facts the advert text did not state and only the photo pass produced.
+    // Shown as their own badges (with the mark) because otherwise there is
+    // nowhere on the card they would appear at all.
+    if (vision != null) {
+      if (vision.derived('bedrooms') && listing.bedrooms != null) {
+        add('${s.t('specBedrooms')}: ${listing.bedrooms}', 'bedrooms');
+      }
+      if (vision.derived('bathrooms') && listing.bathrooms != null) {
+        add('${s.t('specBathrooms')}: ${listing.bathrooms}', 'bathrooms');
+      }
+      if (vision.derived('condition') && listing.condition != null) {
+        add(conditionLabel(listing.condition, s) ?? '', 'condition');
+      }
+      // Value implied by derivation: the pass only names a field once it has
+      // seen the thing, so no separate boolean check (the web client's badge
+      // list works the same way).
+      const visionAmenities = {
+        'washingMachine': 'amenityWashingMachine',
+        'dishwasher': 'amenityDishwasher',
+        'tv': 'amenityTelevision',
+      };
+      for (final entry in visionAmenities.entries) {
+        if (vision.derived(entry.key)) add(s.t(entry.value), entry.key);
+      }
+    }
+
     // Append normalized source tags after the structured badges.
     for (final raw in listing.tags) {
       final label = tagLabel(raw, s).trim();
@@ -470,7 +506,7 @@ class ListingCard extends StatelessWidget {
     return result;
   }
 
-  bool _isRedundantTag(String label, AppStrings s, List<String> current) {
+  bool _isRedundantTag(String label, AppStrings s, List<_Badge> current) {
     final lower = label.toLowerCase();
     final blocked = <String>{
       s.t('owner').toLowerCase(),
@@ -482,7 +518,7 @@ class ListingCard extends StatelessWidget {
       if (listing.metro != null) listing.metro!.toLowerCase(),
     };
     return blocked.contains(lower) ||
-        current.any((e) => e.toLowerCase() == lower);
+        current.any((badge) => badge.label.toLowerCase() == lower);
   }
 }
 
@@ -882,36 +918,82 @@ class _ViewedIcon extends StatelessWidget {
   }
 }
 
+/// One badge and where its value came from. Vision-derived ones are marked
+/// in the UI so a reader can tell an inference from a photo apart from
+/// something the advert actually said.
+class _Badge {
+  const _Badge(this.label, {this.fromVision = false});
+  final String label;
+  final bool fromVision;
+}
+
+/// The cyan tone the web client marks AI-Vision badges with
+/// (.flat-card__badge_vision), kept in step so the same fact reads the same
+/// way on both clients.
+const _visionBadgeText = Color(0xFF8BDCF7);
+const _visionBadgeBorder = Color(0x5C38BDF8);
+const _visionBadgeFill = Color(0x1438BDF8);
+
 class _TagChip extends StatelessWidget {
-  const _TagChip({required this.text, this.compact = false});
-  final String text;
+  const _TagChip({required this.badge, this.compact = false});
+  final _Badge badge;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    final vision = badge.fromVision;
+    final chip = Container(
       alignment: Alignment.center,
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 5 : 7,
         vertical: compact ? 3 : 4,
       ),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        border: Border.all(color: Colors.white.withValues(alpha: .06)),
+        color: vision ? _visionBadgeFill : scheme.primaryContainer,
+        border: Border.all(
+          color:
+              vision ? _visionBadgeBorder : Colors.white.withValues(alpha: .06),
+        ),
         borderRadius: BorderRadius.circular(99),
       ),
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: compact ? 8.5 : 10.5,
-          height: 1,
-          fontWeight: FontWeight.w600,
-          color: scheme.onPrimaryContainer,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (vision) ...[
+            Icon(
+              Icons.auto_awesome,
+              size: compact ? 8 : 10,
+              color: _visionBadgeText,
+            ),
+            SizedBox(width: compact ? 2 : 3),
+          ],
+          Flexible(
+            child: Text(
+              badge.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: compact ? 8.5 : 10.5,
+                height: 1,
+                fontWeight: FontWeight.w600,
+                color: vision ? _visionBadgeText : scheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+        ],
       ),
     );
+    // Colour alone would not say what the mark means, and a card has no room
+    // to spell it out; long-press reaches the same explanation the web
+    // client puts in a title attribute.
+    return vision
+        ? Tooltip(
+            message: AppStrings(
+              context.read<SettingsState>().lang,
+            ).t('aiVisionSource'),
+            child: chip,
+          )
+        : chip;
   }
 }
