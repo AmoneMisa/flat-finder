@@ -464,6 +464,11 @@ class AppStrings {
       'tag_negotiable': 'Negotiable',
       'tag_forRent': 'For rent',
       'tag_noCommission': 'No commission',
+      'updateAvailableTitle': 'Update available',
+      'updateAvailableBody':
+          'A new version of FlatFinder ({version}) is ready to download.',
+      'updateNow': 'Download',
+      'updateLater': 'Later',
     },
     'ru': {
       'appTitle': 'FlatFinder',
@@ -900,6 +905,11 @@ class AppStrings {
       'tag_negotiable': 'Торг уместен',
       'tag_forRent': 'В аренду',
       'tag_noCommission': 'Без комиссии',
+      'updateAvailableTitle': 'Доступно обновление',
+      'updateAvailableBody':
+          'Вышла новая версия FlatFinder ({version}). Хотите скачать?',
+      'updateNow': 'Скачать',
+      'updateLater': 'Позже',
     },
   };
 

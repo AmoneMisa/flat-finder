@@ -1,7 +1,7 @@
 name: flat_finder
 description: Flat & house search across RO, UA, KZ, UZ, KG with a map and filters.
 publish_to: "none"
-version: 1.0.0+42
+version: 1.0.0+43
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -24,6 +24,7 @@ dependencies:
   app_links: ^6.3.2
   firebase_core: ^4.14.0
   firebase_messaging: ^16.6.0
+  package_info_plus: ^8.1.1
 
 dev_dependencies:
   flutter_test:

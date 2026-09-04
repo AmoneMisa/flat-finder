@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/filters.dart';
 import '../models/listing.dart';
@@ -16,6 +19,7 @@ import '../state/favorites.dart';
 import '../state/settings.dart';
 import '../state/sorted.dart';
 import '../services/push_service.dart';
+import '../services/update_service.dart';
 import '../utils/format.dart';
 import '../utils/share_link.dart';
 import '../utils/sort.dart';
@@ -63,6 +67,42 @@ class _HomeScreenState extends State<HomeScreen> {
       _showForegroundPush,
     );
     _resultsScroll.addListener(_loadMoreNearEnd);
+    _checkForAppUpdate();
+  }
+
+  /// Sideloaded APKs (this app isn't on the Play Store) have no built-in
+  /// update mechanism, so the app checks whiteslove.me itself. Android-only:
+  /// iOS/web/desktop builds aren't distributed this way.
+  Future<void> _checkForAppUpdate() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    final update = await UpdateService.checkForUpdate();
+    if (update == null || !mounted) return;
+    final settings = context.read<SettingsState>();
+    final download = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(settings.t('updateAvailableTitle')),
+        content: Text(
+          settings.t('updateAvailableBody', {'version': update.version}),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(settings.t('updateLater')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(settings.t('updateNow')),
+          ),
+        ],
+      ),
+    );
+    if (download == true) {
+      await launchUrl(
+        Uri.parse(update.apkUrl),
+        mode: LaunchMode.externalApplication,
+      );
+    }
   }
 
   void _loadMoreNearEnd() {

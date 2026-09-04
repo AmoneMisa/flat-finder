@@ -1,0 +1,173 @@
+name: Release and deploy to whiteslove.me
+
+# Manual only: a release is a deliberate action, not something every push to
+# master should trigger. Run this from the Actions tab when you want to ship
+# what's currently on master as a new APK.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: flat-finder-release
+  cancel-in-progress: false
+
+jobs:
+  # A moving tag, `last-released`, marks the commit that produced the most
+  # recent release (see the final step of the release job). Re-running this
+  # workflow with nothing new under app/ since that tag would just reship
+  # the same code under a new build number, so skip the whole job instead.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.diff.outputs.has_changes }}
+    steps:
+      - name: Checkout flat-finder
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compare app/ against the last release
+        id: diff
+        run: |
+          set -euo pipefail
+          if ! git rev-parse -q --verify refs/tags/last-released >/dev/null; then
+            echo "No last-released tag yet; treating this as the first release."
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet last-released..HEAD -- app/lib app/android app/assets app/pubspec.yaml; then
+            echo "Nothing under app/ changed since the last release."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: check
+    if: needs.check.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout flat-finder
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      # Only the build number (the part after "+") moves — matches how this
+      # repo has always cut releases (see git history on app/pubspec.yaml).
+      - name: Bump build number
+        id: bump
+        working-directory: app
+        run: |
+          set -euo pipefail
+          line=$(grep -m1 '^version:' pubspec.yaml)
+          version=$(echo "$line" | sed -E 's/^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$/\1/')
+          build=$(echo "$line" | sed -E 's/^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$/\2/')
+          nextBuild=$((build + 1))
+          sed -i -E "s/^version:.*/version: ${version}+${nextBuild}/" pubspec.yaml
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "buildNumber=${nextBuild}" >> "$GITHUB_OUTPUT"
+
+      # The real production keystore never lives in this repo (see
+      # app/android/.gitignore). It's supplied here as a base64-encoded
+      # repo secret and written to disk only for the duration of the build.
+      - name: Restore production keystore
+        working-directory: app/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > flat-finder-release.jks
+          printf '%s\n' \
+            "storeFile=$(pwd)/flat-finder-release.jks" \
+            "storePassword=$ANDROID_KEYSTORE_PASSWORD" \
+            "keyAlias=$ANDROID_KEY_ALIAS" \
+            "keyPassword=$ANDROID_KEY_PASSWORD" \
+            > key.properties
+
+      # Same Firebase client identifiers build-release.ps1 falls back to --
+      # these are public app identifiers, not secrets (Firebase's own model).
+      - name: Build signed universal release APK
+        working-directory: app
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build apk --release \
+            --dart-define=FIREBASE_API_KEY=AIzaSyCUc7PVkioirWhw6jPMt1ZVaWxOijsWlnk \
+            --dart-define=FIREBASE_APP_ID=1:209896392944:android:b142e13aef2b35ef111a35 \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID=209896392944 \
+            --dart-define=FIREBASE_PROJECT_ID=flat-finder-whiteslove
+
+      - name: Remove keystore from disk
+        if: always()
+        run: rm -f app/android/flat-finder-release.jks app/android/key.properties
+
+      - name: Commit build number bump
+        working-directory: app
+        run: |
+          set -euo pipefail
+          git config user.name "flat-finder-release-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add pubspec.yaml
+          git commit -m "chore(release): bump build number to ${{ steps.bump.outputs.buildNumber }}"
+          git push origin HEAD:master
+
+      # public/files/ (including this APK and version.json) is baked into
+      # the frontend Docker image; pushing to master here triggers
+      # Personal-Site's own deploy.yml, which builds and ships it.
+      - name: Checkout website repo
+        uses: actions/checkout@v7
+        with:
+          repository: AmoneMisa/Personal-Site
+          token: ${{ secrets.SITE_REPO_TOKEN }}
+          path: site
+          fetch-depth: 0
+
+      - name: Publish APK and version.json to the website repo
+        working-directory: site
+        env:
+          RELEASE_VERSION: ${{ steps.bump.outputs.version }}
+          RELEASE_BUILD: ${{ steps.bump.outputs.buildNumber }}
+        run: |
+          set -euo pipefail
+          rm -f public/files/FlatFinder_v*_WhitesLove.apk
+          apk_name="FlatFinder_v${RELEASE_VERSION}_WhitesLove.apk"
+          cp "../app/build/app/outputs/flutter-apk/app-release.apk" "public/files/${apk_name}"
+          cat > public/files/version.json <<JSON
+          {
+            "version": "${RELEASE_VERSION}",
+            "versionCode": ${RELEASE_BUILD},
+            "apkUrl": "https://whiteslove.me/files/${apk_name}"
+          }
+          JSON
+          git config user.name "flat-finder-release-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add public/files
+          if git diff --cached --quiet; then
+            echo "Nothing changed on the website side; skipping commit."
+          else
+            git commit -m "chore: release FlatFinder v${RELEASE_VERSION} (build ${RELEASE_BUILD})"
+            git push origin HEAD:master
+          fi
+
+      # Move the marker used by the `check` job so the next run diffs against
+      # what actually shipped this time, including this run's own bump commit.
+      - name: Move the last-released tag
+        run: |
+          set -euo pipefail
+          git config user.name "flat-finder-release-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin master
+          git tag -f last-released origin/master
+          git push origin refs/tags/last-released --force

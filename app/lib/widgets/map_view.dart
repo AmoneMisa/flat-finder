@@ -964,9 +964,11 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
         _mapAreaKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null || !renderBox.attached) return null;
     final local = renderBox.globalToLocal(global);
-    return MapCamera.of(context).pointToLatLng(
-      math.Point(local.dx, local.dy),
-    );
+    // _controller.camera, not MapCamera.of(context): this State's context is
+    // the FlutterMap's *parent*, so there is no MapCamera inherited widget
+    // above it to find. That lookup failed silently on every drag frame,
+    // which is why a grip could be dragged and still change nothing.
+    return _controller.camera.pointToLatLng(math.Point(local.dx, local.dy));
   }
 
   num _shapeRadiusM(Filters filters) =>
