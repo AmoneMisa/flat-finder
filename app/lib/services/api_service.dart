@@ -402,8 +402,8 @@ class ApiService {
     return TranslationJob.fromJson(json);
   }
 
-  /// Translate listing text without holding one HTTP request open while Ollama
-  /// works. Submission returns a key immediately and this method polls the
+  /// Translate listing text without holding one HTTP request open while the
+  /// model works. Submission returns a key immediately and this method polls the
   /// cached BullMQ result. The overall deadline intentionally exceeds the
   /// worker's 180-second translation inference budget and leaves room for queue
   /// wait behind one already-running CPU job.
