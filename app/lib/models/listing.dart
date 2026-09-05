@@ -62,20 +62,26 @@ class NearbyTransportStop {
   final String name;
   final String mode;
   final int distanceM;
+  final int? walkingDistanceM;
+  final int? walkingDurationMin;
   final List<String> routeRefs;
   final String? geoEntityId;
   final Map<String, dynamic>? osm;
   final String? source;
+  final String? walkingSource;
 
   const NearbyTransportStop({
     required this.id,
     required this.name,
     required this.mode,
     required this.distanceM,
+    this.walkingDistanceM,
+    this.walkingDurationMin,
     this.routeRefs = const [],
     this.geoEntityId,
     this.osm,
     this.source,
+    this.walkingSource,
   });
 
   factory NearbyTransportStop.fromJson(Map<String, dynamic> j) =>
@@ -84,6 +90,8 @@ class NearbyTransportStop {
         name: j['name']?.toString() ?? '',
         mode: j['mode']?.toString() ?? '',
         distanceM: (j['distanceM'] as num?)?.round() ?? 0,
+        walkingDistanceM: (j['walkingDistanceM'] as num?)?.round(),
+        walkingDurationMin: (j['walkingDurationMin'] as num?)?.round(),
         routeRefs:
             (j['routeRefs'] as List?)?.map((e) => e.toString()).toList() ??
                 const [],
@@ -91,6 +99,7 @@ class NearbyTransportStop {
         osm:
             j['osm'] is Map ? Map<String, dynamic>.from(j['osm'] as Map) : null,
         source: j['source']?.toString(),
+        walkingSource: j['walkingSource']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -98,14 +107,24 @@ class NearbyTransportStop {
         'name': name,
         'mode': mode,
         'distanceM': distanceM,
+        if (walkingDistanceM != null) 'walkingDistanceM': walkingDistanceM,
+        if (walkingDurationMin != null)
+          'walkingDurationMin': walkingDurationMin,
         'routeRefs': routeRefs,
         if (geoEntityId != null) 'geoEntityId': geoEntityId,
         if (osm != null) 'osm': osm,
         if (source != null) 'source': source,
+        if (walkingSource != null) 'walkingSource': walkingSource,
       };
 
   String get displayLabel {
     final routes = routeRefs.isEmpty ? '' : ' · ${routeRefs.join(', ')}';
+    if (walkingDistanceM != null) {
+      final duration = walkingDurationMin == null
+          ? ''
+          : ' · ${walkingDurationMin!} min';
+      return '$name$routes · 🚶 ${walkingDistanceM!} m$duration';
+    }
     return '$name$routes · $distanceM m';
   }
 }
@@ -213,6 +232,8 @@ class Listing {
   final String? contact; // phone or @handle | null
   final String? district; // intra-city district / neighbourhood | null
   final String? metro; // nearest metro/transit station | null
+  final int? metroWalkingDistanceM;
+  final int? metroWalkingDurationMin;
   final List<NearbyTransportStop> nearbyMetro;
   final List<NearbyTransportStop> nearbyTransport;
   final List<String> nearby; // nearby landmarks
@@ -309,6 +330,8 @@ class Listing {
     required this.contact,
     required this.district,
     required this.metro,
+    this.metroWalkingDistanceM,
+    this.metroWalkingDurationMin,
     this.nearbyMetro = const [],
     this.nearbyTransport = const [],
     required this.nearby,
@@ -412,6 +435,8 @@ class Listing {
       contact: j['contact'] as String?,
       district: _locationName(j['district']),
       metro: _locationName(j['metro']),
+      metroWalkingDistanceM: (j['metroWalkingDistanceM'] as num?)?.round(),
+      metroWalkingDurationMin: (j['metroWalkingDurationMin'] as num?)?.round(),
       nearbyMetro: (j['nearbyMetro'] as List?)
               ?.whereType<Map>()
               .map(
@@ -545,6 +570,10 @@ class Listing {
         'contact': contact,
         'district': district,
         'metro': metro,
+        if (metroWalkingDistanceM != null)
+          'metroWalkingDistanceM': metroWalkingDistanceM,
+        if (metroWalkingDurationMin != null)
+          'metroWalkingDurationMin': metroWalkingDurationMin,
         'nearbyMetro': nearbyMetro.map((e) => e.toJson()).toList(),
         'nearbyTransport': nearbyTransport.map((e) => e.toJson()).toList(),
         'nearby': nearby,

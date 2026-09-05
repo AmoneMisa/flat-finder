@@ -741,6 +741,30 @@ class _SpecTable extends StatelessWidget {
         .trim();
   }
 
+  String _walkingDistanceLabel(int meters) {
+    if (meters < 1000) return s.lang == 'ru' ? '$meters м' : '$meters m';
+    final km = meters / 1000;
+    final value = meters % 1000 == 0
+        ? km.toStringAsFixed(0)
+        : km.toStringAsFixed(1);
+    return s.lang == 'ru' ? '$value км' : '$value km';
+  }
+
+  String? _metroLabel() {
+    final metro = listing.metro;
+    if (metro == null) return null;
+    final name = country?.locationLabel(listing.city, metro, kind: 'metro') ?? metro;
+    final distance = listing.metroWalkingDistanceM;
+    if (distance == null) return name;
+
+    final parts = <String>[name, '🚶 ${_walkingDistanceLabel(distance)}'];
+    final minutes = listing.metroWalkingDurationMin;
+    if (minutes != null) {
+      parts.add(s.lang == 'ru' ? '$minutes мин' : '$minutes min');
+    }
+    return parts.join(' · ');
+  }
+
   /// Groups mirror the web's spec table sections: each group renders under
   /// its own header, its rows laid out as icon+value pairs (no separate
   /// label text, matching the web design) in a 2-column grid on mobile. The
@@ -820,10 +844,7 @@ class _SpecTable extends StatelessWidget {
       (
         Icons.directions_subway_outlined,
         'metro',
-        l.metro == null
-            ? null
-            : (country?.locationLabel(l.city, l.metro!, kind: 'metro') ??
-                l.metro),
+        _metroLabel(),
       ),
       (Icons.location_on_outlined, 'address', l.address),
       (
