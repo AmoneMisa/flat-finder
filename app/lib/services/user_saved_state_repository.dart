@@ -13,8 +13,7 @@ import 'saved_state_api.dart';
 /// claimable by an authenticated account.
 ///
 /// PostgreSQL is the source of truth. SharedPreferences remains only an offline
-/// cache plus a tiny idempotent mutation outbox, so a tap made without network
-/// is replayed on the next successful connection instead of being lost.
+/// cache plus a small durable idempotent mutation outbox.
 class UserSavedStateRepository {
   UserSavedStateRepository(
     this._api, {
@@ -26,6 +25,7 @@ class UserSavedStateRepository {
   static const _favoritesKey = 'favorites';
   static const _sortedKey = 'sortedListings';
   static const _presetsKey = 'filterPresets';
+  static const _importChunkSize = 20;
 
   final ApiService _api;
   final InstallationIdentity _identity;
@@ -46,31 +46,82 @@ class UserSavedStateRepository {
   Future<Map<String, dynamic>> _loadSnapshot() async {
     final prefs = await SharedPreferences.getInstance();
     final fallback = _legacySnapshot(prefs);
-    final id = await deviceId;
+    final credentials = await _identity.credentials();
 
     try {
       if (prefs.getBool(_migrationKey) != true) {
-        await _api.importRemoteSavedState(
-          id,
-          favorites: _mapList(fallback['favorites']),
-          sorted: _mapList(fallback['sorted']),
-          presets: _mapList(fallback['presets']),
-        );
+        await _importLegacy(credentials, fallback);
         await prefs.setBool(_migrationKey, true);
       }
 
       await flushOutbox();
-      final remote = await _api.fetchRemoteSavedState(id);
+      final remote = await _api.fetchRemoteSavedState(credentials);
       return {
         'favorites': _mapList(remote['favorites']),
         'sorted': _mapList(remote['sorted']),
         'presets': _mapList(remote['presets']),
       };
     } catch (_) {
-      // Offline startup must still expose the last local cache. The import
-      // marker is written only after Postgre accepts the legacy snapshot, so a
-      // failed first migration is retried on the next connection.
+      // Offline startup still exposes the local cache. The migration marker is
+      // written only after every idempotent PostgreSQL import chunk succeeds.
       return fallback;
+    }
+  }
+
+  Future<void> _importLegacy(
+    InstallationCredentials credentials,
+    Map<String, dynamic> fallback,
+  ) async {
+    final favorites = _mapList(fallback['favorites']);
+    for (var start = 0; start < favorites.length; start += _importChunkSize) {
+      final end = (start + _importChunkSize).clamp(0, favorites.length);
+      await _api.importRemoteSavedState(
+        credentials,
+        favorites: favorites.sublist(start, end),
+        sorted: const [],
+        presets: const [],
+      );
+    }
+
+    final sorted = _mapList(fallback['sorted']);
+    for (final collection in sorted) {
+      final items = _mapList(collection['items']);
+      for (var start = 0; start < items.length; start += _importChunkSize) {
+        final end = (start + _importChunkSize).clamp(0, items.length);
+        await _api.importRemoteSavedState(
+          credentials,
+          favorites: const [],
+          sorted: [
+            {
+              ...collection,
+              'items': items.sublist(start, end),
+            },
+          ],
+          presets: const [],
+        );
+      }
+    }
+
+    final presets = _mapList(fallback['presets']);
+    for (var start = 0; start < presets.length; start += _importChunkSize) {
+      final end = (start + _importChunkSize).clamp(0, presets.length);
+      await _api.importRemoteSavedState(
+        credentials,
+        favorites: const [],
+        sorted: const [],
+        presets: presets.sublist(start, end),
+      );
+    }
+
+    // With no legacy rows there is nothing to upload, but perform one tiny
+    // authenticated call so bad credentials/network do not mark migration done.
+    if (favorites.isEmpty && sorted.isEmpty && presets.isEmpty) {
+      await _api.importRemoteSavedState(
+        credentials,
+        favorites: const [],
+        sorted: const [],
+        presets: const [],
+      );
     }
   }
 
@@ -128,7 +179,7 @@ class UserSavedStateRepository {
       });
 
   /// Durably enqueue before attempting the network request. Server mutations
-  /// are idempotent (upserts/deletes), so replay after a crash is safe.
+  /// are idempotent, so replay after a process/network failure is safe.
   Future<void> enqueueMutation(Map<String, dynamic> mutation) async {
     final queued = <String, dynamic>{
       '_queueId': InstallationIdentity.newId(),
@@ -160,10 +211,8 @@ class UserSavedStateRepository {
   }
 
   Future<void> _drainOutbox() async {
-    // Ensure an enqueue currently writing SharedPreferences cannot be lost by a
-    // simultaneous drain.
     await _enqueueTail;
-    final id = await deviceId;
+    final credentials = await _identity.credentials();
 
     while (true) {
       final prefs = await SharedPreferences.getInstance();
@@ -173,7 +222,7 @@ class UserSavedStateRepository {
       final queueId = mutation['_queueId']?.toString();
 
       try {
-        await _api.mutateRemoteSavedState(id, mutation);
+        await _api.mutateRemoteSavedState(credentials, mutation);
       } catch (_) {
         // Keep the failed operation at the head. Ordering matters for put/delete
         // sequences touching the same listing.
@@ -290,14 +339,15 @@ class UserSavedStateRepository {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! List) return const [];
-      return decoded
-          .whereType<Map>()
-          .map((entry) => Map<String, dynamic>.from(entry))
-          .where((entry) {
-            final id = entry['id']?.toString().trim() ?? '';
-            return id.isNotEmpty && entry['filters'] is Map;
-          })
-          .toList();
+      final out = <Map<String, dynamic>>[];
+      for (final rawEntry in decoded.whereType<Map>()) {
+        final entry = Map<String, dynamic>.from(rawEntry);
+        if (entry['filters'] is! Map) continue;
+        final id = entry['id']?.toString().trim() ?? '';
+        entry['id'] = id.isEmpty ? InstallationIdentity.newId() : id;
+        out.add(entry);
+      }
+      return out;
     } catch (_) {
       return const [];
     }
