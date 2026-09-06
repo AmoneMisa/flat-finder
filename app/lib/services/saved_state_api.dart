@@ -3,21 +3,34 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'api_service.dart';
+import 'installation_identity.dart';
 
 extension SavedStateApi on ApiService {
   static const _savedStateTimeout = Duration(seconds: 15);
 
-  Future<Map<String, dynamic>> fetchRemoteSavedState(String deviceId) async {
-    final uri = Uri.parse('$baseUrl/api/mobile/saved-state').replace(
-      queryParameters: {'deviceId': deviceId},
-    );
-    final response = await http.get(uri).timeout(_savedStateTimeout);
-    final decoded = _decodeSavedStateResponse(response);
-    return decoded;
+  Map<String, String> _savedStateHeaders(
+    InstallationCredentials credentials, {
+    bool json = false,
+  }) => {
+        'X-Flat-Finder-Device-Id': credentials.deviceId,
+        'X-Flat-Finder-Device-Secret': credentials.secret,
+        if (json) 'Content-Type': 'application/json',
+      };
+
+  Future<Map<String, dynamic>> fetchRemoteSavedState(
+    InstallationCredentials credentials,
+  ) async {
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/api/mobile/saved-state'),
+          headers: _savedStateHeaders(credentials),
+        )
+        .timeout(_savedStateTimeout);
+    return _decodeSavedStateResponse(response);
   }
 
   Future<void> importRemoteSavedState(
-    String deviceId, {
+    InstallationCredentials credentials, {
     required List<Map<String, dynamic>> favorites,
     required List<Map<String, dynamic>> sorted,
     required List<Map<String, dynamic>> presets,
@@ -25,9 +38,8 @@ extension SavedStateApi on ApiService {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/mobile/saved-state/import'),
-          headers: const {'Content-Type': 'application/json'},
+          headers: _savedStateHeaders(credentials, json: true),
           body: jsonEncode({
-            'deviceId': deviceId,
             'favorites': favorites,
             'sorted': sorted,
             'presets': presets,
@@ -38,14 +50,14 @@ extension SavedStateApi on ApiService {
   }
 
   Future<void> mutateRemoteSavedState(
-    String deviceId,
+    InstallationCredentials credentials,
     Map<String, dynamic> mutation,
   ) async {
     final response = await http
         .post(
           Uri.parse('$baseUrl/api/mobile/saved-state/mutate'),
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode({'deviceId': deviceId, ...mutation}),
+          headers: _savedStateHeaders(credentials, json: true),
+          body: jsonEncode(mutation),
         )
         .timeout(_savedStateTimeout);
     _decodeSavedStateResponse(response);
