@@ -2,16 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
 import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
-import '../utils/metro_proximity.dart';
 
 /// A response held for [_feedCacheTtl] and keyed by the exact filter
 /// combination that produced it, so re-visiting a combination -- most often a
@@ -35,82 +32,11 @@ class AppState extends ChangeNotifier {
   final _listingsCache = <String, _CacheEntry<ListingsResult>>{};
   final _mapCache = <String, _CacheEntry<List<MapListingPoint>>>{};
 
-  // Metro station coordinates for the proximity filter below. The backend
-  // has no endpoint for "just these station names' coordinates" -- only the
-  // full per-city geography catalog (districts, microdistricts, POIs, metro
-  // together) that the map screen also loads. Cached per city so switching
-  // filters back and forth doesn't refetch it, and never fetched at all
-  // unless a metro filter is actually active.
-  MapZones _metroZones = const MapZones();
-  String _metroZonesKey = '';
-
-  Future<MapZones> _zonesForMetroProximity(Filters filters) async {
-    if (filters.metro.isEmpty) return const MapZones();
-    final country = filters.countries.isEmpty ? '' : filters.countries.first;
-    if (country.isEmpty || filters.city.isEmpty) return const MapZones();
-    final key = '$country|${filters.city}';
-    if (key == _metroZonesKey) return _metroZones;
-    final zones = await _api.fetchMapZones(country, filters.city);
-    _metroZonesKey = key;
-    _metroZones = zones;
-    return zones;
-  }
-
-  /// Built from the *live* filter set against whatever station coordinates
-  /// are cached -- if a station's coordinates never arrived (offline, or a
-  /// city the zones fetch hasn't covered yet), that station simply drops out
-  /// of the filter rather than the whole search failing.
-  ///
-  /// The distance limit is enforced here only when more than one station is
-  /// selected. With exactly one, the backend already narrowed by metroMaxM
-  /// (see Filters.toUpstreamQueryParams), and re-checking coordinates the
-  /// feed may not carry for every listing would drop results the server
-  /// deliberately kept. The arc has no backend equivalent at all and is
-  /// always enforced here, regardless of station count. Mirrors the web
-  /// client's useMetroProximity.ts exactly.
-  MetroProximity _metroProximityFor(Filters filters, MapZones zones) {
-    if (filters.metro.isEmpty) return const MetroProximity();
-    final stations = [
-      for (final name in filters.metro)
-        for (final zone in zones.metroStations)
-          if (zone.name == name)
-            MetroPoint(name: zone.name, lat: zone.lat, lng: zone.lng),
-    ];
-    return MetroProximity(
-      stations: stations,
-      maxM: filters.metro.length > 1 ? filters.metroMaxM?.toDouble() : null,
-      bearingFrom: filters.metroBearingFrom?.toDouble(),
-      bearingTo: filters.metroBearingTo?.toDouble(),
-    );
-  }
-
-  List<Listing> _narrowListingsByMetro(
-    List<Listing> items,
-    MetroProximity proximity,
-  ) =>
-      applyMetroProximity(
-        items,
-        proximity,
-        (item) => item.hasLocation ? LatLng(item.lat!, item.lng!) : null,
-      );
-
-  List<MapListingPoint> _narrowMapPointsByMetro(
-    List<MapListingPoint> items,
-    MetroProximity proximity,
-  ) =>
-      applyMetroProximity(
-        items,
-        proximity,
-        (item) => LatLng(item.lat, item.lng),
-      );
-
-  /// Stable regardless of the order [Filters.toQueryParams] happened to build
-  /// its map in.
-  String _cacheKey(Filters f) {
-    final params = f.toQueryParams();
-    final keys = params.keys.toList()..sort();
-    return keys.map((k) => '$k=${params[k]}').join('&');
-  }
+  /// Cache identity follows the whole effective filter payload, including sort.
+  /// The previous query-param-only key omitted client state that can select a
+  /// different server cursor stream (notably date/price sort), so an old first
+  /// page/cursor could be painted under a newly selected ordering.
+  String _cacheKey(Filters f) => _filterFingerprint(f);
 
   T? _readCache<T>(Map<String, _CacheEntry<T>> cache, String key) {
     final entry = cache[key];
@@ -128,6 +54,15 @@ class AppState extends ChangeNotifier {
     while (cache.length > _feedCacheMaxEntries) {
       cache.remove(cache.keys.first);
     }
+  }
+
+  void _invalidateListingCaches(String key) {
+    _listingsCache.removeWhere(
+      (_, entry) => entry.value.listings.any((item) => listingKey(item) == key),
+    );
+    _mapCache.removeWhere(
+      (_, entry) => entry.value.any((point) => point.key == key),
+    );
   }
 
   List<Country> countries = [];
@@ -189,7 +124,9 @@ class AppState extends ChangeNotifier {
         filters = filters.copyWith(countries: {countries.first.code});
       }
       notifyListeners();
-      await search();
+      // Startup is not user typing. The 250ms debounce only adds visible cold-
+      // start latency here, so execute the first request immediately.
+      await search(immediate: true);
     } catch (e) {
       error = e.toString();
       notifyListeners();
@@ -399,15 +336,13 @@ class AppState extends ChangeNotifier {
   }
 
   /// Drops a listing confirmed gone by a live source re-check (e.g. an OLX
-  /// advert taken down since the last crawl) from the current result set —
-  /// mirrors the web's `removeUnavailableListing`.
+  /// advert taken down since the last crawl) from the current result set and
+  /// invalidates any feed/map cache that could otherwise resurrect it.
   void removeListing(String source, String country, String id) {
+    final key = listingKeyParts(source: source, country: country, id: id);
     final before = listings.length;
-    listings = listings
-        .where(
-          (l) => !(l.source == source && l.country == country && l.id == id),
-        )
-        .toList();
+    listings = listings.where((l) => listingKey(l) != key).toList();
+    _invalidateListingCaches(key);
     if (listings.length != before) notifyListeners();
   }
 
@@ -420,9 +355,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// Apply a short debounce to rapid filter input and actively abort any HTTP
-  /// page request superseded by the new generation. The generation guard still
-  /// protects state from non-cancellable test doubles and other late futures.
-  Future<void> search() {
+  /// page request superseded by the new generation. [immediate] is reserved for
+  /// startup/explicit flows where there is no burst of user typing to debounce.
+  Future<void> search({bool immediate = false}) {
     final generation = ++_searchGeneration;
     _api.cancelListingRequests();
     _completePendingSearch();
@@ -453,21 +388,10 @@ class AppState extends ChangeNotifier {
     // mapListings belongs to loadMapListings' own cache (below), issued
     // separately right after this call resolves -- cleared here unconditionally,
     // same as before this cache existed, so a cache hit never leaves the
-    // *previous* filter combination's markers on screen while the map's own
-    // cache lookup catches up.
+    // previous filter combination's markers on screen.
     mapListings = [];
     if (cached != null) {
-      // Paint the held answer now -- `loading` stays false so the full-screen
-      // overlay never flashes for a combination already in hand -- then
-      // confirm it is still current behind the paint. The proximity filter
-      // uses whatever station coordinates are already cached synchronously
-      // (an async zones fetch here would defeat the instant paint); if they
-      // don't cover this city yet, filtering is a no-op for this one frame
-      // and self-corrects once _executeSearch's own await resolves below.
-      listings = _narrowListingsByMetro(
-        cached.listings,
-        _metroProximityFor(requestedFilters, _metroZones),
-      );
+      listings = cached.listings;
       nextCursor = cached.nextCursor;
       total = cached.total;
       degradedCountries = cached.degradedCountries;
@@ -477,10 +401,9 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
 
-    // An answer already in hand costs the server nothing to re-apply, so it
-    // also skips the debounce that exists to protect the backend from
-    // combinations it has not answered yet.
-    final delay = cached != null ? Duration.zero : _searchDebounce;
+    // An answer already in hand costs the server nothing to re-apply. Startup
+    // is also explicit and should not pay a typing debounce before first paint.
+    final delay = (cached != null || immediate) ? Duration.zero : _searchDebounce;
     _searchDebounceTimer = Timer(delay, () {
       _searchDebounceTimer = null;
       if (generation != _searchGeneration) {
@@ -510,17 +433,12 @@ class AppState extends ChangeNotifier {
     try {
       final res = await _api.fetchListings(requestedFilters);
       if (generation != _searchGeneration) return;
-      final zones = await _zonesForMetroProximity(requestedFilters);
-      if (generation != _searchGeneration) return;
-      // Cache carries the server's own answer, unfiltered -- this way total
-      // and nextCursor (pagination) always reflect what the server actually
-      // has, and a cache hit re-applies the filter against whatever station
-      // coordinates are current at that later moment rather than baking in
-      // today's.
-      listings = _narrowListingsByMetro(
-        res.listings,
-        _metroProximityFor(requestedFilters, zones),
-      );
+
+      // Metro/radius/arc membership is database-owned now. The old client path
+      // waited for the full district-zones catalog here and then called a no-op
+      // compatibility filter, adding an entire network round trip before first
+      // paint for metro searches. Trust the paginated backend result directly.
+      listings = res.listings;
       nextCursor = res.nextCursor;
       total = res.total;
       degradedCountries = res.degradedCountries;
@@ -611,13 +529,7 @@ class AppState extends ChangeNotifier {
     final cached = _readCache(_mapCache, cacheKey);
 
     if (cached != null) {
-      // Paint the held pins now, without the blocking overlay mapLoading
-      // drives -- the fetch below still confirms them behind the paint.
-      // Same synchronous-zones caveat as search()'s cache-hit path.
-      mapListings = _narrowMapPointsByMetro(
-        cached,
-        _metroProximityFor(requestedFilters, _metroZones),
-      );
+      mapListings = cached;
     } else {
       mapLoading = true;
     }
@@ -626,20 +538,12 @@ class AppState extends ChangeNotifier {
     try {
       final points = await _api.fetchMapListings(requestedFilters);
       if (generation != _searchGeneration) return;
-      final zones = await _zonesForMetroProximity(requestedFilters);
-      if (generation != _searchGeneration) return;
-      mapListings = _narrowMapPointsByMetro(
-        points,
-        _metroProximityFor(requestedFilters, zones),
-      );
+      // Map membership is produced by the same backend geo predicate as cards.
+      mapListings = points;
       _writeCache(_mapCache, cacheKey, points);
     } catch (_) {
-      // Previously an uncached failure here could throw past this method
-      // (several call sites invoke it fire-and-forget, with no catch of
-      // their own). Swallowing it and leaving whatever pins were already on
-      // screen -- cached or from the last successful fetch -- is strictly
-      // better than an unhandled exception surfacing from a secondary feed;
-      // the mirrored web map applies the same rule to its own fetch.
+      // Leave whatever pins were already on screen; the map feed is secondary
+      // to the card results and must not surface an unhandled request failure.
     } finally {
       if (generation == _searchGeneration) {
         mapLoading = false;
@@ -706,6 +610,8 @@ class AppState extends ChangeNotifier {
   Future<Listing?> reloadListing(Listing listing) async {
     final fresh = await _api.reloadListing(listing);
     if (fresh != null) {
+      final key = listingKey(listing);
+      _invalidateListingCaches(key);
       final i = listings.indexWhere((item) => sameListing(item, listing));
       if (i >= 0) {
         listings[i] = fresh;
