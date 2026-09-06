@@ -56,11 +56,16 @@ class PresetsState extends ChangeNotifier {
   static const _kPresets = 'filterPresets';
   static const _kPushMaster = 'filterPresetPushMaster';
   static const _kDeviceId = 'flatFinderDeviceId';
+  static const _kUiLanguage = 'lang';
 
   final ApiService _api;
   final PushService _push;
   final List<FilterPreset> _presets = [];
   StreamSubscription<String>? _tokenSub;
+
+  Future<bool>? _syncFuture;
+  bool _syncAgain = false;
+  bool _requestPermissionNext = false;
 
   bool pushMasterEnabled = false;
   bool syncingPush = false;
@@ -214,11 +219,47 @@ class PresetsState extends ChangeNotifier {
       .where((p) => p.enabled && p.notificationsEnabled)
       .toList(growable: false);
 
-  Future<bool> syncPushSubscriptions({bool requestPermission = false}) async {
-    if (syncingPush) return pushError == null;
+  /// Coalesce concurrent mutations without dropping the newest state. The old
+  /// `if (syncingPush) return` path could lose a preset edit or FCM token refresh
+  /// that arrived while a request was in flight. Every caller now marks the
+  /// snapshot dirty; one drain loop sends again after the current request.
+  Future<bool> syncPushSubscriptions({bool requestPermission = false}) {
+    _syncAgain = true;
+    _requestPermissionNext = _requestPermissionNext || requestPermission;
+
+    final running = _syncFuture;
+    if (running != null) return running;
+
+    final future = _drainPushSync();
+    _syncFuture = future;
+    unawaited(
+      future.whenComplete(() {
+        if (identical(_syncFuture, future)) _syncFuture = null;
+      }),
+    );
+    return future;
+  }
+
+  Future<bool> _drainPushSync() async {
     syncingPush = true;
-    pushError = null;
     notifyListeners();
+    var ok = true;
+    try {
+      while (_syncAgain) {
+        _syncAgain = false;
+        final requestPermission = _requestPermissionNext;
+        _requestPermissionNext = false;
+        pushError = null;
+        ok = await _syncPushOnce(requestPermission: requestPermission);
+      }
+      return ok;
+    } finally {
+      syncingPush = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> _syncPushOnce({required bool requestPermission}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       var deviceId = prefs.getString(_kDeviceId);
@@ -244,21 +285,21 @@ class PresetsState extends ChangeNotifier {
         _ensureTokenRefresh();
       }
 
+      final savedLanguage = prefs.getString(_kUiLanguage)?.trim();
       await _api.syncMobileSubscriptions(
         deviceId: deviceId,
         pushToken: token,
         enabled: pushMasterEnabled,
         platform: defaultTargetPlatform.name,
-        language: ui.PlatformDispatcher.instance.locale.languageCode,
+        language: savedLanguage?.isNotEmpty == true
+            ? savedLanguage!
+            : ui.PlatformDispatcher.instance.locale.languageCode,
         presets: active.map((p) => p.toJson()).toList(),
       );
       return true;
     } catch (e) {
       pushError = e.toString();
       return false;
-    } finally {
-      syncingPush = false;
-      notifyListeners();
     }
   }
 
