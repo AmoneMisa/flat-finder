@@ -1,3 +1,5 @@
+import 'dart:async' show Timer;
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
