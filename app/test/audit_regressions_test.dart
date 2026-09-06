@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flat_finder/models/filters.dart';
 import 'package:flat_finder/services/api_service.dart';
+import 'package:flat_finder/services/installation_identity.dart';
 import 'package:flat_finder/services/update_service.dart';
 import 'package:flat_finder/state/presets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +37,18 @@ class _ControlledSubscriptionApi extends ApiService {
       if (!firstStarted.isCompleted) firstStarted.complete();
       await releaseFirst.future;
     }
+  }
+}
+
+class _MemorySecretStore implements InstallationSecretStore {
+  String? value;
+
+  @override
+  Future<String?> read() async => value;
+
+  @override
+  Future<void> write(String value) async {
+    this.value = value;
   }
 }
 
@@ -93,8 +106,6 @@ void main() {
       final api = ApiService(baseUrl: 'http://127.0.0.1:${server.port}');
       final countriesFuture = api.fetchCountries();
 
-      // Countries is deliberately still blocked. Seeing the listing request now
-      // proves the two cold-start calls are concurrent rather than sequential.
       await listingSeen.future.timeout(const Duration(seconds: 2));
       expect(listingRequests, 1);
       releaseCountries.complete();
@@ -144,7 +155,8 @@ void main() {
   test('push sync queues a newer snapshot instead of dropping it', () async {
     SharedPreferences.setMockInitialValues({'lang': 'ru'});
     final api = _ControlledSubscriptionApi();
-    final state = PresetsState(api);
+    final identity = InstallationIdentity(secretStore: _MemorySecretStore());
+    final state = PresetsState(api, identity: identity);
 
     state.pushMasterEnabled = false;
     final first = state.syncPushSubscriptions();
