@@ -11,6 +11,7 @@ import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/map_listing_point.dart';
 import '../models/search_statistics.dart';
+import 'request_cancellation.dart';
 
 /// A source that failed during a search (a built-in scraper or a custom URL).
 class SourceError {
@@ -411,11 +412,15 @@ class ApiService {
     String text, {
     required String targetLanguage,
     Duration timeout = const Duration(minutes: 5),
+    Duration pollInterval = const Duration(seconds: 2),
+    RequestCancellation? cancellation,
   }) async {
     final normalized = text.trim();
     if (normalized.isEmpty) return '';
+    cancellation?.throwIfCancelled();
 
     var job = await _startTranslation(normalized, targetLanguage);
+    cancellation?.throwIfCancelled();
     if (job.status == 'completed' &&
         job.translatedText?.trim().isNotEmpty == true) {
       return job.translatedText!.trim();
@@ -429,10 +434,14 @@ class ApiService {
     final deadline = DateTime.now().add(timeout);
     var consecutivePollErrors = 0;
     while (DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(seconds: 2));
+      await waitForDelayOrCancellation(pollInterval, cancellation);
       try {
+        cancellation?.throwIfCancelled();
         job = await _translationResult(key);
+        cancellation?.throwIfCancelled();
         consecutivePollErrors = 0;
+      } on RequestCancelledException {
+        rethrow;
       } catch (_) {
         // A short backend/worker hiccup must not discard an already-running AI
         // job. Retry polling, but fail after several consecutive transport errors.
@@ -593,7 +602,9 @@ class ApiService {
   }
 
   Future<Map<String, double>> fetchRates() async {
-    final res = await http.get(Uri.parse('$baseUrl/api/rates'));
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/rates'))
+        .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('rates HTTP ${res.statusCode}');
     }

@@ -9,6 +9,7 @@ import '../models/listing.dart';
 import '../models/listing_identity.dart';
 import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
+import '../services/request_cancellation.dart';
 
 /// A response held for [_feedCacheTtl] and keyed by the exact filter
 /// combination that produced it, so re-visiting a combination -- most often a
@@ -618,7 +619,15 @@ class AppState extends ChangeNotifier {
   /// Translate text into the currently selected UI language. The service uses
   /// asynchronous submit + polling, so a long model inference is not tied to a
   /// single HTTP request and transient transport timeouts do not discard it.
-  Future<String> translateText(String text, {required String targetLanguage}) {
-    return _api.translateText(text, targetLanguage: targetLanguage);
+  Future<String> translateText(
+    String text, {
+    required String targetLanguage,
+    RequestCancellation? cancellation,
+  }) {
+    return _api.translateText(
+      text,
+      targetLanguage: targetLanguage,
+      cancellation: cancellation,
+    );
   }
 }

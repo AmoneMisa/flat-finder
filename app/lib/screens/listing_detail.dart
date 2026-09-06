@@ -14,6 +14,7 @@ import '../l10n/strings.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../services/api_service.dart';
+import '../services/request_cancellation.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
 import '../state/hidden.dart';
@@ -35,6 +36,7 @@ class ListingDetailScreen extends StatefulWidget {
 
 class _ListingDetailScreenState extends State<ListingDetailScreen> {
   final _shareKey = GlobalKey();
+  final RequestCancellation _translationCancellation = RequestCancellation();
 
   // Held in state (not just widget.listing) so a manual reload can swap in a
   // fresh copy in place.
@@ -58,6 +60,12 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     // behind the real advert being taken down. Runs silently in the
     // background — the screen opens immediately with what's already known.
     if (listing.source == 'olx') _verifyStillAvailable();
+  }
+
+  @override
+  void dispose() {
+    _translationCancellation.cancel();
+    super.dispose();
   }
 
   /// Background OLX re-check on open, mirroring the web's
@@ -146,6 +154,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       final translated = await context.read<AppState>().translateText(
             sourceText,
             targetLanguage: lang,
+            cancellation: _translationCancellation,
           );
       if (!mounted) return;
       setState(() {
@@ -153,6 +162,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
         _translatedLang = lang;
         _showTranslated = true;
       });
+    } on RequestCancelledException {
+      // Closing the detail page deliberately ends its polling workflow.
+      return;
     } catch (_) {
       _snack(
         _localized(
