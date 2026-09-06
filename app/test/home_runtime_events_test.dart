@@ -25,6 +25,7 @@ void main() {
       onForegroundPush: seenPushes.add,
     );
     events.start();
+    events.start(); // A widget lifecycle retry must not duplicate listeners.
 
     final live = Uri.parse('flatfinder://search?city=Tashkent');
     links.add(live);
