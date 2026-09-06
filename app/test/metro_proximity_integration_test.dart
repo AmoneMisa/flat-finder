@@ -11,9 +11,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Novza, Tashkent -- the same worked example as tests/flat-metro-proximity
-// on the web client and metro_proximity_test.dart here: "near Novza, west
-// side, within 780m".
 const _novzaLat = 41.2920278;
 const _novzaLng = 69.2233417;
 
@@ -76,13 +73,15 @@ class _FakeApi extends ApiService {
     bool force = false,
     String? cursor,
   }) async {
-    listingsCalls.add(filters.toUpstreamQueryParams());
+    // The production ApiService facade sends the complete serializer upstream;
+    // emulate that wire contract rather than the removed legacy strip logic.
+    listingsCalls.add(filters.toQueryParams());
     return ListingsResult(listings, const [], const [], total: listings.length);
   }
 
   @override
   Future<List<MapListingPoint>> fetchMapListings(Filters filters) async {
-    mapCalls.add(filters.toUpstreamQueryParams());
+    mapCalls.add(filters.toQueryParams());
     return points;
   }
 
@@ -100,23 +99,17 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test(
-      'a west wedge around one station narrows both the list and the map, and the server still gets metro+metroMaxM',
+  test('single-station radius and arc are sent upstream and not re-filtered',
       () async {
-    // The fake server response already excludes west-too-far (900m > the
-    // 780m metroMaxM it was sent): a real server does its own distance
-    // narrowing for a single station, which is exactly why AppState does
-    // NOT re-check distance client-side in this case (see
-    // _metroProximityFor) -- only the arc, which the server never receives
-    // at all, is enforced here. east-inside-radius is within distance but
-    // the wrong direction, so only the arc removes it.
     final listings = [
       _listingAt('west-inside', _at(270, 600)),
-      _listingAt('east-inside-radius', _at(90, 400)),
+      // Deliberately contradictory to the requested arc: if Flutter changes
+      // membership again, this row disappears and the test catches it.
+      _listingAt('east-but-returned-by-server', _at(90, 400)),
     ];
     final points = [
       _pointAt('west-inside', _at(270, 600)),
-      _pointAt('east-inside-radius', _at(90, 400)),
+      _pointAt('east-but-returned-by-server', _at(90, 400)),
     ];
     final api = _FakeApi(
       listings: listings,
@@ -134,65 +127,33 @@ void main() {
       );
 
     await state.search();
-    expect(state.listings.map((l) => l.id).toList(), ['west-inside']);
-    // Distance narrowing is still delegated to the server for one station.
+    expect(state.listings.map((l) => l.id).toList(),
+        ['west-inside', 'east-but-returned-by-server']);
     expect(api.listingsCalls.single['metro'], 'Novza');
     expect(api.listingsCalls.single['metroMaxM'], '780');
-    // The arc has no server representation and must never be sent.
-    expect(api.listingsCalls.single.containsKey('metroArc'), isFalse);
+    expect(api.listingsCalls.single['metroArc'], '252,288');
 
     await state.loadMapListings();
-    expect(state.mapListings.map((p) => p.id).toList(), ['west-inside']);
+    expect(state.mapListings.map((p) => p.id).toList(),
+        ['west-inside', 'east-but-returned-by-server']);
+    expect(api.mapCalls.single['metro'], 'Novza');
+    expect(api.mapCalls.single['metroArc'], '252,288');
   });
 
-  test(
-      'a single station trusts the server for distance and only re-checks the arc',
-      () async {
-    // A listing the server would never have returned for metroMaxM: 780 (it
-    // is 900m out), included here anyway to prove AppState does not
-    // re-filter it -- only a real server enforces that distance for one
-    // station. If this regresses to double-checking distance too, this
-    // listing would vanish and the test would need updating, which is the
-    // point: it documents the trust boundary explicitly.
-    final listings = [_listingAt('too-far-but-trusted', _at(270, 900))];
-    final api = _FakeApi(
-      listings: listings,
-      points: const [],
-      zones: MapZones(metroStations: [_station('Novza')]),
-    );
-    final state = AppState(api)
-      ..filters = Filters(
-        countries: {'UZ'},
-        city: 'Tashkent',
-        metro: {'Novza'},
-        metroMaxM: 780,
-      );
-
-    await state.search();
-    expect(state.listings.single.id, 'too-far-but-trusted');
-  });
-
-  test(
-      'several stations send nothing metro-related upstream and are unioned client-side',
-      () async {
+  test('several stations and radius are sent as a backend union', () async {
     const other = 'Chilonzor';
     final listings = [
       _listingAt('by-novza', _at(270, 300)),
-      _listingAt(
-        'by-other',
-        LatLng(_novzaLat + 0.02, _novzaLng + 0.02 + 0.0001),
-      ),
-      _listingAt('by-neither', const LatLng(41.35, 69.35)),
+      _listingAt('by-other', const LatLng(41.312, 69.243)),
+      _listingAt('server-authoritative-third', const LatLng(41.35, 69.35)),
     ];
-    final otherLat = _novzaLat + 0.02;
-    final otherLng = _novzaLng + 0.02;
     final api = _FakeApi(
       listings: listings,
       points: const [],
       zones: MapZones(
         metroStations: [
           _station('Novza'),
-          _station(other, lat: otherLat, lng: otherLng),
+          _station(other, lat: 41.312, lng: 69.243),
         ],
       ),
     );
@@ -206,16 +167,14 @@ void main() {
 
     await state.search();
 
-    expect(api.listingsCalls.single.containsKey('metro'), isFalse);
-    expect(api.listingsCalls.single.containsKey('metroMaxM'), isFalse);
-    expect(
-      state.listings.map((l) => l.id).toSet(),
-      {'by-novza', 'by-other'},
-    );
+    final sent = api.listingsCalls.single;
+    expect(sent['metro']!.split(',').toSet(), {'Novza', other});
+    expect(sent['metroMaxM'], '800');
+    expect(state.listings.map((l) => l.id).toList(),
+        ['by-novza', 'by-other', 'server-authoritative-third']);
   });
 
-  test(
-      'a listing with no coordinates survives the filter rather than vanishing',
+  test('missing listing coordinates are a backend concern, not a client drop',
       () async {
     final noCoords = Listing.fromJson({
       'id': 'no-coords',
