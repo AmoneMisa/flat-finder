@@ -2,9 +2,8 @@ import 'package:flat_finder/utils/metro_proximity.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 
-// Novza, Tashkent -- the worked example: "near Novza, west side, within 780m".
-// Same coordinates and expectations as tests/flat-metro-proximity.test.mjs on
-// the web client, so the two geometries can be trusted to agree.
+// Novza, Tashkent -- geometry here is presentation geometry only. Membership
+// itself is decided by the backend/database before count and pagination.
 const _novza = MetroPoint(name: 'Novza', lat: 41.2920278, lng: 69.2233417);
 
 LatLng _at(double bearing, double metres) =>
@@ -28,65 +27,28 @@ void main() {
     expect(bearingWithinArc(350, 340, 20), isTrue);
     expect(bearingWithinArc(19, 340, 20), isTrue);
     expect(bearingWithinArc(180, 340, 20), isFalse);
-    // Handles that have not been separated yet must not reject everything.
     expect(bearingWithinArc(123, 90, 90), isTrue);
   });
 
-  test('a west wedge keeps west listings and drops the rest', () {
+  test('legacy post-filter shim never changes backend membership', () {
     final points = {
       'west-inside': _at(270, 600),
-      'west-edge': _at(255, 770),
       'west-too-far': _at(270, 900),
       'east-inside-radius': _at(90, 400),
-      'north-inside-radius': _at(0, 300),
+      'no-coords': null,
     };
+    final items = points.entries.toList();
     final proximity = const MetroProximity(
       stations: [_novza],
       maxM: 780,
       bearingFrom: 252,
       bearingTo: 288,
     );
-    final kept = applyMetroProximity(
-      points.entries.toList(),
-      proximity,
-      (entry) => entry.value,
-    ).map((e) => e.key).toList();
-    expect(kept, ['west-inside', 'west-edge']);
+    final kept = applyMetroProximity(items, proximity, (entry) => entry.value);
+    expect(kept, same(items));
   });
 
-  test('several stations are a union, not an intersection', () {
-    const other = MetroPoint(name: 'Other', lat: 41.31, lng: 69.28);
-    final points = {
-      'by-novza': _at(270, 300),
-      'by-other': const LatLng(41.311, 69.28),
-      'by-neither': const LatLng(41.35, 69.35),
-    };
-    final proximity =
-        const MetroProximity(stations: [_novza, other], maxM: 800);
-    final kept = applyMetroProximity(
-      points.entries.toList(),
-      proximity,
-      (entry) => entry.value,
-    ).map((e) => e.key).toList()
-      ..sort();
-    expect(kept, ['by-novza', 'by-other']);
-  });
-
-  test('items without usable coordinates are kept, not silently dropped', () {
-    final points = <String, LatLng?>{
-      'no-coords': null,
-      'far-east': _at(90, 5000),
-    };
-    final proximity = const MetroProximity(stations: [_novza], maxM: 780);
-    final kept = applyMetroProximity(
-      points.entries.toList(),
-      proximity,
-      (entry) => entry.value,
-    ).map((e) => e.key).toList();
-    expect(kept, ['no-coords']);
-  });
-
-  test('an inert filter passes every item through untouched', () {
+  test('an inert overlay is recognized without affecting results', () {
     final items = ['a'];
     expect(const MetroProximity().isEmpty, isTrue);
     expect(const MetroProximity(stations: [_novza]).isEmpty, isTrue);
@@ -148,15 +110,11 @@ void main() {
       expect(tap(150), 200);
       expect(tap(400), 500);
       expect(tap(900), 1000);
-      // Outside the outermost ring the tap belongs to whatever is under it.
       expect(tap(1400), isNull);
     });
 
     test('with a selection active, only the dot counts -- not the old 1km grab',
         () {
-      // This is the misclick the pixel rule exists to stop: far from the dot
-      // in screen terms, but well within the metre radius that used to
-      // swallow the tap and silently change the search.
       expect(
         metroTapRadiusM(
           screenDistancePx: 200,
@@ -168,8 +126,6 @@ void main() {
     });
 
     test('the slop is a pixel budget, so zoom does not change the target', () {
-      // Same station, same tap offset on screen, wildly different metre
-      // distances (zoomed out vs zoomed in): the answer must not differ.
       for (final metres in [30.0, 300.0, 3000.0]) {
         expect(
           metroTapRadiusM(
