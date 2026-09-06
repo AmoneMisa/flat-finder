@@ -4,7 +4,11 @@ on:
   pull_request:
     branches: [ master ]
     paths:
+      - 'app/lib/**'
       - 'app/android/**'
+      - 'app/assets/**'
+      - 'app/pubspec.yaml'
+      - 'app/pubspec.lock'
       - '.github/workflows/verify-android-release-pr.yml'
 
 permissions:
