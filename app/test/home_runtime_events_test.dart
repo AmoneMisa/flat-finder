@@ -47,7 +47,7 @@ void main() {
     await pushes.close();
   });
 
-  test('dispose suppresses a late cold-start link and cancels streams', () async {
+  test('dispose suppresses late events and remains idempotent', () async {
     final initial = Completer<Uri?>();
     final links = StreamController<Uri>.broadcast();
     final listings = StreamController<int>.broadcast();
@@ -64,6 +64,7 @@ void main() {
       onForegroundPush: (_) => calls++,
     )..start();
 
+    events.dispose();
     events.dispose();
     initial.complete(Uri.parse('flatfinder://listing?id=9'));
     links.add(Uri.parse('flatfinder://search?city=Odesa'));
