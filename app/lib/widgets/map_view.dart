@@ -113,6 +113,9 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   // _globalToLatLng) -- the same technique flutter_map's own "Draggable
   // Marker" example uses, since Marker itself has no native drag support.
   final GlobalKey _mapAreaKey = GlobalKey();
+  // Camera panning only changes screen-space metro grip positions. Tick a
+  // tiny overlay instead of rebuilding all map polygons/markers per frame.
+  final ValueNotifier<int> _cameraOverlayTick = ValueNotifier<int>(0);
   // Which handle (if any) is currently held, and its in-progress value. Kept
   // separate from AppState so a drag repaints only this widget every frame
   // instead of the whole filter/search pipeline; only the value on release
@@ -138,6 +141,9 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   // actually shown at rest.
   List<_PinGroup>? _groupsCache;
   String? _groupsCacheKey;
+  // Fallback/POI circles are pure geometry. Cache their 65 LatLng points
+  // instead of repeating trigonometry on unrelated UI rebuilds.
+  final Map<String, List<LatLng>> _circleRingCache = {};
 
   // Canonical geography overlay layers.
   MapZones _zones = const MapZones();
@@ -169,6 +175,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   @override
   void dispose() {
     _cameraAnim.dispose();
+    _cameraOverlayTick.dispose();
     super.dispose();
   }
 
@@ -239,7 +246,10 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
         locale != widget.locale) {
       return;
     }
-    setState(() => _zones = zones);
+    setState(() {
+      _zones = zones;
+      _circleRingCache.clear();
+    });
 
     // Filters and map share one canonical selection. If a saved preset, filter
     // sheet or deep link already selected a zone, restore it immediately and
@@ -278,6 +288,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
       _selectedZoneId = null;
       _activeZoneFocusId = null;
       _zones = const MapZones();
+      _circleRingCache.clear();
       _loadZones(focusCity: widget.city.isNotEmpty);
     } else if (localeChanged) {
       _loadZones();
@@ -307,8 +318,14 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
     ];
   }
 
-  List<LatLng> _circleRing(DistrictZone zone, [double? radiusM]) =>
-      _circleRingAt(zone.lat, zone.lng, radiusM ?? zone.radiusM);
+  List<LatLng> _circleRing(DistrictZone zone, [double? radiusM]) {
+    final radius = radiusM ?? zone.radiusM;
+    final key = '${zone.id}|${zone.lat}|${zone.lng}|$radius';
+    return _circleRingCache.putIfAbsent(
+      key,
+      () => _circleRingAt(zone.lat, zone.lng, radius),
+    );
+  }
 
   List<List<LatLng>> _ringsFor(DistrictZone zone) =>
       zone.boundaryRings.isNotEmpty ? zone.boundaryRings : [_circleRing(zone)];
@@ -1242,7 +1259,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<SettingsState>().s;
-    final appState = context.watch<AppState>();
+    final filters = context.select<AppState, Filters>((state) => state.filters);
     final desiredZone = _zoneMatchingFilters();
     if (desiredZone?.id != _selectedZoneId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1283,14 +1300,15 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   // drift off the wedge they belong to. Only while a
                   // selection actually exists -- otherwise this is the old
                   // zoom-bucketed behaviour.
-                  final trackingHandles =
-                      context.read<AppState>().filters.metro.isNotEmpty;
-                  if (zoomChanged || closeRadial || trackingHandles) {
+                  final trackingHandles = filters.metro.isNotEmpty;
+                  if (zoomChanged || closeRadial) {
                     setState(() {
                       _zoom = z;
                       _expandedGroupKey = null;
                       _expandedGroupPage = 0;
                     });
+                  } else if (trackingHandles) {
+                    _cameraOverlayTick.value += 1;
                   }
                 },
               ),
@@ -1369,7 +1387,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                 // asked.
                 if (_showMetro &&
                     _zones.metroStations.isNotEmpty &&
-                    appState.filters.metro.isEmpty)
+                    filters.metro.isEmpty)
                   PolygonLayer(
                     polygons: [
                       // Largest first so the stronger inner zones stay visible.
@@ -1382,18 +1400,18 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                     ],
                   ),
                 if (_showMetro &&
-                    _selectedMetroStations(appState.filters).isNotEmpty)
+                    _selectedMetroStations(filters).isNotEmpty)
                   PolygonLayer(
                     polygons: [
                       for (final station
-                          in _selectedMetroStations(appState.filters))
+                          in _selectedMetroStations(filters))
                         Polygon(
                           points: sectorPolygon(
                             LatLng(station.lat, station.lng),
-                            _shapeRadiusM(appState.filters).toDouble(),
+                            _shapeRadiusM(filters).toDouble(),
                             from:
-                                _shapeBearingFrom(appState.filters)?.toDouble(),
-                            to: _shapeBearingTo(appState.filters)?.toDouble(),
+                                _shapeBearingFrom(filters)?.toDouble(),
+                            to: _shapeBearingTo(filters)?.toDouble(),
                           ),
                           borderStrokeWidth: 2,
                           borderColor:
@@ -1513,9 +1531,9 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                             ),
                             child: _MetroStationMarker(
                               selected:
-                                  appState.filters.metro.contains(station.name),
-                              dimmed: appState.filters.metro.isNotEmpty &&
-                                  !appState.filters.metro.contains(
+                                  filters.metro.contains(station.name),
+                              dimmed: filters.metro.isNotEmpty &&
+                                  !filters.metro.contains(
                                     station.name,
                                   ),
                             ),
@@ -1676,8 +1694,16 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
               ],
             )),
         // Above the map, so a grip keeps its own drag instead of losing the
-        // gesture to the map's pan recognizer.
-        ..._metroHandleOverlay(appState.filters),
+        // gesture to the map's pan recognizer. Camera panning ticks only this
+        // overlay; the expensive FlutterMap subtree stays intact.
+        Positioned.fill(
+          child: ValueListenableBuilder<int>(
+            valueListenable: _cameraOverlayTick,
+            builder: (context, _, __) => Stack(
+              children: _metroHandleOverlay(filters),
+            ),
+          ),
+        ),
         Positioned(
           top: 12,
           right: 12,
