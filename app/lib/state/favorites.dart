@@ -7,15 +7,15 @@ import '../models/listing.dart';
 import '../models/listing_identity.dart';
 import '../services/user_saved_state_repository.dart';
 
-/// Saved listings. PostgreSQL is authoritative; SharedPreferences is retained
-/// as an offline/instant cache so opening the favorites tab never depends on a
-/// network round-trip.
+/// Saved listings. PostgreSQL is authoritative in the application graph;
+/// SharedPreferences remains an offline/instant cache. A nullable repository
+/// keeps the state independently testable without network infrastructure.
 class FavoritesState extends ChangeNotifier {
-  FavoritesState(this._repository);
+  FavoritesState([this._repository]);
 
   static const _kFavorites = 'favorites';
 
-  final UserSavedStateRepository _repository;
+  final UserSavedStateRepository? _repository;
   final List<Listing> _items = [];
   final Set<String> _keys = {};
 
@@ -26,8 +26,10 @@ class FavoritesState extends ChangeNotifier {
 
   Future<void> load() async {
     await _loadLocalCache();
+    final repository = _repository;
+    if (repository == null) return;
     try {
-      final snapshot = await _repository.snapshot();
+      final snapshot = await repository.snapshot();
       final remote = <Listing>[];
       for (final entry in (snapshot['favorites'] as List? ?? const [])) {
         if (entry is! Map) continue;
@@ -81,10 +83,12 @@ class FavoritesState extends ChangeNotifier {
     }
     notifyListeners();
     await _saveLocalCache();
+    final repository = _repository;
+    if (repository == null) return;
     if (removing) {
-      await _repository.deleteFavorite(listing);
+      await repository.deleteFavorite(listing);
     } else {
-      await _repository.putFavorite(listing);
+      await repository.putFavorite(listing);
     }
   }
 
@@ -94,11 +98,9 @@ class FavoritesState extends ChangeNotifier {
     _keys.remove(key);
     notifyListeners();
     await _saveLocalCache();
-    await _repository.deleteFavorite(listing);
+    await _repository?.deleteFavorite(listing);
   }
 
-  /// Grouped as country code → (city name → listings). Cities with no name are
-  /// bucketed under an empty-string key that the UI labels "Other".
   Map<String, Map<String, List<Listing>>> grouped() {
     final out = <String, Map<String, List<Listing>>>{};
     for (final l in _items) {
