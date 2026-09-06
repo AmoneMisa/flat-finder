@@ -10,12 +10,21 @@ on:
       - 'app/pubspec.yaml'
       - 'app/pubspec.lock'
       - '.github/workflows/verify-android-release-pr.yml'
+  push:
+    branches: [ develop ]
+    paths:
+      - 'app/lib/**'
+      - 'app/android/**'
+      - 'app/assets/**'
+      - 'app/pubspec.yaml'
+      - 'app/pubspec.lock'
+      - '.github/workflows/verify-android-release-pr.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: verify-android-release-${{ github.event.pull_request.number }}
+  group: verify-android-release-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
