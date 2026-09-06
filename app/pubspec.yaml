@@ -18,8 +18,6 @@ dependencies:
   url_launcher: ^6.2.5
   intl: ^0.20.2
   shared_preferences: ^2.2.2
-  sqflite: ^2.4.3
-  path: ^1.9.1
   cached_network_image: ^3.3.1
   share_plus: ^10.1.4
   path_provider: ^2.1.5
