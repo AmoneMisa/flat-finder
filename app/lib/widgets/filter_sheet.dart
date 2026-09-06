@@ -929,6 +929,9 @@ class _FilterSheetState extends State<FilterSheet> {
                           // mirrors it for keyboard/screen-reader access and
                           // gives the filter a value that can be typed exactly.
                           DropdownButtonFormField<String?>(
+                            key: ValueKey(
+                              'filter-metro-direction-${_metroBearingFrom ?? 'any'}-${_metroBearingTo ?? 'any'}',
+                            ),
                             initialValue: _metroBearingFrom == null ||
                                     _metroBearingTo == null
                                 ? null
@@ -966,6 +969,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         ],
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String?>(
+                          key: ValueKey('filter-nearby-${_nearbyKind ?? 'any'}'),
                           initialValue: _nearbyKind,
                           isExpanded: true,
                           decoration: InputDecoration(
@@ -1151,6 +1155,9 @@ class _FilterSheetState extends State<FilterSheet> {
                                 .isNotEmpty) ...[
                           const SizedBox(height: 8),
                           DropdownButtonFormField<String?>(
+                            key: ValueKey(
+                              'filter-price-currency-${_priceCurrency ?? 'native'}',
+                            ),
                             initialValue: _priceCurrency,
                             decoration: InputDecoration(
                               labelText: s.t('priceCurrency'),
@@ -1325,6 +1332,7 @@ class _FilterSheetState extends State<FilterSheet> {
                       title: s.t('sectionSortAndTiming'),
                       children: [
                         DropdownButtonFormField<int?>(
+                          key: ValueKey('filter-age-${_maxAgeDays ?? 'any'}'),
                           initialValue: _maxAgeDays,
                           isExpanded: true,
                           decoration: const InputDecoration(
@@ -1357,6 +1365,7 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<SortBy>(
+                          key: ValueKey('filter-sort-${_sort.name}'),
                           initialValue: _sort,
                           isExpanded: true,
                           decoration: const InputDecoration(
