@@ -1,6 +1,11 @@
-name: Verify flat-finder Flutter pull request
+name: Verify flat-finder Flutter
 
 on:
+  push:
+    branches: [ develop ]
+    paths:
+      - 'app/**'
+      - '.github/workflows/verify-flutter-pr.yml'
   pull_request:
     branches: [ master ]
     paths:
@@ -11,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-flutter-pr-${{ github.event.pull_request.number }}
+  group: verify-flutter-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
