@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'l10n/strings.dart';
 import 'services/api_service.dart';
+import 'services/user_saved_state_repository.dart';
 import 'state/app_state.dart';
 import 'state/favorites.dart';
 import 'state/hidden.dart';
@@ -18,8 +19,6 @@ void main() {
   runApp(const FlatFinderApp());
 }
 
-/// Lets pointers other than touch (mouse, trackpad, stylus) drag scrollables,
-/// so swiping the photo gallery works on Windows/web.
 class _AppScrollBehavior extends MaterialScrollBehavior {
   const _AppScrollBehavior();
 
@@ -39,24 +38,32 @@ class FlatFinderApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // One transport instance per application. Apart from reusing connection
-        // state this also lets startup prefetch, AppState and push subscriptions
-        // share the same request policy instead of behaving like separate apps.
         Provider<ApiService>(create: (_) => ApiService()),
+        Provider<UserSavedStateRepository>(
+          create: (context) =>
+              UserSavedStateRepository(context.read<ApiService>()),
+        ),
         ChangeNotifierProvider(create: (_) => SettingsState()..load()),
         ChangeNotifierProvider(
-          create: (context) =>
-              AppState(context.read<ApiService>())..init(),
+          create: (context) => AppState(context.read<ApiService>())..init(),
         ),
-        ChangeNotifierProvider(create: (_) => FavoritesState()..load()),
+        ChangeNotifierProvider(
+          create: (context) =>
+              FavoritesState(context.read<UserSavedStateRepository>())..load(),
+        ),
         ChangeNotifierProvider(create: (_) => HistoryState()..load()),
         ChangeNotifierProvider(create: (_) => HiddenState()..load()),
         ChangeNotifierProvider(
           lazy: false,
-          create: (context) =>
-              PresetsState(context.read<ApiService>())..load(),
+          create: (context) => PresetsState(
+            context.read<ApiService>(),
+            saved: context.read<UserSavedStateRepository>(),
+          )..load(),
         ),
-        ChangeNotifierProvider(create: (_) => SortedState()..load()),
+        ChangeNotifierProvider(
+          create: (context) =>
+              SortedState(context.read<UserSavedStateRepository>())..load(),
+        ),
       ],
       child: Consumer<SettingsState>(
         builder: (context, settings, _) => MaterialApp(
@@ -70,13 +77,7 @@ class FlatFinderApp extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
           ],
           theme: settings.themeData,
-          // Allow drag-to-scroll with a mouse/trackpad (not just touch), so the
-          // photo carousel and lists can be swiped on desktop/web too.
           scrollBehavior: const _AppScrollBehavior(),
-          // Home owns deep links and update checks. Do not construct it until the
-          // first feed request has actually settled: otherwise a cold-start deep
-          // link races filter restoration and, visually, the empty initial model
-          // briefly reads as a genuine "0 results" search.
           home: const _BootstrapGate(),
         ),
       ),
@@ -99,10 +100,6 @@ class _BootstrapGateState extends State<_BootstrapGate> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
 
-    // AppState starts with loading=false while it restores local filters and
-    // fetches metadata. Remember the first real search transition, then release
-    // the gate only after it settles. A valid zero-result response therefore
-    // opens Home, while the pre-search empty model never masquerades as one.
     if (state.loading) _observedInitialSearch = true;
     if (!_ready &&
         (state.error != null ||
