@@ -95,4 +95,39 @@ void main() {
     expect(persisted['priceUsd'], 500);
     expect(persisted['priceRatio'], 0.8333);
   });
+
+  test('OLX photo objects are normalized instead of stringified as maps', () {
+    final json = listingJson()
+      ..['photos'] = [
+        {
+          'link': 'https://img.example.test/a;s={width}x{height}',
+        },
+        {
+          'url': 'https://img.example.test/b.jpg',
+        },
+      ];
+
+    final listing = Listing.fromJson(json);
+
+    expect(listing.photo, 'https://img.example.test/a;s=800x600');
+    expect(listing.photos, [
+      'https://img.example.test/a;s=800x600',
+      'https://img.example.test/b.jpg',
+    ]);
+    expect(listing.photos.any((url) => url.startsWith('{')), isFalse);
+  });
+
+  test('relative Telegram photo URL remains usable and deduplicated', () {
+    final json = listingJson()
+      ..['photo'] = '/api/tg-photo/flats/42'
+      ..['photos'] = [
+        '/api/tg-photo/flats/42',
+        '/api/tg-photo/flats/42',
+      ];
+
+    final listing = Listing.fromJson(json);
+
+    expect(listing.photo, '/api/tg-photo/flats/42');
+    expect(listing.photos, ['/api/tg-photo/flats/42']);
+  });
 }
