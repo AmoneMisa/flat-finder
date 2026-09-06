@@ -38,7 +38,10 @@ class FlatFinderApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider<ApiService>(create: (_) => ApiService()),
+        Provider<ApiService>(
+          create: (_) => ApiService(),
+          dispose: (_, api) => api.dispose(),
+        ),
         Provider<UserSavedStateRepository>(
           create: (context) =>
               UserSavedStateRepository(context.read<ApiService>()),

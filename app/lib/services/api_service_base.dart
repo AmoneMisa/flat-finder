@@ -90,11 +90,22 @@ class TranslationJob {
 }
 
 class ApiService {
-  ApiService({String? baseUrl}) : baseUrl = baseUrl ?? _defaultBaseUrl();
+  ApiService({String? baseUrl, http.Client? client})
+      : baseUrl = baseUrl ?? _defaultBaseUrl(),
+        _client = client ?? http.Client(),
+        _ownsClient = client == null;
 
   final String baseUrl;
+  final http.Client _client;
+  final bool _ownsClient;
   Future<SearchStatistics?>? _statisticsSnapshotRequest;
   final Set<http.Client> _listingClients = <http.Client>{};
+
+  /// Reused by ordinary metadata/detail/statistics requests. Listing pages keep
+  /// dedicated clients because closing those clients is how a superseded
+  /// cursor request is actively aborted.
+  @protected
+  http.Client get transportClient => _client;
 
   /// Set when a snapshot was served from the stored copy because the request
   /// itself failed, so the session retries instead of pinning stale numbers.
@@ -149,7 +160,7 @@ class ApiService {
   Future<List<Country>> fetchCountries({String locale = ''}) async {
     final uri = Uri.parse('$baseUrl/api/countries')
         .replace(queryParameters: locale.isEmpty ? null : {'locale': locale});
-    final res = await http.get(uri);
+    final res = await _client.get(uri);
     if (res.statusCode != 200) {
       throw Exception('countries HTTP ${res.statusCode}');
     }
@@ -189,6 +200,14 @@ class ApiService {
     for (final client in clients) {
       client.close();
     }
+  }
+
+  /// Closes transport resources owned by this service. An injected client is
+  /// caller-owned and deliberately remains open; the app's Provider constructs
+  /// the default owned client and disposes the service with the widget tree.
+  void dispose() {
+    cancelListingRequests();
+    if (_ownsClient) _client.close();
   }
 
   /// [force] triggers a fresh backend scrape (bypasses the cache) — used by the
@@ -262,8 +281,7 @@ class ApiService {
     if (listings.isEmpty) return const <String, MarketComparison>{};
     final requested = listings.take(60).toList(growable: false);
     try {
-      final res = await http
-          .post(
+      final res = await _client.post(
             Uri.parse('$baseUrl/api/mobile/market-comparisons'),
             headers: const {'content-type': 'application/json'},
             body: jsonEncode({
@@ -299,7 +317,7 @@ class ApiService {
       ..['mapOnly'] = 'true';
     final uri =
         Uri.parse('$baseUrl/api/listings').replace(queryParameters: params);
-    final res = await http.get(uri).timeout(const Duration(seconds: 30));
+    final res = await _client.get(uri).timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) return const [];
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     return ((json['mapPoints'] as List?) ?? const []).map((raw) {
@@ -316,7 +334,7 @@ class ApiService {
   Future<Listing?> reloadListing(Listing l) async {
     final uri = Uri.parse('$baseUrl/api/listing/${l.source}/${l.id}')
         .replace(queryParameters: {'country': l.country});
-    final res = await http.get(uri).timeout(const Duration(seconds: 20));
+    final res = await _client.get(uri).timeout(const Duration(seconds: 20));
     if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
     if (res.statusCode == 404) return null;
     if (res.statusCode != 200) throw Exception('reload HTTP ${res.statusCode}');
@@ -333,7 +351,7 @@ class ApiService {
   /// few seconds while it's indexed, same as the site's polling fallback.
   Future<Listing?> fetchListingByPublicId(int publicId) async {
     final uri = Uri.parse('$baseUrl/api/listing/by-public-id/$publicId');
-    final res = await http.get(uri).timeout(const Duration(seconds: 15));
+    final res = await _client.get(uri).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return null;
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     final j = json['listing'];
@@ -345,8 +363,7 @@ class ApiService {
   /// commits to adding it. Returns how many listings it could read, or an error.
   Future<SourceValidation> validateSource(String url, {String? country}) async {
     try {
-      final res = await http
-          .post(
+      final res = await _client.post(
             Uri.parse('$baseUrl/api/sources/validate'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
@@ -374,8 +391,7 @@ class ApiService {
     String text,
     String targetLanguage,
   ) async {
-    final res = await http
-        .post(
+    final res = await _client.post(
           Uri.parse('$baseUrl/api/translation'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'text': text, 'targetLanguage': targetLanguage}),
@@ -391,8 +407,7 @@ class ApiService {
   }
 
   Future<TranslationJob> _translationResult(String key) async {
-    final res = await http
-        .get(Uri.parse('$baseUrl/api/translation/$key'))
+    final res = await _client.get(Uri.parse('$baseUrl/api/translation/$key'))
         .timeout(const Duration(seconds: 15));
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200) {
@@ -501,7 +516,7 @@ class ApiService {
     Uri uri,
     Map<String, String> headers,
   ) =>
-      http.get(uri, headers: headers).timeout(const Duration(seconds: 30));
+      _client.get(uri, headers: headers).timeout(const Duration(seconds: 30));
 
   /// The snapshot is regenerated by the backend on a schedule, not per request,
   /// and it is the same payload for every client. So keep the last one on disk
@@ -596,14 +611,13 @@ class ApiService {
         if (locale.isNotEmpty) 'locale': locale,
       },
     );
-    final res = await http.get(uri).timeout(const Duration(seconds: 15));
+    final res = await _client.get(uri).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) return const MapZones();
     return MapZones.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
   Future<Map<String, double>> fetchRates() async {
-    final res = await http
-        .get(Uri.parse('$baseUrl/api/rates'))
+    final res = await _client.get(Uri.parse('$baseUrl/api/rates'))
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       throw Exception('rates HTTP ${res.statusCode}');
@@ -621,8 +635,7 @@ class ApiService {
     required String language,
     required List<Map<String, dynamic>> presets,
   }) async {
-    final res = await http
-        .put(
+    final res = await _client.put(
           Uri.parse('$baseUrl/api/mobile-subscriptions'),
           headers: const {'content-type': 'application/json'},
           body: jsonEncode({

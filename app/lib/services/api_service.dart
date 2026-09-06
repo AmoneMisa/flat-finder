@@ -3,7 +3,6 @@ export 'api_service_base.dart' hide ApiService;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/filters.dart';
@@ -26,7 +25,7 @@ import 'api_service_base.dart' as base;
 /// consistent application-wide: startup prefetch, metadata deadlines and
 /// validation of externally launchable listing URLs.
 class ApiService extends base.ApiService {
-  ApiService({String? baseUrl}) : super(baseUrl: baseUrl);
+  ApiService({super.baseUrl, super.client});
 
   static const _filtersPreferenceKey = 'filters';
   static const _countriesCacheKey = 'api.countries.cache.v1';
@@ -306,8 +305,7 @@ class ApiService extends base.ApiService {
     String text,
     String targetLanguage,
   ) async {
-    final res = await http
-        .post(
+    final res = await transportClient.post(
           Uri.parse('$baseUrl/api/translation'),
           headers: const {'Content-Type': 'application/json'},
           body: jsonEncode({'text': text, 'targetLanguage': targetLanguage}),
@@ -325,8 +323,7 @@ class ApiService extends base.ApiService {
   }
 
   Future<base.TranslationJob> _translationResult(String key) async {
-    final res = await http
-        .get(Uri.parse('$baseUrl/api/translation/$key'))
+    final res = await transportClient.get(Uri.parse('$baseUrl/api/translation/$key'))
         .timeout(const Duration(seconds: 15));
     final decoded = jsonDecode(res.body);
     if (decoded is! Map) throw const FormatException('translation response');
