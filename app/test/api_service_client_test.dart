@@ -46,6 +46,7 @@ void main() {
 
     expect(rates['EUR'], 0.9);
     expect(translated, 'Translated');
+    expect(paths, hasLength(2));
     expect(paths, ['/api/rates', '/api/translation']);
   });
 }
