@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/map_listing_point.dart';
+import 'request_cancellation.dart';
 import 'api_service_base.dart' as base;
 
 /// Public transport facade.
@@ -229,11 +230,15 @@ class ApiService extends base.ApiService {
     String text, {
     required String targetLanguage,
     Duration timeout = const Duration(minutes: 5),
+    Duration pollInterval = const Duration(seconds: 1),
+    RequestCancellation? cancellation,
   }) async {
     final normalized = text.trim();
     if (normalized.isEmpty) return '';
+    cancellation?.throwIfCancelled();
 
     var job = await _startTranslation(normalized, targetLanguage);
+    cancellation?.throwIfCancelled();
     if (job.status == 'completed' &&
         job.translatedText?.trim().isNotEmpty == true) {
       return job.translatedText!.trim();
@@ -247,17 +252,24 @@ class ApiService extends base.ApiService {
 
     final deadline = DateTime.now().add(timeout);
     var consecutivePollErrors = 0;
-    var delay = const Duration(seconds: 1);
+    var delay = pollInterval;
     const maxDelay = Duration(seconds: 10);
 
     while (DateTime.now().isBefore(deadline)) {
       final remaining = deadline.difference(DateTime.now());
       if (remaining <= Duration.zero) break;
-      await Future<void>.delayed(delay < remaining ? delay : remaining);
+      await waitForDelayOrCancellation(
+        delay < remaining ? delay : remaining,
+        cancellation,
+      );
 
       try {
+        cancellation?.throwIfCancelled();
         job = await _translationResult(key);
+        cancellation?.throwIfCancelled();
         consecutivePollErrors = 0;
+      } on RequestCancelledException {
+        rethrow;
       } catch (_) {
         consecutivePollErrors += 1;
         if (consecutivePollErrors >= 5) rethrow;

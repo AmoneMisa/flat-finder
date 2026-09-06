@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flat_finder/services/api_service_base.dart' as base;
+import 'package:flat_finder/services/api_service.dart';
 import 'package:flat_finder/services/request_cancellation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -30,7 +30,7 @@ void main() {
       await serving.cancel();
     });
 
-    final api = base.ApiService(baseUrl: 'http://127.0.0.1:${server.port}');
+    final api = ApiService(baseUrl: 'http://127.0.0.1:${server.port}');
     final cancellation = RequestCancellation();
     final future = api.translateText(
       'Apartment description',
@@ -55,7 +55,7 @@ void main() {
 
   test('already-cancelled request never submits translation', () async {
     final cancellation = RequestCancellation()..cancel();
-    final api = base.ApiService(baseUrl: 'http://127.0.0.1:1');
+    final api = ApiService(baseUrl: 'http://127.0.0.1:1');
 
     await expectLater(
       api.translateText(
