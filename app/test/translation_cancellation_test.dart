@@ -69,6 +69,8 @@ void main() {
 
   test('request cancellation is idempotent', () async {
     final cancellation = RequestCancellation();
+    expect(cancellation.isCancelled, isFalse);
+
     cancellation.cancel();
     cancellation.cancel();
 
