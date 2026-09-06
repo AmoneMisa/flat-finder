@@ -3,6 +3,7 @@ export 'api_service_base.dart' hide ApiService;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/filters.dart';
@@ -218,6 +219,113 @@ class ApiService extends base.ApiService {
   @override
   Future<Map<String, double>> fetchRates() =>
       super.fetchRates().timeout(_metadataTimeout);
+
+  /// Poll translation jobs with bounded exponential backoff instead of a fixed
+  /// 2-second interval. A five-minute job now performs roughly a few dozen
+  /// status requests rather than up to ~150, reducing radio wakeups/backend
+  /// load while still checking quickly during the first seconds of inference.
+  @override
+  Future<String> translateText(
+    String text, {
+    required String targetLanguage,
+    Duration timeout = const Duration(minutes: 5),
+  }) async {
+    final normalized = text.trim();
+    if (normalized.isEmpty) return '';
+
+    var job = await _startTranslation(normalized, targetLanguage);
+    if (job.status == 'completed' &&
+        job.translatedText?.trim().isNotEmpty == true) {
+      return job.translatedText!.trim();
+    }
+    if (job.status == 'disabled') throw Exception('translation disabled');
+    if (job.status == 'failed') {
+      throw Exception(job.error ?? 'translation failed');
+    }
+    final key = job.key;
+    if (key == null || key.isEmpty) throw Exception('translation key missing');
+
+    final deadline = DateTime.now().add(timeout);
+    var consecutivePollErrors = 0;
+    var delay = const Duration(seconds: 1);
+    const maxDelay = Duration(seconds: 10);
+
+    while (DateTime.now().isBefore(deadline)) {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) break;
+      await Future<void>.delayed(delay < remaining ? delay : remaining);
+
+      try {
+        job = await _translationResult(key);
+        consecutivePollErrors = 0;
+      } catch (_) {
+        consecutivePollErrors += 1;
+        if (consecutivePollErrors >= 5) rethrow;
+        delay = _nextTranslationPollDelay(delay, maxDelay);
+        continue;
+      }
+
+      if (job.status == 'completed') {
+        final translated = job.translatedText?.trim() ?? '';
+        if (translated.isEmpty) throw Exception('translation was empty');
+        return translated;
+      }
+      if (job.status == 'failed' ||
+          job.status == 'not_found' ||
+          job.status == 'disabled') {
+        throw Exception(job.error ?? 'translation ${job.status}');
+      }
+      delay = _nextTranslationPollDelay(delay, maxDelay);
+    }
+
+    throw TimeoutException(
+      'translation did not finish before the client deadline',
+    );
+  }
+
+  Duration _nextTranslationPollDelay(Duration current, Duration max) {
+    final doubled = current.inMilliseconds * 2;
+    return Duration(
+      milliseconds: doubled > max.inMilliseconds ? max.inMilliseconds : doubled,
+    );
+  }
+
+  Future<base.TranslationJob> _startTranslation(
+    String text,
+    String targetLanguage,
+  ) async {
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/translation'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({'text': text, 'targetLanguage': targetLanguage}),
+        )
+        .timeout(const Duration(seconds: 15));
+    final decoded = jsonDecode(res.body);
+    if (decoded is! Map) throw const FormatException('translation response');
+    final json = Map<String, dynamic>.from(decoded);
+    if (res.statusCode != 200) {
+      throw Exception(
+        json['error']?.toString() ?? 'translation HTTP ${res.statusCode}',
+      );
+    }
+    return base.TranslationJob.fromJson(json);
+  }
+
+  Future<base.TranslationJob> _translationResult(String key) async {
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/translation/$key'))
+        .timeout(const Duration(seconds: 15));
+    final decoded = jsonDecode(res.body);
+    if (decoded is! Map) throw const FormatException('translation response');
+    final json = Map<String, dynamic>.from(decoded);
+    if (res.statusCode != 200) {
+      throw Exception(
+        json['error']?.toString() ?? 'translation HTTP ${res.statusCode}',
+      );
+    }
+    return base.TranslationJob.fromJson(json);
+  }
 
   base.ListingsResult _sanitizeResult(base.ListingsResult result) =>
       base.ListingsResult(
