@@ -64,7 +64,7 @@ jobs:
       - name: Verify Flutter and signed release build
         working-directory: app
         run: |
-          flutter pub get
+          flutter pub get --enforce-lockfile
           flutter analyze --no-fatal-infos
           flutter test
           flutter build apk --release
