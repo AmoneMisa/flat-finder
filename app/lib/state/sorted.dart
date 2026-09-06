@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
+import '../services/user_saved_state_repository.dart';
 
 class SortedCollection {
   const SortedCollection({
@@ -27,12 +28,12 @@ class SortedCollection {
     String? presetName,
     List<Listing>? items,
   }) => SortedCollection(
-    id: id,
-    title: title ?? this.title,
-    isPreset: isPreset ?? this.isPreset,
-    presetName: presetName ?? this.presetName,
-    items: items ?? this.items,
-  );
+        id: id,
+        title: title ?? this.title,
+        isPreset: isPreset ?? this.isPreset,
+        presetName: presetName ?? this.presetName,
+        items: items ?? this.items,
+      );
 
   factory SortedCollection.fromJson(Map<String, dynamic> json) =>
       SortedCollection(
@@ -41,6 +42,20 @@ class SortedCollection {
         isPreset: json['isPreset'] == true,
         presetName: json['presetName']?.toString(),
         items: (json['items'] as List? ?? const [])
+            .whereType<Map>()
+            .map((item) => Listing.fromJson(Map<String, dynamic>.from(item)))
+            .toList(),
+      );
+
+  factory SortedCollection.fromRemote(Map<String, dynamic> json) =>
+      SortedCollection(
+        id: json['id']?.toString() ?? '',
+        title: json['title']?.toString() ?? '',
+        isPreset: json['isPreset'] == true,
+        presetName: json['presetName']?.toString(),
+        items: (json['items'] as List? ?? const [])
+            .whereType<Map>()
+            .map((entry) => entry['listing'])
             .whereType<Map>()
             .map((item) => Listing.fromJson(Map<String, dynamic>.from(item)))
             .toList(),
@@ -55,10 +70,15 @@ class SortedCollection {
       };
 }
 
+/// User-created listing collections. PostgreSQL is authoritative; the previous
+/// SharedPreferences document remains an offline cache and migration source.
 class SortedState extends ChangeNotifier {
+  SortedState(this._repository);
+
   static const _key = 'sortedListings';
   static const _version = 3;
 
+  final UserSavedStateRepository _repository;
   final List<SortedCollection> _collections = [];
   final Set<String> _keys = {};
 
@@ -67,23 +87,44 @@ class SortedState extends ChangeNotifier {
         for (final collection in _collections) ...collection.items,
       ]);
 
-  /// Cards and map points call this for every visible result. Keep a dedicated
-  /// identity index so membership is O(1) instead of rescanning every saved
-  /// collection for every rendered listing.
   bool containsKey(String key) => _keys.contains(key);
-
   bool contains(Listing listing) => containsKey(listingKey(listing));
-
   bool containsListing(Listing listing) => contains(listing);
 
   Future<void> load() async {
+    await _loadLocalCache();
+    try {
+      final snapshot = await _repository.snapshot();
+      final remote = <SortedCollection>[];
+      for (final entry in (snapshot['sorted'] as List? ?? const [])) {
+        if (entry is! Map) continue;
+        try {
+          final collection = SortedCollection.fromRemote(
+            Map<String, dynamic>.from(entry),
+          );
+          if (collection.id.isNotEmpty && collection.items.isNotEmpty) {
+            remote.add(collection);
+          }
+        } catch (_) {}
+      }
+      _collections
+        ..clear()
+        ..addAll(remote);
+      _rebuildIndex();
+      await _saveLocalCache();
+      notifyListeners();
+    } catch (_) {
+      // Keep local cache when server is unavailable.
+    }
+  }
+
+  Future<void> _loadLocalCache() async {
     try {
       final raw = (await SharedPreferences.getInstance()).getString(_key);
       if (raw == null) return;
       final decoded = jsonDecode(raw);
       _collections.clear();
 
-      // Migration from the original flat List<Listing> storage.
       if (decoded is List) {
         final legacy = decoded
             .whereType<Map>()
@@ -98,8 +139,6 @@ class SortedState extends ChangeNotifier {
             ),
           );
         }
-        _rebuildIndex();
-        await _save();
       } else if (decoded is Map) {
         final map = Map<String, dynamic>.from(decoded);
         final values = map['collections'] as List? ?? const [];
@@ -116,8 +155,8 @@ class SortedState extends ChangeNotifier {
                     collection.id.isNotEmpty && collection.items.isNotEmpty,
               ),
         );
-        _rebuildIndex();
       }
+      _rebuildIndex();
       notifyListeners();
     } catch (_) {
       _collections.clear();
@@ -134,8 +173,8 @@ class SortedState extends ChangeNotifier {
   }) async {
     final key = listingKey(listing);
 
-    // One apartment belongs to one sorted collection. Sorting it from another
-    // search/preset moves it instead of creating duplicates in several lists.
+    // A listing belongs to one sorted collection. PostgreSQL enforces the same
+    // move semantics transactionally.
     for (var i = _collections.length - 1; i >= 0; i--) {
       final remaining = _collections[i].items
           .where((item) => listingKey(item) != key)
@@ -177,35 +216,46 @@ class SortedState extends ChangeNotifier {
 
     _keys.add(key);
     notifyListeners();
-    await _save();
+    await _saveLocalCache();
+    await _repository.putSorted(
+      listing,
+      collectionId: collectionId,
+      collectionTitle: collectionTitle,
+      isPreset: isPreset,
+      presetName: presetName,
+    );
   }
 
   Future<void> remove(Listing listing, {String? collectionId}) async {
     final key = listingKey(listing);
+    final affected = <String>[];
     for (var i = _collections.length - 1; i >= 0; i--) {
       if (collectionId != null && _collections[i].id != collectionId) continue;
+      final before = _collections[i].items.length;
       final remaining = _collections[i].items
           .where((item) => listingKey(item) != key)
           .toList();
+      if (remaining.length != before) affected.add(_collections[i].id);
       if (remaining.isEmpty) {
         _collections.removeAt(i);
-      } else if (remaining.length != _collections[i].items.length) {
+      } else if (remaining.length != before) {
         _collections[i] = _collections[i].copyWith(items: remaining);
       }
     }
-    // Rebuild rather than blindly removing the key so this remains correct if
-    // an old/corrupt persisted state happened to contain the same identity in
-    // more than one collection.
     _rebuildIndex();
     notifyListeners();
-    await _save();
+    await _saveLocalCache();
+    for (final id in affected) {
+      await _repository.deleteSorted(listing, collectionId: id);
+    }
   }
 
   Future<void> removeCollection(String collectionId) async {
     _collections.removeWhere((collection) => collection.id == collectionId);
     _rebuildIndex();
     notifyListeners();
-    await _save();
+    await _saveLocalCache();
+    await _repository.deleteSortedCollection(collectionId);
   }
 
   void _rebuildIndex() {
@@ -216,7 +266,7 @@ class SortedState extends ChangeNotifier {
       );
   }
 
-  Future<void> _save() async {
+  Future<void> _saveLocalCache() async {
     await (await SharedPreferences.getInstance()).setString(
       _key,
       jsonEncode({
