@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -8,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../controllers/home_runtime_events.dart';
 import '../l10n/review_strings.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
@@ -19,7 +17,6 @@ import '../state/hidden.dart';
 import '../state/favorites.dart';
 import '../state/settings.dart';
 import '../state/sorted.dart';
-import '../services/push_service.dart';
 import '../services/update_service.dart';
 import '../utils/format.dart';
 import '../utils/share_link.dart';
@@ -51,22 +48,17 @@ enum _ViewTab { all, hidden }
 class _HomeScreenState extends State<HomeScreen> {
   bool _mapMode = false;
   _ViewTab _tab = _ViewTab.all;
-  AppLinks? _appLinks;
-  StreamSubscription<Uri>? _linkSub;
-  StreamSubscription<int>? _pushListingSub;
-  StreamSubscription<ForegroundPush>? _foregroundPushSub;
+  late final HomeRuntimeEvents _runtimeEvents;
   final ScrollController _resultsScroll = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _initDeepLinks();
-    _pushListingSub = PushService.instance.listingOpens.listen(
-      _openSharedListing,
-    );
-    _foregroundPushSub = PushService.instance.foregroundPushes.listen(
-      _showForegroundPush,
-    );
+    _runtimeEvents = HomeRuntimeEvents.production(
+      onLink: _applyLink,
+      onListingOpen: _openSharedListing,
+      onForegroundPush: _showForegroundPush,
+    )..start();
     _resultsScroll.addListener(_loadMoreNearEnd);
     _checkForAppUpdate();
   }
@@ -115,25 +107,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _linkSub?.cancel();
-    _pushListingSub?.cancel();
-    _foregroundPushSub?.cancel();
+    _runtimeEvents.dispose();
     _resultsScroll.dispose();
     super.dispose();
-  }
-
-  /// Listen for `flatfinder://search?…` deep links (a shared search opening the
-  /// app) and apply the encoded filters. Handles both a cold start (initial
-  /// link) and links received while the app is already running.
-  Future<void> _initDeepLinks() async {
-    try {
-      _appLinks = AppLinks();
-      final initial = await _appLinks!.getInitialLink();
-      if (initial != null) _applyLink(initial);
-      _linkSub = _appLinks!.uriLinkStream.listen(_applyLink, onError: (_) {});
-    } catch (_) {
-      // Deep links are best-effort; a platform without support just no-ops.
-    }
   }
 
   void _applyLink(Uri uri) {
