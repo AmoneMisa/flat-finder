@@ -101,11 +101,15 @@ void main() {
 
     await settings.setDisplayCurrency('USD');
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.text(settings.t('nativeCurrency')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     final nativeCurrency = find.byWidgetPredicate(
       (widget) => widget is RadioListTile<String?> && widget.value == null,
     );
     expect(nativeCurrency, findsOneWidget);
-    await tester.ensureVisible(nativeCurrency);
     await tester.tap(nativeCurrency);
     await tester.pump();
     expect(settings.displayCurrency, isNull);
