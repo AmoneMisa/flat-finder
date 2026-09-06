@@ -170,6 +170,38 @@ String _capitalizeFirstLetter(String value) {
   return value;
 }
 
+String? _photoUrl(dynamic value) {
+  if (value == null) return null;
+  dynamic raw = value;
+  if (value is Map) {
+    raw = value['link'] ?? value['url'] ?? value['src'] ?? value['imageUrl'];
+  }
+  if (raw is! String) return null;
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+  return text
+      .replaceAll('{width}', '800')
+      .replaceAll('{height}', '600');
+}
+
+List<String> _photoUrls(dynamic values, dynamic fallback) {
+  final out = <String>[];
+  void add(dynamic value) {
+    final url = _photoUrl(value);
+    if (url != null && !out.contains(url)) out.add(url);
+  }
+
+  if (values is Iterable && values is! String) {
+    for (final value in values) {
+      add(value);
+    }
+  } else {
+    add(values);
+  }
+  add(fallback);
+  return out;
+}
+
 /// A normalized listing as returned by the backend `/api/listings` endpoint.
 /// What the backend's AI Vision pass concluded from a listing's photos.
 ///
@@ -415,6 +447,8 @@ class Listing {
   factory Listing.fromJson(Map<String, dynamic> j) {
     double? toD(dynamic v) => v == null ? null : (v as num).toDouble();
     final market = j['marketComparison'];
+    final photos = _photoUrls(j['photos'], j['photo']);
+    final photo = _photoUrl(j['photo']) ?? (photos.isNotEmpty ? photos.first : null);
     return Listing(
       id: j['id'].toString(),
       source: j['source'] ?? 'mock',
@@ -530,9 +564,8 @@ class Listing {
       city: _locationName(j['city']) ?? '',
       lat: toD(j['lat']),
       lng: toD(j['lng']),
-      photo: j['photo'],
-      photos: (j['photos'] as List?)?.map((e) => e.toString()).toList() ??
-          (j['photo'] != null ? [j['photo'].toString()] : const []),
+      photo: photo,
+      photos: photos,
       url: j['url'] ?? '',
       createdAt:
           j['createdAt'] != null ? DateTime.tryParse(j['createdAt']) : null,
