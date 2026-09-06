@@ -66,4 +66,17 @@ void main() {
       throwsA(isA<RequestCancelledException>()),
     );
   });
+
+  test('request cancellation is idempotent', () async {
+    final cancellation = RequestCancellation();
+    cancellation.cancel();
+    cancellation.cancel();
+
+    expect(cancellation.isCancelled, isTrue);
+    await expectLater(cancellation.whenCancelled, completes);
+    expect(
+      cancellation.throwIfCancelled,
+      throwsA(isA<RequestCancelledException>()),
+    );
+  });
 }
