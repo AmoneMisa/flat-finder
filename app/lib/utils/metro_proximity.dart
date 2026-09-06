@@ -2,15 +2,12 @@ import 'dart:math' as math;
 
 import 'package:latlong2/latlong.dart';
 
-/// Metro proximity as a *client-side* filter: "within N metres of any
-/// selected station, and only in this compass arc".
+/// Geometry helpers for rendering and editing metro-proximity overlays.
 ///
-/// The backend understands a single `metro` station plus a plain `metroMaxM`
-/// radius and nothing else -- there is no bearing or multi-station parameter
-/// -- so the directional wedge and the union over several stations are
-/// evaluated here, against listings the feed already returned. This is a
-/// straight port of the web client's `useMetroProximity.ts`; keep the two in
-/// step if the rule ever changes.
+/// Result membership is intentionally **not** decided here. The backend/database
+/// owns station resolution, distance, directional arc, count, pagination and
+/// map/list membership. Keeping the drawing math in Flutter is fine; narrowing
+/// a returned page is not.
 ///
 /// Bearings are degrees clockwise from north, the convention the map's drag
 /// handles and the `metroArc` query parameter both use.
@@ -39,7 +36,7 @@ class MetroProximity {
   final double? bearingFrom;
   final double? bearingTo;
 
-  /// True when the filter is inert and every listing should pass untouched.
+  /// True when the overlay has no geometric restriction to draw.
   bool get isEmpty {
     if (stations.isEmpty) return true;
     final hasArc = bearingFrom != null && bearingTo != null;
@@ -147,24 +144,20 @@ extension on MetroPoint {
   LatLng toLatLng() => LatLng(lat, lng);
 }
 
-/// Keeps items near *any* selected station -- a union, not an intersection:
-/// picking two stations means "either is fine", which is how a rider reads
-/// it. [locationOf] returns null for an item with no usable coordinates,
-/// which is kept rather than dropped: the backend geocodes better than the
-/// client can, so a missing lat/lng is a gap in the map data, not evidence
-/// the flat is far away.
+/// Compatibility shim for callers that have not yet removed their old
+/// post-processing call site. It deliberately does not change membership.
+///
+/// The backend applies the equivalent selected-station union, Haversine radius
+/// and bearing arc in PostgreSQL before count/dedupe/pagination/map projection.
+/// Flutter must trust that result rather than re-evaluating only the current
+/// page with a second coordinate implementation.
+@Deprecated('Result membership is database-owned; do not client-filter listings.')
 List<T> applyMetroProximity<T>(
   List<T> items,
   MetroProximity proximity,
   LatLng? Function(T item) locationOf,
 ) {
-  if (proximity.isEmpty) return items;
-  return items.where((item) {
-    final point = locationOf(item);
-    if (point == null) return true;
-    return proximity.stations
-        .any((station) => _matchesStation(point, station, proximity));
-  }).toList(growable: false);
+  return items;
 }
 
 const List<String> compassOrder = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
