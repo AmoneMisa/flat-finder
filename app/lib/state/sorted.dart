@@ -47,12 +47,12 @@ class SortedCollection {
       );
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'isPreset': isPreset,
-    if (presetName != null) 'presetName': presetName,
-    'items': items.map((item) => item.toJson()).toList(),
-  };
+        'id': id,
+        'title': title,
+        'isPreset': isPreset,
+        if (presetName != null) 'presetName': presetName,
+        'items': items.map((item) => item.toJson()).toList(),
+      };
 }
 
 class SortedState extends ChangeNotifier {
@@ -60,16 +60,17 @@ class SortedState extends ChangeNotifier {
   static const _version = 3;
 
   final List<SortedCollection> _collections = [];
+  final Set<String> _keys = {};
 
   List<SortedCollection> get collections => List.unmodifiable(_collections);
   List<Listing> get items => List.unmodifiable([
-    for (final collection in _collections) ...collection.items,
-  ]);
+        for (final collection in _collections) ...collection.items,
+      ]);
 
-  bool containsKey(String key) => _collections.any(
-        (collection) =>
-            collection.items.any((item) => listingKey(item) == key),
-      );
+  /// Cards and map points call this for every visible result. Keep a dedicated
+  /// identity index so membership is O(1) instead of rescanning every saved
+  /// collection for every rendered listing.
+  bool containsKey(String key) => _keys.contains(key);
 
   bool contains(Listing listing) => containsKey(listingKey(listing));
 
@@ -97,6 +98,7 @@ class SortedState extends ChangeNotifier {
             ),
           );
         }
+        _rebuildIndex();
         await _save();
       } else if (decoded is Map) {
         final map = Map<String, dynamic>.from(decoded);
@@ -114,9 +116,13 @@ class SortedState extends ChangeNotifier {
                     collection.id.isNotEmpty && collection.items.isNotEmpty,
               ),
         );
+        _rebuildIndex();
       }
       notifyListeners();
-    } catch (_) {}
+    } catch (_) {
+      _collections.clear();
+      _keys.clear();
+    }
   }
 
   Future<void> add(
@@ -169,6 +175,7 @@ class SortedState extends ChangeNotifier {
       }
     }
 
+    _keys.add(key);
     notifyListeners();
     await _save();
   }
@@ -186,14 +193,27 @@ class SortedState extends ChangeNotifier {
         _collections[i] = _collections[i].copyWith(items: remaining);
       }
     }
+    // Rebuild rather than blindly removing the key so this remains correct if
+    // an old/corrupt persisted state happened to contain the same identity in
+    // more than one collection.
+    _rebuildIndex();
     notifyListeners();
     await _save();
   }
 
   Future<void> removeCollection(String collectionId) async {
     _collections.removeWhere((collection) => collection.id == collectionId);
+    _rebuildIndex();
     notifyListeners();
     await _save();
+  }
+
+  void _rebuildIndex() {
+    _keys
+      ..clear()
+      ..addAll(
+        _collections.expand((collection) => collection.items).map(listingKey),
+      );
   }
 
   Future<void> _save() async {
@@ -201,7 +221,8 @@ class SortedState extends ChangeNotifier {
       _key,
       jsonEncode({
         'version': _version,
-        'collections': _collections.map((collection) => collection.toJson()).toList(),
+        'collections':
+            _collections.map((collection) => collection.toJson()).toList(),
       }),
     );
   }
