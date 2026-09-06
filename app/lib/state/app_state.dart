@@ -299,15 +299,9 @@ class AppState extends ChangeNotifier {
     }
 
     if (_sameFilterPayload(current, normalized)) return false;
-    final sortChanged = current.sort != normalized.sort;
     filters = normalized;
     notifyListeners();
     _saveFilters(); // persist so choices survive restarts
-
-    // The header sort control only updates the filter. Server-backed sorts need
-    // a fresh cursor stream (especially price asc/desc); scheduling here also
-    // makes switching back from a server sort restore the canonical feed order.
-    if (sortChanged) unawaited(search());
     return true;
   }
 

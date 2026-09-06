@@ -473,8 +473,11 @@ class _HomeScreenState extends State<HomeScreen> {
               color: Theme.of(context).colorScheme.primary,
             ),
             initialValue: state.filters.sort,
-            onSelected: (v) =>
-                state.updateFilters(state.filters.copyWith(sort: v)),
+            onSelected: (v) async {
+              if (!state.updateFilters(state.filters.copyWith(sort: v))) return;
+              await state.search();
+              if (_mapMode) await state.loadMapListings();
+            },
             itemBuilder: (context) => SortBy.values
                 .map(
                   (v) => PopupMenuItem(
@@ -593,16 +596,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     title: Text(settings.t('favorites')),
                   ),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                     value: 'swipe',
                     child: ListTile(
-                        leading: Icon(Icons.swipe),
-                        title: Text('Просмотреть подборки'))),
-                const PopupMenuItem(
+                        leading: const Icon(Icons.swipe),
+                        title: Text(settings.s.reviewCollectionsMenu))),
+                PopupMenuItem(
                     value: 'sorted',
                     child: ListTile(
-                        leading: Icon(Icons.done_all),
-                        title: Text('Отсортированные'))),
+                        leading: const Icon(Icons.done_all),
+                        title: Text(settings.s.sortedTitle))),
                 PopupMenuItem(
                   value: 'presets',
                   child: ListTile(
@@ -657,9 +660,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (state.loading || state.mapLoading)
                   Positioned.fill(
                     child: _DataLoadingOverlay(
-                      label: settings.lang == 'ru'
-                          ? 'Загружаем данные…'
-                          : 'Loading data…',
+                      label: settings.s.loadingData,
                     ),
                   ),
               ],

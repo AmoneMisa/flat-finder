@@ -12,6 +12,13 @@ extension ReviewStrings on AppStrings {
   String get cancel => _ru ? 'Отмена' : 'Cancel';
   String get start => _ru ? 'Начать' : 'Start';
   String get sortedTitle => _ru ? 'Отсортированные' : 'Sorted';
+  String get reviewCollectionsMenu =>
+      _ru ? 'Просмотреть подборки' : 'Review collections';
+  String get loadingData => _ru ? 'Загружаем данные…' : 'Loading data…';
+  String get placeWorkOnMap =>
+      _ru ? 'Указать работу на карте' : 'Set work location on map';
+  String get metresShort => _ru ? 'м' : 'm';
+  String get kilometresShort => _ru ? 'км' : 'km';
   String get sortedEmpty => _ru
       ? 'Здесь появятся квартиры после свайпа вправо'
       : 'Apartments sorted with a right swipe will appear here';

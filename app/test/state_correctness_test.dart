@@ -41,6 +41,13 @@ class ControlledApi extends ApiService {
   Completer<ListingsResult>? pageCompleter;
   Completer<List<MapListingPoint>>? mapCompleter;
   ListingsResult? pageResult;
+  int cancellationCalls = 0;
+
+  @override
+  void cancelListingRequests() {
+    cancellationCalls += 1;
+    super.cancelListingRequests();
+  }
 
   @override
   Future<ListingsResult> fetchListings(
@@ -222,6 +229,20 @@ void main() {
       );
 
       expect(state.updateFilters(reordered), isFalse);
+    });
+
+
+    test('filter mutation is transport-free, including sort changes', () {
+      final api = ControlledApi();
+      final state = AppState(api)
+        ..filters = Filters(countries: {'UZ'}, sort: SortBy.relevance);
+
+      expect(
+        state.updateFilters(state.filters.copyWith(sort: SortBy.priceAsc)),
+        isTrue,
+      );
+      expect(state.filters.sort, SortBy.priceAsc);
+      expect(api.cancellationCalls, 0);
     });
   });
 

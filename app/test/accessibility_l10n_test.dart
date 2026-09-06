@@ -19,6 +19,20 @@ void main() {
     expect(AppStrings('en').apartmentsCount(2), '2 apartments');
   });
 
+
+  test('review and map chrome is localized outside widgets', () {
+    const ru = AppStrings('ru');
+    const en = AppStrings('en');
+    expect(ru.reviewCollectionsMenu, 'Просмотреть подборки');
+    expect(en.reviewCollectionsMenu, 'Review collections');
+    expect(ru.loadingData, 'Загружаем данные…');
+    expect(en.loadingData, 'Loading data…');
+    expect(ru.placeWorkOnMap, 'Указать работу на карте');
+    expect(en.placeWorkOnMap, 'Set work location on map');
+    expect(ru.kilometresShort, 'км');
+    expect(en.kilometresShort, 'km');
+  });
+
   test('primary button themes keep a 48dp minimum touch height', () {
     for (final name in kThemeOptions) {
       final theme = buildTheme(name);

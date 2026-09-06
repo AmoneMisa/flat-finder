@@ -6,6 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/review_strings.dart';
 import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/map_listing_point.dart';
@@ -1750,7 +1751,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'radiusCenter',
-                  tooltip: 'Указать работу на карте',
+                  tooltip: s.placeWorkOnMap,
                   onPressed: () => setState(
                     () => _placingRadiusCenter = !_placingRadiusCenter,
                   ),
@@ -1815,7 +1816,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                       onChanged: widget.onRadiusChanged,
                     ),
                   ),
-                  Text('${(widget.radiusM! / 1000).toStringAsFixed(1)} км'),
+                  Text('${(widget.radiusM! / 1000).toStringAsFixed(1)} ${s.kilometresShort}'),
                   const SizedBox(width: 12),
                 ],
               ),
@@ -1908,7 +1909,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
             (_showParks && _zones.parks.isNotEmpty) ||
             (_showShoppingMalls && _zones.shoppingMalls.isNotEmpty) ||
             (_showUniversities && _zones.universities.isNotEmpty))
-          Positioned(left: 12, bottom: 12, child: const _MetroLegend()),
+          Positioned(left: 12, bottom: 12, child: _MetroLegend(s: s)),
       ],
     );
   }
@@ -1954,7 +1955,8 @@ class _ZoneToggle extends StatelessWidget {
 }
 
 class _MetroLegend extends StatelessWidget {
-  const _MetroLegend();
+  const _MetroLegend({required this.s});
+  final AppStrings s;
 
   @override
   Widget build(BuildContext context) {
@@ -1965,14 +1967,14 @@ class _MetroLegend extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white24),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _LegendItem(color: _metro200Color, label: '200 м'),
-          SizedBox(width: 8),
-          _LegendItem(color: _metro500Color, label: '500 м'),
-          SizedBox(width: 8),
-          _LegendItem(color: _metro1000Color, label: '1 км'),
+          _LegendItem(color: _metro200Color, label: '200 ${s.metresShort}'),
+          const SizedBox(width: 8),
+          _LegendItem(color: _metro500Color, label: '500 ${s.metresShort}'),
+          const SizedBox(width: 8),
+          _LegendItem(color: _metro1000Color, label: '1 ${s.kilometresShort}'),
         ],
       ),
     );
