@@ -126,24 +126,6 @@ List<LatLng> sectorPolygon(
   return full ? arc : [LatLng(station.latitude, station.longitude), ...arc];
 }
 
-bool _matchesStation(
-    LatLng listing, MetroPoint station, MetroProximity proximity) {
-  if (proximity.maxM != null &&
-      metresBetween(station.toLatLng(), listing) > proximity.maxM!) {
-    return false;
-  }
-  if (proximity.bearingFrom == null || proximity.bearingTo == null) return true;
-  return bearingWithinArc(
-    bearingBetween(station.toLatLng(), listing),
-    proximity.bearingFrom!,
-    proximity.bearingTo!,
-  );
-}
-
-extension on MetroPoint {
-  LatLng toLatLng() => LatLng(lat, lng);
-}
-
 /// Compatibility shim for callers that have not yet removed their old
 /// post-processing call site. It deliberately does not change membership.
 ///
