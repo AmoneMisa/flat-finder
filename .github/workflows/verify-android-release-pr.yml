@@ -5,6 +5,7 @@ on:
     branches: [ master ]
     paths:
       - 'app/lib/**'
+      - 'app/test/**'
       - 'app/android/**'
       - 'app/assets/**'
       - 'app/pubspec.yaml'
@@ -14,6 +15,7 @@ on:
     branches: [ develop ]
     paths:
       - 'app/lib/**'
+      - 'app/test/**'
       - 'app/android/**'
       - 'app/assets/**'
       - 'app/pubspec.yaml'
