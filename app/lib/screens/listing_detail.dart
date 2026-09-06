@@ -299,14 +299,14 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 44,
-        leadingWidth: 40,
+        toolbarHeight: 48,
+        leadingWidth: 48,
         titleSpacing: 0,
         centerTitle: false,
         actionsPadding: EdgeInsets.zero,
         leading: IconButton(
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 40, height: 44),
+          constraints: const BoxConstraints.tightFor(width: 48, height: 48),
           tooltip: MaterialLocalizations.of(context).backButtonTooltip,
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.maybePop(context),
@@ -322,7 +322,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
             IconButton(
               tooltip: s.t('reloadThis'),
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 40, height: 44),
+              constraints: const BoxConstraints.tightFor(width: 48, height: 48),
               icon: _reloading
                   ? const SizedBox(
                       width: 18,

@@ -103,19 +103,19 @@ ThemeData buildTheme(String name) {
         visualDensity: VisualDensity.compact,
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
@@ -169,19 +169,19 @@ ThemeData buildTheme(String name) {
         visualDensity: VisualDensity.compact,
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
@@ -225,19 +225,19 @@ ThemeData buildTheme(String name) {
         visualDensity: VisualDensity.compact,
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/review_strings.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
@@ -45,9 +46,7 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
     if (preset != null) {
       return _SortTarget(
         id: 'preset:${preset.id}',
-        title: settings.lang == 'ru'
-            ? '${preset.name} · Пресет'
-            : '${preset.name} · Preset',
+        title: '${preset.name} · ${settings.s.presetLabel}',
         isPreset: true,
         presetName: preset.name,
       );
@@ -73,22 +72,22 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
 
       switch (filters.dealType) {
         case DealType.sale:
-          add(settings.lang == 'ru' ? 'Продажа' : 'Sale');
+          add(settings.t('sale'));
         case DealType.longRent:
           add(filters.roomOnly
-              ? (settings.lang == 'ru' ? 'Комната' : 'Room rent')
-              : (settings.lang == 'ru' ? 'Долгосрочная аренда' : 'Long rent'));
+              ? settings.t('cardRoomRent')
+              : settings.t('longRentLong'));
         case DealType.shortRent:
-          add(settings.lang == 'ru' ? 'Посуточно' : 'Short rent');
+          add(settings.t('shortRentLong'));
         case DealType.any:
           break;
       }
 
       switch (filters.agency) {
         case AgencyFilter.owner:
-          add(settings.lang == 'ru' ? 'Собственник' : 'Owner');
+          add(settings.t('owner'));
         case AgencyFilter.agency:
-          add(settings.lang == 'ru' ? 'Агентство' : 'Agency');
+          add(settings.t('agency'));
         case AgencyFilter.any:
           break;
       }
@@ -116,29 +115,29 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
       final roomRange = range(
         filters.roomsMin,
         filters.roomsMax,
-        settings.lang == 'ru' ? 'комн.' : 'rooms',
+        settings.s.roomsUnitShort,
       );
       add(roomRange);
 
       final priceCurrency = filters.priceCurrency ?? listing.currency;
       add(range(filters.priceMin, filters.priceMax, priceCurrency));
 
-      if (filters.pets)
-        add(settings.lang == 'ru' ? 'Можно с животными' : 'Pets allowed');
-      if (filters.children) {
-        add(settings.lang == 'ru' ? 'Можно с детьми' : 'Children allowed');
+      if (filters.pets) {
+        add(settings.t('badgePet'));
       }
-      if (filters.withPhotos)
-        add(settings.lang == 'ru' ? 'С фото' : 'With photos');
+      if (filters.children) {
+        add(settings.t('badgeChildren'));
+      }
+      if (filters.withPhotos) {
+        add(settings.t('withPhotos'));
+      }
       if (filters.query.trim().isNotEmpty) add('“${filters.query.trim()}”');
       for (final amenity in filters.amenities.toList()..sort()) {
         add(amenity);
       }
     }
 
-    final title = parts.isEmpty
-        ? (settings.lang == 'ru' ? 'Отсортированные' : 'Sorted')
-        : parts.join(' · ');
+    final title = parts.isEmpty ? settings.s.sortedTitle : parts.join(' · ');
     final scope = filtersApplyToListing ? jsonEncode(filters.toJson()) : '';
     return _SortTarget(
       id: 'filters:${listing.country}:${listing.city}:$scope',
@@ -181,10 +180,9 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsState>();
     final remaining = widget.listings.length - _index;
-    final ru = settings.lang == 'ru';
     return Scaffold(
       appBar: AppBar(
-        title: Text(ru ? 'Просмотр подборки' : 'Review selection'),
+        title: Text(settings.s.reviewSelectionTitle),
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -200,7 +198,7 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
                   children: [
                     const Icon(Icons.done_all, size: 56),
                     const SizedBox(height: 12),
-                    Text(ru ? 'Подборка просмотрена' : 'Selection reviewed'),
+                    Text(settings.s.selectionReviewed),
                   ],
                 ),
               )
@@ -209,9 +207,7 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
                     child: Text(
-                      ru
-                          ? '← Скрыть   •   Отсортировать →'
-                          : '← Hide   •   Sort →',
+                      settings.s.swipeReviewHint,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -227,13 +223,13 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
                         alignment: Alignment.centerLeft,
                         color: const Color(0xFF159957),
                         icon: Icons.done_all,
-                        label: ru ? 'Отсортировать' : 'Sort',
+                        label: settings.s.sortAction,
                       ),
                       secondaryBackground: _DecisionBackground(
                         alignment: Alignment.centerRight,
                         color: const Color(0xFFB23A48),
                         icon: Icons.visibility_off,
-                        label: ru ? 'Скрыть' : 'Hide',
+                        label: settings.t('hideListing'),
                       ),
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),

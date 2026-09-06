@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/review_strings.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
@@ -283,12 +284,14 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
   Future<void> _openSwipeReview() async {
+    final settings = context.read<SettingsState>();
     final grouped = context.read<FavoritesState>().grouped();
     final groups = <String, List<Listing>>{};
     for (final country in grouped.entries) {
+      final countryLabel = settings.s.countryName(country.key, country.key);
       for (final city in country.value.entries) {
-        groups['${country.key} · ${city.key.isEmpty ? 'Без города' : city.key}'] =
-            city.value;
+        final cityLabel = city.key.isEmpty ? settings.s.noCity : city.key;
+        groups['$countryLabel · $cityLabel'] = city.value;
       }
     }
     if (groups.isEmpty) return;
@@ -297,7 +300,7 @@ class _HomeScreenState extends State<HomeScreen> {
         context: context,
         builder: (dialogContext) => StatefulBuilder(
               builder: (context, setLocal) => AlertDialog(
-                title: const Text('Какие подборки посмотреть?'),
+                title: Text(settings.s.chooseCollectionsToReview),
                 content: SizedBox(
                     width: 420,
                     child: ListView(shrinkWrap: true, children: [
@@ -305,7 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         CheckboxListTile(
                           value: selected.contains(entry.key),
                           title: Text(entry.key),
-                          subtitle: Text('${entry.value.length} квартир'),
+                          subtitle: Text(settings.s.apartmentsCount(entry.value.length)),
                           onChanged: (value) => setLocal(() => value == true
                               ? selected.add(entry.key)
                               : selected.remove(entry.key)),
@@ -314,20 +317,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(dialogContext, false),
-                      child: const Text('Отмена')),
+                      child: Text(settings.s.cancel)),
                   FilledButton(
                       onPressed: selected.isEmpty
                           ? null
                           : () => Navigator.pop(dialogContext, true),
-                      child: const Text('Начать')),
+                      child: Text(settings.s.start)),
                 ],
               ),
             ));
     if (ok != true || !mounted) return;
     final unique = <String, Listing>{};
     for (final name in selected) {
-      for (final listing in groups[name]!)
+      for (final listing in groups[name]!) {
         unique[listingKey(listing)] = listing;
+      }
     }
     Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => SwipeReviewScreen(listings: unique.values.toList())));
@@ -425,10 +429,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final hidden = context.watch<HiddenState>();
     final sorted = context.watch<SortedState>();
     final headerActionStyle = IconButton.styleFrom(
-      minimumSize: const Size(30, 38),
-      maximumSize: const Size(30, 38),
+      minimumSize: const Size(48, 48),
+      maximumSize: const Size(48, 48),
       padding: EdgeInsets.zero,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
     // Cheap no-op once already fetched for this language; re-fetches with
     // localized city/district/metro names once settings finish loading (or
@@ -437,7 +440,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 52,
+        toolbarHeight: 56,
         titleSpacing: 8,
         title: Row(
           mainAxisSize: MainAxisSize.min,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/review_strings.dart';
 import '../state/settings.dart';
 import '../state/sorted.dart';
 import '../widgets/listing_card.dart';
@@ -13,15 +14,12 @@ class SortedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final sorted = context.watch<SortedState>();
     final settings = context.watch<SettingsState>();
-    final ru = settings.lang == 'ru';
     return Scaffold(
-      appBar: AppBar(title: Text(ru ? 'Отсортированные' : 'Sorted')),
+      appBar: AppBar(title: Text(settings.s.sortedTitle)),
       body: sorted.collections.isEmpty
           ? Center(
               child: Text(
-                ru
-                    ? 'Здесь появятся квартиры после свайпа вправо'
-                    : 'Apartments sorted with a right swipe will appear here',
+                settings.s.sortedEmpty,
                 textAlign: TextAlign.center,
               ),
             )
@@ -47,12 +45,8 @@ class SortedScreen extends StatelessWidget {
                     ),
                     subtitle: Text(
                       collection.isPreset
-                          ? (ru
-                              ? 'Пресет · ${collection.items.length} квартир'
-                              : 'Preset · ${collection.items.length} apartments')
-                          : (ru
-                              ? '${collection.items.length} квартир'
-                              : '${collection.items.length} apartments'),
+                          ? '${settings.s.presetLabel} · ${settings.s.apartmentsCount(collection.items.length)}'
+                          : settings.s.apartmentsCount(collection.items.length),
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -62,11 +56,11 @@ class SortedScreen extends StatelessWidget {
                             padding: const EdgeInsets.only(right: 4),
                             child: Chip(
                               visualDensity: VisualDensity.compact,
-                              label: Text(ru ? 'Пресет' : 'Preset'),
+                              label: Text(settings.s.presetLabel),
                             ),
                           ),
                         IconButton(
-                          tooltip: ru ? 'Удалить список' : 'Delete collection',
+                          tooltip: settings.s.deleteCollection,
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () =>
                               sorted.removeCollection(collection.id),
