@@ -205,8 +205,8 @@ class ApiService extends base.ApiService {
       super.fetchMapListings(_BackendOwnedGeoFilters(filters));
 
   @override
-  Future<Listing?> reloadListing(Listing listing) async {
-    final fresh = await super.reloadListing(listing);
+  Future<Listing?> reloadListing(Listing l) async {
+    final fresh = await super.reloadListing(l);
     return fresh == null ? null : _sanitizeListing(fresh);
   }
 

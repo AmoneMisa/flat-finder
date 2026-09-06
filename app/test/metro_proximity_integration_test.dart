@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flat_finder/models/district_zone.dart';
 import 'package:flat_finder/models/filters.dart';
 import 'package:flat_finder/models/listing.dart';

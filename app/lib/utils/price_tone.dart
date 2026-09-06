@@ -33,8 +33,9 @@ PriceTone priceToneFromRatio(double ratio) {
 /// (e.g. the popup ID) fall back to [PriceTone.pink] themselves, same as
 /// `useFlatDetailsTitle.ts`'s `?? "pink"`.
 PriceTone? flatPriceTone(double? priceUsd, double? medianUsd) {
-  if (medianUsd == null || medianUsd <= 0 || priceUsd == null || priceUsd <= 0)
+  if (medianUsd == null || medianUsd <= 0 || priceUsd == null || priceUsd <= 0) {
     return null;
+  }
   return priceToneFromRatio(priceUsd / medianUsd);
 }
 

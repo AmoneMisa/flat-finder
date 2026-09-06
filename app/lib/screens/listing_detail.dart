@@ -207,8 +207,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
         ),
       );
     final info = <String>[];
-    if (listing.rooms != null)
+    if (listing.rooms != null) {
       info.add(s.t('roomsN', {'n': '${listing.rooms}'}));
+    }
     if (listing.areaSqm != null) info.add('${listing.areaSqm} m²');
     final fl = floorLabel(listing, s);
     if (fl != null) info.add(fl);
@@ -230,8 +231,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
       b.writeln(contact);
     }
     if (listing.url.isNotEmpty) b.writeln(listing.url);
-    if (listing.publicId != null)
+    if (listing.publicId != null) {
       b.writeln(buildListingWebShareUrl(listing.publicId!));
+    }
     return b.toString().trim();
   }
 
@@ -1082,8 +1084,9 @@ class _SpecTable extends StatelessWidget {
 
 String _contactWithCountryCode(String raw, String? callingCode) {
   final value = raw.trim();
-  if (value.isEmpty || value.startsWith('@') || value.contains('+'))
+  if (value.isEmpty || value.startsWith('@') || value.contains('+')) {
     return value;
+  }
 
   var digits = value.replaceAll(RegExp(r'\D'), '');
   if (digits.length < 6) return value;

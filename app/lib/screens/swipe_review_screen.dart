@@ -105,8 +105,9 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
       }
 
       String range(num? min, num? max, String unit) {
-        if (min != null && max != null)
+        if (min != null && max != null) {
           return '${min.toString()}–${max.toString()} $unit';
+        }
         if (min != null) return '≥ ${min.toString()} $unit';
         if (max != null) return '≤ ${max.toString()} $unit';
         return '';
@@ -148,29 +149,33 @@ class _SwipeReviewScreenState extends State<SwipeReviewScreen> {
   Future<void> _decide(DismissDirection direction) async {
     if (_index >= widget.listings.length) return;
     final listing = widget.listings[_index];
+    final sorted = context.read<SortedState>();
+    final hidden = context.read<HiddenState>();
+    final favorites = context.read<FavoritesState>();
 
     switch (direction) {
       case DismissDirection.startToEnd:
         // Explicitly: swipe RIGHT => sorted/saved.
         final target = _sortTarget(listing);
-        await context.read<SortedState>().add(
-              listing,
-              collectionId: target.id,
-              collectionTitle: target.title,
-              isPreset: target.isPreset,
-              presetName: target.presetName,
-            );
+        await sorted.add(
+          listing,
+          collectionId: target.id,
+          collectionTitle: target.title,
+          isPreset: target.isPreset,
+          presetName: target.presetName,
+        );
       case DismissDirection.endToStart:
         // Explicitly: swipe LEFT => hidden/dismissed.
-        final hidden = context.read<HiddenState>();
-        if (!hidden.isHidden(listing)) await hidden.toggle(listing);
+        if (!hidden.isHidden(listing)) {
+          await hidden.toggle(listing);
+        }
       default:
         return;
     }
 
     // Review is fed from saved selections. Once the apartment is classified it
     // must leave the source list instead of remaining there to be reviewed again.
-    await context.read<FavoritesState>().remove(listing);
+    await favorites.remove(listing);
 
     if (!mounted) return;
     setState(() => _index++);

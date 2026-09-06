@@ -322,8 +322,9 @@ class ApiService {
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     return ((json['mapPoints'] as List?) ?? const []).map((raw) {
       final point = Map<String, dynamic>.from(raw as Map);
-      if (point['photo'] != null)
+      if (point['photo'] != null) {
         point['photo'] = _resolvePhoto(point['photo']);
+      }
       return MapListingPoint.fromJson(point);
     }).toList();
   }
@@ -441,8 +442,9 @@ class ApiService {
       return job.translatedText!.trim();
     }
     if (job.status == 'disabled') throw Exception('translation disabled');
-    if (job.status == 'failed')
+    if (job.status == 'failed') {
       throw Exception(job.error ?? 'translation failed');
+    }
     final key = job.key;
     if (key == null || key.isEmpty) throw Exception('translation key missing');
 

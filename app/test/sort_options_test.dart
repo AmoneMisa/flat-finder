@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/models/filters.dart';
-import '../lib/models/listing.dart';
-import '../lib/utils/sort.dart';
+import 'package:flat_finder/models/filters.dart';
+import 'package:flat_finder/models/listing.dart';
+import 'package:flat_finder/utils/sort.dart';
 
 Listing _listing(
   String id, {

@@ -767,8 +767,9 @@ class Filters {
     if (noDeposit) p['noDeposit'] = 'true';
     if (communalIncluded) p['communalIncluded'] = 'true';
     if (noCommission) p['noCommission'] = 'true';
-    if (maxAgeDays != null && maxAgeDays! > 0)
+    if (maxAgeDays != null && maxAgeDays! > 0) {
       p['maxAgeDays'] = maxAgeDays.toString();
+    }
     // Only send when it's a real subset; all-selected means "all" server-side.
     if (sources.isNotEmpty && sources.length < kAllSources.length) {
       p['sources'] = sources.join(',');
@@ -807,8 +808,9 @@ class Filters {
     }
     if (metroMaxM != null) p['metroMaxM'] = metroMaxM.toString();
     if (nearbyMaxM != null) p['nearbyMaxM'] = nearbyMaxM.toString();
-    if (nearbyKind != null && nearbyKind!.isNotEmpty)
+    if (nearbyKind != null && nearbyKind!.isNotEmpty) {
       p['nearbyKind'] = nearbyKind!;
+    }
     if (centerLat != null && centerLng != null && radiusM != null) {
       p['centerLat'] = centerLat.toString();
       p['centerLng'] = centerLng.toString();
@@ -817,8 +819,9 @@ class Filters {
     if (withPhotos) p['withPhotos'] = 'true';
     if (city.trim().isNotEmpty) p['city'] = city.trim();
     if (district.trim().isNotEmpty) p['district'] = district.trim();
-    if (microdistrict.trim().isNotEmpty)
+    if (microdistrict.trim().isNotEmpty) {
       p['microdistrict'] = microdistrict.trim();
+    }
     if (quartal.trim().isNotEmpty) p['quartal'] = quartal.trim();
     if (area.trim().isNotEmpty) p['area'] = area.trim();
     if (metro.isNotEmpty) p['metro'] = metro.join(',');

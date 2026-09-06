@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/models/filters.dart';
-import '../lib/services/api_service.dart';
-import '../lib/state/app_state.dart';
+import 'package:flat_finder/models/filters.dart';
+import 'package:flat_finder/services/api_service.dart';
+import 'package:flat_finder/state/app_state.dart';
 
 class _LocaleApi extends ApiService {
   _LocaleApi() : super(baseUrl: 'http://test.invalid');

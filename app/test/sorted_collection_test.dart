@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/state/sorted.dart';
+import 'package:flat_finder/state/sorted.dart';
 
 void main() {
   test('sorted collection keeps filter/preset metadata', () {

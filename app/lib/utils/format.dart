@@ -173,10 +173,12 @@ String? audienceLabel(String? audience, [AppStrings? s]) => switch (audience) {
 String? postedLabel(DateTime? createdAt, [AppStrings? s]) {
   if (createdAt == null) return null;
   final d = DateTime.now().difference(createdAt);
-  if (d.inDays >= 1)
+  if (d.inDays >= 1) {
     return s?.t('daysAgo', {'n': '${d.inDays}'}) ?? '${d.inDays}d ago';
-  if (d.inHours >= 1)
+  }
+  if (d.inHours >= 1) {
     return s?.t('hoursAgo', {'n': '${d.inHours}'}) ?? '${d.inHours}h ago';
+  }
   return s?.t('justNow') ?? 'Just now';
 }
 

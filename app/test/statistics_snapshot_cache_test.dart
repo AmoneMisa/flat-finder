@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../lib/models/filters.dart';
-import '../lib/services/api_service.dart';
+import 'package:flat_finder/models/filters.dart';
+import 'package:flat_finder/services/api_service.dart';
 
 const _etag = 'W/"stats-1756900000000"';
 
