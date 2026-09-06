@@ -2,7 +2,11 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 
-import '../services/push_service.dart';
+import '../services/push_service.dart' as push;
+
+/// Payload exposed to HomeScreen without making the screen depend on the FCM
+/// service itself. The runtime boundary owns that infrastructure dependency.
+typedef ForegroundPush = push.ForegroundPush;
 
 /// Owns HomeScreen's external event subscriptions without owning navigation UI.
 ///
@@ -33,12 +37,12 @@ class HomeRuntimeEvents {
     required void Function(ForegroundPush) onForegroundPush,
   }) {
     final appLinks = AppLinks();
-    final push = PushService.instance;
+    final pushService = push.PushService.instance;
     return HomeRuntimeEvents(
       loadInitialLink: appLinks.getInitialLink,
       links: appLinks.uriLinkStream,
-      listingOpens: push.listingOpens,
-      foregroundPushes: push.foregroundPushes,
+      listingOpens: pushService.listingOpens,
+      foregroundPushes: pushService.foregroundPushes,
       onLink: onLink,
       onListingOpen: onListingOpen,
       onForegroundPush: onForegroundPush,
