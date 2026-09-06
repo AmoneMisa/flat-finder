@@ -1,0 +1,41 @@
+name: Apply accessibility and l10n audit fixes
+
+on:
+  push:
+    branches: [ develop ]
+    paths:
+      - '.github/scripts/apply-accessibility-l10n-audit.py'
+      - '.github/workflows/apply-accessibility-l10n-audit.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-accessibility-l10n-audit
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Apply asserted replacements
+        run: python .github/scripts/apply-accessibility-l10n-audit.py
+
+      - name: Commit patched app
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/lib app/test
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix(app): improve accessibility and localize review flow'
+          git push origin HEAD:develop
