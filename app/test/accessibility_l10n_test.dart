@@ -9,14 +9,14 @@ Size? _minimumSize(ButtonStyle? style) =>
 
 void main() {
   test('saved-listing counts use correct Russian plural forms', () {
-    final s = AppStrings('ru');
+    const s = AppStrings('ru');
     expect(s.apartmentsCount(1), '1 квартира');
     expect(s.apartmentsCount(2), '2 квартиры');
     expect(s.apartmentsCount(5), '5 квартир');
     expect(s.apartmentsCount(11), '11 квартир');
     expect(s.apartmentsCount(21), '21 квартира');
-    expect(AppStrings('en').apartmentsCount(1), '1 apartment');
-    expect(AppStrings('en').apartmentsCount(2), '2 apartments');
+    expect(const AppStrings('en').apartmentsCount(1), '1 apartment');
+    expect(const AppStrings('en').apartmentsCount(2), '2 apartments');
   });
 
   test('review and map chrome is localized outside widgets', () {
@@ -36,6 +36,14 @@ void main() {
     expect(en.metroRadiusHandle, 'Metro radius');
     expect(ru.metroArcStartHandle, 'Начало сектора метро');
     expect(en.metroArcEndHandle, 'Metro sector end');
+    expect(
+      ru.adjustWithDragOrButtons,
+      'Перетащите или используйте действия увеличить и уменьшить',
+    );
+    expect(
+      en.adjustWithDragOrButtons,
+      'Drag or use the increase and decrease actions',
+    );
   });
 
   test('primary button themes keep a 48dp minimum touch height', () {
