@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:app_links/app_links.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -75,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// update mechanism, so the app checks whiteslove.me itself. Android-only:
   /// iOS/web/desktop builds aren't distributed this way.
   Future<void> _checkForAppUpdate() async {
-    if (kIsWeb || !Platform.isAndroid) return;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     final update = await UpdateService.checkForUpdate();
     if (update == null || !mounted) return;
     final settings = context.read<SettingsState>();

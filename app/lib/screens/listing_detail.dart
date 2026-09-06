@@ -1,11 +1,11 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -172,7 +172,10 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   }
 
   bool get _isDesktop =>
-      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   /// Compose the parsed-info text shared alongside the screenshot + link.
   String _shareText(
@@ -250,7 +253,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     final text = _shareText(s, rates, displayCurrency);
     // Desktop OS share sheets (esp. Windows) are unreliable, so copy the listing
     // details to the clipboard and confirm with a SnackBar instead.
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    if (_isDesktop) {
       await Clipboard.setData(ClipboardData(text: text));
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -265,10 +268,12 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
         final image = await boundary.toImage(pixelRatio: 2);
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
         if (bytes != null) {
-          final dir = await getTemporaryDirectory();
-          final file = File('${dir.path}/listing_${listing.id}.png');
-          await file.writeAsBytes(bytes.buffer.asUint8List());
-          await Share.shareXFiles([XFile(file.path)], text: text);
+          final file = XFile.fromData(
+            bytes.buffer.asUint8List(),
+            mimeType: 'image/png',
+            name: 'listing_${listing.id}.png',
+          );
+          await Share.shareXFiles([file], text: text);
           return;
         }
       }
