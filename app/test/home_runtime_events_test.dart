@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flat_finder/controllers/home_runtime_events.dart';
-import 'package:flat_finder/services/push_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
