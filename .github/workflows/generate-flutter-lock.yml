@@ -1,0 +1,48 @@
+name: Generate Flutter dependency lock
+
+on:
+  push:
+    branches: [ develop ]
+    paths:
+      - '.github/workflows/generate-flutter-lock.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: generate-flutter-lock
+  cancel-in-progress: false
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Resolve locked dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Commit lockfile
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/pubspec.lock
+          if git diff --cached --quiet; then
+            echo 'Lockfile already current.'
+            exit 0
+          fi
+          git commit -m 'build(app): lock Flutter dependencies'
+          git push origin HEAD:develop
