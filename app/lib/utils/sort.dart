@@ -31,22 +31,60 @@ double _distanceKm(double lat1, double lng1, double lat2, double lng2) {
 }
 
 /// Price expressed in [displayCurrency] (or native) for comparison, or null.
+/// A missing FX leg is deliberately *not* treated as the raw amount: comparing
+/// 500 EUR with 500 USD/KZT as the same number silently corrupts the server's
+/// already-normalized price order while rates are still loading.
 num? _comparablePrice(
   Listing l,
   Map<String, double>? rates,
   String? displayCurrency,
 ) {
   if (l.price == null) return null;
+  if (displayCurrency == null || displayCurrency == l.currency) return l.price;
   final from = rates?[l.currency];
-  final to = displayCurrency == null ? null : rates?[displayCurrency];
-  if (displayCurrency != null &&
-      displayCurrency != l.currency &&
-      from != null &&
-      to != null &&
-      from > 0) {
-    return l.price! * to / from;
+  final to = rates?[displayCurrency];
+  if (from == null || to == null || from <= 0 || to <= 0) return null;
+  return l.price! * to / from;
+}
+
+bool _canCompareAllPrices(
+  List<Listing> listings,
+  Map<String, double>? rates,
+  String? displayCurrency,
+) {
+  final priced = listings.where((listing) => listing.price != null).toList();
+  if (priced.length < 2) return true;
+
+  if (displayCurrency == null) {
+    // Native-currency view has no common unit. Sorting is valid only when all
+    // priced rows are already in the same currency; otherwise preserve the
+    // backend order until the user selects a normalization currency.
+    return priced.map((listing) => listing.currency).toSet().length <= 1;
   }
-  return l.price;
+
+  final to = rates?[displayCurrency];
+  if (to == null || to <= 0) {
+    return priced.every((listing) => listing.currency == displayCurrency);
+  }
+  for (final listing in priced) {
+    if (listing.currency == displayCurrency) continue;
+    final from = rates?[listing.currency];
+    if (from == null || from <= 0) return false;
+  }
+  return true;
+}
+
+num? _metroDistanceM(Listing listing) {
+  final direct = listing.metroWalkingDistanceM;
+  if (direct != null && direct >= 0) return direct;
+
+  num? best;
+  for (final stop in listing.nearbyMetro) {
+    final distance = stop.walkingDistanceM ?? stop.distanceM;
+    if (distance < 0) continue;
+    if (best == null || distance < best) best = distance;
+  }
+  return best;
 }
 
 /// Returns a new list ordered per [sort]. Listings with an unknown sort key are
@@ -89,6 +127,9 @@ List<Listing> sortListings(
         return da.compareTo(db);
       });
     case SortBy.priceAsc:
+      if (!_canCompareAllPrices(listings, rates, displayCurrency)) {
+        return listings;
+      }
       out.sort(
         (a, b) => byNum(
           _comparablePrice(a, rates, displayCurrency),
@@ -96,6 +137,9 @@ List<Listing> sortListings(
         ),
       );
     case SortBy.priceDesc:
+      if (!_canCompareAllPrices(listings, rates, displayCurrency)) {
+        return listings;
+      }
       out.sort(
         (a, b) => byNum(
           _comparablePrice(a, rates, displayCurrency),
@@ -112,18 +156,10 @@ List<Listing> sortListings(
           : null;
       out.sort((a, b) => byNum(d(a), d(b)));
     case SortBy.distanceMetro:
-      // No station coordinates are available, so this is best-effort: listings
-      // that name a nearby metro come first (closest to transit), the rest by
-      // distance from the city center.
-      out.sort((a, b) {
-        final am = a.metro != null, bm = b.metro != null;
-        if (am != bm) return am ? -1 : 1;
-        if (centerLat == null || centerLng == null) return 0;
-        num? d(Listing l) => l.hasLocation
-            ? _distanceKm(l.lat!, l.lng!, centerLat, centerLng)
-            : null;
-        return byNum(d(a), d(b));
-      });
+      // Prefer actual walking distance from the backend/geo pipeline, then the
+      // nearest structured metro stop's walking/geodesic distance. Unknowns go
+      // to the end; city-center distance is not a proxy for metro proximity.
+      out.sort((a, b) => byNum(_metroDistanceM(a), _metroDistanceM(b)));
     case SortBy.relevance:
       break;
   }
