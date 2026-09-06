@@ -18,23 +18,39 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         children: [
           _sectionTitle(context, settings.t('theme')),
-          ...kThemeOptions.map(
-            (name) => RadioListTile<String>(
-              value: name,
-              groupValue: settings.themeName,
-              title: Text(settings.t(_themeLabelKey(name))),
-              secondary: Icon(_themeIcon(name)),
-              onChanged: (v) => settings.setTheme(v!),
+          RadioGroup<String>(
+            groupValue: settings.themeName,
+            onChanged: (value) {
+              if (value != null) settings.setTheme(value);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final name in kThemeOptions)
+                  RadioListTile<String>(
+                    value: name,
+                    title: Text(settings.t(_themeLabelKey(name))),
+                    secondary: Icon(_themeIcon(name)),
+                  ),
+              ],
             ),
           ),
           const Divider(),
           _sectionTitle(context, settings.t('language')),
-          ...AppStrings.supported.map(
-            (code) => RadioListTile<String>(
-              value: code,
-              groupValue: settings.lang,
-              title: Text(AppStrings.languageNames[code] ?? code),
-              onChanged: (v) => settings.setLang(v!),
+          RadioGroup<String>(
+            groupValue: settings.lang,
+            onChanged: (value) {
+              if (value != null) settings.setLang(value);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final code in AppStrings.supported)
+                  RadioListTile<String>(
+                    value: code,
+                    title: Text(AppStrings.languageNames[code] ?? code),
+                  ),
+              ],
             ),
           ),
           const Divider(),
@@ -67,12 +83,18 @@ class SettingsScreen extends StatelessWidget {
           ),
           const Divider(),
           _sectionTitle(context, settings.t('displayCurrency')),
-          ...SettingsState.currencyOptions.map(
-            (cur) => RadioListTile<String?>(
-              value: cur,
-              groupValue: settings.displayCurrency,
-              title: Text(cur ?? settings.t('nativeCurrency')),
-              onChanged: (v) => settings.setDisplayCurrency(v),
+          RadioGroup<String?>(
+            groupValue: settings.displayCurrency,
+            onChanged: settings.setDisplayCurrency,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final cur in SettingsState.currencyOptions)
+                  RadioListTile<String?>(
+                    value: cur,
+                    title: Text(cur ?? settings.t('nativeCurrency')),
+                  ),
+              ],
             ),
           ),
         ],

@@ -1154,7 +1154,8 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                     SizedBox(
                       width: 76,
                       child: DropdownButtonFormField<String>(
-                        value: selectedCountry,
+                        key: ValueKey('quick-country-$selectedCountry'),
+                        initialValue: selectedCountry,
                         isExpanded: true,
                         isDense: true,
                         decoration: InputDecoration(
@@ -1231,7 +1232,10 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<AgencyFilter>(
-                        value: widget.filters.agency,
+                        key: ValueKey(
+                          'quick-agency-${widget.filters.agency.name}',
+                        ),
+                        initialValue: widget.filters.agency,
                         isExpanded: true,
                         isDense: true,
                         decoration: InputDecoration(
@@ -1263,7 +1267,10 @@ class _MobilePrimaryFiltersState extends State<_MobilePrimaryFilters> {
                     const SizedBox(width: 5),
                     Expanded(
                       child: DropdownButtonFormField<_QuickDeal>(
-                        value: _quickDealFor(widget.filters),
+                        key: ValueKey(
+                          'quick-deal-${_quickDealFor(widget.filters).name}',
+                        ),
+                        initialValue: _quickDealFor(widget.filters),
                         isExpanded: true,
                         isDense: true,
                         decoration: InputDecoration(labelText: s.t('dealType')),

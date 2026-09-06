@@ -1406,8 +1406,8 @@ class _FullscreenGalleryState extends State<_FullscreenGallery> {
     }
     final p = details.localPosition;
     _transform.value = Matrix4.identity()
-      ..translate(-p.dx * 1.5, -p.dy * 1.5)
-      ..scale(2.5);
+      ..translateByDouble(-p.dx * 1.5, -p.dy * 1.5, 0, 1)
+      ..scaleByDouble(2.5, 2.5, 2.5, 1);
   }
 
   @override

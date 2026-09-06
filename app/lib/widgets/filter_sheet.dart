@@ -724,7 +724,10 @@ class _FilterSheetState extends State<FilterSheet> {
                       children: [
                         // One country at a time: the sources and cities differ per country.
                         DropdownButtonFormField<String>(
-                          value:
+                          key: ValueKey(
+                            'filter-country-${_countries.isNotEmpty ? _countries.first : ''}',
+                          ),
+                          initialValue:
                               _countries.isNotEmpty ? _countries.first : null,
                           isExpanded: true,
                           isDense: true,
@@ -1004,7 +1007,8 @@ class _FilterSheetState extends State<FilterSheet> {
                       title: s.t('sectionProperty'),
                       children: [
                         DropdownButtonFormField<PropertyType>(
-                          value: _type,
+                          key: ValueKey('filter-type-${_type.name}'),
+                          initialValue: _type,
                           isExpanded: true,
                           isDense: true,
                           decoration: InputDecoration(
@@ -1030,7 +1034,8 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<DealType>(
-                          value: _deal,
+                          key: ValueKey('filter-deal-${_deal.name}'),
+                          initialValue: _deal,
                           isExpanded: true,
                           isDense: true,
                           decoration: InputDecoration(
@@ -1050,7 +1055,8 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<AgencyFilter>(
-                          value: _agency,
+                          key: ValueKey('filter-agency-${_agency.name}'),
+                          initialValue: _agency,
                           isExpanded: true,
                           isDense: true,
                           decoration: InputDecoration(
@@ -1076,7 +1082,8 @@ class _FilterSheetState extends State<FilterSheet> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<Audience>(
-                          value: _audience,
+                          key: ValueKey('filter-audience-${_audience.name}'),
+                          initialValue: _audience,
                           isExpanded: true,
                           isDense: true,
                           decoration: InputDecoration(
