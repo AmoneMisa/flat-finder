@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -8,7 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/filters.dart';
 import '../services/api_service.dart';
+import '../services/installation_identity.dart';
 import '../services/push_service.dart';
+import '../services/user_saved_state_repository.dart';
 
 class FilterPreset {
   final String id;
@@ -31,36 +32,42 @@ class FilterPreset {
     bool? enabled,
     bool? notificationsEnabled,
   }) => FilterPreset(
-    id: id,
-    name: name ?? this.name,
-    filters: filters ?? this.filters,
-    enabled: enabled ?? this.enabled,
-    notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
-  );
+        id: id,
+        name: name ?? this.name,
+        filters: filters ?? this.filters,
+        enabled: enabled ?? this.enabled,
+        notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      );
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'filters': filters.toJson(),
-    'enabled': enabled,
-    'notificationsEnabled': notificationsEnabled,
-  };
+        'id': id,
+        'name': name,
+        'filters': filters.toJson(),
+        'enabled': enabled,
+        'notificationsEnabled': notificationsEnabled,
+      };
 }
 
-/// Saved filters remain local. Only enabled notification presets are mirrored
-/// to the Flat Finder backend using an anonymous, locally generated device ID.
+/// Saved searches are mirrored to PostgreSQL so a future account can claim the
+/// installation and sync them across devices. SharedPreferences remains the
+/// immediate/offline cache; push delivery is still synchronized independently.
 class PresetsState extends ChangeNotifier {
-  PresetsState(this._api, {PushService? push})
-    : _push = push ?? PushService.instance;
+  PresetsState(
+    this._api, {
+    UserSavedStateRepository? saved,
+    PushService? push,
+  })  : _saved = saved,
+        _push = push ?? PushService.instance;
 
   static const _kPresets = 'filterPresets';
   static const _kPushMaster = 'filterPresetPushMaster';
-  static const _kDeviceId = 'flatFinderDeviceId';
   static const _kUiLanguage = 'lang';
 
   final ApiService _api;
+  final UserSavedStateRepository? _saved;
   final PushService _push;
   final List<FilterPreset> _presets = [];
+  final InstallationIdentity _identity = InstallationIdentity();
   StreamSubscription<String>? _tokenSub;
 
   Future<bool>? _syncFuture;
@@ -85,26 +92,37 @@ class PresetsState extends ChangeNotifier {
         _presets
           ..clear()
           ..addAll(
-            list.map((entry) {
-              final m = Map<String, dynamic>.from(entry as Map);
+            list.whereType<Map>().map((entry) {
+              final m = Map<String, dynamic>.from(entry);
               final id = m['id']?.toString().trim();
               if (id == null || id.isEmpty) migrated = true;
-              return FilterPreset(
-                id: id == null || id.isEmpty ? _newId() : id,
-                name: m['name']?.toString() ?? '',
-                filters: Filters.fromJson(
-                  Map<String, dynamic>.from(m['filters'] as Map),
-                ),
-                enabled: m['enabled'] is bool ? m['enabled'] as bool : true,
-                notificationsEnabled: m['notificationsEnabled'] is bool
-                    ? m['notificationsEnabled'] as bool
-                    : false,
-              );
+              return _fromMap(m, fallbackId: id == null || id.isEmpty ? _newId() : id);
             }),
           );
       }
-      if (migrated) await _persist();
+      if (migrated) await _persistLocal();
       notifyListeners();
+
+      final saved = _saved;
+      if (saved != null) {
+        final snapshot = await saved.snapshot();
+        final remote = <FilterPreset>[];
+        for (final entry in (snapshot['presets'] as List? ?? const [])) {
+          if (entry is! Map) continue;
+          try {
+            final value = Map<String, dynamic>.from(entry);
+            final id = value['id']?.toString().trim() ?? '';
+            if (id.isEmpty) continue;
+            remote.add(_fromMap(value, fallbackId: id));
+          } catch (_) {}
+        }
+        _presets
+          ..clear()
+          ..addAll(remote);
+        await _persistLocal();
+        notifyListeners();
+      }
+
       if (pushMasterEnabled && _activePushPresets.isNotEmpty) {
         unawaited(syncPushSubscriptions());
       }
@@ -113,15 +131,28 @@ class PresetsState extends ChangeNotifier {
     }
   }
 
-  static String _newId() {
-    final random = Random.secure();
-    return List<int>.generate(
-      24,
-      (_) => random.nextInt(256),
-    ).map((v) => v.toRadixString(16).padLeft(2, '0')).join();
+  static FilterPreset _fromMap(
+    Map<String, dynamic> map, {
+    required String fallbackId,
+  }) {
+    final filtersRaw = map['filters'];
+    return FilterPreset(
+      id: (map['id']?.toString().trim().isNotEmpty == true)
+          ? map['id'].toString().trim()
+          : fallbackId,
+      name: map['name']?.toString() ?? '',
+      filters: filtersRaw is Map
+          ? Filters.fromJson(Map<String, dynamic>.from(filtersRaw))
+          : Filters(),
+      enabled: map['enabled'] is bool ? map['enabled'] as bool : true,
+      notificationsEnabled: map['notificationsEnabled'] is bool
+          ? map['notificationsEnabled'] as bool
+          : false,
+    );
   }
 
-  /// Overwriting a preset by name preserves its ID and notification toggles.
+  static String _newId() => InstallationIdentity.newId();
+
   Future<FilterPreset?> save(String name, Filters filters) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
@@ -137,7 +168,7 @@ class PresetsState extends ChangeNotifier {
       _presets.add(preset);
     }
     notifyListeners();
-    await _persist();
+    await _persistPreset(preset);
     unawaited(syncPushSubscriptions());
     return preset;
   }
@@ -153,14 +184,21 @@ class PresetsState extends ChangeNotifier {
     if (clash) return;
     _presets[i] = _presets[i].copyWith(name: trimmed);
     notifyListeners();
-    await _persist();
+    await _persistPreset(_presets[i]);
     await syncPushSubscriptions();
   }
 
   Future<void> remove(String name) async {
+    final removed = _presets.where((p) => p.name == name).toList(growable: false);
     _presets.removeWhere((p) => p.name == name);
     notifyListeners();
-    await _persist();
+    await _persistLocal();
+    final saved = _saved;
+    if (saved != null) {
+      for (final preset in removed) {
+        await saved.deletePreset(preset.id);
+      }
+    }
     await syncPushSubscriptions();
   }
 
@@ -169,7 +207,7 @@ class PresetsState extends ChangeNotifier {
     if (i < 0 || _presets[i].enabled == enabled) return;
     _presets[i] = _presets[i].copyWith(enabled: enabled);
     notifyListeners();
-    await _persist();
+    await _persistPreset(_presets[i]);
     await syncPushSubscriptions();
   }
 
@@ -183,7 +221,7 @@ class PresetsState extends ChangeNotifier {
     );
     if (enabled) pushMasterEnabled = true;
     notifyListeners();
-    await _persist();
+    await _persistPreset(_presets[i]);
 
     final ok = await syncPushSubscriptions(requestPermission: enabled);
     if (enabled && !ok) {
@@ -192,7 +230,7 @@ class PresetsState extends ChangeNotifier {
         pushMasterEnabled = false;
       }
       notifyListeners();
-      await _persist();
+      await _persistPreset(_presets[i]);
       await syncPushSubscriptions();
     }
     return ok;
@@ -202,14 +240,14 @@ class PresetsState extends ChangeNotifier {
     final old = pushMasterEnabled;
     pushMasterEnabled = enabled;
     notifyListeners();
-    await _persist();
+    await _persistLocal();
     final ok = await syncPushSubscriptions(
       requestPermission: enabled && _activePushPresets.isNotEmpty,
     );
     if (enabled && !ok && _activePushPresets.isNotEmpty) {
       pushMasterEnabled = old;
       notifyListeners();
-      await _persist();
+      await _persistLocal();
       return false;
     }
     return true;
@@ -219,10 +257,6 @@ class PresetsState extends ChangeNotifier {
       .where((p) => p.enabled && p.notificationsEnabled)
       .toList(growable: false);
 
-  /// Coalesce concurrent mutations without dropping the newest state. The old
-  /// `if (syncingPush) return` path could lose a preset edit or FCM token refresh
-  /// that arrived while a request was in flight. Every caller now marks the
-  /// snapshot dirty; one drain loop sends again after the current request.
   Future<bool> syncPushSubscriptions({bool requestPermission = false}) {
     _syncAgain = true;
     _requestPermissionNext = _requestPermissionNext || requestPermission;
@@ -262,12 +296,7 @@ class PresetsState extends ChangeNotifier {
   Future<bool> _syncPushOnce({required bool requestPermission}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      var deviceId = prefs.getString(_kDeviceId);
-      if (deviceId == null || deviceId.isEmpty) {
-        deviceId = _newId();
-        await prefs.setString(_kDeviceId, deviceId);
-      }
-
+      final deviceId = await _identity.getOrCreate();
       final active = pushMasterEnabled
           ? _activePushPresets
           : const <FilterPreset>[];
@@ -310,7 +339,12 @@ class PresetsState extends ChangeNotifier {
     });
   }
 
-  Future<void> _persist() async {
+  Future<void> _persistPreset(FilterPreset preset) async {
+    await _persistLocal();
+    await _saved?.putPreset(preset.toJson());
+  }
+
+  Future<void> _persistLocal() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_kPushMaster, pushMasterEnabled);
