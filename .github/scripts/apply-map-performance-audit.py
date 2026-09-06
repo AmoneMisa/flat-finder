@@ -74,8 +74,8 @@ text = replace_once(
 )
 
 count = text.count('appState.filters')
-if count != 9:
-    raise SystemExit(f'appState.filters replacement: expected 9 matches, found {count}')
+if count != 10:
+    raise SystemExit(f'appState.filters replacement: expected 10 matches, found {count}')
 text = text.replace('appState.filters', 'filters')
 
 old_position = """                  final trackingHandles =
