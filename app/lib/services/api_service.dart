@@ -1,5 +1,6 @@
 export 'api_service_base.dart' hide ApiService;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,6 +27,7 @@ class ApiService extends base.ApiService {
   ApiService({String? baseUrl}) : super(baseUrl: baseUrl);
 
   static const _filtersPreferenceKey = 'filters';
+  static const _countriesCacheKey = 'api.countries.cache.v1';
   static const _metadataTimeout = Duration(seconds: 12);
 
   Future<base.ListingsResult>? _startupPrefetch;
@@ -37,6 +39,10 @@ class ApiService extends base.ApiService {
   /// request while countries are in flight and hold the result for the first
   /// matching fetchListings call. Critical-path latency becomes roughly
   /// max(countries, listings) instead of countries + listings.
+  ///
+  /// Once a country catalog has been fetched successfully, subsequent launches
+  /// use the stored copy immediately and refresh it in the background. That
+  /// takes countries off the critical path entirely after the first launch.
   @override
   Future<List<Country>> fetchCountries({String locale = ''}) async {
     if (locale.isNotEmpty || _startupPrefetchAttempted) {
@@ -47,15 +53,87 @@ class ApiService extends base.ApiService {
 
     _startupPrefetchAttempted = true;
     final prefetch = _prefetchStartupListings();
+    final cached = await _readCachedCountries();
+    if (cached.isNotEmpty) {
+      unawaited(_refreshCountriesCache());
+      // AppState calls cancelListingRequests() at the start of search(). Wait
+      // for the startup request to settle before returning cached metadata so
+      // that normal cancellation cannot kill the useful prefetched page.
+      await prefetch;
+      return cached;
+    }
+
     final countries = await super
         .fetchCountries(locale: locale)
         .timeout(_metadataTimeout);
-    // Do not hand control back to AppState until the prefetched request has
-    // settled. Its subsequent search() calls cancelListingRequests(); waiting
-    // here prevents that normal cancellation from killing useful startup work.
+    await _writeCachedCountries(countries);
     await prefetch;
     return countries;
   }
+
+  Future<void> _refreshCountriesCache() async {
+    try {
+      final countries = await super
+          .fetchCountries()
+          .timeout(_metadataTimeout);
+      await _writeCachedCountries(countries);
+    } catch (_) {
+      // Stale metadata is still enough to render filters while the normal
+      // localized fetch can retry later; a background refresh never blocks feed.
+    }
+  }
+
+  Future<List<Country>> _readCachedCountries() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_countriesCacheKey);
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((item) => Country.fromJson(Map<String, dynamic>.from(item)))
+          .where((country) => country.code.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _writeCachedCountries(List<Country> countries) async {
+    if (countries.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _countriesCacheKey,
+        jsonEncode(countries.map(_countryToJson).toList(growable: false)),
+      );
+    } catch (_) {}
+  }
+
+  Map<String, dynamic> _countryToJson(Country country) => {
+        'code': country.code,
+        'name': country.name,
+        'currency': country.currency,
+        'callingCode': country.callingCode,
+        'center': {'lat': country.centerLat, 'lng': country.centerLng},
+        'cities': country.cities,
+        'cityLabels': country.cityLabels,
+        'locations': country.locations.map(
+          (city, locations) => MapEntry(city, {
+            'districts': locations.districts,
+            'metro': locations.metro,
+            'microdistricts': locations.microdistricts,
+            'quartals': locations.quartals,
+            'areas': locations.areas,
+            'districtLabels': locations.districtLabels,
+            'metroLabels': locations.metroLabels,
+            'microdistrictLabels': locations.microdistrictLabels,
+            'quartalLabels': locations.quartalLabels,
+            'areaLabels': locations.areaLabels,
+          }),
+        ),
+      };
 
   Future<void> _prefetchStartupListings() async {
     try {
