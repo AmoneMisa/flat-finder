@@ -5,12 +5,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
+import '../services/user_saved_state_repository.dart';
 
-/// Saved listings, persisted locally. Exposes them grouped into
-/// country → city "folders" for the favorites screen.
+/// Saved listings. PostgreSQL is authoritative; SharedPreferences is retained
+/// as an offline/instant cache so opening the favorites tab never depends on a
+/// network round-trip.
 class FavoritesState extends ChangeNotifier {
+  FavoritesState(this._repository);
+
   static const _kFavorites = 'favorites';
 
+  final UserSavedStateRepository _repository;
   final List<Listing> _items = [];
   final Set<String> _keys = {};
 
@@ -20,22 +25,44 @@ class FavoritesState extends ChangeNotifier {
   bool isFavorite(Listing listing) => _keys.contains(listingKey(listing));
 
   Future<void> load() async {
+    await _loadLocalCache();
+    try {
+      final snapshot = await _repository.snapshot();
+      final remote = <Listing>[];
+      for (final entry in (snapshot['favorites'] as List? ?? const [])) {
+        if (entry is! Map) continue;
+        final map = Map<String, dynamic>.from(entry);
+        final payload = map['listing'];
+        if (payload is! Map) continue;
+        try {
+          remote.add(Listing.fromJson(Map<String, dynamic>.from(payload)));
+        } catch (_) {}
+      }
+      _items
+        ..clear()
+        ..addAll(remote);
+      _rebuildIndex();
+      await _saveLocalCache();
+      notifyListeners();
+    } catch (_) {
+      // The local cache loaded above remains usable offline.
+    }
+  }
+
+  Future<void> _loadLocalCache() async {
     try {
       final p = await SharedPreferences.getInstance();
       final raw = p.getString(_kFavorites);
-      if (raw != null) {
-        final list = jsonDecode(raw) as List;
-        _items
-          ..clear()
-          ..addAll(
-            list.map((e) => Listing.fromJson(Map<String, dynamic>.from(e))),
-          );
-        _rebuildIndex();
-        notifyListeners();
-      }
+      if (raw == null) return;
+      final list = jsonDecode(raw) as List;
+      _items
+        ..clear()
+        ..addAll(
+          list.map((e) => Listing.fromJson(Map<String, dynamic>.from(e))),
+        );
+      _rebuildIndex();
+      notifyListeners();
     } catch (_) {
-      // Corrupt/incompatible saved state: start empty and keep the list/index
-      // consistent rather than leaving a partially decoded collection behind.
       _items.clear();
       _keys.clear();
     }
@@ -44,7 +71,8 @@ class FavoritesState extends ChangeNotifier {
   Future<void> toggle(Listing listing) async {
     final key = listingKey(listing);
     final i = _items.indexWhere((item) => listingKey(item) == key);
-    if (i >= 0) {
+    final removing = i >= 0;
+    if (removing) {
       _items.removeAt(i);
       _keys.remove(key);
     } else {
@@ -52,7 +80,12 @@ class FavoritesState extends ChangeNotifier {
       _keys.add(key);
     }
     notifyListeners();
-    await _save();
+    await _saveLocalCache();
+    if (removing) {
+      await _repository.deleteFavorite(listing);
+    } else {
+      await _repository.putFavorite(listing);
+    }
   }
 
   Future<void> remove(Listing listing) async {
@@ -60,7 +93,8 @@ class FavoritesState extends ChangeNotifier {
     _items.removeWhere((item) => listingKey(item) == key);
     _keys.remove(key);
     notifyListeners();
-    await _save();
+    await _saveLocalCache();
+    await _repository.deleteFavorite(listing);
   }
 
   /// Grouped as country code → (city name → listings). Cities with no name are
@@ -80,7 +114,7 @@ class FavoritesState extends ChangeNotifier {
       ..addAll(_items.map(listingKey));
   }
 
-  Future<void> _save() async {
+  Future<void> _saveLocalCache() async {
     try {
       final p = await SharedPreferences.getInstance();
       await p.setString(
