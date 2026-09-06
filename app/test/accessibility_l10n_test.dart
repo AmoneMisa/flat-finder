@@ -1,8 +1,13 @@
 import 'package:flat_finder/l10n/review_strings.dart';
 import 'package:flat_finder/l10n/strings.dart';
+import 'package:flat_finder/screens/settings_screen.dart';
+import 'package:flat_finder/services/api_service.dart';
+import 'package:flat_finder/state/presets.dart';
 import 'package:flat_finder/state/settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Size? _minimumSize(ButtonStyle? style) =>
     style?.minimumSize?.resolve(const <WidgetState>{});
@@ -62,5 +67,47 @@ void main() {
         greaterThanOrEqualTo(48),
       );
     }
+  });
+
+  testWidgets('settings RadioGroups update theme and nullable currency',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    final settings = SettingsState();
+    final api = ApiService(baseUrl: 'https://example.test');
+    final presets = PresetsState(api);
+    addTearDown(() {
+      presets.dispose();
+      settings.dispose();
+      api.dispose();
+    });
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsState>.value(value: settings),
+          ChangeNotifierProvider<PresetsState>.value(value: presets),
+        ],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+
+    final lightTheme = find.byWidgetPredicate(
+      (widget) => widget is RadioListTile<String> && widget.value == 'light',
+    );
+    expect(lightTheme, findsOneWidget);
+    await tester.tap(lightTheme);
+    await tester.pump();
+    expect(settings.themeName, 'light');
+
+    await settings.setDisplayCurrency('USD');
+    await tester.pump();
+    final nativeCurrency = find.byWidgetPredicate(
+      (widget) => widget is RadioListTile<String?> && widget.value == null,
+    );
+    expect(nativeCurrency, findsOneWidget);
+    await tester.ensureVisible(nativeCurrency);
+    await tester.tap(nativeCurrency);
+    await tester.pump();
+    expect(settings.displayCurrency, isNull);
   });
 }
