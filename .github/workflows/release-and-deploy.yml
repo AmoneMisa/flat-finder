@@ -37,7 +37,7 @@ jobs:
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --quiet last-released..HEAD -- app/lib app/android app/assets app/pubspec.yaml; then
+          if git diff --quiet last-released..HEAD -- app/lib app/android app/assets app/pubspec.yaml app/pubspec.lock; then
             echo "Nothing under app/ changed since the last release."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
@@ -96,13 +96,16 @@ jobs:
             "keyPassword=$ANDROID_KEY_PASSWORD" \
             > key.properties
 
-      # Same Firebase client identifiers build-release.ps1 falls back to --
-      # these are public app identifiers, not secrets (Firebase's own model).
-      - name: Build signed universal release APK
+      # A manual release is the final gate, not a way around PR CI. Re-run the
+      # analyzer and tests against the exact source tree/build number that will
+      # be signed, then build the universal APK.
+      - name: Verify and build signed universal release APK
         working-directory: app
         run: |
           set -euo pipefail
           flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
           flutter build apk --release \
             --dart-define=FIREBASE_API_KEY=AIzaSyCUc7PVkioirWhw6jPMt1ZVaWxOijsWlnk \
             --dart-define=FIREBASE_APP_ID=1:209896392944:android:b142e13aef2b35ef111a35 \
