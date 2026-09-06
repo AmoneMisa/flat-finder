@@ -56,8 +56,10 @@ class PresetsState extends ChangeNotifier {
     this._api, {
     UserSavedStateRepository? saved,
     PushService? push,
+    InstallationIdentity? identity,
   })  : _saved = saved,
-        _push = push ?? PushService.instance;
+        _push = push ?? PushService.instance,
+        _identity = identity ?? InstallationIdentity();
 
   static const _kPresets = 'filterPresets';
   static const _kPushMaster = 'filterPresetPushMaster';
@@ -66,8 +68,8 @@ class PresetsState extends ChangeNotifier {
   final ApiService _api;
   final UserSavedStateRepository? _saved;
   final PushService _push;
+  final InstallationIdentity _identity;
   final List<FilterPreset> _presets = [];
-  final InstallationIdentity _identity = InstallationIdentity();
   StreamSubscription<String>? _tokenSub;
 
   Future<bool>? _syncFuture;
