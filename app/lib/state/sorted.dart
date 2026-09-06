@@ -70,15 +70,16 @@ class SortedCollection {
       };
 }
 
-/// User-created listing collections. PostgreSQL is authoritative; the previous
-/// SharedPreferences document remains an offline cache and migration source.
+/// User-created listing collections. PostgreSQL is authoritative in the app;
+/// SharedPreferences is an offline cache. The optional repository keeps this
+/// state independently testable without network infrastructure.
 class SortedState extends ChangeNotifier {
-  SortedState(this._repository);
+  SortedState([this._repository]);
 
   static const _key = 'sortedListings';
   static const _version = 3;
 
-  final UserSavedStateRepository _repository;
+  final UserSavedStateRepository? _repository;
   final List<SortedCollection> _collections = [];
   final Set<String> _keys = {};
 
@@ -93,8 +94,10 @@ class SortedState extends ChangeNotifier {
 
   Future<void> load() async {
     await _loadLocalCache();
+    final repository = _repository;
+    if (repository == null) return;
     try {
-      final snapshot = await _repository.snapshot();
+      final snapshot = await repository.snapshot();
       final remote = <SortedCollection>[];
       for (final entry in (snapshot['sorted'] as List? ?? const [])) {
         if (entry is! Map) continue;
@@ -173,8 +176,6 @@ class SortedState extends ChangeNotifier {
   }) async {
     final key = listingKey(listing);
 
-    // A listing belongs to one sorted collection. PostgreSQL enforces the same
-    // move semantics transactionally.
     for (var i = _collections.length - 1; i >= 0; i--) {
       final remaining = _collections[i].items
           .where((item) => listingKey(item) != key)
@@ -217,7 +218,7 @@ class SortedState extends ChangeNotifier {
     _keys.add(key);
     notifyListeners();
     await _saveLocalCache();
-    await _repository.putSorted(
+    await _repository?.putSorted(
       listing,
       collectionId: collectionId,
       collectionTitle: collectionTitle,
@@ -245,8 +246,10 @@ class SortedState extends ChangeNotifier {
     _rebuildIndex();
     notifyListeners();
     await _saveLocalCache();
+    final repository = _repository;
+    if (repository == null) return;
     for (final id in affected) {
-      await _repository.deleteSorted(listing, collectionId: id);
+      await repository.deleteSorted(listing, collectionId: id);
     }
   }
 
@@ -255,7 +258,7 @@ class SortedState extends ChangeNotifier {
     _rebuildIndex();
     notifyListeners();
     await _saveLocalCache();
-    await _repository.deleteSortedCollection(collectionId);
+    await _repository?.deleteSortedCollection(collectionId);
   }
 
   void _rebuildIndex() {
