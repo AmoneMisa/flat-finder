@@ -12,14 +12,12 @@ class FavoritesState extends ChangeNotifier {
   static const _kFavorites = 'favorites';
 
   final List<Listing> _items = [];
+  final Set<String> _keys = {};
 
   List<Listing> get items => List.unmodifiable(_items);
   bool get isEmpty => _items.isEmpty;
 
-  bool isFavorite(Listing listing) {
-    final key = listingKey(listing);
-    return _items.any((item) => listingKey(item) == key);
-  }
+  bool isFavorite(Listing listing) => _keys.contains(listingKey(listing));
 
   Future<void> load() async {
     try {
@@ -32,10 +30,14 @@ class FavoritesState extends ChangeNotifier {
           ..addAll(
             list.map((e) => Listing.fromJson(Map<String, dynamic>.from(e))),
           );
+        _rebuildIndex();
         notifyListeners();
       }
     } catch (_) {
-      // Corrupt/incompatible saved state: start empty.
+      // Corrupt/incompatible saved state: start empty and keep the list/index
+      // consistent rather than leaving a partially decoded collection behind.
+      _items.clear();
+      _keys.clear();
     }
   }
 
@@ -44,8 +46,10 @@ class FavoritesState extends ChangeNotifier {
     final i = _items.indexWhere((item) => listingKey(item) == key);
     if (i >= 0) {
       _items.removeAt(i);
+      _keys.remove(key);
     } else {
       _items.insert(0, listing);
+      _keys.add(key);
     }
     notifyListeners();
     await _save();
@@ -54,6 +58,7 @@ class FavoritesState extends ChangeNotifier {
   Future<void> remove(Listing listing) async {
     final key = listingKey(listing);
     _items.removeWhere((item) => listingKey(item) == key);
+    _keys.remove(key);
     notifyListeners();
     await _save();
   }
@@ -67,6 +72,12 @@ class FavoritesState extends ChangeNotifier {
       byCity.putIfAbsent(l.city, () => []).add(l);
     }
     return out;
+  }
+
+  void _rebuildIndex() {
+    _keys
+      ..clear()
+      ..addAll(_items.map(listingKey));
   }
 
   Future<void> _save() async {
