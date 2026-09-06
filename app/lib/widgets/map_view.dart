@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/review_strings.dart';
+import '../l10n/strings.dart';
 import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/map_listing_point.dart';
@@ -1181,18 +1182,29 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
         for (final poi in pois)
           Marker(
             point: LatLng(poi.lat, poi.lng),
-            width: 34,
-            height: 34,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
+            width: 48,
+            height: 48,
+            child: Semantics(
+              button: true,
+              selected: poi.id == _selectedZoneId,
+              label: poi.label,
               onTap: () => _handlePointTap(
                 LatLng(poi.lat, poi.lng),
                 () => unawaited(_selectZone(poi)),
               ),
-              child: _PoiMarker(
-                icon: icon,
-                color: _parseHexColor(poi.colorHex),
-                selected: poi.id == _selectedZoneId,
+              child: ExcludeSemantics(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _handlePointTap(
+                    LatLng(poi.lat, poi.lng),
+                    () => unawaited(_selectZone(poi)),
+                  ),
+                  child: _PoiMarker(
+                    icon: icon,
+                    color: _parseHexColor(poi.colorHex),
+                    selected: poi.id == _selectedZoneId,
+                  ),
+                ),
               ),
             ),
           ),
@@ -1209,7 +1221,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   /// map's pan recognizer won the arena and panned the view instead (verified
   /// on a device -- the handle tracked the finger while the radius never
   /// changed). A sibling above the map is hit-tested first and keeps the drag.
-  List<Widget> _metroHandleOverlay(Filters filters) {
+  List<Widget> _metroHandleOverlay(Filters filters, AppStrings s) {
     final stations = _selectedMetroStations(filters);
     if (stations.isEmpty || !_showMetro) return const [];
     final anchor = LatLng(stations.first.lat, stations.first.lng);
@@ -1231,21 +1243,38 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
           point.y > box.size.height + 40) {
         return null;
       }
+      final semanticLabel = switch (kind) {
+        'radius' => s.metroRadiusHandle,
+        'from' => s.metroArcStartHandle,
+        _ => s.metroArcEndHandle,
+      };
+      final semanticValue = kind == 'radius'
+          ? '${_shapeRadiusM(filters).round()} ${s.metresShort}'
+          : '${_handleBearing(filters, kind).round()}°';
       return Positioned(
-        left: point.x - 22,
-        top: point.y - 22,
-        width: 44,
-        height: 44,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (_) => setState(() => _draggingMetroHandle = kind),
-          onPanUpdate: (details) =>
-              _onMetroHandlePanUpdate(kind, anchor, filters, details),
-          onPanEnd: (_) => unawaited(_onMetroHandlePanEnd()),
-          onPanCancel: () => setState(() => _draggingMetroHandle = null),
-          child: _MetroHandleMarker(
-            kind: kind,
-            active: _draggingMetroHandle == kind,
+        left: point.x - 24,
+        top: point.y - 24,
+        width: 48,
+        height: 48,
+        child: Semantics(
+          label: semanticLabel,
+          value: semanticValue,
+          hint: s.adjustWithDragOrButtons,
+          onIncrease: () => _nudgeMetroHandle(kind, filters, increase: true),
+          onDecrease: () => _nudgeMetroHandle(kind, filters, increase: false),
+          child: ExcludeSemantics(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (_) => setState(() => _draggingMetroHandle = kind),
+              onPanUpdate: (details) =>
+                  _onMetroHandlePanUpdate(kind, anchor, filters, details),
+              onPanEnd: (_) => unawaited(_onMetroHandlePanEnd()),
+              onPanCancel: () => setState(() => _draggingMetroHandle = null),
+              child: _MetroHandleMarker(
+                kind: kind,
+                active: _draggingMetroHandle == kind,
+              ),
+            ),
           ),
         ),
       );
@@ -1255,6 +1284,42 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
       for (final kind in const ['radius', 'from', 'to'])
         if (handle(kind) case final Widget widget) widget,
     ];
+  }
+
+  void _nudgeMetroHandle(
+    String kind,
+    Filters filters, {
+    required bool increase,
+  }) {
+    final state = context.read<AppState>();
+    final direction = increase ? 1.0 : -1.0;
+    Filters next;
+    if (kind == 'radius') {
+      final radius = (_shapeRadiusM(filters).toDouble() + direction * 100)
+          .clamp(metroMinRadiusM, metroMaxRadiusM)
+          .toDouble();
+      next = filters.copyWith(metroMaxM: radius);
+    } else {
+      final from = _shapeBearingFrom(filters)?.toDouble() ?? 270;
+      final to = _shapeBearingTo(filters)?.toDouble() ?? 90;
+      if (kind == 'from') {
+        next = filters.copyWith(
+          metroBearingFrom: normalizeBearing(from + direction * 15),
+          metroBearingTo: to,
+        );
+      } else {
+        next = filters.copyWith(
+          metroBearingFrom: from,
+          metroBearingTo: normalizeBearing(to + direction * 15),
+        );
+      }
+    }
+    if (!state.updateFilters(next)) return;
+    unawaited(() async {
+      await state.search();
+      if (!mounted) return;
+      await state.loadMapListings();
+    }());
   }
 
   @override
@@ -1522,21 +1587,32 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                       for (final station in _zones.metroStations)
                         Marker(
                           point: LatLng(station.lat, station.lng),
-                          width: 34,
-                          height: 34,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
+                          width: 48,
+                          height: 48,
+                          child: Semantics(
+                            button: true,
+                            selected: filters.metro.contains(station.name),
+                            label: station.label,
                             onTap: () => _handlePointTap(
                               LatLng(station.lat, station.lng),
                               () => unawaited(_toggleMetroStation(station)),
                             ),
-                            child: _MetroStationMarker(
-                              selected:
-                                  filters.metro.contains(station.name),
-                              dimmed: filters.metro.isNotEmpty &&
-                                  !filters.metro.contains(
-                                    station.name,
-                                  ),
+                            child: ExcludeSemantics(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => _handlePointTap(
+                                  LatLng(station.lat, station.lng),
+                                  () => unawaited(_toggleMetroStation(station)),
+                                ),
+                                child: _MetroStationMarker(
+                                  selected:
+                                      filters.metro.contains(station.name),
+                                  dimmed: filters.metro.isNotEmpty &&
+                                      !filters.metro.contains(
+                                        station.name,
+                                      ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1701,7 +1777,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
           child: ValueListenableBuilder<int>(
             valueListenable: _cameraOverlayTick,
             builder: (context, _, __) => Stack(
-              children: _metroHandleOverlay(filters),
+              children: _metroHandleOverlay(filters, s),
             ),
           ),
         ),
@@ -1930,22 +2006,38 @@ class _ZoneToggle extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
+      child: Semantics(
+        button: true,
+        selected: active,
+        label: label,
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color:
-                active ? scheme.primary : Colors.black.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: active ? scheme.primary : Colors.white24),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? scheme.onPrimary : Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+        child: ExcludeSemantics(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: active
+                      ? scheme.primary
+                      : Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: active ? scheme.primary : Colors.white24,
+                  ),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: active ? scheme.onPrimary : Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -2020,22 +2112,34 @@ class _MetroStationMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: dimmed ? 0.45 : 1,
-      child: Container(
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.black.withValues(alpha: 0.78),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? Colors.white : _metro200Color,
-            width: selected ? 2.5 : 2,
+    return Center(
+      child: SizedBox(
+        width: 34,
+        height: 34,
+        child: Opacity(
+          opacity: dimmed ? 0.45 : 1,
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.black.withValues(alpha: 0.78),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: selected ? Colors.white : _metro200Color,
+                width: selected ? 2.5 : 2,
+              ),
+              boxShadow: const [
+                BoxShadow(color: Colors.black38, blurRadius: 3),
+              ],
+            ),
+            child: const Icon(
+              Icons.subway_outlined,
+              size: 18,
+              color: Colors.white,
+            ),
           ),
-          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
         ),
-        child: const Icon(Icons.subway_outlined, size: 18, color: Colors.white),
       ),
     );
   }
@@ -2091,20 +2195,28 @@ class _PoiMarker extends StatelessWidget {
   final bool selected;
 
   @override
-  Widget build(BuildContext context) => Container(
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.black.withValues(alpha: 0.78),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? Colors.white : color,
-            width: selected ? 2.5 : 2,
+  Widget build(BuildContext context) => Center(
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.black.withValues(alpha: 0.78),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: selected ? Colors.white : color,
+                width: selected ? 2.5 : 2,
+              ),
+              boxShadow: const [
+                BoxShadow(color: Colors.black38, blurRadius: 3),
+              ],
+            ),
+            child: Icon(icon, size: 18, color: Colors.white),
           ),
-          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 3)],
         ),
-        child: Icon(icon, size: 18, color: Colors.white),
       );
 }
 

@@ -32,6 +32,10 @@ void main() {
     expect(en.metresShort, 'm');
     expect(ru.kilometresShort, 'км');
     expect(en.kilometresShort, 'km');
+    expect(ru.metroRadiusHandle, 'Радиус метро');
+    expect(en.metroRadiusHandle, 'Metro radius');
+    expect(ru.metroArcStartHandle, 'Начало сектора метро');
+    expect(en.metroArcEndHandle, 'Metro sector end');
   });
 
   test('primary button themes keep a 48dp minimum touch height', () {

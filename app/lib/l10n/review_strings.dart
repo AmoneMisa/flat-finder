@@ -19,6 +19,12 @@ extension ReviewStrings on AppStrings {
       _ru ? 'Указать работу на карте' : 'Set work location on map';
   String get metresShort => _ru ? 'м' : 'm';
   String get kilometresShort => _ru ? 'км' : 'km';
+  String get metroRadiusHandle => _ru ? 'Радиус метро' : 'Metro radius';
+  String get metroArcStartHandle => _ru ? 'Начало сектора метро' : 'Metro sector start';
+  String get metroArcEndHandle => _ru ? 'Конец сектора метро' : 'Metro sector end';
+  String get adjustWithDragOrButtons => _ru
+      ? 'Перетащите или используйте действия увеличить и уменьшить'
+      : 'Drag or use the increase and decrease actions';
   String get sortedEmpty => _ru
       ? 'Здесь появятся квартиры после свайпа вправо'
       : 'Apartments sorted with a right swipe will appear here';
