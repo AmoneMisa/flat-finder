@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -7,6 +8,7 @@ import 'installation_identity.dart';
 
 extension SavedStateApi on ApiService {
   static const _savedStateTimeout = Duration(seconds: 15);
+  static const _maxRateLimitAttempts = 4;
 
   Map<String, String> _savedStateHeaders(
     InstallationCredentials credentials, {
@@ -17,15 +19,45 @@ extension SavedStateApi on ApiService {
         if (json) 'Content-Type': 'application/json',
       };
 
+  Future<http.Response> _sendWithRateLimitRetry(
+    Future<http.Response> Function() send,
+  ) async {
+    http.Response? response;
+    for (var attempt = 0; attempt < _maxRateLimitAttempts; attempt++) {
+      response = await send().timeout(_savedStateTimeout);
+      if (response.statusCode != 429 ||
+          attempt == _maxRateLimitAttempts - 1) {
+        return response;
+      }
+      await Future<void>.delayed(_rateLimitDelay(response));
+    }
+    return response!;
+  }
+
+  Duration _rateLimitDelay(http.Response response) {
+    var delayMs = 300;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map && decoded['retryAfterMs'] is num) {
+        delayMs = (decoded['retryAfterMs'] as num).round();
+      } else {
+        final retryAfter = int.tryParse(response.headers['retry-after'] ?? '');
+        if (retryAfter != null) delayMs = retryAfter * 1000;
+      }
+    } catch (_) {}
+    // A small margin avoids immediately landing on the same limiter boundary.
+    return Duration(milliseconds: delayMs.clamp(50, 5000) + 40);
+  }
+
   Future<Map<String, dynamic>> fetchRemoteSavedState(
     InstallationCredentials credentials,
   ) async {
-    final response = await http
-        .get(
-          Uri.parse('$baseUrl/api/mobile/saved-state'),
-          headers: _savedStateHeaders(credentials),
-        )
-        .timeout(_savedStateTimeout);
+    final response = await _sendWithRateLimitRetry(
+      () => http.get(
+        Uri.parse('$baseUrl/api/mobile/saved-state'),
+        headers: _savedStateHeaders(credentials),
+      ),
+    );
     return _decodeSavedStateResponse(response);
   }
 
@@ -35,17 +67,16 @@ extension SavedStateApi on ApiService {
     required List<Map<String, dynamic>> sorted,
     required List<Map<String, dynamic>> presets,
   }) async {
-    final response = await http
-        .post(
-          Uri.parse('$baseUrl/api/mobile/saved-state/import'),
-          headers: _savedStateHeaders(credentials, json: true),
-          body: jsonEncode({
-            'favorites': favorites,
-            'sorted': sorted,
-            'presets': presets,
-          }),
-        )
-        .timeout(_savedStateTimeout);
+    final uri = Uri.parse('$baseUrl/api/mobile/saved-state/import');
+    final body = jsonEncode({
+      'favorites': favorites,
+      'sorted': sorted,
+      'presets': presets,
+    });
+    final headers = _savedStateHeaders(credentials, json: true);
+    final response = await _sendWithRateLimitRetry(
+      () => http.post(uri, headers: headers, body: body),
+    );
     _decodeSavedStateResponse(response);
   }
 
@@ -53,13 +84,12 @@ extension SavedStateApi on ApiService {
     InstallationCredentials credentials,
     Map<String, dynamic> mutation,
   ) async {
-    final response = await http
-        .post(
-          Uri.parse('$baseUrl/api/mobile/saved-state/mutate'),
-          headers: _savedStateHeaders(credentials, json: true),
-          body: jsonEncode(mutation),
-        )
-        .timeout(_savedStateTimeout);
+    final uri = Uri.parse('$baseUrl/api/mobile/saved-state/mutate');
+    final body = jsonEncode(mutation);
+    final headers = _savedStateHeaders(credentials, json: true);
+    final response = await _sendWithRateLimitRetry(
+      () => http.post(uri, headers: headers, body: body),
+    );
     _decodeSavedStateResponse(response);
   }
 }
