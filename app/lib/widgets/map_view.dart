@@ -97,7 +97,7 @@ class MapView extends StatefulWidget {
 
 class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   final MapController _controller = MapController();
-  final ApiService _api = ApiService();
+  ApiService get _api => context.read<ApiService>();
   late final AnimationController _cameraAnim = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 320),
@@ -141,6 +141,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
 
   // Canonical geography overlay layers.
   MapZones _zones = const MapZones();
+  int _zonesLoadGeneration = 0;
   String? _selectedDistrictId;
   String? _selectedZoneId;
   String? _activeZoneFocusId;
@@ -226,12 +227,18 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
 
   Future<void> _loadZones({bool focusCity = false}) async {
     if (widget.country.isEmpty || widget.city.isEmpty) return;
-    final zones = await _api.fetchMapZones(
-      widget.country,
-      widget.city,
-      locale: widget.locale,
-    );
-    if (!mounted) return;
+    final generation = ++_zonesLoadGeneration;
+    final country = widget.country;
+    final city = widget.city;
+    final locale = widget.locale;
+    final zones = await _api.fetchMapZones(country, city, locale: locale);
+    if (!mounted ||
+        generation != _zonesLoadGeneration ||
+        country != widget.country ||
+        city != widget.city ||
+        locale != widget.locale) {
+      return;
+    }
     setState(() => _zones = zones);
 
     // Filters and map share one canonical selection. If a saved preset, filter
@@ -264,6 +271,9 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
       _expandedGroupPage = 0;
     }
     if (cityChanged) {
+      // Invalidate a request for the previous city even when the new city is
+      // empty (in that case _loadZones itself deliberately does not start).
+      _zonesLoadGeneration += 1;
       _selectedDistrictId = null;
       _selectedZoneId = null;
       _activeZoneFocusId = null;
@@ -1289,7 +1299,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   TileLayer(
                     urlTemplate:
                         'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.example.flat_finder',
+                    userAgentPackageName: 'com.flatfinder.flat_finder',
                     maxZoom: 19,
                     // Keep a ring of off-screen tiles cached and fade new tiles
                     // in instead of popping them in, so panning/zooming doesn't
