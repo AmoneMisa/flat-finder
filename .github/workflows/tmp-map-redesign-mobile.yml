@@ -1,0 +1,42 @@
+name: Temporary mobile map redesign
+
+on:
+  push:
+    branches:
+      - feature/map-redesign-mobile
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Apply map redesign patch
+        run: python scripts/patch_map_redesign_mobile.py
+      - name: Format and verify Flutter
+        working-directory: app
+        run: |
+          dart format lib/models/district_zone.dart lib/widgets/map_view.dart
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Commit verified sources
+        shell: bash
+        run: |
+          git config user.name "MARHARYTA KUBAI"
+          git config user.email "44707323+AmoneMisa@users.noreply.github.com"
+          git add app/lib/models/district_zone.dart app/lib/widgets/map_view.dart
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m "feat(map): port grouped overlays and price clusters to Flutter"
+          git push origin HEAD:feature/map-redesign-mobile
