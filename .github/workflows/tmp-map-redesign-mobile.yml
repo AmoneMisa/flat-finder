@@ -19,12 +19,14 @@ jobs:
           channel: stable
           cache: true
       - name: Apply map redesign patch
-        run: python scripts/patch_map_redesign_mobile.py
+        run: |
+          python scripts/patch_map_redesign_mobile.py
+          python scripts/fix_map_redesign_mobile_patch.py
       - name: Format and verify Flutter
         working-directory: app
         run: |
-          dart format lib/models/district_zone.dart lib/widgets/map_view.dart
           flutter pub get --enforce-lockfile
+          dart format lib/models/district_zone.dart lib/widgets/map_view.dart
           flutter analyze --no-fatal-infos
           flutter test
       - name: Commit verified sources
