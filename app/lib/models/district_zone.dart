@@ -86,9 +86,13 @@ class DistrictZone {
 /// All canonical map-zone layers for one city.
 class MapZones {
   final List<DistrictZone> districtZones;
+  final List<DistrictZone> regionZones;
   final List<DistrictZone> microdistrictMarkers;
+  final List<DistrictZone> mahallaMarkers;
+  final List<DistrictZone> quarterMarkers;
   final List<DistrictZone> quartalMarkers;
   final List<DistrictZone> areaZones;
+  final List<DistrictZone> zoneMarkers;
   final List<DistrictZone> metroStations;
   final List<DistrictZone> parks;
   final List<DistrictZone> shoppingMalls;
@@ -104,9 +108,13 @@ class MapZones {
 
   const MapZones({
     this.districtZones = const [],
+    this.regionZones = const [],
     this.microdistrictMarkers = const [],
+    this.mahallaMarkers = const [],
+    this.quarterMarkers = const [],
     this.quartalMarkers = const [],
     this.areaZones = const [],
+    this.zoneMarkers = const [],
     this.metroStations = const [],
     this.parks = const [],
     this.shoppingMalls = const [],
@@ -124,9 +132,19 @@ class MapZones {
   Iterable<DistrictZone> get allZones sync* {
     if (cityZone != null) yield cityZone!;
     yield* districtZones;
+    yield* regionZones;
     yield* microdistrictMarkers;
-    yield* quartalMarkers;
-    yield* areaZones;
+    if (mahallaMarkers.isNotEmpty) {
+      yield* mahallaMarkers;
+    } else {
+      yield* quartalMarkers;
+    }
+    yield* quarterMarkers;
+    if (zoneMarkers.isNotEmpty) {
+      yield* zoneMarkers;
+    } else {
+      yield* areaZones;
+    }
     yield* metroStations;
     yield* parks;
     yield* shoppingMalls;
@@ -143,6 +161,12 @@ class MapZones {
   List<DistrictZone> transport(String mode) =>
       transportStops.where((zone) => zone.mode == mode).toList(growable: false);
 
+  List<DistrictZone> get effectiveMahallas =>
+      mahallaMarkers.isNotEmpty ? mahallaMarkers : quartalMarkers;
+
+  List<DistrictZone> get effectiveZones =>
+      zoneMarkers.isNotEmpty ? zoneMarkers : areaZones;
+
   DistrictZone? byId(String? id) {
     if (id == null || id.isEmpty) return null;
     for (final zone in allZones) {
@@ -157,9 +181,17 @@ class MapZones {
         .toList(growable: false);
     return MapZones(
       districtZones: list('districtZones'),
+      regionZones: list('regionZones'),
       microdistrictMarkers: list('microdistrictMarkers'),
+      mahallaMarkers: list('mahallaMarkers').isNotEmpty
+          ? list('mahallaMarkers')
+          : list('quartalMarkers'),
+      quarterMarkers: list('quarterMarkers'),
       quartalMarkers: list('quartalMarkers'),
       areaZones: list('areaZones'),
+      zoneMarkers: list('zoneMarkers').isNotEmpty
+          ? list('zoneMarkers')
+          : list('areaZones'),
       metroStations: list('metroStations'),
       parks: list('parks'),
       shoppingMalls: list('shoppingMalls'),

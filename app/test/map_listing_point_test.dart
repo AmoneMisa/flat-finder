@@ -23,6 +23,7 @@ void main() {
       'rooms': 2,
       'areaSqm': 54,
       'photo': 'https://example.test/photo.jpg',
+      'residenceComplex': 'NRG Oybek',
       'createdAt': '2026-08-31T08:00:00.000Z',
     });
 
@@ -30,6 +31,7 @@ void main() {
     expect(point.lat, 41.31);
     expect(point.publicId, 42);
     expect(point.marketMedianUsd, isNull);
+    expect(point.residenceComplex, 'NRG Oybek');
   });
 
   test('adapts loaded listing and creates one preview fallback', () {

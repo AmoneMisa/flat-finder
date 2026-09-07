@@ -149,18 +149,21 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   String? _selectedZoneId;
   String? _activeZoneFocusId;
 
-  // Defaults mostly match Personal Site; metro is opt-in because its three
-  // proximity rings are visually dense.
+  // Defaults mostly match Personal Site; metro is opt-in and renders only
+  // the single radius currently selected by the user.
   bool _showCity = true;
+  bool _showRegions = true;
   bool _showDistricts = true;
   bool _showMicrodistricts = false;
   bool _showQuartals = false;
+  bool _showQuarters = false;
   bool _showAreas = true;
   bool _showMetro = false;
   bool _showBus = false;
   bool _showTram = false;
   bool _showTrolleybus = false;
   bool _showMinibus = false;
+  bool _showFunicular = false;
   bool _showParks = false;
   bool _showShoppingMalls = false;
   bool _showUniversities = false;
@@ -175,6 +178,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
   double _tramRadiusM = 500;
   double _trolleybusRadiusM = 500;
   double _minibusRadiusM = 500;
+  double _funicularRadiusM = 500;
   double _parkRadiusM = 500;
   double _mallRadiusM = 500;
   double _universityRadiusM = 500;
@@ -447,12 +451,17 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
 
   void _showLayerFor(DistrictZone zone) {
     switch (zone.type) {
+      case 'region':
+        _showRegions = true;
       case 'district':
         _showDistricts = true;
       case 'microdistrict':
         _showMicrodistricts = true;
       case 'mahalla':
         _showQuartals = true;
+      case 'quarter':
+      case 'quartal':
+        _showQuarters = true;
       case 'local_area':
       case 'development_area':
         _showAreas = true;
@@ -913,6 +922,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
         'tram' => _tramRadiusM,
         'trolleybus' => _trolleybusRadiusM,
         'minibus' => _minibusRadiusM,
+        'funicular' => _funicularRadiusM,
         _ => _busRadiusM,
       };
 
@@ -921,6 +931,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
         'tram' => _showTram,
         'trolleybus' => _showTrolleybus,
         'minibus' => _showMinibus,
+        'funicular' => _showFunicular,
         _ => false,
       };
 
@@ -928,6 +939,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
         'tram' => Icons.tram_outlined,
         'trolleybus' => Icons.directions_bus_outlined,
         'minibus' => Icons.airport_shuttle_outlined,
+        'funicular' => Icons.elevator_outlined,
         _ => Icons.directions_bus_outlined,
       };
 
@@ -993,6 +1005,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
             required ValueChanged<bool> onChanged,
             double? radius,
             ValueChanged<double>? onRadius,
+            bool continuousRadius = false,
           }) {
             return Column(
               mainAxisSize: MainAxisSize.min,
@@ -1006,7 +1019,11 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   value: available && value,
                   onChanged: available ? onChanged : null,
                 ),
-                if (available && value && radius != null && onRadius != null)
+                if (available &&
+                    value &&
+                    radius != null &&
+                    onRadius != null &&
+                    !continuousRadius)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(56, 0, 20, 8),
                     child: Row(
@@ -1028,15 +1045,73 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                       ],
                     ),
                   ),
+                if (available &&
+                    value &&
+                    radius != null &&
+                    onRadius != null &&
+                    continuousRadius)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(56, 0, 20, 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            min: 100,
+                            max: 5000,
+                            divisions: 98,
+                            value: radius.clamp(100, 5000),
+                            onChanged: onRadius,
+                          ),
+                        ),
+                        SizedBox(
+                          width: 82,
+                          child: TextFormField(
+                            key: ValueKey('$label-${radius.round()}'),
+                            initialValue: radius.round().toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              suffixText: 'м',
+                              isDense: true,
+                            ),
+                            onFieldSubmitted: (raw) {
+                              final parsed = double.tryParse(raw);
+                              if (parsed != null) {
+                                onRadius(parsed.clamp(100, 5000));
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             );
           }
 
+          Widget section(String label) => Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 2),
+                child: Text(
+                  label.toUpperCase(),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                ),
+              );
+
           final children = <Widget>[];
           if (group == _MapLayerGroup.territories) {
             children.addAll([
+              section(_mapCopy(context, 'Административные', 'Administrative')),
               toggle(
-                  label: s.t('city'),
+                  label: _mapCopy(context, 'Области', 'Regions'),
+                  icon: Icons.public_outlined,
+                  value: _showRegions,
+                  available: _zones.regionZones.isNotEmpty,
+                  onChanged: (v) => update(() => _showRegions = v)),
+              toggle(
+                  label: _mapCopy(context, 'Граница города', 'City boundary'),
                   icon: Icons.location_city_outlined,
                   value: _showCity,
                   available: _zones.cityZone != null,
@@ -1047,6 +1122,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   value: _showDistricts,
                   available: _zones.districtZones.isNotEmpty,
                   onChanged: (v) => update(() => _showDistricts = v)),
+              section(_mapCopy(context, 'Локальные', 'Local')),
               toggle(
                   label: s.t('microdistricts'),
                   icon: Icons.grid_view_outlined,
@@ -1054,16 +1130,23 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.microdistrictMarkers.isNotEmpty,
                   onChanged: (v) => update(() => _showMicrodistricts = v)),
               toggle(
-                  label: s.t('quartals'),
+                  label: _mapCopy(context, 'Махалли', 'Mahallas'),
                   icon: Icons.dashboard_outlined,
                   value: _showQuartals,
-                  available: _zones.quartalMarkers.isNotEmpty,
+                  available: _zones.effectiveMahallas.isNotEmpty,
                   onChanged: (v) => update(() => _showQuartals = v)),
               toggle(
-                  label: s.t('areas'),
+                  label: _mapCopy(context, 'Кварталы', 'Quarters'),
+                  icon: Icons.view_module_outlined,
+                  value: _showQuarters,
+                  available: _zones.quarterMarkers.isNotEmpty,
+                  onChanged: (v) => update(() => _showQuarters = v)),
+              section(_mapCopy(context, 'Прочее', 'Other')),
+              toggle(
+                  label: _mapCopy(context, 'Зоны', 'Zones'),
                   icon: Icons.map_outlined,
                   value: _showAreas,
-                  available: _zones.areaZones.isNotEmpty,
+                  available: _zones.effectiveZones.isNotEmpty,
                   onChanged: (v) => update(() => _showAreas = v)),
             ]);
           } else if (group == _MapLayerGroup.transport) {
@@ -1115,6 +1198,14 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   onChanged: (v) => update(() => _showMinibus = v),
                   radius: _minibusRadiusM,
                   onRadius: (v) => update(() => _minibusRadiusM = v)),
+              toggle(
+                  label: _mapCopy(context, 'Фуникулёр', 'Funicular'),
+                  icon: Icons.elevator_outlined,
+                  value: _showFunicular,
+                  available: _zones.transport('funicular').isNotEmpty,
+                  onChanged: (v) => update(() => _showFunicular = v),
+                  radius: _funicularRadiusM,
+                  onRadius: (v) => update(() => _funicularRadiusM = v)),
             ]);
           } else {
             children.addAll([
@@ -1132,6 +1223,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.schools.isNotEmpty,
                   onChanged: (v) => update(() => _showSchools = v),
                   radius: _schoolRadiusM,
+                  continuousRadius: true,
                   onRadius: (v) => update(() => _schoolRadiusM = v)),
               toggle(
                   label: s.t('shoppingMalls'),
@@ -1140,6 +1232,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.shoppingMalls.isNotEmpty,
                   onChanged: (v) => update(() => _showShoppingMalls = v),
                   radius: _mallRadiusM,
+                  continuousRadius: true,
                   onRadius: (v) => update(() => _mallRadiusM = v)),
               toggle(
                   label: s.t('parks'),
@@ -1148,6 +1241,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.parks.isNotEmpty,
                   onChanged: (v) => update(() => _showParks = v),
                   radius: _parkRadiusM,
+                  continuousRadius: true,
                   onRadius: (v) => update(() => _parkRadiusM = v)),
               toggle(
                   label: s.t('universities'),
@@ -1156,6 +1250,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.universities.isNotEmpty,
                   onChanged: (v) => update(() => _showUniversities = v),
                   radius: _universityRadiusM,
+                  continuousRadius: true,
                   onRadius: (v) => update(() => _universityRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Парковки', 'Parking'),
@@ -1164,6 +1259,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.parkings.isNotEmpty,
                   onChanged: (v) => update(() => _showParkings = v),
                   radius: _parkingRadiusM,
+                  continuousRadius: true,
                   onRadius: (v) => update(() => _parkingRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Аэропорт', 'Airport'),
@@ -1172,6 +1268,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.airports.isNotEmpty,
                   onChanged: (v) => update(() => _showAirports = v),
                   radius: _airportRadiusM,
+                  continuousRadius: true,
                   onRadius: (v) => update(() => _airportRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Ж/д вокзал', 'Railway station'),
@@ -1180,6 +1277,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.railwayStations.isNotEmpty,
                   onChanged: (v) => update(() => _showRailwayStations = v),
                   radius: _railwayRadiusM,
+                  continuousRadius: true,
                   onRadius: (v) => update(() => _railwayRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Автовокзалы', 'Bus stations'),
@@ -1188,6 +1286,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.busStations.isNotEmpty,
                   onChanged: (v) => update(() => _showBusStations = v),
                   radius: _busStationRadiusM,
+                  continuousRadius: true,
                   onRadius: (v) => update(() => _busStationRadiusM = v)),
             ]);
           }
@@ -1274,7 +1373,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
 
   /// Adds or removes one station from the multi-select set. The first
   /// station chosen (starting from no selection) adopts the tapped preset
-  /// ring as its radius, matching _metroHit's 200/500/1000m proximity read;
+  /// as its one active radius;
   /// every station after that shares whatever radius/arc is already set,
   /// because the shape describes one rule ("within 780m, west side"), not a
   /// separate one per station.
@@ -1461,7 +1560,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
           _showBus ||
           _showTram ||
           _showTrolleybus ||
-          _showMinibus)
+          _showMinibus ||
+          _showFunicular)
         _hitZone(point, <DistrictZone>[
           if (_showParks) ..._zones.parks,
           if (_showShoppingMalls) ..._zones.shoppingMalls,
@@ -1476,9 +1576,11 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
           if (_showTram) ..._zones.transport('tram'),
           if (_showTrolleybus) ..._zones.transport('trolleybus'),
           if (_showMinibus) ..._zones.transport('minibus'),
+          if (_showFunicular) ..._zones.transport('funicular'),
         ]),
-      if (_showAreas) _hitZone(point, _zones.areaZones),
-      if (_showQuartals) _hitZone(point, _zones.quartalMarkers),
+      if (_showAreas) _hitZone(point, _zones.effectiveZones),
+      if (_showQuarters) _hitZone(point, _zones.quarterMarkers),
+      if (_showQuartals) _hitZone(point, _zones.effectiveMahallas),
       if (_showMicrodistricts) _hitZone(point, _zones.microdistrictMarkers),
       if (_showDistricts) _hitZone(point, _zones.districtZones),
     ];
@@ -1529,7 +1631,38 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
     );
   }
 
-  List<Marker> _poiMarkers(List<DistrictZone> pois, IconData icon) => [
+  String _poiTooltip(DistrictZone poi, {bool residential = false}) {
+    if (!residential) return poi.label;
+    final matches = widget.listings
+        .where((listing) =>
+            listing.residenceComplex?.trim().toLowerCase() ==
+            poi.name.trim().toLowerCase())
+        .toList(growable: false);
+    if (matches.isEmpty) return poi.label;
+    final priced = matches
+        .where((listing) => listing.price != null)
+        .toList(growable: false)
+      ..sort((a, b) =>
+          (a.price ?? double.infinity).compareTo(b.price ?? double.infinity));
+    final cheapest = priced.isEmpty
+        ? null
+        : pinPriceLabelValues(
+            priced.first.price,
+            priced.first.currency,
+            rates: widget.rates,
+            displayCurrency: widget.displayCurrency,
+          );
+    return [
+      poi.label,
+      _mapCopy(context, '${matches.length} объявлений',
+          '${matches.length} listings'),
+      if (cheapest != null) _mapCopy(context, 'от $cheapest', 'from $cheapest'),
+    ].join('\n');
+  }
+
+  List<Marker> _poiMarkers(List<DistrictZone> pois, IconData icon,
+          {bool residential = false}) =>
+      [
         for (final poi in pois)
           Marker(
             point: LatLng(poi.lat, poi.lng),
@@ -1538,7 +1671,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
             child: Semantics(
               button: true,
               selected: poi.id == _selectedZoneId,
-              label: poi.label,
+              label: _poiTooltip(poi, residential: residential),
               onTap: () => _handlePointTap(
                 LatLng(poi.lat, poi.lng),
                 () => unawaited(_selectZone(poi)),
@@ -1550,10 +1683,13 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                     LatLng(poi.lat, poi.lng),
                     () => unawaited(_selectZone(poi)),
                   ),
-                  child: _PoiMarker(
-                    icon: icon,
-                    color: _parseHexColor(poi.colorHex),
-                    selected: poi.id == _selectedZoneId,
+                  child: Tooltip(
+                    message: _poiTooltip(poi, residential: residential),
+                    child: _PoiMarker(
+                      icon: icon,
+                      color: _parseHexColor(poi.colorHex),
+                      selected: poi.id == _selectedZoneId,
+                    ),
                   ),
                 ),
               ),
@@ -1759,6 +1895,19 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                         ),
                     ],
                   ),
+                if (_showRegions && _zones.regionZones.isNotEmpty)
+                  PolygonLayer(
+                    polygons: [
+                      for (final zone in _zones.regionZones)
+                        for (final ring in _ringsFor(zone))
+                          _zonePolygon(
+                            zone,
+                            ring,
+                            fillAlpha: 0.035,
+                            borderWidth: 3,
+                          ),
+                    ],
+                  ),
                 if (_showDistricts && _zones.districtZones.isNotEmpty)
                   PolygonLayer(
                     polygons: [
@@ -1772,10 +1921,10 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                           ),
                     ],
                   ),
-                if (_showAreas && _zones.areaZones.isNotEmpty)
+                if (_showAreas && _zones.effectiveZones.isNotEmpty)
                   PolygonLayer(
                     polygons: [
-                      for (final zone in _zones.areaZones)
+                      for (final zone in _zones.effectiveZones)
                         for (final ring in _ringsFor(zone))
                           _zonePolygon(zone, ring, fillAlpha: 0.14),
                     ],
@@ -1789,12 +1938,20 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                           _zonePolygon(zone, ring, fillAlpha: 0.12),
                     ],
                   ),
-                if (_showQuartals && _zones.quartalMarkers.isNotEmpty)
+                if (_showQuartals && _zones.effectiveMahallas.isNotEmpty)
                   PolygonLayer(
                     polygons: [
-                      for (final zone in _zones.quartalMarkers)
+                      for (final zone in _zones.effectiveMahallas)
                         for (final ring in _ringsFor(zone))
                           _zonePolygon(zone, ring, fillAlpha: 0.15),
+                    ],
+                  ),
+                if (_showQuarters && _zones.quarterMarkers.isNotEmpty)
+                  PolygonLayer(
+                    polygons: [
+                      for (final zone in _zones.quarterMarkers)
+                        for (final ring in _ringsFor(zone))
+                          _zonePolygon(zone, ring, fillAlpha: 0.11),
                     ],
                   ),
                 if (_showMetro && _selectedMetroStations(filters).isNotEmpty)
@@ -1927,8 +2084,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                     ],
                   ),
                 // Every station keeps its dot, even once a selection exists:
-                // it was their three overlapping rings that made the map
-                // unreadable, not the dots, and hiding the unchosen ones
+                // overlapping discovery rings made the map unreadable, not
+                // the dots, and hiding the unchosen ones
                 // would leave no way to add a second station by tapping the
                 // map at all. Unchosen ones just recede.
                 if (_showMetro && _zones.metroStations.isNotEmpty)
@@ -1998,8 +2155,11 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                 if (_showResidentialComplexes &&
                     _zones.residentialComplexes.isNotEmpty)
                   MarkerLayer(
-                      markers: _poiMarkers(_zones.residentialComplexes,
-                          Icons.apartment_outlined)),
+                      markers: _poiMarkers(
+                    _zones.residentialComplexes,
+                    Icons.apartment_outlined,
+                    residential: true,
+                  )),
                 if (_showAirports && _zones.airports.isNotEmpty)
                   MarkerLayer(
                       markers:
@@ -2168,29 +2328,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
           right: 12,
           child: Column(
             children: [
-              if (widget.onExpand != null) ...[
-                FloatingActionButton.small(
-                  heroTag: 'expand',
-                  onPressed: widget.onExpand,
-                  backgroundColor: Theme.of(context).colorScheme.surface,
-                  foregroundColor: Theme.of(context).colorScheme.onSurface,
-                  child: const Icon(Icons.fullscreen),
-                ),
-                const SizedBox(height: 8),
-              ],
-              FloatingActionButton.small(
-                heroTag: 'draw',
-                onPressed: () => setState(() => _drawing = !_drawing),
-                backgroundColor: _drawing
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.surface,
-                foregroundColor: _drawing
-                    ? Theme.of(context).colorScheme.onPrimary
-                    : Theme.of(context).colorScheme.onSurface,
-                child: Icon(_drawing ? Icons.check : Icons.gesture),
-              ),
               if (widget.onRadiusCenterChanged != null) ...[
-                const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'radiusCenter',
                   tooltip: s.placeWorkOnMap,
@@ -2275,9 +2413,11 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                 tooltip: _mapCopy(context, 'Территории', 'Territories'),
                 icon: Icons.layers_outlined,
                 active: _showCity ||
+                    _showRegions ||
                     _showDistricts ||
                     _showMicrodistricts ||
                     _showQuartals ||
+                    _showQuarters ||
                     _showAreas,
                 onTap: () => _openLayerSheet(_MapLayerGroup.territories),
               ),
@@ -2289,7 +2429,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                     _showBus ||
                     _showTram ||
                     _showTrolleybus ||
-                    _showMinibus,
+                    _showMinibus ||
+                    _showFunicular,
                 onTap: () => _openLayerSheet(_MapLayerGroup.transport),
               ),
               const SizedBox(width: 6),
@@ -2308,6 +2449,22 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                     _showParkings,
                 onTap: () => _openLayerSheet(_MapLayerGroup.poi),
               ),
+              const SizedBox(width: 6),
+              _MapLayerButton(
+                tooltip: _mapCopy(context, 'Выделить область', 'Draw area'),
+                icon: _drawing ? Icons.check : Icons.crop_free,
+                active: _drawing,
+                onTap: () => setState(() => _drawing = !_drawing),
+              ),
+              if (widget.onExpand != null) ...[
+                const SizedBox(width: 6),
+                _MapLayerButton(
+                  tooltip: _mapCopy(context, 'На весь экран', 'Full screen'),
+                  icon: Icons.fullscreen,
+                  active: false,
+                  onTap: widget.onExpand!,
+                ),
+              ],
             ],
           ),
         ),

@@ -21,6 +21,7 @@ class MapListingPoint {
     this.price,
     this.publicId,
     this.district,
+    this.residenceComplex,
     this.dealType,
     this.roomOnly = false,
     this.byAgency = false,
@@ -42,6 +43,7 @@ class MapListingPoint {
   final int? publicId;
   final String city;
   final String? district;
+  final String? residenceComplex;
   final String? dealType;
   final bool roomOnly;
   final bool byAgency;
@@ -79,6 +81,7 @@ class MapListingPoint {
       publicId: (json['publicId'] as num?)?.toInt(),
       city: json['city']?.toString() ?? '',
       district: json['district']?.toString(),
+      residenceComplex: json['residenceComplex']?.toString(),
       dealType: json['dealType']?.toString(),
       roomOnly: json['roomOnly'] == true,
       byAgency: json['byAgency'] == true,
@@ -106,6 +109,7 @@ class MapListingPoint {
       publicId: listing.publicId,
       city: listing.city,
       district: listing.district,
+      residenceComplex: listing.residenceComplex,
       dealType: listing.dealType,
       roomOnly: listing.roomOnly,
       byAgency: listing.byAgency,
@@ -133,6 +137,7 @@ class MapListingPoint {
         'publicId': publicId,
         'city': city,
         'district': district,
+        'residenceComplex': residenceComplex,
         'dealType': dealType,
         'roomOnly': roomOnly,
         'byAgency': byAgency,
