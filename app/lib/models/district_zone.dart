@@ -1,10 +1,6 @@
 import 'package:latlong2/latlong.dart';
 
 /// One canonical geographic map zone from `@whiteslove/geo-catalog`.
-///
-/// The backend keeps the catalog's identity, hierarchy and boundary intact so
-/// Flutter can render and select districts, microdistricts, mahallas, local
-/// areas and metro stations without inventing a parallel geography model.
 class DistrictZone {
   final String id;
   final String? parentId;
@@ -14,13 +10,13 @@ class DistrictZone {
   final double lat;
   final double lng;
   final double radiusM;
-  final String colorHex; // e.g. "#e0679a"
+  final String colorHex;
+  final String? mode;
+  final List<String> routeRefs;
+  final String? lineColorHex;
+  final List<String> lineColorHexes;
 
-  /// Real OSM/catalog boundary as one or more rings of [lat, lng] points,
-  /// already converted from GeoJSON's [lng, lat] order. Empty when the catalog
-  /// only has a centroid; callers may use the catalog accuracy as a visual
-  /// fallback circle in that case. Metro proximity rings are deliberately UI
-  /// radii around the canonical station center, not canonical boundaries.
+  /// Real OSM/catalog boundary as one or more rings of [lat, lng] points.
   final List<List<LatLng>> boundaryRings;
 
   const DistrictZone({
@@ -34,6 +30,10 @@ class DistrictZone {
     required this.radiusM,
     required this.colorHex,
     required this.boundaryRings,
+    this.mode,
+    this.routeRefs = const [],
+    this.lineColorHex,
+    this.lineColorHexes = const [],
   });
 
   static List<List<LatLng>> _ringsFromGeoJson(Map<String, dynamic>? boundary) {
@@ -57,33 +57,45 @@ class DistrictZone {
     return const [];
   }
 
+  static List<String> _strings(dynamic value) => value is List
+      ? value.map((item) => item.toString()).where((item) => item.isNotEmpty).toList(growable: false)
+      : const [];
+
   factory DistrictZone.fromJson(Map<String, dynamic> j) => DistrictZone(
-    id: j['id']?.toString() ?? '',
-    parentId: j['parentId']?.toString(),
-    type: j['type']?.toString() ?? '',
-    name: j['name']?.toString() ?? '',
-    label: j['label']?.toString() ?? j['name']?.toString() ?? '',
-    lat: (j['lat'] as num).toDouble(),
-    lng: (j['lng'] as num).toDouble(),
-    radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
-    colorHex: j['color']?.toString() ?? '#e0679a',
-    boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
-  );
+        id: j['id']?.toString() ?? '',
+        parentId: j['parentId']?.toString(),
+        type: j['type']?.toString() ?? '',
+        name: j['name']?.toString() ?? '',
+        label: j['label']?.toString() ?? j['name']?.toString() ?? '',
+        lat: (j['lat'] as num).toDouble(),
+        lng: (j['lng'] as num).toDouble(),
+        radiusM: (j['radiusM'] as num?)?.toDouble() ?? 400,
+        colorHex: j['color']?.toString() ?? '#e0679a',
+        mode: j['mode']?.toString(),
+        routeRefs: _strings(j['routeRefs']),
+        lineColorHex: j['lineColor']?.toString(),
+        lineColorHexes: _strings(j['lineColors']),
+        boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
+      );
 }
 
-/// All canonical map-zone layers for one city. The legacy `*Markers` names are
-/// kept in the wire model for backward compatibility, but Flutter renders any
-/// available boundary as a real polygon and only falls back to a centroid
-/// circle when the geo catalog has no boundary for that entity.
+/// All canonical map-zone layers for one city.
 class MapZones {
   final List<DistrictZone> districtZones;
   final List<DistrictZone> microdistrictMarkers;
-  final List<DistrictZone> quartalMarkers; // mahallas
+  final List<DistrictZone> quartalMarkers;
   final List<DistrictZone> areaZones;
   final List<DistrictZone> metroStations;
   final List<DistrictZone> parks;
   final List<DistrictZone> shoppingMalls;
   final List<DistrictZone> universities;
+  final List<DistrictZone> schools;
+  final List<DistrictZone> residentialComplexes;
+  final List<DistrictZone> airports;
+  final List<DistrictZone> railwayStations;
+  final List<DistrictZone> busStations;
+  final List<DistrictZone> transportStops;
+  final List<DistrictZone> parkings;
   final DistrictZone? cityZone;
 
   const MapZones({
@@ -95,6 +107,13 @@ class MapZones {
     this.parks = const [],
     this.shoppingMalls = const [],
     this.universities = const [],
+    this.schools = const [],
+    this.residentialComplexes = const [],
+    this.airports = const [],
+    this.railwayStations = const [],
+    this.busStations = const [],
+    this.transportStops = const [],
+    this.parkings = const [],
     this.cityZone,
   });
 
@@ -108,7 +127,18 @@ class MapZones {
     yield* parks;
     yield* shoppingMalls;
     yield* universities;
+    yield* schools;
+    yield* residentialComplexes;
+    yield* airports;
+    yield* railwayStations;
+    yield* busStations;
+    yield* transportStops;
+    yield* parkings;
   }
+
+  List<DistrictZone> transport(String mode) => transportStops
+      .where((zone) => zone.mode == mode)
+      .toList(growable: false);
 
   DistrictZone? byId(String? id) {
     if (id == null || id.isEmpty) return null;
@@ -120,8 +150,8 @@ class MapZones {
 
   factory MapZones.fromJson(Map<String, dynamic> j) {
     List<DistrictZone> list(String key) => ((j[key] as List?) ?? const [])
-        .map((e) => DistrictZone.fromJson(e as Map<String, dynamic>))
-        .toList();
+        .map((e) => DistrictZone.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList(growable: false);
     return MapZones(
       districtZones: list('districtZones'),
       microdistrictMarkers: list('microdistrictMarkers'),
@@ -131,6 +161,13 @@ class MapZones {
       parks: list('parks'),
       shoppingMalls: list('shoppingMalls'),
       universities: list('universities'),
+      schools: list('schools'),
+      residentialComplexes: list('residentialComplexes'),
+      airports: list('airports'),
+      railwayStations: list('railwayStations'),
+      busStations: list('busStations'),
+      transportStops: list('transportStops'),
+      parkings: list('parkings'),
       cityZone: j['cityZone'] is Map
           ? DistrictZone.fromJson(
               Map<String, dynamic>.from(j['cityZone'] as Map),
