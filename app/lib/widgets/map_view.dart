@@ -1005,7 +1005,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
             required ValueChanged<bool> onChanged,
             double? radius,
             ValueChanged<double>? onRadius,
-            bool continuousRadius = false,
           }) {
             return Column(
               mainAxisSize: MainAxisSize.min,
@@ -1022,34 +1021,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                 if (available &&
                     value &&
                     radius != null &&
-                    onRadius != null &&
-                    !continuousRadius)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(56, 0, 20, 8),
-                    child: Row(
-                      children: [
-                        Text(_mapCopy(context, 'Радиус', 'Radius')),
-                        const Spacer(),
-                        DropdownButton<double>(
-                          value: radius,
-                          items: const [200.0, 500.0, 1000.0, 2000.0]
-                              .map((value) => DropdownMenuItem(
-                                    value: value,
-                                    child: Text('${value.round()} m'),
-                                  ))
-                              .toList(growable: false),
-                          onChanged: (value) {
-                            if (value != null) onRadius(value);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                if (available &&
-                    value &&
-                    radius != null &&
-                    onRadius != null &&
-                    continuousRadius)
+                    onRadius != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(56, 0, 20, 10),
                     child: Row(
@@ -1223,7 +1195,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.schools.isNotEmpty,
                   onChanged: (v) => update(() => _showSchools = v),
                   radius: _schoolRadiusM,
-                  continuousRadius: true,
                   onRadius: (v) => update(() => _schoolRadiusM = v)),
               toggle(
                   label: s.t('shoppingMalls'),
@@ -1232,7 +1203,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.shoppingMalls.isNotEmpty,
                   onChanged: (v) => update(() => _showShoppingMalls = v),
                   radius: _mallRadiusM,
-                  continuousRadius: true,
                   onRadius: (v) => update(() => _mallRadiusM = v)),
               toggle(
                   label: s.t('parks'),
@@ -1241,7 +1211,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.parks.isNotEmpty,
                   onChanged: (v) => update(() => _showParks = v),
                   radius: _parkRadiusM,
-                  continuousRadius: true,
                   onRadius: (v) => update(() => _parkRadiusM = v)),
               toggle(
                   label: s.t('universities'),
@@ -1250,7 +1219,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.universities.isNotEmpty,
                   onChanged: (v) => update(() => _showUniversities = v),
                   radius: _universityRadiusM,
-                  continuousRadius: true,
                   onRadius: (v) => update(() => _universityRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Парковки', 'Parking'),
@@ -1259,7 +1227,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.parkings.isNotEmpty,
                   onChanged: (v) => update(() => _showParkings = v),
                   radius: _parkingRadiusM,
-                  continuousRadius: true,
                   onRadius: (v) => update(() => _parkingRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Аэропорт', 'Airport'),
@@ -1268,7 +1235,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.airports.isNotEmpty,
                   onChanged: (v) => update(() => _showAirports = v),
                   radius: _airportRadiusM,
-                  continuousRadius: true,
                   onRadius: (v) => update(() => _airportRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Ж/д вокзал', 'Railway station'),
@@ -1277,7 +1243,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.railwayStations.isNotEmpty,
                   onChanged: (v) => update(() => _showRailwayStations = v),
                   radius: _railwayRadiusM,
-                  continuousRadius: true,
                   onRadius: (v) => update(() => _railwayRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Автовокзалы', 'Bus stations'),
@@ -1286,7 +1251,6 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.busStations.isNotEmpty,
                   onChanged: (v) => update(() => _showBusStations = v),
                   radius: _busStationRadiusM,
-                  continuousRadius: true,
                   onRadius: (v) => update(() => _busStationRadiusM = v)),
             ]);
           }
