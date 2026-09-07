@@ -58,7 +58,10 @@ class DistrictZone {
   }
 
   static List<String> _strings(dynamic value) => value is List
-      ? value.map((item) => item.toString()).where((item) => item.isNotEmpty).toList(growable: false)
+      ? value
+          .map((item) => item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false)
       : const [];
 
   factory DistrictZone.fromJson(Map<String, dynamic> j) => DistrictZone(
@@ -75,7 +78,8 @@ class DistrictZone {
         routeRefs: _strings(j['routeRefs']),
         lineColorHex: j['lineColor']?.toString(),
         lineColorHexes: _strings(j['lineColors']),
-        boundaryRings: _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
+        boundaryRings:
+            _ringsFromGeoJson(j['boundary'] as Map<String, dynamic>?),
       );
 }
 
@@ -136,9 +140,8 @@ class MapZones {
     yield* parkings;
   }
 
-  List<DistrictZone> transport(String mode) => transportStops
-      .where((zone) => zone.mode == mode)
-      .toList(growable: false);
+  List<DistrictZone> transport(String mode) =>
+      transportStops.where((zone) => zone.mode == mode).toList(growable: false);
 
   DistrictZone? byId(String? id) {
     if (id == null || id.isEmpty) return null;
