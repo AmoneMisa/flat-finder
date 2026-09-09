@@ -24,13 +24,16 @@ import '../utils/screen_space_clustering.dart';
 /// ZONE_PALETTE) — kept only as a fallback for zones whose stored colour
 /// string fails to parse.
 const _fallbackZoneColor = Color(0xFFE0679A);
+// Same default as the site's `safeColor(stop.color, "#2563eb")` for
+// transport stops -- amenities/zones fall back to pink, transport to blue.
+const _fallbackTransportColor = Color(0xFF2563EB);
 const _metroSelectedColor = Color(0xFFE0679A);
 const _neutralMapMarker = Color(0xE61A1F2B);
 
-Color _parseHexColor(String hex) {
+Color _parseHexColor(String hex, [Color fallback = _fallbackZoneColor]) {
   final cleaned = hex.replaceFirst('#', '');
   final value = int.tryParse(cleaned, radix: 16);
-  if (value == null) return _fallbackZoneColor;
+  if (value == null) return fallback;
   return Color(0xFF000000 | value);
 }
 
@@ -841,7 +844,11 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
       ];
     }
 
-    final size = group.listings.length > 1 ? 32.0 : 16.0;
+    // Matches the site's renderMarkers(): multi-item dots grow from 32 to
+    // 36 once a cluster hits 100 listings.
+    final size = group.listings.length > 1
+        ? (group.listings.length >= 100 ? 36.0 : 32.0)
+        : 16.0;
     return [
       Marker(
         point: group.point,
@@ -967,7 +974,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   ),
                   child: _PoiMarker(
                     icon: _transportIcon(stop.mode),
-                    color: _parseHexColor(stop.colorHex),
+                    color: _parseHexColor(
+                        stop.colorHex, _fallbackTransportColor),
                     selected: false,
                   ),
                 ),
@@ -1005,6 +1013,9 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
             required ValueChanged<bool> onChanged,
             double? radius,
             ValueChanged<double>? onRadius,
+            double radiusMin = 100,
+            double radiusMax = 5000,
+            double radiusStep = 50,
           }) {
             return Column(
               mainAxisSize: MainAxisSize.min,
@@ -1028,10 +1039,11 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                       children: [
                         Expanded(
                           child: Slider(
-                            min: 100,
-                            max: 5000,
-                            divisions: 98,
-                            value: radius.clamp(100, 5000),
+                            min: radiusMin,
+                            max: radiusMax,
+                            divisions:
+                                ((radiusMax - radiusMin) / radiusStep).round(),
+                            value: radius.clamp(radiusMin, radiusMax),
                             onChanged: onRadius,
                           ),
                         ),
@@ -1048,7 +1060,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                             onFieldSubmitted: (raw) {
                               final parsed = double.tryParse(raw);
                               if (parsed != null) {
-                                onRadius(parsed.clamp(100, 5000));
+                                onRadius(parsed.clamp(radiusMin, radiusMax));
                               }
                             },
                           ),
@@ -1195,6 +1207,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.schools.isNotEmpty,
                   onChanged: (v) => update(() => _showSchools = v),
                   radius: _schoolRadiusM,
+                  radiusMax: 2000,
                   onRadius: (v) => update(() => _schoolRadiusM = v)),
               toggle(
                   label: s.t('shoppingMalls'),
@@ -1203,6 +1216,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.shoppingMalls.isNotEmpty,
                   onChanged: (v) => update(() => _showShoppingMalls = v),
                   radius: _mallRadiusM,
+                  radiusMax: 3000,
+                  radiusStep: 100,
                   onRadius: (v) => update(() => _mallRadiusM = v)),
               toggle(
                   label: s.t('parks'),
@@ -1211,6 +1226,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.parks.isNotEmpty,
                   onChanged: (v) => update(() => _showParks = v),
                   radius: _parkRadiusM,
+                  radiusMax: 3000,
+                  radiusStep: 100,
                   onRadius: (v) => update(() => _parkRadiusM = v)),
               toggle(
                   label: s.t('universities'),
@@ -1219,6 +1236,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.universities.isNotEmpty,
                   onChanged: (v) => update(() => _showUniversities = v),
                   radius: _universityRadiusM,
+                  radiusMax: 3000,
+                  radiusStep: 100,
                   onRadius: (v) => update(() => _universityRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Парковки', 'Parking'),
@@ -1227,6 +1246,7 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.parkings.isNotEmpty,
                   onChanged: (v) => update(() => _showParkings = v),
                   radius: _parkingRadiusM,
+                  radiusMax: 2000,
                   onRadius: (v) => update(() => _parkingRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Аэропорт', 'Airport'),
@@ -1235,6 +1255,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.airports.isNotEmpty,
                   onChanged: (v) => update(() => _showAirports = v),
                   radius: _airportRadiusM,
+                  radiusMin: 500,
+                  radiusStep: 250,
                   onRadius: (v) => update(() => _airportRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Ж/д вокзал', 'Railway station'),
@@ -1243,6 +1265,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.railwayStations.isNotEmpty,
                   onChanged: (v) => update(() => _showRailwayStations = v),
                   radius: _railwayRadiusM,
+                  radiusMin: 200,
+                  radiusStep: 100,
                   onRadius: (v) => update(() => _railwayRadiusM = v)),
               toggle(
                   label: _mapCopy(context, 'Автовокзалы', 'Bus stations'),
@@ -1251,6 +1275,8 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                   available: _zones.busStations.isNotEmpty,
                   onChanged: (v) => update(() => _showBusStations = v),
                   radius: _busStationRadiusM,
+                  radiusMin: 200,
+                  radiusStep: 100,
                   onRadius: (v) => update(() => _busStationRadiusM = v)),
             ]);
           }
@@ -1996,8 +2022,11 @@ class _MapViewState extends State<MapView> with SingleTickerProviderStateMixin {
                 if (_visibleTransportStops.isNotEmpty)
                   PolygonLayer(polygons: [
                     for (final stop in _visibleTransportStops)
-                      _proximityRing(stop, _transportRadius(stop.mode),
-                          _parseHexColor(stop.colorHex))
+                      _proximityRing(
+                          stop,
+                          _transportRadius(stop.mode),
+                          _parseHexColor(
+                              stop.colorHex, _fallbackTransportColor))
                   ]),
                 if (_showDistricts && _zones.districtZones.isNotEmpty)
                   MarkerLayer(
@@ -2493,25 +2522,33 @@ class _PriceLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same six price-vs-median bands as the site's map legend, in the same
+    // order (percentage labels match `priceToneFromRatio` in
+    // utils/price_tone.dart exactly), one per line.
+    final entries = <(PriceTone, String, String)>[
+      (PriceTone.red, '+45% и выше', '+45% and above'),
+      (PriceTone.yellow, '+31–44%', '+31–44%'),
+      (PriceTone.orange, '+16–30%', '+16–30%'),
+      (PriceTone.pink, '±15%', '±15%'),
+      (PriceTone.blue, '−16–30%', '−16–30%'),
+      (PriceTone.green, '−31% и ниже', '−31% and below'),
+    ];
+
     return Material(
       color: Colors.black.withValues(alpha: 0.72),
       borderRadius: BorderRadius.circular(10),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _LegendItem(
-                color: priceToneColor(PriceTone.green),
-                label: copy(context, 'выгодно', 'good')),
-            const SizedBox(width: 8),
-            _LegendItem(
-                color: priceToneColor(PriceTone.pink),
-                label: copy(context, 'средне', 'average')),
-            const SizedBox(width: 8),
-            _LegendItem(
-                color: priceToneColor(PriceTone.red),
-                label: copy(context, 'дорого', 'high')),
+            for (final (tone, ru, en) in entries)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: _LegendItem(
+                    color: priceToneColor(tone), label: copy(context, ru, en)),
+              ),
           ],
         ),
       ),
@@ -2708,7 +2745,7 @@ class _ClusterDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: _neutralMapMarker,
         shape: BoxShape.circle,
-        border: Border.all(color: ring, width: 3),
+        border: Border.all(color: ring, width: 2),
         boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 4)],
       ),
       child: count > 1

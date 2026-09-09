@@ -7,6 +7,6 @@ void main() {
     final source = File('lib/widgets/map_view.dart').readAsStringSync();
     expect(source, contains('final ring = priceToneColor(tone)'));
     expect(source, contains('color: _neutralMapMarker'));
-    expect(source, contains('border: Border.all(color: ring, width: 3)'));
+    expect(source, contains('border: Border.all(color: ring, width: 2)'));
   });
 }
