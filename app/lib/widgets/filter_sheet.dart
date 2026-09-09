@@ -752,6 +752,9 @@ class _FilterSheetState extends State<FilterSheet> {
                               _metro = {};
                               _metroBearingFrom = null;
                               _metroBearingTo = null;
+                              _microdistrictCtl.clear();
+                              _quartalCtl.clear();
+                              _areaNameCtl.clear();
                             });
                           },
                         ),
@@ -771,6 +774,9 @@ class _FilterSheetState extends State<FilterSheet> {
                             _metro = {};
                             _metroBearingFrom = null;
                             _metroBearingTo = null;
+                            _microdistrictCtl.clear();
+                            _quartalCtl.clear();
+                            _areaNameCtl.clear();
                           }),
                         ),
                         // District & metro inputs only appear when the picked city has data.
