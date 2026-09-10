@@ -38,4 +38,28 @@ void main() {
     final filters = Filters(sources: {'custom'});
     expect(filters.toQueryParams()['sources'], 'custom');
   });
+
+  test('customSites narrows the Sites bucket without affecting sources', () {
+    final filters = Filters(customSites: {'krisha.kz'});
+
+    expect(filters.customSites, {'krisha.kz'});
+    // Still "all sources" -- customSites only narrows within the custom bucket.
+    expect(filters.toQueryParams().containsKey('sources'), isFalse);
+    expect(filters.toQueryParams()['customSites'], 'krisha.kz');
+  });
+
+  test('customSites defaults to empty (all curated sites)', () {
+    expect(Filters().customSites, isEmpty);
+    expect(Filters().toQueryParams().containsKey('customSites'), isFalse);
+  });
+
+  test('customSites round-trips through JSON and query params', () {
+    final restored = Filters.fromJson(
+      Filters(customSites: {'krisha.kz', 'lun.ua'}).toJson(),
+    );
+    expect(restored.customSites, {'krisha.kz', 'lun.ua'});
+
+    final fromQuery = Filters.fromQueryParams({'customSites': 'krisha.kz,lun.ua'});
+    expect(fromQuery.customSites, {'krisha.kz', 'lun.ua'});
+  });
 }

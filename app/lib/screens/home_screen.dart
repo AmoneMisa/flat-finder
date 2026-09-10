@@ -191,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) => FilterSheet(
         initial: state.filters,
         countries: state.countries,
+        customSiteDomains: state.customSiteDomains,
         onChanged: (filters) async {
           if (!state.updateFilters(filters)) return;
           await state.search();

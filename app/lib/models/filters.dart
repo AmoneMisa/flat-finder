@@ -102,6 +102,24 @@ Map<String, String> _stringMap(dynamic v) => v is Map
     ? v.map((k, val) => MapEntry(k.toString(), val.toString()))
     : const {};
 
+/// One curated real-estate site behind the "Sites" (`custom`) source bucket,
+/// e.g. `krisha.kz`. `countries` lists which country codes it is scraped for,
+/// so the UI can hide sites that don't apply to the selected country.
+class CustomSite {
+  final String domain;
+  final List<String> countries;
+
+  const CustomSite({required this.domain, this.countries = const []});
+
+  factory CustomSite.fromJson(Map<String, dynamic> j) => CustomSite(
+        domain: (j['domain'] ?? '').toString(),
+        countries: (j['countries'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
+      );
+}
+
 Set<String> _storedSources(dynamic value) {
   final sources = (value is List && value.isNotEmpty)
       ? value.map((item) => item.toString()).toSet()
@@ -256,6 +274,10 @@ class Filters {
   Set<String> countries; // exactly one selected country code
   Set<String> sources; // selected listing sources
   List<String> customSources; // user-added source URLs (JSON-LD / RSS pages)
+  // Narrows the curated `custom` ("Sites") bucket to specific site domains
+  // (e.g. {'krisha.kz'}). Empty means "all curated sites" -- same convention
+  // as `sources` being the full kAllSources set.
+  Set<String> customSites;
   PropertyType propertyType;
   DealType dealType;
   AgencyFilter agency;
@@ -317,6 +339,7 @@ class Filters {
     Set<String>? countries,
     Set<String>? sources,
     List<String>? customSources,
+    Set<String>? customSites,
     this.propertyType = PropertyType.any,
     this.dealType = DealType.any,
     this.agency = AgencyFilter.any,
@@ -370,6 +393,7 @@ class Filters {
   })  : countries = _singleCountry(countries),
         sources = sources ?? {...kAllSources},
         customSources = customSources ?? [],
+        customSites = customSites ?? {},
         metro = metro ?? {},
         amenities = amenities ?? {};
 
@@ -377,6 +401,7 @@ class Filters {
     Set<String>? countries,
     Set<String>? sources,
     List<String>? customSources,
+    Set<String>? customSites,
     PropertyType? propertyType,
     DealType? dealType,
     AgencyFilter? agency,
@@ -458,6 +483,7 @@ class Filters {
       countries: countries ?? this.countries,
       sources: sources ?? this.sources,
       customSources: customSources ?? this.customSources,
+      customSites: customSites ?? this.customSites,
       propertyType: propertyType ?? this.propertyType,
       dealType: dealType ?? this.dealType,
       agency: agency ?? this.agency,
@@ -530,6 +556,7 @@ class Filters {
         'countries': countries.toList(),
         'sources': sources.toList(),
         'customSources': customSources,
+        'customSites': customSites.toList(),
         'propertyType': propertyType.name,
         'dealType': dealType.name,
         'agency': agency.name,
@@ -604,6 +631,11 @@ class Filters {
               .where((e) => e.isNotEmpty)
               .toList() ??
           [],
+      customSites: (j['customSites'] as List?)
+              ?.map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toSet() ??
+          {},
       propertyType: byName(
         PropertyType.values,
         j['propertyType'],
@@ -691,6 +723,7 @@ class Filters {
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
           .toList(),
+      customSites: csv(q['customSites']),
       propertyType: byName(
         PropertyType.values,
         q['propertyType'],
@@ -776,6 +809,9 @@ class Filters {
     }
     if (customSources.isNotEmpty) {
       p['customSources'] = customSources.join(',');
+    }
+    if (customSites.isNotEmpty) {
+      p['customSites'] = customSites.join(',');
     }
     if (priceMin != null) p['priceMin'] = priceMin.toString();
     if (priceMax != null) p['priceMax'] = priceMax.toString();

@@ -168,6 +168,27 @@ class ApiService {
     return list.map((e) => Country.fromJson(e)).toList();
   }
 
+  /// The individual curated real-estate sites behind the "Sites" (`custom`)
+  /// source bucket, so the filter sheet can offer per-site toggles instead of
+  /// one opaque "Sites" switch. Pass [country] to narrow to sites scraped for
+  /// that country; omit for the full catalogue.
+  Future<List<CustomSite>> fetchCustomSites({String? country}) async {
+    final uri = Uri.parse('$baseUrl/api/custom-sites').replace(
+      queryParameters: (country == null || country.isEmpty)
+          ? null
+          : {'country': country},
+    );
+    final res = await _client.get(uri);
+    if (res.statusCode != 200) {
+      throw Exception('custom-sites HTTP ${res.statusCode}');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = (body['sites'] as List?) ?? const [];
+    return list
+        .map((e) => CustomSite.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
   /// Parse the server's suggested wait (from body or the Retry-After header),
   /// defaulting to a few seconds if absent.
   int _retryAfterMs(http.Response res) {

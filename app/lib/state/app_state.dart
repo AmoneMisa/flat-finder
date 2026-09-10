@@ -67,6 +67,7 @@ class AppState extends ChangeNotifier {
   }
 
   List<Country> countries = [];
+  List<CustomSite> customSiteDomains = [];
   Filters filters = Filters();
   List<Listing> listings = [];
   List<MapListingPoint> mapListings = [];
@@ -114,9 +115,14 @@ class AppState extends ChangeNotifier {
     // app reopens where they left off.
     await _loadFilters();
 
-    // Rates are non-critical: fetch best-effort so a failure never blocks search.
+    // Rates and the curated-site catalogue are non-critical: fetch best-effort
+    // so a failure never blocks search.
     _api.fetchRates().then((r) {
       rates = r;
+      notifyListeners();
+    }).catchError((_) {});
+    _api.fetchCustomSites().then((sites) {
+      customSiteDomains = sites;
       notifyListeners();
     }).catchError((_) {});
     try {
