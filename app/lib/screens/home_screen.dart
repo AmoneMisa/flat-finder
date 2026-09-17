@@ -12,6 +12,7 @@ import '../l10n/review_strings.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
 import '../models/listing_identity.dart';
+import '../models/listing_owner.dart';
 import '../models/map_listing_point.dart';
 import '../services/api_service.dart';
 import '../state/app_state.dart';
@@ -27,12 +28,14 @@ import '../widgets/filter_sheet.dart';
 import '../widgets/listing_card.dart';
 import '../widgets/listing_line_legend.dart';
 import '../widgets/map_view.dart';
+import '../widgets/owner_breadcrumbs.dart';
 import '../widgets/quick_presets_bar.dart';
 import '../widgets/searchable_dropdown.dart';
 import '../widgets/stats_sheet.dart';
 import 'favorites_screen.dart';
 import 'history_screen.dart';
 import 'listing_detail.dart';
+import 'owners_screen.dart';
 import 'presets_screen.dart';
 import 'settings_screen.dart';
 import 'sorted_screen.dart';
@@ -332,6 +335,25 @@ class _HomeScreenState extends State<HomeScreen> {
     state.loadMapListings();
   }
 
+  /// Owners list; picking one shows only that owner's listings here.
+  Future<void> _openOwners(AppState state) async {
+    final country = state.filters.countries.isNotEmpty
+        ? state.filters.countries.first
+        : (state.countries.isNotEmpty ? state.countries.first.code : 'UZ');
+    final owner = await Navigator.of(context).push<ListingOwner>(
+      MaterialPageRoute(builder: (_) => OwnersScreen(country: country)),
+    );
+    if (owner == null || !mounted) return;
+    await _setOwner(state, owner.ownerKey);
+  }
+
+  Future<void> _setOwner(AppState state, String ownerKey) async {
+    setState(() => _tab = _ViewTab.all);
+    if (!state.updateFilters(state.filters.copyWith(owner: ownerKey))) return;
+    await state.search();
+    if (_mapMode) await state.loadMapListings();
+  }
+
   void _openPresets() {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const PresetsScreen()));
@@ -540,6 +562,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   _openSwipeReview();
                 case 'sorted':
                   _openSorted();
+                case 'owners':
+                  _openOwners(state);
                 case 'presets':
                   _openPresets();
                 case 'statistics':
@@ -583,6 +607,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           : null,
                     ),
                   ),
+                PopupMenuItem(
+                  value: 'owners',
+                  child: ListTile(
+                    leading: const Icon(Icons.groups_outlined),
+                    title: Text(settings.t('ownersTab')),
+                  ),
+                ),
                 const PopupMenuDivider(),
                 PopupMenuItem(
                   value: 'history',
@@ -647,6 +678,16 @@ class _HomeScreenState extends State<HomeScreen> {
             onManage: _openPresets,
           ),
           _SummaryBar(state: state, settings: settings),
+          if (state.filters.owner.isNotEmpty)
+            OwnerBreadcrumbs(
+              ownerKey: state.filters.owner,
+              s: settings.s,
+              onAllListings: () => _setOwner(state, ''),
+              onOwners: () async {
+                await _setOwner(state, '');
+                if (mounted) await _openOwners(state);
+              },
+            ),
           if (state.degradedCountries.isNotEmpty)
             _Banner(
               text: settings.t('demoBanner', {

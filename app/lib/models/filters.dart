@@ -314,6 +314,10 @@ class Filters {
   /// (phantom_risk) ones. Filtered by the backend.
   bool trustedOnly;
   bool hideDanger;
+
+  /// Owner collection: one advertiser's listings, by the backend's opaque
+  /// owner key. Empty = every advertiser.
+  String owner;
   String city;
   String district;
   String microdistrict;
@@ -378,6 +382,7 @@ class Filters {
     this.withPhotos = false,
     this.trustedOnly = false,
     this.hideDanger = false,
+    this.owner = '',
     this.city = '',
     this.district = '',
     this.microdistrict = '',
@@ -442,6 +447,7 @@ class Filters {
     bool? withPhotos,
     bool? trustedOnly,
     bool? hideDanger,
+    String? owner,
     bool clearPriceMin = false,
     bool clearPriceMax = false,
     bool clearPriceTolerance = false,
@@ -536,6 +542,7 @@ class Filters {
       withPhotos: withPhotos ?? this.withPhotos,
       trustedOnly: trustedOnly ?? this.trustedOnly,
       hideDanger: hideDanger ?? this.hideDanger,
+      owner: owner ?? this.owner,
       city: city ?? this.city,
       district: district ?? this.district,
       microdistrict: microdistrict ?? this.microdistrict,
@@ -601,6 +608,7 @@ class Filters {
         'withPhotos': withPhotos,
         'trustedOnly': trustedOnly,
         'hideDanger': hideDanger,
+        'owner': owner,
         'city': city,
         'district': district,
         'microdistrict': microdistrict,
@@ -686,6 +694,7 @@ class Filters {
       withPhotos: j['withPhotos'] == true,
       trustedOnly: j['trustedOnly'] == true,
       hideDanger: j['hideDanger'] == true,
+      owner: _ownerKeyOrEmpty(j['owner']),
       city: (j['city'] ?? '').toString(),
       district: (j['district'] ?? '').toString(),
       microdistrict: (j['microdistrict'] ?? '').toString(),
@@ -778,6 +787,7 @@ class Filters {
       withPhotos: q['withPhotos'] == 'true',
       trustedOnly: q['trustedOnly'] == 'true',
       hideDanger: q['hideDanger'] == 'true',
+      owner: _ownerKeyOrEmpty(q['owner']),
       city: (q['city'] ?? '').trim(),
       district: (q['district'] ?? '').trim(),
       microdistrict: (q['microdistrict'] ?? '').trim(),
@@ -872,6 +882,7 @@ class Filters {
     if (withPhotos) p['withPhotos'] = 'true';
     if (trustedOnly) p['trustedOnly'] = 'true';
     if (hideDanger) p['hideDanger'] = 'true';
+    if (owner.isNotEmpty) p['owner'] = owner;
     if (city.trim().isNotEmpty) p['city'] = city.trim();
     if (district.trim().isNotEmpty) p['district'] = district.trim();
     if (microdistrict.trim().isNotEmpty) {
@@ -907,4 +918,11 @@ class Filters {
     }
     return p;
   }
+}
+
+/// Owner keys are 24 lower-case hex characters; anything else is dropped so
+/// a malformed link cannot reach the API.
+String _ownerKeyOrEmpty(Object? value) {
+  final text = value?.toString() ?? '';
+  return RegExp(r'^[0-9a-f]{24}$').hasMatch(text) ? text : '';
 }

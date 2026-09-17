@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/listing_owner.dart';
 import '../models/map_listing_point.dart';
 import '../models/search_statistics.dart';
 import 'request_cancellation.dart';
@@ -371,6 +372,41 @@ class ApiService {
   /// source+id pair. Returns null if it's gone or the id doesn't exist —
   /// callers that expect a freshly-scraped listing may need to retry for a
   /// few seconds while it's indexed, same as the site's polling fallback.
+  /// Owners with two or more different listings in [country], largest first.
+  Future<OwnersPage> fetchOwners(String country, {String? cursor}) async {
+    final uri = Uri.parse('$baseUrl/api/owners').replace(
+      queryParameters: {
+        'country': country,
+        'limit': '24',
+        if (cursor != null) 'cursor': cursor,
+      },
+    );
+    final res = await _client.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
+    if (res.statusCode != 200) throw Exception('owners HTTP ${res.statusCode}');
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    return OwnersPage(
+      owners: (json['owners'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => ListingOwner.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      next: json['next'] as String?,
+    );
+  }
+
+  /// One owner, for the breadcrumb above an owner's listings.
+  Future<ListingOwner?> fetchOwner(String ownerKey) async {
+    if (!ListingOwner.isKey(ownerKey)) return null;
+    final uri = Uri.parse('$baseUrl/api/owners/$ownerKey');
+    final res = await _client.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) return null;
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final owner = json['owner'];
+    return owner is Map
+        ? ListingOwner.fromJson(Map<String, dynamic>.from(owner))
+        : null;
+  }
+
   /// The same contact's other listings, one per property.
   Future<List<Listing>> fetchContactListings(int publicId) async {
     final uri = Uri.parse(
