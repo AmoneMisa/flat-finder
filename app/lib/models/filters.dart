@@ -309,6 +309,11 @@ class Filters {
   num? centerLng;
   num? radiusM;
   bool withPhotos;
+
+  /// Listing-line toggles: only green (steady) listings, and hiding red
+  /// (phantom_risk) ones. Filtered by the backend.
+  bool trustedOnly;
+  bool hideDanger;
   String city;
   String district;
   String microdistrict;
@@ -371,6 +376,8 @@ class Filters {
     this.centerLng,
     this.radiusM,
     this.withPhotos = false,
+    this.trustedOnly = false,
+    this.hideDanger = false,
     this.city = '',
     this.district = '',
     this.microdistrict = '',
@@ -433,6 +440,8 @@ class Filters {
     num? centerLng,
     num? radiusM,
     bool? withPhotos,
+    bool? trustedOnly,
+    bool? hideDanger,
     bool clearPriceMin = false,
     bool clearPriceMax = false,
     bool clearPriceTolerance = false,
@@ -525,6 +534,8 @@ class Filters {
       centerLng: clearRadiusSearch ? null : (centerLng ?? this.centerLng),
       radiusM: clearRadiusSearch ? null : (radiusM ?? this.radiusM),
       withPhotos: withPhotos ?? this.withPhotos,
+      trustedOnly: trustedOnly ?? this.trustedOnly,
+      hideDanger: hideDanger ?? this.hideDanger,
       city: city ?? this.city,
       district: district ?? this.district,
       microdistrict: microdistrict ?? this.microdistrict,
@@ -588,6 +599,8 @@ class Filters {
         'centerLng': centerLng,
         'radiusM': radiusM,
         'withPhotos': withPhotos,
+        'trustedOnly': trustedOnly,
+        'hideDanger': hideDanger,
         'city': city,
         'district': district,
         'microdistrict': microdistrict,
@@ -671,6 +684,8 @@ class Filters {
       centerLng: n(j['centerLng']),
       radiusM: n(j['radiusM']),
       withPhotos: j['withPhotos'] == true,
+      trustedOnly: j['trustedOnly'] == true,
+      hideDanger: j['hideDanger'] == true,
       city: (j['city'] ?? '').toString(),
       district: (j['district'] ?? '').toString(),
       microdistrict: (j['microdistrict'] ?? '').toString(),
@@ -761,6 +776,8 @@ class Filters {
       centerLng: n(q['centerLng']),
       radiusM: n(q['radiusM']),
       withPhotos: q['withPhotos'] == 'true',
+      trustedOnly: q['trustedOnly'] == 'true',
+      hideDanger: q['hideDanger'] == 'true',
       city: (q['city'] ?? '').trim(),
       district: (q['district'] ?? '').trim(),
       microdistrict: (q['microdistrict'] ?? '').trim(),
@@ -853,6 +870,8 @@ class Filters {
       p['radiusM'] = radiusM.toString();
     }
     if (withPhotos) p['withPhotos'] = 'true';
+    if (trustedOnly) p['trustedOnly'] = 'true';
+    if (hideDanger) p['hideDanger'] = 'true';
     if (city.trim().isNotEmpty) p['city'] = city.trim();
     if (district.trim().isNotEmpty) p['district'] = district.trim();
     if (microdistrict.trim().isNotEmpty) {

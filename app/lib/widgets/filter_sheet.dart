@@ -89,6 +89,8 @@ class _FilterSheetState extends State<FilterSheet> {
   String? _nearbyKind;
   String? _priceCurrency;
   late bool _withPhotos;
+  late bool _trustedOnly;
+  late bool _hideDanger;
 
   @override
   void initState() {
@@ -188,6 +190,8 @@ class _FilterSheetState extends State<FilterSheet> {
     _nearbyKind = widget.initial.nearbyKind;
     _priceCurrency = widget.initial.priceCurrency;
     _withPhotos = widget.initial.withPhotos;
+    _trustedOnly = widget.initial.trustedOnly;
+    _hideDanger = widget.initial.hideDanger;
 
     for (final controller in _textControllers) {
       controller.addListener(_scheduleLiveApply);
@@ -350,6 +354,8 @@ class _FilterSheetState extends State<FilterSheet> {
       nearbyMaxM: parse(_nearbyMaxMCtl.text),
       nearbyKind: _nearbyKind,
       withPhotos: _withPhotos,
+      trustedOnly: _trustedOnly,
+      hideDanger: _hideDanger,
       query: _queryCtl.text,
       pets: _pets,
       children: _children,
@@ -489,6 +495,8 @@ class _FilterSheetState extends State<FilterSheet> {
       _nearbyMaxMCtl.text = f.nearbyMaxM?.toString() ?? '';
       _nearbyKind = f.nearbyKind;
       _withPhotos = f.withPhotos;
+      _trustedOnly = f.trustedOnly;
+      _hideDanger = f.hideDanger;
       _queryCtl.text = f.query;
     });
     _hydratingControls = false;
@@ -1336,6 +1344,21 @@ class _FilterSheetState extends State<FilterSheet> {
                               _setFilterState(() => _withPhotos = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('withPhotos')),
+                        ),
+                        // Listing lines: green only, and hide red ones.
+                        SwitchListTile(
+                          value: _trustedOnly,
+                          onChanged: (v) =>
+                              _setFilterState(() => _trustedOnly = v),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(s.t('trustedOnly')),
+                        ),
+                        SwitchListTile(
+                          value: _hideDanger,
+                          onChanged: (v) =>
+                              _setFilterState(() => _hideDanger = v),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(s.t('hideDanger')),
                         ),
                       ],
                     ),

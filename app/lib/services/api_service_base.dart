@@ -371,6 +371,27 @@ class ApiService {
   /// source+id pair. Returns null if it's gone or the id doesn't exist —
   /// callers that expect a freshly-scraped listing may need to retry for a
   /// few seconds while it's indexed, same as the site's polling fallback.
+  /// The same contact's other listings, one per property.
+  Future<List<Listing>> fetchContactListings(int publicId) async {
+    final uri = Uri.parse(
+      '$baseUrl/api/listing/by-public-id/$publicId/contact-listings',
+    );
+    final res = await _client.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
+    if (res.statusCode != 200) {
+      throw Exception('contact listings HTTP ${res.statusCode}');
+    }
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    return (json['listings'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (e) => Listing.fromJson(
+            _absolutizePhotos(Map<String, dynamic>.from(e)),
+          ),
+        )
+        .toList();
+  }
+
   Future<Listing?> fetchListingByPublicId(int publicId) async {
     final uri = Uri.parse('$baseUrl/api/listing/by-public-id/$publicId');
     final res = await _client.get(uri).timeout(const Duration(seconds: 15));

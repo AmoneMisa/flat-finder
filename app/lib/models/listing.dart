@@ -440,6 +440,13 @@ class Listing {
   /// survives favorites/history storage like every other public field.
   ListingLine? get listingLine => listingLineFromJson(rawData['listingLine']);
 
+  /// Other properties the same contact advertises (backend
+  /// `contactListingCount`); the listing screen offers a tab for them.
+  int get contactListingCount {
+    final value = rawData['contactListingCount'];
+    return value is num && value > 0 ? value.toInt() : 0;
+  }
+
   List<NearbyTransportStop> transportByMode(String mode) => nearbyTransport
       .where((stop) => stop.mode == mode)
       .toList(growable: false);

@@ -608,6 +608,14 @@ class AppState extends ChangeNotifier {
 
   /// Re-fetch one listing fresh and, if it's still in the current results,
   /// swap in the updated copy. Returns the fresh listing (or null if gone).
+  /// The same contact's other listings for the listing screen's tab. Empty
+  /// when the listing has no public id or no other listings.
+  Future<List<Listing>> contactListings(Listing listing) async {
+    final publicId = listing.publicId;
+    if (publicId == null || listing.contactListingCount == 0) return const [];
+    return _api.fetchContactListings(publicId);
+  }
+
   Future<Listing?> reloadListing(Listing listing) async {
     final fresh = await _api.reloadListing(listing);
     if (fresh != null) {

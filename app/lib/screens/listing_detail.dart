@@ -23,6 +23,7 @@ import '../state/settings.dart';
 import '../utils/format.dart';
 import '../utils/price_tone.dart';
 import '../utils/share_link.dart';
+import '../widgets/contact_listings_view.dart';
 import '../widgets/nearby_transport_tables.dart';
 
 class ListingDetailScreen extends StatefulWidget {
@@ -49,6 +50,9 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
   String? _translatedText;
   String? _translatedLang;
   bool _showTranslated = false;
+
+  /// Which tab the body shows when the contact has other listings.
+  bool _showContactListings = false;
 
   @override
   void initState() {
@@ -97,6 +101,53 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
     } catch (_) {
       // Inconclusive (timeout, rate limit, etc.) — leave the listing as-is.
     }
+  }
+
+  /// Wraps the listing body with a "listing / more from this contact" switch
+  /// when the contact advertises other properties.
+  Widget _withContactListingsTab(AppStrings s, {required Widget details}) {
+    final count = listing.contactListingCount;
+    if (count == 0) return details;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(
+                value: false,
+                label: Text(s.t('listingDetailsTab')),
+              ),
+              ButtonSegment(
+                value: true,
+                label: Text(
+                  s.t('contactListingsTab', {'n': '$count'}),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+            selected: {_showContactListings},
+            onSelectionChanged: (value) =>
+                setState(() => _showContactListings = value.first),
+          ),
+        ),
+        Expanded(
+          child: _showContactListings
+              ? ContactListingsView(
+                  listing: listing,
+                  s: s,
+                  onOpen: (other) => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ListingDetailScreen(listing: other),
+                    ),
+                  ),
+                )
+              : details,
+        ),
+      ],
+    );
   }
 
   /// Re-fetch this single listing fresh from the source. Server flood protection
@@ -405,231 +456,234 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> {
           ),
         ),
       ),
-      body: ListView(
-        children: [
-          if (_unavailable)
-            Container(
-              width: double.infinity,
-              color: theme.colorScheme.errorContainer,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    size: 18,
-                    color: theme.colorScheme.onErrorContainer,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      s.t('listingUnavailableDescription'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onErrorContainer,
+      body: _withContactListingsTab(
+        s,
+        details: ListView(
+          children: [
+            if (_unavailable)
+              Container(
+                width: double.infinity,
+                color: theme.colorScheme.errorContainer,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        s.t('listingUnavailableDescription'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              ),
+            RepaintBoundary(
+              key: _shareKey,
+              child: Container(
+                color: theme.colorScheme.surface,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (listing.photos.isNotEmpty)
+                      _PhotoGallery(photos: listing.photos)
+                    else if (listing.photo != null)
+                      CachedNetworkImage(
+                        imageUrl: listing.photo!,
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const SizedBox(
+                          height: 200,
+                          child: Icon(Icons.home, size: 80),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            formatPrice(
+                              listing,
+                              rates: rates,
+                              displayCurrency: settings.displayCurrency,
+                              s: s,
+                            ),
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (listing.marketComparison?.goodPrice == true) ...[
+                            const SizedBox(height: 8),
+                            Tooltip(
+                              message: _goodPriceExplanation(listing, s),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: BrandColors.toneGreen.withValues(
+                                    alpha: .16,
+                                  ),
+                                  border: Border.all(
+                                    color: BrandColors.toneGreen.withValues(
+                                      alpha: .7,
+                                    ),
+                                  ),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.trending_down,
+                                      color: BrandColors.toneGreen,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      s.t('goodPrice'),
+                                      style: const TextStyle(
+                                        color: BrandColors.toneGreen,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              _goodPriceExplanation(listing, s),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.hintColor,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 4),
+                          if (postedLabel(listing.createdAt, s) != null)
+                            Text(
+                              postedLabel(listing.createdAt, s)!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.hintColor,
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          SelectableText(
+                            listing.title,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 16),
+                          _SpecTable(listing: listing, s: s, country: country),
+                          if (listing.nearbyTransport.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            NearbyTransportTables(
+                              stops: listing.nearbyTransport,
+                              s: s,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          RepaintBoundary(
-            key: _shareKey,
-            child: Container(
-              color: theme.colorScheme.surface,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (listing.photos.isNotEmpty)
-                    _PhotoGallery(photos: listing.photos)
-                  else if (listing.photo != null)
-                    CachedNetworkImage(
-                      imageUrl: listing.photo!,
-                      height: 200,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => const SizedBox(
-                        height: 200,
-                        child: Icon(Icons.home, size: 80),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  if (contacts.isNotEmpty) ...[
+                    for (var i = 0; i < contacts.length; i++) ...[
+                      _ContactCard(contact: contacts[i], s: s),
+                      if (i < contacts.length - 1) const SizedBox(height: 8),
+                    ],
+                    const SizedBox(height: 16),
+                  ],
+                  if (hasTranslatableText) ...[
+                    const SizedBox(height: 20),
+                    Row(
                       children: [
-                        Text(
-                          formatPrice(
-                            listing,
-                            rates: rates,
-                            displayCurrency: settings.displayCurrency,
-                            s: s,
-                          ),
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
+                        OutlinedButton.icon(
+                          onPressed:
+                              _translating ? null : () => _translate(settings),
+                          icon: _translating
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Icon(
+                                  showTranslated
+                                      ? Icons.article_outlined
+                                      : Icons.translate,
+                                ),
+                          label: Text(
+                            _translating
+                                ? _localized(settings, 'Translating…', 'Перевод…')
+                                : showTranslated
+                                    ? _localized(
+                                        settings,
+                                        'Show original',
+                                        'Показать оригинал',
+                                      )
+                                    : _localized(
+                                        settings, 'Translate', 'Перевести'),
                           ),
                         ),
-                        if (listing.marketComparison?.goodPrice == true) ...[
-                          const SizedBox(height: 8),
-                          Tooltip(
-                            message: _goodPriceExplanation(listing, s),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 9,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: BrandColors.toneGreen.withValues(
-                                  alpha: .16,
-                                ),
-                                border: Border.all(
-                                  color: BrandColors.toneGreen.withValues(
-                                    alpha: .7,
-                                  ),
-                                ),
-                                borderRadius: BorderRadius.circular(99),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.trending_down,
-                                    color: BrandColors.toneGreen,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    s.t('goodPrice'),
-                                    style: const TextStyle(
-                                      color: BrandColors.toneGreen,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            _goodPriceExplanation(listing, s),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.hintColor,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 4),
-                        if (postedLabel(listing.createdAt, s) != null)
-                          Text(
-                            postedLabel(listing.createdAt, s)!,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.hintColor,
-                            ),
-                          ),
-                        const SizedBox(height: 8),
-                        SelectableText(
-                          listing.title,
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 16),
-                        _SpecTable(listing: listing, s: s, country: country),
-                        if (listing.nearbyTransport.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          NearbyTransportTables(
-                            stops: listing.nearbyTransport,
-                            s: s,
-                          ),
-                        ],
                       ],
                     ),
-                  ),
+                  ],
+                  if (showTranslated) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _localized(settings, 'Translation', 'Перевод'),
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      _translatedText!,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ] else if (listing.description.trim().isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Theme(
+                      data: theme.copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: const EdgeInsets.only(bottom: 8),
+                        title: Text(
+                          s.t('description'),
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: SelectableText(
+                              listing.description,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (contacts.isNotEmpty) ...[
-                  for (var i = 0; i < contacts.length; i++) ...[
-                    _ContactCard(contact: contacts[i], s: s),
-                    if (i < contacts.length - 1) const SizedBox(height: 8),
-                  ],
-                  const SizedBox(height: 16),
-                ],
-                if (hasTranslatableText) ...[
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed:
-                            _translating ? null : () => _translate(settings),
-                        icon: _translating
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Icon(
-                                showTranslated
-                                    ? Icons.article_outlined
-                                    : Icons.translate,
-                              ),
-                        label: Text(
-                          _translating
-                              ? _localized(settings, 'Translating…', 'Перевод…')
-                              : showTranslated
-                                  ? _localized(
-                                      settings,
-                                      'Show original',
-                                      'Показать оригинал',
-                                    )
-                                  : _localized(
-                                      settings, 'Translate', 'Перевести'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (showTranslated) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    _localized(settings, 'Translation', 'Перевод'),
-                    style: theme.textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  SelectableText(
-                    _translatedText!,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ] else if (listing.description.trim().isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Theme(
-                    data: theme.copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      tilePadding: EdgeInsets.zero,
-                      childrenPadding: const EdgeInsets.only(bottom: 8),
-                      title: Text(
-                        s.t('description'),
-                        style: theme.textTheme.titleSmall,
-                      ),
-                      children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: SelectableText(
-                            listing.description,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
