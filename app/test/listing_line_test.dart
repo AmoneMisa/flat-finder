@@ -24,22 +24,20 @@ void main() {
         ...extra,
       };
 
-  test('backend line values parse to the four lines', () {
+  test('backend line values parse to the three lines', () {
     expect(listingLineFromJson('steady'), ListingLine.steady);
-    expect(listingLineFromJson('check'), ListingLine.check);
     expect(listingLineFromJson('phantom_risk'), ListingLine.phantomRisk);
     expect(listingLineFromJson('multi_listing'), ListingLine.multiListing);
   });
 
   test('unknown or missing values draw no line', () {
-    for (final value in [null, '', 'fraud', 'red', 42, true]) {
+    for (final value in [null, '', 'check', 'fraud', 'red', 42, true]) {
       expect(listingLineFromJson(value), isNull, reason: '$value');
     }
   });
 
   test('colours match the website tokens', () {
     expect(ListingLineColors.of(ListingLine.steady), const Color(0xFF4ADE80));
-    expect(ListingLineColors.of(ListingLine.check), const Color(0xFFFACC15));
     expect(ListingLineColors.of(ListingLine.phantomRisk), const Color(0xFFF43F5E));
     expect(ListingLineColors.of(ListingLine.multiListing), const Color(0xFFA855F7));
     expect(ListingLineColors.of(null), const Color(0xFF6B7091));
@@ -53,12 +51,11 @@ void main() {
     expect(Listing.fromJson(listingJson()).listingLine, isNull);
   });
 
-  test('legend has five entries in design order with both translations', () {
+  test('legend has four entries in design order with both translations', () {
     expect(
       listingLineLegendKeys.map((entry) => entry.$1).toList(),
       [
         ListingLine.steady,
-        ListingLine.check,
         ListingLine.phantomRisk,
         ListingLine.multiListing,
         null,

@@ -7,15 +7,14 @@ import 'package:flutter/material.dart';
 /// Wording describes the listing, never a verdict about a person: the lines
 /// are automatic and nobody reviews them. Same values, colours and legend as
 /// the website (Personal-Site utils/flats/listingLine.ts).
-enum ListingLine { steady, check, phantomRisk, multiListing }
+/// There is no yellow line: the operator removed it as unnecessary.
+enum ListingLine { steady, phantomRisk, multiListing }
 
 /// Parses the API value. Anything unknown draws no line.
 ListingLine? listingLineFromJson(Object? value) {
   switch (value) {
     case 'steady':
       return ListingLine.steady;
-    case 'check':
-      return ListingLine.check;
     case 'phantom_risk':
       return ListingLine.phantomRisk;
     case 'multi_listing':
@@ -30,7 +29,6 @@ class ListingLineColors {
   const ListingLineColors._();
 
   static const steady = Color(0xFF4ADE80);
-  static const check = Color(0xFFFACC15);
   static const phantom = Color(0xFFF43F5E);
   static const multi = Color(0xFFA855F7);
   static const none = Color(0xFF6B7091);
@@ -39,8 +37,6 @@ class ListingLineColors {
     switch (line) {
       case ListingLine.steady:
         return steady;
-      case ListingLine.check:
-        return check;
       case ListingLine.phantomRisk:
         return phantom;
       case ListingLine.multiListing:
@@ -54,7 +50,6 @@ class ListingLineColors {
 /// String keys for the legend entries, in design order, `null` = no line.
 const listingLineLegendKeys = <(ListingLine?, String, String)>[
   (ListingLine.steady, 'lineSteady', 'lineSteadyHint'),
-  (ListingLine.check, 'lineCheck', 'lineCheckHint'),
   (ListingLine.phantomRisk, 'linePhantom', 'linePhantomHint'),
   (ListingLine.multiListing, 'lineMulti', 'lineMultiHint'),
   (null, 'lineNone', 'lineNoneHint'),
