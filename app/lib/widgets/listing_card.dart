@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../l10n/strings.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/listing_line.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
 import '../state/hidden.dart';
@@ -88,6 +89,10 @@ class ListingCard extends StatelessWidget {
     final mobile = !grid && MediaQuery.sizeOf(context).width < 700;
 
     final dealTone = _dealTone(listing);
+    // The coloured line is the card outline only, never a divider under the
+    // photo (that was a bug in the design mockup).
+    final line = listing.listingLine;
+    final lineColor = line == null ? null : ListingLineColors.of(line);
     final photo = Stack(
       fit: StackFit.expand,
       children: [
@@ -190,17 +195,20 @@ class ListingCard extends StatelessWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      elevation: isFav ? 5 : 0,
-      shadowColor: isFav ? const Color(0x66E0679A) : Colors.transparent,
+      elevation: lineColor != null || isFav ? 5 : 0,
+      shadowColor: lineColor?.withValues(alpha: .45) ??
+          (isFav ? const Color(0x66E0679A) : Colors.transparent),
       color: const Color(0xFF0B102A),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: listing.potentiallyUnsafe
-              ? const Color(0x8FF2B86B)
-              : isFav
-                  ? const Color(0x85E0679A)
-                  : Theme.of(context).dividerColor.withValues(alpha: .65),
+          width: lineColor != null ? 1.5 : 1,
+          color: lineColor ??
+              (listing.potentiallyUnsafe
+                  ? const Color(0x8FF2B86B)
+                  : isFav
+                      ? const Color(0x85E0679A)
+                      : Theme.of(context).dividerColor.withValues(alpha: .65)),
         ),
       ),
       margin: grid

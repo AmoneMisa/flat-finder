@@ -25,6 +25,7 @@ import '../utils/share_link.dart';
 import '../utils/sort.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/listing_card.dart';
+import '../widgets/listing_line_legend.dart';
 import '../widgets/map_view.dart';
 import '../widgets/quick_presets_bar.dart';
 import '../widgets/searchable_dropdown.dart';
@@ -669,16 +670,28 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        tooltip: settings.t('filters'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-        onPressed: () => _openFilters(state),
-        child: const Icon(Icons.tune),
+      floatingActionButton: Padding(
+        // Lifted above the line legend while it is shown under the results.
+        padding: EdgeInsets.only(
+          bottom: _showsLineLegend(state) ? ListingLineLegend.height + 8 : 0,
+        ),
+        child: FloatingActionButton(
+          tooltip: settings.t('filters'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          onPressed: () => _openFilters(state),
+          child: const Icon(Icons.tune),
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
+
+  /// Whether the results list, and with it the line legend, is on screen.
+  /// Deliberately cheap (no sort/tab pass): it only positions the filter
+  /// button, so a tab that filters every card away costs a few pixels at most.
+  bool _showsLineLegend(AppState state) =>
+      !_mapMode && state.listings.isNotEmpty;
 
   Widget _body(
     AppState state,
@@ -805,7 +818,10 @@ class _HomeScreenState extends State<HomeScreen> {
               if (columns == 1) {
                 return ListView.builder(
                   controller: _resultsScroll,
-                  padding: const EdgeInsets.only(bottom: 90, top: 4),
+                  padding: const EdgeInsets.only(
+                    bottom: 90 + ListingLineLegend.height,
+                    top: 4,
+                  ),
                   itemCount: listings.length + (state.loadingMore ? 1 : 0),
                   itemBuilder: (_, i) {
                     if (i == listings.length) {
@@ -825,7 +841,12 @@ class _HomeScreenState extends State<HomeScreen> {
               }
               return GridView.builder(
                 controller: _resultsScroll,
-                padding: const EdgeInsets.fromLTRB(6, 4, 6, 90),
+                padding: const EdgeInsets.fromLTRB(
+                  6,
+                  4,
+                  6,
+                  90 + ListingLineLegend.height,
+                ),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
                   childAspectRatio: 0.82,
@@ -847,6 +868,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               );
             },
+          ),
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 8,
+            child: ListingLineLegend(s: settings.s),
           ),
         ],
       ),
