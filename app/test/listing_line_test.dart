@@ -1,7 +1,7 @@
 import 'package:flat_finder/l10n/strings.dart';
 import 'package:flat_finder/models/listing.dart';
 import 'package:flat_finder/models/listing_line.dart';
-import 'package:flat_finder/widgets/listing_line_legend.dart';
+import 'package:flat_finder/widgets/listing_line_legend_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -84,22 +84,25 @@ void main() {
     }
   });
 
-  testWidgets('legend fits a phone width without overflow, at large text', (tester) async {
+  test('each line maps to its own legend keys, and no line maps to none', () {
+    expect(listingLineKeys(ListingLine.steady), ('lineSteady', 'lineSteadyHint'));
+    expect(listingLineKeys(ListingLine.phantomRisk), ('linePhantom', 'linePhantomHint'));
+    expect(listingLineKeys(ListingLine.multiListing), ('lineMulti', 'lineMultiHint'));
+    expect(listingLineKeys(null), isNull);
+  });
+
+  testWidgets('the legend sheet lists every entry on a phone, at large text', (tester) async {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: MediaQuery(
-          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          data: MediaQueryData(textScaler: TextScaler.linear(2)),
           child: Scaffold(
-            body: Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: ListingLineLegend(s: const AppStrings('ru')),
-              ),
+            body: SingleChildScrollView(
+              child: ListingLineLegendSheet(s: AppStrings('ru')),
             ),
           ),
         ),
@@ -107,11 +110,11 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Похоже на фантом'), findsOneWidget);
-    expect(find.text('без метки'), findsOneWidget);
-    expect(
-      tester.getSize(find.byType(ListingLineLegend)).height,
-      ListingLineLegend.height,
-    );
+    // Titles wrap now instead of being ellipsized by a fixed-height strip.
+    const s = AppStrings('ru');
+    for (final (_, titleKey, hintKey) in listingLineLegendKeys) {
+      expect(find.text(s.t(titleKey)), findsOneWidget, reason: titleKey);
+      expect(find.text(s.t(hintKey)), findsOneWidget, reason: hintKey);
+    }
   });
 }

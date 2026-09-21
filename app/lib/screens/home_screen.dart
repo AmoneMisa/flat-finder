@@ -26,7 +26,7 @@ import '../utils/share_link.dart';
 import '../utils/sort.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/listing_card.dart';
-import '../widgets/listing_line_legend.dart';
+import '../widgets/listing_line_legend_sheet.dart';
 import '../widgets/map_view.dart';
 import '../widgets/owner_breadcrumbs.dart';
 import '../widgets/quick_presets_bar.dart';
@@ -543,6 +543,22 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.bar_chart_outlined),
             onPressed: () => _openStats(state),
           ),
+          // What the coloured card outlines mean. Only in list mode, where the
+          // outlines are on screen -- a card also explains itself on long
+          // press, but that is easy to miss, so the legend stays reachable.
+          if (!_mapMode)
+            IconButton(
+              tooltip: settings.t('lineLegend'),
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+              style: IconButton.styleFrom(
+                minimumSize: const Size(40, 48),
+                maximumSize: const Size(40, 48),
+                padding: EdgeInsets.zero,
+              ),
+              icon: const Icon(Icons.help_outline),
+              onPressed: () => showListingLineLegend(context, settings.s),
+            ),
           PopupMenuButton<String>(
             tooltip: settings.t('more'),
             padding: EdgeInsets.zero,
@@ -711,28 +727,16 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: Padding(
-        // Lifted above the line legend while it is shown under the results.
-        padding: EdgeInsets.only(
-          bottom: _showsLineLegend(state) ? ListingLineLegend.height + 8 : 0,
-        ),
-        child: FloatingActionButton(
-          tooltip: settings.t('filters'),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          foregroundColor: Theme.of(context).colorScheme.onPrimary,
-          onPressed: () => _openFilters(state),
-          child: const Icon(Icons.tune),
-        ),
+      floatingActionButton: FloatingActionButton(
+        tooltip: settings.t('filters'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        onPressed: () => _openFilters(state),
+        child: const Icon(Icons.tune),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
-
-  /// Whether the results list, and with it the line legend, is on screen.
-  /// Deliberately cheap (no sort/tab pass): it only positions the filter
-  /// button, so a tab that filters every card away costs a few pixels at most.
-  bool _showsLineLegend(AppState state) =>
-      !_mapMode && state.listings.isNotEmpty;
 
   Widget _body(
     AppState state,
@@ -860,7 +864,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 return ListView.builder(
                   controller: _resultsScroll,
                   padding: const EdgeInsets.only(
-                    bottom: 90 + ListingLineLegend.height,
+                    bottom: 90,
                     top: 4,
                   ),
                   itemCount: listings.length + (state.loadingMore ? 1 : 0),
@@ -886,7 +890,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   6,
                   4,
                   6,
-                  90 + ListingLineLegend.height,
+                  90,
                 ),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
@@ -909,12 +913,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               );
             },
-          ),
-          Positioned(
-            left: 8,
-            right: 8,
-            bottom: 8,
-            child: ListingLineLegend(s: settings.s),
           ),
         ],
       ),

@@ -54,3 +54,14 @@ const listingLineLegendKeys = <(ListingLine?, String, String)>[
   (ListingLine.multiListing, 'lineMulti', 'lineMultiHint'),
   (null, 'lineNone', 'lineNoneHint'),
 ];
+
+/// The (title, hint) keys for one line, or null when the listing has no line.
+/// The legend is no longer a strip under the results; a card explains its own
+/// line on long press, so the lookup is per-card now.
+(String, String)? listingLineKeys(ListingLine? line) {
+  if (line == null) return null;
+  for (final (candidate, titleKey, hintKey) in listingLineLegendKeys) {
+    if (candidate == line) return (titleKey, hintKey);
+  }
+  return null;
+}

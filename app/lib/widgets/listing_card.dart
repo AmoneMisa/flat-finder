@@ -93,6 +93,16 @@ class ListingCard extends StatelessWidget {
     // photo (that was a bug in the design mockup).
     final line = listing.listingLine;
     final lineColor = line == null ? null : ListingLineColors.of(line);
+    // What the outline colour means. The legend strip under the results is
+    // gone, so the card carries its own explanation; long press is the touch
+    // equivalent of the website's hover. Same wording split as the site: the
+    // purple entry is one sentence, the others are "title — hint".
+    final lineKeys = listingLineKeys(line);
+    final lineTooltip = lineKeys == null
+        ? null
+        : line == ListingLine.multiListing
+            ? '${s.t(lineKeys.$1)} ${s.t(lineKeys.$2)}'
+            : '${s.t(lineKeys.$1)} — ${s.t(lineKeys.$2)}';
     final photo = Stack(
       fit: StackFit.expand,
       children: [
@@ -193,7 +203,7 @@ class ListingCard extends StatelessWidget {
       ],
     );
 
-    return Card(
+    final card = Card(
       clipBehavior: Clip.antiAlias,
       elevation: lineColor != null || isFav ? 5 : 0,
       shadowColor: lineColor?.withValues(alpha: .45) ??
@@ -262,6 +272,15 @@ class ListingCard extends StatelessWidget {
                 ],
               ),
       ),
+    );
+
+    if (lineTooltip == null) return card;
+    // Long press, not tap: the card's own tap opens the listing.
+    return Tooltip(
+      message: lineTooltip,
+      triggerMode: TooltipTriggerMode.longPress,
+      excludeFromSemantics: true,
+      child: Semantics(container: true, hint: lineTooltip, child: card),
     );
   }
 
