@@ -145,6 +145,19 @@ class ApiService {
     return s.startsWith('/') ? '$baseUrl$s' : s;
   }
 
+  /// An owner's sample photo is a stored listing photo, so a Telegram one is
+  /// relative to the API (`/api/tg-photo/...`) like any feed listing's.
+  Map<String, dynamic> _absolutizeOwner(Map<String, dynamic> j) {
+    final sample = j['sample'];
+    if (sample is Map && sample['photo'] != null) {
+      j['sample'] = {
+        ...Map<String, dynamic>.from(sample),
+        'photo': _resolvePhoto(sample['photo']),
+      };
+    }
+    return j;
+  }
+
   Map<String, dynamic> _absolutizePhotos(Map<String, dynamic> j) {
     if (j['photo'] != null) j['photo'] = _resolvePhoto(j['photo']);
     if (j['photos'] is List) {
@@ -367,11 +380,6 @@ class ApiService {
     return Listing.fromJson(_absolutizePhotos(j as Map<String, dynamic>));
   }
 
-  /// Look up a listing by its stable [publicId] (the `#12345` shown in the
-  /// detail title / used for single-listing share links) rather than its
-  /// source+id pair. Returns null if it's gone or the id doesn't exist —
-  /// callers that expect a freshly-scraped listing may need to retry for a
-  /// few seconds while it's indexed, same as the site's polling fallback.
   /// Owners with two or more different listings in [country], largest first.
   Future<OwnersPage> fetchOwners(String country, {String? cursor}) async {
     final uri = Uri.parse('$baseUrl/api/owners').replace(
@@ -388,7 +396,11 @@ class ApiService {
     return OwnersPage(
       owners: (json['owners'] as List? ?? const [])
           .whereType<Map>()
-          .map((e) => ListingOwner.fromJson(Map<String, dynamic>.from(e)))
+          .map(
+            (e) => ListingOwner.fromJson(
+              _absolutizeOwner(Map<String, dynamic>.from(e)),
+            ),
+          )
           .toList(),
       next: json['next'] as String?,
     );
@@ -403,7 +415,9 @@ class ApiService {
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     final owner = json['owner'];
     return owner is Map
-        ? ListingOwner.fromJson(Map<String, dynamic>.from(owner))
+        ? ListingOwner.fromJson(
+            _absolutizeOwner(Map<String, dynamic>.from(owner)),
+          )
         : null;
   }
 
@@ -428,6 +442,11 @@ class ApiService {
         .toList();
   }
 
+  /// Look up a listing by its stable [publicId] (the `#12345` shown in the
+  /// detail title / used for single-listing share links) rather than its
+  /// source+id pair. Returns null if it's gone or the id doesn't exist —
+  /// callers that expect a freshly-scraped listing may need to retry for a
+  /// few seconds while it's indexed, same as the site's polling fallback.
   Future<Listing?> fetchListingByPublicId(int publicId) async {
     final uri = Uri.parse('$baseUrl/api/listing/by-public-id/$publicId');
     final res = await _client.get(uri).timeout(const Duration(seconds: 15));
