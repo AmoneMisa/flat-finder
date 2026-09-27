@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'listing_line.dart';
+
 /// Market-price comparison attached by the backend for recent comparable listings.
 class MarketComparison {
   final bool goodPrice;
@@ -433,6 +435,17 @@ class Listing {
             : Map<String, dynamic>.unmodifiable(rawData);
 
   bool get hasLocation => lat != null && lng != null;
+
+  /// Card line from the backend's `listingLine`. Read from [rawData] so it
+  /// survives favorites/history storage like every other public field.
+  ListingLine? get listingLine => listingLineFromJson(rawData['listingLine']);
+
+  /// Other properties the same contact advertises (backend
+  /// `contactListingCount`); the listing screen offers a tab for them.
+  int get contactListingCount {
+    final value = rawData['contactListingCount'];
+    return value is num && value > 0 ? value.toInt() : 0;
+  }
 
   List<NearbyTransportStop> transportByMode(String mode) => nearbyTransport
       .where((stop) => stop.mode == mode)

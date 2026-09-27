@@ -102,6 +102,24 @@ Map<String, String> _stringMap(dynamic v) => v is Map
     ? v.map((k, val) => MapEntry(k.toString(), val.toString()))
     : const {};
 
+/// One curated real-estate site behind the "Sites" (`custom`) source bucket,
+/// e.g. `krisha.kz`. `countries` lists which country codes it is scraped for,
+/// so the UI can hide sites that don't apply to the selected country.
+class CustomSite {
+  final String domain;
+  final List<String> countries;
+
+  const CustomSite({required this.domain, this.countries = const []});
+
+  factory CustomSite.fromJson(Map<String, dynamic> j) => CustomSite(
+        domain: (j['domain'] ?? '').toString(),
+        countries: (j['countries'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
+      );
+}
+
 Set<String> _storedSources(dynamic value) {
   final sources = (value is List && value.isNotEmpty)
       ? value.map((item) => item.toString()).toSet()
@@ -256,6 +274,10 @@ class Filters {
   Set<String> countries; // exactly one selected country code
   Set<String> sources; // selected listing sources
   List<String> customSources; // user-added source URLs (JSON-LD / RSS pages)
+  // Narrows the curated `custom` ("Sites") bucket to specific site domains
+  // (e.g. {'krisha.kz'}). Empty means "all curated sites" -- same convention
+  // as `sources` being the full kAllSources set.
+  Set<String> customSites;
   PropertyType propertyType;
   DealType dealType;
   AgencyFilter agency;
@@ -287,6 +309,15 @@ class Filters {
   num? centerLng;
   num? radiusM;
   bool withPhotos;
+
+  /// Listing-line toggles: only green (steady) listings, and hiding red
+  /// (phantom_risk) ones. Filtered by the backend.
+  bool trustedOnly;
+  bool hideDanger;
+
+  /// Owner collection: one advertiser's listings, by the backend's opaque
+  /// owner key. Empty = every advertiser.
+  String owner;
   String city;
   String district;
   String microdistrict;
@@ -317,6 +348,7 @@ class Filters {
     Set<String>? countries,
     Set<String>? sources,
     List<String>? customSources,
+    Set<String>? customSites,
     this.propertyType = PropertyType.any,
     this.dealType = DealType.any,
     this.agency = AgencyFilter.any,
@@ -348,6 +380,9 @@ class Filters {
     this.centerLng,
     this.radiusM,
     this.withPhotos = false,
+    this.trustedOnly = false,
+    this.hideDanger = false,
+    this.owner = '',
     this.city = '',
     this.district = '',
     this.microdistrict = '',
@@ -370,6 +405,7 @@ class Filters {
   })  : countries = _singleCountry(countries),
         sources = sources ?? {...kAllSources},
         customSources = customSources ?? [],
+        customSites = customSites ?? {},
         metro = metro ?? {},
         amenities = amenities ?? {};
 
@@ -377,6 +413,7 @@ class Filters {
     Set<String>? countries,
     Set<String>? sources,
     List<String>? customSources,
+    Set<String>? customSites,
     PropertyType? propertyType,
     DealType? dealType,
     AgencyFilter? agency,
@@ -408,6 +445,9 @@ class Filters {
     num? centerLng,
     num? radiusM,
     bool? withPhotos,
+    bool? trustedOnly,
+    bool? hideDanger,
+    String? owner,
     bool clearPriceMin = false,
     bool clearPriceMax = false,
     bool clearPriceTolerance = false,
@@ -458,6 +498,7 @@ class Filters {
       countries: countries ?? this.countries,
       sources: sources ?? this.sources,
       customSources: customSources ?? this.customSources,
+      customSites: customSites ?? this.customSites,
       propertyType: propertyType ?? this.propertyType,
       dealType: dealType ?? this.dealType,
       agency: agency ?? this.agency,
@@ -499,6 +540,9 @@ class Filters {
       centerLng: clearRadiusSearch ? null : (centerLng ?? this.centerLng),
       radiusM: clearRadiusSearch ? null : (radiusM ?? this.radiusM),
       withPhotos: withPhotos ?? this.withPhotos,
+      trustedOnly: trustedOnly ?? this.trustedOnly,
+      hideDanger: hideDanger ?? this.hideDanger,
+      owner: owner ?? this.owner,
       city: city ?? this.city,
       district: district ?? this.district,
       microdistrict: microdistrict ?? this.microdistrict,
@@ -530,6 +574,7 @@ class Filters {
         'countries': countries.toList(),
         'sources': sources.toList(),
         'customSources': customSources,
+        'customSites': customSites.toList(),
         'propertyType': propertyType.name,
         'dealType': dealType.name,
         'agency': agency.name,
@@ -561,6 +606,9 @@ class Filters {
         'centerLng': centerLng,
         'radiusM': radiusM,
         'withPhotos': withPhotos,
+        'trustedOnly': trustedOnly,
+        'hideDanger': hideDanger,
+        'owner': owner,
         'city': city,
         'district': district,
         'microdistrict': microdistrict,
@@ -604,6 +652,11 @@ class Filters {
               .where((e) => e.isNotEmpty)
               .toList() ??
           [],
+      customSites: (j['customSites'] as List?)
+              ?.map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toSet() ??
+          {},
       propertyType: byName(
         PropertyType.values,
         j['propertyType'],
@@ -639,6 +692,9 @@ class Filters {
       centerLng: n(j['centerLng']),
       radiusM: n(j['radiusM']),
       withPhotos: j['withPhotos'] == true,
+      trustedOnly: j['trustedOnly'] == true,
+      hideDanger: j['hideDanger'] == true,
+      owner: _ownerKeyOrEmpty(j['owner']),
       city: (j['city'] ?? '').toString(),
       district: (j['district'] ?? '').toString(),
       microdistrict: (j['microdistrict'] ?? '').toString(),
@@ -691,6 +747,7 @@ class Filters {
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
           .toList(),
+      customSites: csv(q['customSites']),
       propertyType: byName(
         PropertyType.values,
         q['propertyType'],
@@ -728,6 +785,9 @@ class Filters {
       centerLng: n(q['centerLng']),
       radiusM: n(q['radiusM']),
       withPhotos: q['withPhotos'] == 'true',
+      trustedOnly: q['trustedOnly'] == 'true',
+      hideDanger: q['hideDanger'] == 'true',
+      owner: _ownerKeyOrEmpty(q['owner']),
       city: (q['city'] ?? '').trim(),
       district: (q['district'] ?? '').trim(),
       microdistrict: (q['microdistrict'] ?? '').trim(),
@@ -777,6 +837,9 @@ class Filters {
     if (customSources.isNotEmpty) {
       p['customSources'] = customSources.join(',');
     }
+    if (customSites.isNotEmpty) {
+      p['customSites'] = customSites.join(',');
+    }
     if (priceMin != null) p['priceMin'] = priceMin.toString();
     if (priceMax != null) p['priceMax'] = priceMax.toString();
     // Tolerance only makes sense with a max price set.
@@ -817,6 +880,9 @@ class Filters {
       p['radiusM'] = radiusM.toString();
     }
     if (withPhotos) p['withPhotos'] = 'true';
+    if (trustedOnly) p['trustedOnly'] = 'true';
+    if (hideDanger) p['hideDanger'] = 'true';
+    if (owner.isNotEmpty) p['owner'] = owner;
     if (city.trim().isNotEmpty) p['city'] = city.trim();
     if (district.trim().isNotEmpty) p['district'] = district.trim();
     if (microdistrict.trim().isNotEmpty) {
@@ -852,4 +918,11 @@ class Filters {
     }
     return p;
   }
+}
+
+/// Owner keys are 24 lower-case hex characters; anything else is dropped so
+/// a malformed link cannot reach the API.
+String _ownerKeyOrEmpty(Object? value) {
+  final text = value?.toString() ?? '';
+  return RegExp(r'^[0-9a-f]{24}$').hasMatch(text) ? text : '';
 }

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../l10n/strings.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/listing_line.dart';
 import '../state/app_state.dart';
 import '../state/favorites.dart';
 import '../state/hidden.dart';
@@ -88,6 +89,20 @@ class ListingCard extends StatelessWidget {
     final mobile = !grid && MediaQuery.sizeOf(context).width < 700;
 
     final dealTone = _dealTone(listing);
+    // The coloured line is the card outline only, never a divider under the
+    // photo (that was a bug in the design mockup).
+    final line = listing.listingLine;
+    final lineColor = line == null ? null : ListingLineColors.of(line);
+    // What the outline colour means. The legend strip under the results is
+    // gone, so the card carries its own explanation; long press is the touch
+    // equivalent of the website's hover. Same wording split as the site: the
+    // purple entry is one sentence, the others are "title — hint".
+    final lineKeys = listingLineKeys(line);
+    final lineTooltip = lineKeys == null
+        ? null
+        : line == ListingLine.multiListing
+            ? '${s.t(lineKeys.$1)} ${s.t(lineKeys.$2)}'
+            : '${s.t(lineKeys.$1)} — ${s.t(lineKeys.$2)}';
     final photo = Stack(
       fit: StackFit.expand,
       children: [
@@ -188,19 +203,22 @@ class ListingCard extends StatelessWidget {
       ],
     );
 
-    return Card(
+    final card = Card(
       clipBehavior: Clip.antiAlias,
-      elevation: isFav ? 5 : 0,
-      shadowColor: isFav ? const Color(0x66E0679A) : Colors.transparent,
+      elevation: lineColor != null || isFav ? 5 : 0,
+      shadowColor: lineColor?.withValues(alpha: .45) ??
+          (isFav ? const Color(0x66E0679A) : Colors.transparent),
       color: const Color(0xFF0B102A),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: listing.potentiallyUnsafe
-              ? const Color(0x8FF2B86B)
-              : isFav
-                  ? const Color(0x85E0679A)
-                  : Theme.of(context).dividerColor.withValues(alpha: .65),
+          width: lineColor != null ? 1.5 : 1,
+          color: lineColor ??
+              (listing.potentiallyUnsafe
+                  ? const Color(0x8FF2B86B)
+                  : isFav
+                      ? const Color(0x85E0679A)
+                      : Theme.of(context).dividerColor.withValues(alpha: .65)),
         ),
       ),
       margin: grid
@@ -254,6 +272,15 @@ class ListingCard extends StatelessWidget {
                 ],
               ),
       ),
+    );
+
+    if (lineTooltip == null) return card;
+    // Long press, not tap: the card's own tap opens the listing.
+    return Tooltip(
+      message: lineTooltip,
+      triggerMode: TooltipTriggerMode.longPress,
+      excludeFromSemantics: true,
+      child: Semantics(container: true, hint: lineTooltip, child: card),
     );
   }
 

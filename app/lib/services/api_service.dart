@@ -211,6 +211,12 @@ class ApiService extends base.ApiService {
   }
 
   @override
+  Future<List<Listing>> fetchContactListings(int publicId) async {
+    final listings = await super.fetchContactListings(publicId);
+    return listings.map(_sanitizeListing).toList();
+  }
+
+  @override
   Future<Listing?> fetchListingByPublicId(int publicId) async {
     final listing = await super.fetchListingByPublicId(publicId);
     return listing == null ? null : _sanitizeListing(listing);

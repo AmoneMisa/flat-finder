@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/district_zone.dart';
 import '../models/filters.dart';
 import '../models/listing.dart';
+import '../models/listing_owner.dart';
 import '../models/map_listing_point.dart';
 import '../models/search_statistics.dart';
 import 'request_cancellation.dart';
@@ -166,6 +167,27 @@ class ApiService {
     }
     final list = jsonDecode(res.body) as List;
     return list.map((e) => Country.fromJson(e)).toList();
+  }
+
+  /// The individual curated real-estate sites behind the "Sites" (`custom`)
+  /// source bucket, so the filter sheet can offer per-site toggles instead of
+  /// one opaque "Sites" switch. Pass [country] to narrow to sites scraped for
+  /// that country; omit for the full catalogue.
+  Future<List<CustomSite>> fetchCustomSites({String? country}) async {
+    final uri = Uri.parse('$baseUrl/api/custom-sites').replace(
+      queryParameters: (country == null || country.isEmpty)
+          ? null
+          : {'country': country},
+    );
+    final res = await _client.get(uri);
+    if (res.statusCode != 200) {
+      throw Exception('custom-sites HTTP ${res.statusCode}');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = (body['sites'] as List?) ?? const [];
+    return list
+        .map((e) => CustomSite.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
   }
 
   /// Parse the server's suggested wait (from body or the Retry-After header),
@@ -350,6 +372,62 @@ class ApiService {
   /// source+id pair. Returns null if it's gone or the id doesn't exist —
   /// callers that expect a freshly-scraped listing may need to retry for a
   /// few seconds while it's indexed, same as the site's polling fallback.
+  /// Owners with two or more different listings in [country], largest first.
+  Future<OwnersPage> fetchOwners(String country, {String? cursor}) async {
+    final uri = Uri.parse('$baseUrl/api/owners').replace(
+      queryParameters: {
+        'country': country,
+        'limit': '24',
+        if (cursor != null) 'cursor': cursor,
+      },
+    );
+    final res = await _client.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
+    if (res.statusCode != 200) throw Exception('owners HTTP ${res.statusCode}');
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    return OwnersPage(
+      owners: (json['owners'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => ListingOwner.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      next: json['next'] as String?,
+    );
+  }
+
+  /// One owner, for the breadcrumb above an owner's listings.
+  Future<ListingOwner?> fetchOwner(String ownerKey) async {
+    if (!ListingOwner.isKey(ownerKey)) return null;
+    final uri = Uri.parse('$baseUrl/api/owners/$ownerKey');
+    final res = await _client.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) return null;
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final owner = json['owner'];
+    return owner is Map
+        ? ListingOwner.fromJson(Map<String, dynamic>.from(owner))
+        : null;
+  }
+
+  /// The same contact's other listings, one per property.
+  Future<List<Listing>> fetchContactListings(int publicId) async {
+    final uri = Uri.parse(
+      '$baseUrl/api/listing/by-public-id/$publicId/contact-listings',
+    );
+    final res = await _client.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode == 429) throw RateLimitException(_retryAfterMs(res));
+    if (res.statusCode != 200) {
+      throw Exception('contact listings HTTP ${res.statusCode}');
+    }
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    return (json['listings'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (e) => Listing.fromJson(
+            _absolutizePhotos(Map<String, dynamic>.from(e)),
+          ),
+        )
+        .toList();
+  }
+
   Future<Listing?> fetchListingByPublicId(int publicId) async {
     final uri = Uri.parse('$baseUrl/api/listing/by-public-id/$publicId');
     final res = await _client.get(uri).timeout(const Duration(seconds: 15));

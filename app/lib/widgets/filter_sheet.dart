@@ -19,11 +19,13 @@ class FilterSheet extends StatefulWidget {
     super.key,
     required this.initial,
     required this.countries,
+    this.customSiteDomains = const [],
     required this.onChanged,
   });
 
   final Filters initial;
   final List<Country> countries;
+  final List<CustomSite> customSiteDomains;
   final ValueChanged<Filters> onChanged;
 
   @override
@@ -36,6 +38,7 @@ class _FilterSheetState extends State<FilterSheet> {
   late Set<String> _countries;
   late Set<String> _sources;
   late List<String> _customSources;
+  late Set<String> _customSites;
   late PropertyType _type;
   late DealType _deal;
   late AgencyFilter _agency;
@@ -86,6 +89,8 @@ class _FilterSheetState extends State<FilterSheet> {
   String? _nearbyKind;
   String? _priceCurrency;
   late bool _withPhotos;
+  late bool _trustedOnly;
+  late bool _hideDanger;
 
   @override
   void initState() {
@@ -93,6 +98,7 @@ class _FilterSheetState extends State<FilterSheet> {
     _countries = {...widget.initial.countries};
     _sources = {...widget.initial.sources};
     _customSources = [...widget.initial.customSources];
+    _customSites = {...widget.initial.customSites};
     _type = widget.initial.propertyType;
     _deal = widget.initial.dealType;
     _agency = widget.initial.agency;
@@ -184,6 +190,8 @@ class _FilterSheetState extends State<FilterSheet> {
     _nearbyKind = widget.initial.nearbyKind;
     _priceCurrency = widget.initial.priceCurrency;
     _withPhotos = widget.initial.withPhotos;
+    _trustedOnly = widget.initial.trustedOnly;
+    _hideDanger = widget.initial.hideDanger;
 
     for (final controller in _textControllers) {
       controller.addListener(_scheduleLiveApply);
@@ -284,6 +292,15 @@ class _FilterSheetState extends State<FilterSheet> {
     );
   }
 
+  /// Curated custom sites that apply to the currently selected country.
+  List<CustomSite> get _availableCustomSites {
+    final country = _countries.isNotEmpty ? _countries.first : null;
+    if (country == null) return widget.customSiteDomains;
+    return widget.customSiteDomains
+        .where((site) => site.countries.contains(country))
+        .toList();
+  }
+
   /// District/metro data for the currently selected city, if any is available.
   CityLocations? get _cityLoc {
     if (_city == null) return null;
@@ -301,6 +318,7 @@ class _FilterSheetState extends State<FilterSheet> {
       countries: _countries,
       sources: _sources,
       customSources: _customSources,
+      customSites: _customSites,
       propertyType: _type,
       dealType: _deal,
       agency: _agency,
@@ -336,6 +354,8 @@ class _FilterSheetState extends State<FilterSheet> {
       nearbyMaxM: parse(_nearbyMaxMCtl.text),
       nearbyKind: _nearbyKind,
       withPhotos: _withPhotos,
+      trustedOnly: _trustedOnly,
+      hideDanger: _hideDanger,
       query: _queryCtl.text,
       pets: _pets,
       children: _children,
@@ -429,6 +449,7 @@ class _FilterSheetState extends State<FilterSheet> {
       _countries = {...f.countries};
       _sources = {...f.sources};
       _customSources = [...f.customSources];
+      _customSites = {...f.customSites};
       _type = f.propertyType;
       _deal = f.dealType;
       _agency = f.agency;
@@ -474,6 +495,8 @@ class _FilterSheetState extends State<FilterSheet> {
       _nearbyMaxMCtl.text = f.nearbyMaxM?.toString() ?? '';
       _nearbyKind = f.nearbyKind;
       _withPhotos = f.withPhotos;
+      _trustedOnly = f.trustedOnly;
+      _hideDanger = f.hideDanger;
       _queryCtl.text = f.query;
     });
     _hydratingControls = false;
@@ -752,9 +775,15 @@ class _FilterSheetState extends State<FilterSheet> {
                               _metro = {};
                               _metroBearingFrom = null;
                               _metroBearingTo = null;
-                              _microdistrictCtl.clear();
-                              _quartalCtl.clear();
-                              _areaNameCtl.clear();
+                              // Drop selections that don't apply to the new
+                              // country instead of silently filtering to
+                              // sites with zero listings there.
+                              final available = widget.customSiteDomains
+                                  .where((site) => site.countries.contains(value))
+                                  .map((site) => site.domain)
+                                  .toSet();
+                              _customSites =
+                                  _customSites.intersection(available);
                             });
                           },
                         ),
@@ -774,9 +803,6 @@ class _FilterSheetState extends State<FilterSheet> {
                             _metro = {};
                             _metroBearingFrom = null;
                             _metroBearingTo = null;
-                            _microdistrictCtl.clear();
-                            _quartalCtl.clear();
-                            _areaNameCtl.clear();
                           }),
                         ),
                         // District & metro inputs only appear when the picked city has data.
@@ -1007,6 +1033,63 @@ class _FilterSheetState extends State<FilterSheet> {
                               suffixText: 'm',
                               border: const OutlineInputBorder(),
                             ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    _section(
+                      context,
+                      icon: Icons.travel_explore,
+                      title: s.t('sectionSources'),
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: kAllSources.map((key) {
+                            final selected = _sources.contains(key);
+                            return FilterChip(
+                              label: Text(kSourceLabels[key] ?? key),
+                              selected: selected,
+                              onSelected: (v) => _setFilterState(() {
+                                if (v) {
+                                  _sources.add(key);
+                                } else {
+                                  _sources.remove(key);
+                                  // An empty selection means "all sources" to
+                                  // the backend, the opposite of deselecting
+                                  // everything -- keep at least one checked.
+                                  if (_sources.isEmpty) _sources.add(key);
+                                }
+                              }),
+                            );
+                          }).toList(),
+                        ),
+                        if (_sources.contains('custom') &&
+                            _availableCustomSites.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            s.t('sectionCustomSites'),
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _availableCustomSites.map((site) {
+                              final selected =
+                                  _customSites.contains(site.domain);
+                              return FilterChip(
+                                label: Text(site.domain),
+                                selected: selected,
+                                onSelected: (v) => _setFilterState(() {
+                                  if (v) {
+                                    _customSites.add(site.domain);
+                                  } else {
+                                    _customSites.remove(site.domain);
+                                  }
+                                }),
+                              );
+                            }).toList(),
                           ),
                         ],
                       ],
@@ -1261,6 +1344,21 @@ class _FilterSheetState extends State<FilterSheet> {
                               _setFilterState(() => _withPhotos = v),
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.t('withPhotos')),
+                        ),
+                        // Listing lines: green only, and hide red ones.
+                        SwitchListTile(
+                          value: _trustedOnly,
+                          onChanged: (v) =>
+                              _setFilterState(() => _trustedOnly = v),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(s.t('trustedOnly')),
+                        ),
+                        SwitchListTile(
+                          value: _hideDanger,
+                          onChanged: (v) =>
+                              _setFilterState(() => _hideDanger = v),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(s.t('hideDanger')),
                         ),
                       ],
                     ),
