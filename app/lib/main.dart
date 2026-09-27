@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 
 import 'l10n/strings.dart';
 import 'services/api_service.dart';
+import 'services/google_auth.dart';
 import 'services/user_saved_state_repository.dart';
+import 'state/account.dart';
 import 'state/app_state.dart';
 import 'state/favorites.dart';
 import 'state/hidden.dart';
@@ -66,6 +68,30 @@ class FlatFinderApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) =>
               SortedState(context.read<UserSavedStateRepository>())..load(),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => AccountState(
+            ApiAccountBackend(context.read<ApiService>()),
+            PluginGoogleAuth.instance,
+            flushPending: () =>
+                context.read<UserSavedStateRepository>().flushOutbox(),
+            // Signing in or out changes which saved state this installation
+            // reads, so reload all of it from the server and re-register this
+            // device's push subscriptions for the presets it now has.
+            reloadSavedState: () async {
+              final saved = context.read<UserSavedStateRepository>();
+              final favorites = context.read<FavoritesState>();
+              final sorted = context.read<SortedState>();
+              final presets = context.read<PresetsState>();
+              await saved.snapshot(force: true);
+              await Future.wait([
+                favorites.load(),
+                sorted.load(),
+                presets.load(),
+              ]);
+              await presets.syncPushSubscriptions();
+            },
+          )..load(),
         ),
       ],
       child: Consumer<SettingsState>(

@@ -5,7 +5,11 @@ param(
     [string]$FirebaseAppId = "",
     [string]$FirebaseMessagingSenderId = "",
     [string]$FirebaseProjectId = "",
-    [string]$ApiBase = ""
+    [string]$ApiBase = "",
+    # OAuth "Web application" client id for Sign in with Google. Empty = the
+    # Account section is hidden. Also needs an "Android" OAuth client for this
+    # package name and signing SHA-1 in the same Google Cloud project.
+    [string]$GoogleServerClientId = ""
 )
 
 Set-StrictMode -Version Latest
@@ -53,6 +57,10 @@ if ([string]::IsNullOrWhiteSpace($ApiBase) -and -not [string]::IsNullOrWhiteSpac
     $ApiBase = $env:API_BASE
 }
 
+if ([string]::IsNullOrWhiteSpace($GoogleServerClientId) -and -not [string]::IsNullOrWhiteSpace($env:GOOGLE_SERVER_CLIENT_ID)) {
+    $GoogleServerClientId = $env:GOOGLE_SERVER_CLIENT_ID
+}
+
 if (-not (Test-Path $pubspecPath)) {
     throw "pubspec.yaml was not found at $pubspecPath"
 }
@@ -77,6 +85,9 @@ $flutterArgs += "--dart-define=FIREBASE_MESSAGING_SENDER_ID=$FirebaseMessagingSe
 $flutterArgs += "--dart-define=FIREBASE_PROJECT_ID=$FirebaseProjectId"
 if (-not [string]::IsNullOrWhiteSpace($ApiBase)) {
     $flutterArgs += "--dart-define=API_BASE=$ApiBase"
+}
+if (-not [string]::IsNullOrWhiteSpace($GoogleServerClientId)) {
+    $flutterArgs += "--dart-define=GOOGLE_SERVER_CLIENT_ID=$GoogleServerClientId"
 }
 
 Push-Location $appDir

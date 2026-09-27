@@ -450,6 +450,23 @@ class AppStrings {
       'presetHousingTitle': 'Housing by filter presets',
       'noPresets': 'No filter presets yet. Save one from Filters first.',
       'allListingsPreset': 'All listings',
+      'accountTitle': 'Account',
+      'accountSignedOut':
+          'Sign in with Google to share saved flats, collections and searches with whiteslove.me and your other phones.',
+      'accountSignedIn': 'Saved flats are synced with your Google account.',
+      'accountPrivacy':
+          'Only an anonymous Google account id is stored — no email, name or photo.',
+      'accountSignIn': 'Sign in with Google',
+      'accountSignOut': 'Sign out',
+      'accountDelete': 'Delete account data',
+      'accountDeleteConfirm':
+          'Delete the saved flats, collections and searches stored with this Google account on every device? This cannot be undone.',
+      'accountLinked': 'Signed in. Saved flats are now synced.',
+      'accountCancelled': 'Sign-in was cancelled.',
+      'accountFailed': 'Could not complete the request. Try again later.',
+      'accountSignedOutToast':
+          'Signed out. Your saved flats stay with your Google account.',
+      'accountDeleted': 'Account data deleted.',
       'pushNotifications': 'New-listing notifications',
       'pushNotificationsHint':
           'Notify this phone when enabled presets get new listings.',
@@ -915,6 +932,24 @@ class AppStrings {
       'noPresets':
           'Пока нет пресетов фильтров. Сначала сохраните пресет в фильтрах.',
       'allListingsPreset': 'Все объявления',
+      'accountTitle': 'Аккаунт',
+      'accountSignedOut':
+          'Войдите через Google, чтобы сохранённые квартиры, подборки и поиски были общими с whiteslove.me и другими телефонами.',
+      'accountSignedIn':
+          'Сохранённые квартиры синхронизируются с вашим аккаунтом Google.',
+      'accountPrivacy':
+          'Хранится только анонимный идентификатор аккаунта Google — без почты, имени и фото.',
+      'accountSignIn': 'Войти через Google',
+      'accountSignOut': 'Выйти',
+      'accountDelete': 'Удалить данные аккаунта',
+      'accountDeleteConfirm':
+          'Удалить сохранённые квартиры, подборки и поиски этого аккаунта Google на всех устройствах? Отменить нельзя.',
+      'accountLinked': 'Вы вошли. Сохранённые квартиры синхронизируются.',
+      'accountCancelled': 'Вход отменён.',
+      'accountFailed': 'Не удалось выполнить запрос. Попробуйте позже.',
+      'accountSignedOutToast':
+          'Вы вышли. Сохранённые квартиры остались в вашем аккаунте Google.',
+      'accountDeleted': 'Данные аккаунта удалены.',
       'pushNotifications': 'Уведомления о новых квартирах',
       'pushNotificationsHint':
           'Присылать на этот телефон новые объявления по включённым пресетам.',

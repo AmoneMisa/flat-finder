@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/strings.dart';
+import '../state/account.dart';
 import '../state/settings.dart';
 import '../state/presets.dart';
 import 'presets_screen.dart';
@@ -17,6 +18,7 @@ class SettingsScreen extends StatelessWidget {
       appBar: AppBar(title: Text(settings.t('settings'))),
       body: ListView(
         children: [
+          const _AccountSection(),
           _sectionTitle(context, settings.t('theme')),
           RadioGroup<String>(
             groupValue: settings.themeName,
@@ -124,4 +126,114 @@ class SettingsScreen extends StatelessWidget {
               ?.copyWith(color: Theme.of(context).colorScheme.primary),
         ),
       );
+}
+
+/// "Sign in with Google" to share saved flats, sorted collections and
+/// presets with the website and other phones. Hidden in builds without a
+/// Google client id (GOOGLE_SERVER_CLIENT_ID).
+class _AccountSection extends StatelessWidget {
+  const _AccountSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsState>();
+    // Optional: a host without accounts (or a test) simply has no section.
+    final account = context.watch<AccountState?>();
+    if (account == null || !account.available) return const SizedBox.shrink();
+
+    Future<void> report(AccountOutcome outcome) async {
+      if (!context.mounted) return;
+      final key = switch (outcome) {
+        AccountOutcome.linked => 'accountLinked',
+        AccountOutcome.cancelled => 'accountCancelled',
+        AccountOutcome.signedOut => 'accountSignedOutToast',
+        AccountOutcome.deleted => 'accountDeleted',
+        AccountOutcome.failed => 'accountFailed',
+      };
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(settings.t(key))));
+    }
+
+    Future<void> confirmDelete() async {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(settings.t('accountDelete')),
+          content: Text(settings.t('accountDeleteConfirm')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(settings.t('cancel')),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(settings.t('accountDelete')),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) await report(await account.deleteAccount());
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            settings.t('accountTitle'),
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(color: Theme.of(context).colorScheme.primary),
+          ),
+        ),
+        ListTile(
+          leading: Icon(
+            account.signedIn ? Icons.cloud_done_outlined : Icons.cloud_outlined,
+          ),
+          title: Text(
+            settings.t(account.signedIn ? 'accountSignedIn' : 'accountSignedOut'),
+          ),
+          subtitle: Text(settings.t('accountPrivacy')),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: account.signedIn
+                ? [
+                    OutlinedButton(
+                      onPressed: account.busy
+                          ? null
+                          : () async => report(await account.signOut()),
+                      child: Text(settings.t('accountSignOut')),
+                    ),
+                    TextButton(
+                      onPressed: account.busy ? null : confirmDelete,
+                      child: Text(settings.t('accountDelete')),
+                    ),
+                  ]
+                : [
+                    FilledButton.icon(
+                      onPressed: account.busy
+                          ? null
+                          : () async => report(await account.signIn()),
+                      icon: account.busy
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.login),
+                      label: Text(settings.t('accountSignIn')),
+                    ),
+                  ],
+          ),
+        ),
+        const Divider(),
+      ],
+    );
+  }
 }
