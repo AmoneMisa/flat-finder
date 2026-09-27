@@ -57,8 +57,15 @@ if ([string]::IsNullOrWhiteSpace($ApiBase) -and -not [string]::IsNullOrWhiteSpac
     $ApiBase = $env:API_BASE
 }
 
-if ([string]::IsNullOrWhiteSpace($GoogleServerClientId) -and -not [string]::IsNullOrWhiteSpace($env:GOOGLE_SERVER_CLIENT_ID)) {
-    $GoogleServerClientId = $env:GOOGLE_SERVER_CLIENT_ID
+if ([string]::IsNullOrWhiteSpace($GoogleServerClientId)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:GOOGLE_SERVER_CLIENT_ID)) {
+        $GoogleServerClientId = $env:GOOGLE_SERVER_CLIENT_ID
+    } else {
+        # The whiteslove.me "Web application" OAuth client. Not a secret: it
+        # is public in every sign-in request. The backend must list it in
+        # GOOGLE_OAUTH_CLIENT_IDS.
+        $GoogleServerClientId = "913508510175-gdo90hovn95djsrran21afogu23ild21.apps.googleusercontent.com"
+    }
 }
 
 if (-not (Test-Path $pubspecPath)) {
